@@ -1,0 +1,67 @@
+Sirius Looper - A Reference Architecture for Time-Domain Audio/Video Looping
+Copyright (C) 2026 Larry Seyer
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+================================================================================
+APPLE APP STORE EXCEPTION
+================================================================================
+
+As a special exception, the copyright holder grants permission to distribute
+compiled versions of this program through Apple's App Store, under Apple's
+standard App Store terms, provided that:
+
+1. The complete corresponding source code remains freely available under the
+   terms of the GNU Affero General Public License version 3.
+
+2. The source code location is clearly documented and accessible to users.
+
+This exception applies only to distribution through Apple's App Store and
+does not modify any other terms of the AGPLv3.
+
+================================================================================
+SAMPLE LIBRARY EXCLUSION
+================================================================================
+
+IMPORTANT: The Larry Seyer Acoustic Drum Library (audio sample files in FLAC
+format and their associated SFZ mapping files) included with official Sirius
+Looper distributions is NOT covered by this license.
+
+The Larry Seyer Acoustic Drum Library is proprietary content:
+Copyright (C) 1999 Larry Seyer. All Rights Reserved.
+
+Sirius Looper ships with a selection from this library, played by an embedded
+sampler engine derived from the sister application OTTO. The selection is
+smaller than the library distributed with OTTO, but is governed by the same
+terms. See SAMPLE-LICENSE.md for the terms governing use of the drum sample
+library.
+
+The AGPLv3 license applies only to the Sirius Looper software source code, not
+to any bundled audio content or sample libraries.
+
+================================================================================
+THIRD-PARTY COMPONENTS
+================================================================================
+
+Sirius Looper includes third-party open source components under various
+licenses. See LICENSE-THIRD-PARTY.md for complete details.
+
+================================================================================
+FULL LICENSE TEXT
+================================================================================
+
+The complete text of the GNU Affero General Public License version 3 is
+available at: https://www.gnu.org/licenses/agpl-3.0.txt
+
+A copy is also included in this repository at: licenses/AGPL-3.0.txt

@@ -8,7 +8,7 @@
 
 **Status:** Draft for review
 **Version:** 2.0
-**License:** TBD (intended for permissive public release)
+**License:** The Sirius Looper software is licensed under AGPLv3 with an Apple App Store distribution exception. The bundled Larry Seyer Acoustic Drum Library selection is proprietary and separately licensed. See `LICENSE`, `LICENSE-THIRD-PARTY.md`, and `SAMPLE-LICENSE.md`. This document — the white paper — is offered for permissive public release.
 
 ---
 
