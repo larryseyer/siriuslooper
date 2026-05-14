@@ -158,6 +158,16 @@ bool Rational::operator<= (const Rational& other) const { return ! (other < *thi
 bool Rational::operator>  (const Rational& other) const { return other < *this; }
 bool Rational::operator>= (const Rational& other) const { return ! (*this < other); }
 
+std::int64_t Rational::floor() const noexcept
+{
+    // den is always positive after normalization, so the remainder carries the
+    // sign of the numerator. Integer division truncates toward zero; when the
+    // value is negative and not exact, that is one too high — round it down.
+    const std::int64_t quotient  = num / den;
+    const std::int64_t remainder = num % den;
+    return (remainder < 0) ? quotient - 1 : quotient;
+}
+
 double Rational::toDouble() const noexcept
 {
     return static_cast<double> (num) / static_cast<double> (den);

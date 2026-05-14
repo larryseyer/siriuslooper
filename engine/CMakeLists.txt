@@ -10,7 +10,10 @@
 
 add_library(SiriusEngine STATIC
     src/MonotonicClock.cpp
-    src/Lmc.cpp)
+    src/Lmc.cpp
+    src/AudioDeviceCalibration.cpp
+    src/Membrane.cpp
+    src/LoopRenderer.cpp)
 
 target_include_directories(SiriusEngine PUBLIC include)
 

@@ -8,7 +8,11 @@ add_executable(SiriusTests
     TapeTests.cpp
     LockFreeSpscQueueTests.cpp
     RetroactiveRingTests.cpp
-    LmcTests.cpp)
+    LmcTests.cpp
+    SampleClockTests.cpp
+    AudioDeviceCalibrationTests.cpp
+    MembraneTests.cpp
+    LoopRendererTests.cpp)
 
 target_compile_features(SiriusTests PRIVATE cxx_std_20)
 

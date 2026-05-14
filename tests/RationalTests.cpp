@@ -184,3 +184,16 @@ TEST_CASE ("toString reports normalized form", "[rational]")
     CHECK (Rational (0, 9).toString() == "0/1");
     CHECK (Rational (1, -2).toString() == "-1/2");
 }
+
+TEST_CASE ("floor rounds toward negative infinity, exactly", "[rational]")
+{
+    CHECK (Rational (7, 2).floor()  == 3);   // 3.5 -> 3
+    CHECK (Rational (4).floor()     == 4);   // exact integer
+    CHECK (Rational (0).floor()     == 0);
+    CHECK (Rational (1, 3).floor()  == 0);   // 0.333... -> 0
+    // The case naive truncation gets wrong: a negative non-integer rounds
+    // *down*, not toward zero.
+    CHECK (Rational (-7, 2).floor() == -4);  // -3.5 -> -4, not -3
+    CHECK (Rational (-1, 3).floor() == -1);  // -0.333... -> -1
+    CHECK (Rational (-6, 3).floor() == -2);  // exact negative integer
+}

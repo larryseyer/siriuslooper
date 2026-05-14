@@ -59,6 +59,10 @@ public:
     bool operator>  (const Rational& other) const;
     bool operator>= (const Rational& other) const;
 
+    /// The greatest integer not exceeding this value. Exact: floor(-7/2) is -4,
+    /// not -3. Used by cyclic math such as locating a loop's current cycle.
+    std::int64_t floor() const noexcept;
+
     /// Lossy conversion to double. This belongs at the membrane only — the
     /// engine never uses it internally. Named explicitly so its use is visible.
     double toDouble() const noexcept;
