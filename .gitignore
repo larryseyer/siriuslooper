@@ -3,3 +3,7 @@ cmake-build-*/
 .cache/
 .DS_Store
 *.user
+
+# Vendored third-party dependencies — present on disk, not committed.
+# Populated by `bash/setup-deps.sh` (matches the sister app OTTO's layout).
+external/

@@ -19,6 +19,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Fetch vendored dependencies
+        shell: bash
+        run: bash/setup-deps.sh
+
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
