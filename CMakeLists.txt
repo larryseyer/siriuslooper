@@ -19,10 +19,14 @@ include(cmake/Dependencies.cmake)
 # Conceptual-time engine core — JUCE-free, deterministic, unit-testable.
 add_subdirectory(core)
 
+# Real-time engine layer — JUCE-free real-time primitives, retroactive ring, LMC.
+add_subdirectory(engine)
+
 # Standalone application shell.
 add_subdirectory(app)
 
 if(SIRIUS_BUILD_TESTS)
     enable_testing()
+    find_package(Threads REQUIRED)
     add_subdirectory(tests)
 endif()

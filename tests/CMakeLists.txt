@@ -5,13 +5,19 @@ add_executable(SiriusTests
     PositionTests.cpp
     TimeDomainTests.cpp
     ConstituentTests.cpp
-    TapeTests.cpp)
+    TapeTests.cpp
+    LockFreeSpscQueueTests.cpp
+    RetroactiveRingTests.cpp
+    LmcTests.cpp)
 
 target_compile_features(SiriusTests PRIVATE cxx_std_20)
 
+# Sirius::Engine links Sirius::Core publicly, so linking Engine here brings
+# Core's headers and library along transitively — no need to list it twice.
 target_link_libraries(SiriusTests PRIVATE
-    Sirius::Core
-    Catch2::Catch2WithMain)
+    Sirius::Engine
+    Catch2::Catch2WithMain
+    Threads::Threads)
 
 include(Catch)
 catch_discover_tests(SiriusTests)
