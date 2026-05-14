@@ -73,6 +73,27 @@ Constituent Constituent::withoutLocalTempoMap() const
     return next;
 }
 
+Constituent Constituent::withRepetitionRules (RepetitionRules rules) const
+{
+    Constituent next (*this);
+    next.repetitionRules_ = std::move (rules);
+    return next;
+}
+
+Constituent Constituent::withPhraseMetadata (PhraseMetadata metadata) const
+{
+    Constituent next (*this);
+    next.phraseMetadata_ = std::move (metadata);
+    return next;
+}
+
+Constituent Constituent::withoutPhraseMetadata() const
+{
+    Constituent next (*this);
+    next.phraseMetadata_.reset();
+    return next;
+}
+
 Constituent Constituent::withChildAdded (ChildPtr child) const
 {
     if (child == nullptr)

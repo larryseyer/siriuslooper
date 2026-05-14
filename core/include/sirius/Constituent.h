@@ -1,11 +1,13 @@
 #pragma once
 
+#include "sirius/ConstituentId.h"
 #include "sirius/Meter.h"
+#include "sirius/Phrase.h"
 #include "sirius/Position.h"
 #include "sirius/Rational.h"
+#include "sirius/RepetitionRules.h"
 #include "sirius/TempoMap.h"
 
-#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -13,24 +15,6 @@
 
 namespace sirius
 {
-
-/// A Constituent's persistent identity. It survives every content revision: a
-/// phrase named "the verse" remains the same phrase, with the same id, through
-/// fifteen revisions of its content (white paper Part 7.6). Versioning happens
-/// at the content level; identity persists at the structural level.
-class ConstituentId
-{
-public:
-    explicit constexpr ConstituentId (std::int64_t value) noexcept : value_ (value) {}
-
-    std::int64_t value() const noexcept { return value_; }
-
-    bool operator== (const ConstituentId& other) const noexcept { return value_ == other.value_; }
-    bool operator!= (const ConstituentId& other) const noexcept { return value_ != other.value_; }
-
-private:
-    std::int64_t value_;
-};
 
 /// How a Constituent aligns to its parent (white paper Appendix A, "Anchor to
 /// parent").
@@ -70,6 +54,15 @@ public:
     const std::optional<Meter>&    localMeter()    const noexcept { return localMeter_; }
     const std::optional<TempoMap>& localTempoMap() const noexcept { return localTempoMap_; }
 
+    /// How this Constituent plays back — the five dimensions of white paper
+    /// Part X. A freshly constructed Constituent carries the default loop rules.
+    const RepetitionRules& repetitionRules() const noexcept { return repetitionRules_; }
+
+    /// The phrase metadata, present only when this Constituent is functioning
+    /// as a phrase (white paper Part VIII) rather than a bare loop or slice.
+    const std::optional<PhraseMetadata>& phraseMetadata() const noexcept { return phraseMetadata_; }
+    bool isPhrase() const noexcept { return phraseMetadata_.has_value(); }
+
     const std::vector<ChildPtr>& children() const noexcept { return children_; }
     bool isLeaf() const noexcept { return children_.empty(); }
 
@@ -86,6 +79,9 @@ public:
     Constituent withoutLocalMeter() const;
     Constituent withLocalTempoMap (TempoMap tempoMap) const;
     Constituent withoutLocalTempoMap() const;
+    Constituent withRepetitionRules (RepetitionRules rules) const;
+    Constituent withPhraseMetadata (PhraseMetadata metadata) const;
+    Constituent withoutPhraseMetadata() const;
     Constituent withChildAdded (ChildPtr child) const;
     Constituent withChildReplaced (std::size_t index, ChildPtr child) const;
     Constituent withChildRemoved (std::size_t index) const;
@@ -98,6 +94,8 @@ private:
     std::optional<TempoMap> localTempoMap_;
     AnchorToParent anchor_ { AnchorToParent::Free };
     std::string name_;
+    RepetitionRules repetitionRules_;
+    std::optional<PhraseMetadata> phraseMetadata_;
     std::vector<ChildPtr> children_;
 };
 

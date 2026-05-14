@@ -9,6 +9,7 @@
 
 #include <memory>
 #include <stdexcept>
+#include <variant>
 
 using sirius::AnchorToParent;
 using sirius::Constituent;
@@ -137,4 +138,52 @@ TEST_CASE ("child edits reject bad indices and null children", "[constituent]")
 
     const Constituent withChild = c.withChildAdded (makeLeaf (2, Rational (1)));
     CHECK_THROWS_AS (withChild.withChildReplaced (0, nullptr), std::invalid_argument);
+}
+
+TEST_CASE ("a fresh Constituent carries the default loop repetition rules", "[constituent][repetition]")
+{
+    const Constituent c (ConstituentId (1), Position(), Position (Rational (4)));
+    // White paper Part 10.2: the default rules are the system's best guess.
+    CHECK (std::holds_alternative<sirius::trigger::FreeRunning> (c.repetitionRules().trigger));
+    CHECK (std::holds_alternative<sirius::cardinality::Forever> (c.repetitionRules().cardinality));
+}
+
+TEST_CASE ("repetition rules are editable copy-on-write, identity preserved", "[constituent][repetition]")
+{
+    const Constituent original (ConstituentId (7), Position(), Position (Rational (4)));
+
+    sirius::RepetitionRules rules;
+    rules.cardinality = sirius::cardinality::NTimes (8);
+    rules.termination = sirius::termination::HandOff { ConstituentId (8) };
+    const Constituent edited = original.withRepetitionRules (rules);
+
+    CHECK (edited.id() == ConstituentId (7)); // identity survives the edit
+    CHECK (std::get<sirius::cardinality::NTimes> (edited.repetitionRules().cardinality).count == 8);
+    // The original is untouched.
+    CHECK (std::holds_alternative<sirius::cardinality::Forever> (
+               original.repetitionRules().cardinality));
+}
+
+TEST_CASE ("a Constituent becomes a phrase when it carries phrase metadata",
+           "[constituent][phrase]")
+{
+    const Constituent loop (ConstituentId (1), Position(), Position (Rational (4)));
+    CHECK_FALSE (loop.isPhrase());
+    CHECK_FALSE (loop.phraseMetadata().has_value());
+
+    sirius::PhraseMetadata meta;
+    meta.role = "verse";
+    meta.isRoleFillable = true;
+    const Constituent phrase = loop.withPhraseMetadata (meta);
+
+    CHECK (phrase.isPhrase());
+    REQUIRE (phrase.phraseMetadata().has_value());
+    CHECK (phrase.phraseMetadata()->role == "verse");
+    CHECK (phrase.id() == ConstituentId (1)); // still the same Constituent
+    CHECK_FALSE (loop.isPhrase());            // the original is untouched
+
+    // The phrase role can be dropped again, copy-on-write.
+    const Constituent backToLoop = phrase.withoutPhraseMetadata();
+    CHECK_FALSE (backToLoop.isPhrase());
+    CHECK (phrase.isPhrase()); // and that edit did not touch `phrase`
 }
