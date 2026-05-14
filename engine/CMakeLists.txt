@@ -14,7 +14,8 @@ add_library(SiriusEngine STATIC
     src/AudioDeviceCalibration.cpp
     src/Membrane.cpp
     src/LoopRenderer.cpp
-    src/Asrc.cpp)
+    src/Asrc.cpp
+    src/RenderPipeline.cpp)
 
 target_include_directories(SiriusEngine PUBLIC include)
 

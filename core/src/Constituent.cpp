@@ -94,6 +94,20 @@ Constituent Constituent::withoutPhraseMetadata() const
     return next;
 }
 
+Constituent Constituent::withTapeReference (TapeReference reference) const
+{
+    Constituent next (*this);
+    next.tapeReference_ = reference;
+    return next;
+}
+
+Constituent Constituent::withoutTapeReference() const
+{
+    Constituent next (*this);
+    next.tapeReference_.reset();
+    return next;
+}
+
 Constituent Constituent::withChildAdded (ChildPtr child) const
 {
     if (child == nullptr)

@@ -6,6 +6,7 @@
 #include "sirius/Position.h"
 #include "sirius/Rational.h"
 #include "sirius/RepetitionRules.h"
+#include "sirius/TapeReference.h"
 #include "sirius/TempoMap.h"
 
 #include <memory>
@@ -63,6 +64,12 @@ public:
     const std::optional<PhraseMetadata>& phraseMetadata() const noexcept { return phraseMetadata_; }
     bool isPhrase() const noexcept { return phraseMetadata_.has_value(); }
 
+    /// The reference into a source tape, present only when this Constituent is
+    /// a loop — the Constituent type that directly references tape data (white
+    /// paper Part 7.4).
+    const std::optional<TapeReference>& tapeReference() const noexcept { return tapeReference_; }
+    bool isLoop() const noexcept { return tapeReference_.has_value(); }
+
     const std::vector<ChildPtr>& children() const noexcept { return children_; }
     bool isLeaf() const noexcept { return children_.empty(); }
 
@@ -82,6 +89,8 @@ public:
     Constituent withRepetitionRules (RepetitionRules rules) const;
     Constituent withPhraseMetadata (PhraseMetadata metadata) const;
     Constituent withoutPhraseMetadata() const;
+    Constituent withTapeReference (TapeReference reference) const;
+    Constituent withoutTapeReference() const;
     Constituent withChildAdded (ChildPtr child) const;
     Constituent withChildReplaced (std::size_t index, ChildPtr child) const;
     Constituent withChildRemoved (std::size_t index) const;
@@ -96,6 +105,7 @@ private:
     std::string name_;
     RepetitionRules repetitionRules_;
     std::optional<PhraseMetadata> phraseMetadata_;
+    std::optional<TapeReference> tapeReference_;
     std::vector<ChildPtr> children_;
 };
 

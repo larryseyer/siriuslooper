@@ -2,28 +2,14 @@
 
 #include "sirius/Position.h"
 #include "sirius/Rational.h"
+#include "sirius/TapeId.h"
 
-#include <cstdint>
+#include <cstddef>
 #include <stdexcept>
 #include <vector>
 
 namespace sirius
 {
-
-/// Identifies a single input source — which tape an event belongs to.
-class TapeId
-{
-public:
-    explicit constexpr TapeId (std::int64_t value) noexcept : value_ (value) {}
-
-    std::int64_t value() const noexcept { return value_; }
-
-    bool operator== (const TapeId& other) const noexcept { return value_ == other.value_; }
-    bool operator!= (const TapeId& other) const noexcept { return value_ != other.value_; }
-
-private:
-    std::int64_t value_;
-};
 
 /// One event on a tape, in the uniform format every tape shares (white paper
 /// Part 6.2). It carries two timestamps: the LMC timestamp is the truth about
