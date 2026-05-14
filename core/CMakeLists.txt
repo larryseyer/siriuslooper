@@ -12,7 +12,8 @@ add_library(SiriusCore STATIC
     src/Meter.cpp
     src/TempoMap.cpp
     src/Position.cpp
-    src/TimeDomain.cpp)
+    src/TimeDomain.cpp
+    src/Constituent.cpp)
 
 target_include_directories(SiriusCore PUBLIC include)
 
