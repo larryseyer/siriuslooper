@@ -12,6 +12,7 @@ mkdir -p "$EXT"
 DEPS=(
     "JUCE|https://github.com/juce-framework/JUCE.git|8.0.12"
     "Catch2|https://github.com/catchorg/Catch2.git|v3.15.0"
+    "soxr|https://github.com/chirlu/soxr.git|master"  # libsoxr is effectively frozen at 0.1.3
 )
 
 for entry in "${DEPS[@]}"; do
@@ -24,6 +25,13 @@ for entry in "${DEPS[@]}"; do
     echo "cloning $name @ $ref ..."
     git clone --depth 1 --branch "$ref" -q "$repo" "$dest"
     rm -rf "$dest/.git"
+
+    # Apply any vendored patches for this dependency (patches/<name>-*.patch).
+    for patch in "$ROOT"/patches/"$name"-*.patch; do
+        [ -e "$patch" ] || continue
+        echo "  applying $(basename "$patch")"
+        patch -p1 -d "$dest" < "$patch"
+    done
 done
 
 echo "external/ ready."

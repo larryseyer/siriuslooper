@@ -26,3 +26,32 @@
 **Resolved:** Ableton Link license procurement — the proprietary license is
 already held (same licensing model as the sister app OTTO; see
 `LICENSE-THIRD-PARTY.md`). No procurement action is outstanding.
+
+### 2026-05-14 — M2: Membranes & always-running tape
+
+- **Files:** future `engine/` membrane classes + `app/AudioDeviceManagement.*`
+- **What was deferred (the hardware-dependent half of M2):**
+  1. JUCE `AudioIODeviceCallback` device wiring — the thin glue that drives the
+     inbound membrane (timestamp + enqueue to the lock-free queue) and the
+     outbound membrane (render the loop) from a real audio device.
+  2. One-time loopback latency calibration per device (output a click, capture
+     it back, measure the round-trip).
+  3. The end-to-end "audio in → tape → mark a loop → hear it repeat" milestone
+     test.
+- **Why deferred:** all three require real audio hardware; device and audio
+  testing is operator-run per project conventions, not verifiable headless.
+- **What's needed to finish:**
+  1. Build the membrane device-callback classes on top of the verified engine
+     foundation (lock-free queue, LMC, membrane math, LoopRenderer, Asrc), then
+     wire them through JUCE's `AudioDeviceManager` in `app/`.
+  2. Run the loopback calibration on a real interface; confirm it populates an
+     `AudioDeviceCalibration` with sane rate-factor/offset values.
+  3. With an instrument plugged in: capture audio, mark a loop, confirm it
+     repeats audibly and stays in time over many cycles.
+
+- **Headless verification already done for M2:** lock-free SPSC queue
+  (incl. 200k-item concurrent stress), retroactive ring, LMC, latency-
+  compensation math, device calibration, LoopRenderer, and the libsoxr ASRC —
+  78 tests pass. The libsoxr variable-rate latency measurement the plan asked
+  for: reported delay ~2.1 ms, impulse-response latency ~0.04 ms — both
+  comfortably inside the <30 ms trust budget.

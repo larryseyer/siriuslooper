@@ -13,12 +13,18 @@ add_library(SiriusEngine STATIC
     src/Lmc.cpp
     src/AudioDeviceCalibration.cpp
     src/Membrane.cpp
-    src/LoopRenderer.cpp)
+    src/LoopRenderer.cpp
+    src/Asrc.cpp)
 
 target_include_directories(SiriusEngine PUBLIC include)
 
 target_compile_features(SiriusEngine PUBLIC cxx_std_20)
 
-target_link_libraries(SiriusEngine PUBLIC Sirius::Core)
+# Sirius::Core is public (its types appear in the engine's headers); soxr is
+# private (it is an implementation detail of Asrc.cpp — soxr.h never leaks into
+# a SiriusEngine public header).
+target_link_libraries(SiriusEngine
+    PUBLIC  Sirius::Core
+    PRIVATE soxr)
 
 add_library(Sirius::Engine ALIAS SiriusEngine)

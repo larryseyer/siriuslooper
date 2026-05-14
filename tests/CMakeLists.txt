@@ -12,7 +12,8 @@ add_executable(SiriusTests
     SampleClockTests.cpp
     AudioDeviceCalibrationTests.cpp
     MembraneTests.cpp
-    LoopRendererTests.cpp)
+    LoopRendererTests.cpp
+    AsrcTests.cpp)
 
 target_compile_features(SiriusTests PRIVATE cxx_std_20)
 
