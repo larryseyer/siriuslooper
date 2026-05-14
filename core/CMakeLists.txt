@@ -8,7 +8,11 @@
 # =============================================================================
 
 add_library(SiriusCore STATIC
-    src/Rational.cpp)
+    src/Rational.cpp
+    src/Meter.cpp
+    src/TempoMap.cpp
+    src/Position.cpp
+    src/TimeDomain.cpp)
 
 target_include_directories(SiriusCore PUBLIC include)
 

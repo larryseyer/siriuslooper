@@ -1,5 +1,9 @@
 add_executable(SiriusTests
-    RationalTests.cpp)
+    RationalTests.cpp
+    MeterTests.cpp
+    TempoMapTests.cpp
+    PositionTests.cpp
+    TimeDomainTests.cpp)
 
 target_compile_features(SiriusTests PRIVATE cxx_std_20)
 
