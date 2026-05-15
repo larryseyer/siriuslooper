@@ -425,7 +425,7 @@ void MainComponent::chooseFileAndSave()
         "Save Sirius session as...",
         juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
             .getChildFile ("session.sirius.json"),
-        "*.sirius.json;*.json");
+        "*.json");
 
     sessionFileChooser_->launchAsync (
         juce::FileBrowserComponent::saveMode
@@ -448,7 +448,7 @@ void MainComponent::chooseFileAndLoad()
     sessionFileChooser_ = std::make_unique<juce::FileChooser> (
         "Load Sirius session...",
         juce::File::getSpecialLocation (juce::File::userDocumentsDirectory),
-        "*.sirius.json;*.json");
+        "*.json");
 
     sessionFileChooser_->launchAsync (
         juce::FileBrowserComponent::openMode,
