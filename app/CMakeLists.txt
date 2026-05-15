@@ -26,7 +26,7 @@ juce_add_gui_app(SiriusLooper
 target_sources(SiriusLooper PRIVATE
     Main.cpp
     DemoSession.cpp
-    SessionInspector.cpp)
+    MainComponent.cpp)
 
 target_compile_definitions(SiriusLooper PRIVATE
     JUCE_WEB_BROWSER=0
@@ -37,6 +37,9 @@ target_compile_definitions(SiriusLooper PRIVATE
 target_link_libraries(SiriusLooper PRIVATE
     Sirius::Engine
     Sirius::AppCore
+    Sirius::Ui
+    Sirius::Host
+    Sirius::Video
     juce::juce_gui_extra
     juce::juce_recommended_config_flags
     juce::juce_recommended_lto_flags

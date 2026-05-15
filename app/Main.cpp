@@ -1,4 +1,4 @@
-#include "SessionInspector.h"
+#include "MainComponent.h"
 
 #include <juce_gui_extra/juce_gui_extra.h>
 
@@ -40,7 +40,7 @@ private:
                               DocumentWindow::allButtons)
         {
             setUsingNativeTitleBar (true);
-            setContentOwned (new SessionInspector(), true);
+            setContentOwned (new MainComponent(), true);
             setResizable (true, true);
             centreWithSize (getWidth(), getHeight());
             setVisible (true);
