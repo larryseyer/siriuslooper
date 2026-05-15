@@ -208,3 +208,28 @@ TEST_CASE ("promote clamps Loop bounds to the host Phrase when region extends pa
     CHECK (loop.tapeReference()->tapeIn  == Rational (4));
     CHECK (loop.tapeReference()->tapeOut == Rational (9));
 }
+
+TEST_CASE ("promote throws on a zero-duration or reversed region",
+           "[promotion][defensive]")
+{
+    Constituent root = emptyRoot();
+    Counter counter;
+
+    SECTION ("zero duration")
+    {
+        const CaptureRegion bad { TapeId (200), Rational (3), Rational (3) };
+        CHECK_THROWS_AS (
+            promote (root, identityMap(), bad, Rational (3),
+                     IdAllocator (std::ref (counter))),
+            std::invalid_argument);
+    }
+
+    SECTION ("reversed bounds")
+    {
+        const CaptureRegion bad { TapeId (200), Rational (5), Rational (3) };
+        CHECK_THROWS_AS (
+            promote (root, identityMap(), bad, Rational (5),
+                     IdAllocator (std::ref (counter))),
+            std::invalid_argument);
+    }
+}
