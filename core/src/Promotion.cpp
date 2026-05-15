@@ -1,6 +1,5 @@
 #include "sirius/Promotion.h"
 
-#include "sirius/Phrase.h"
 #include "sirius/TapeReference.h"
 
 #include <algorithm>
