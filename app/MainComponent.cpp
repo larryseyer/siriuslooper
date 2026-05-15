@@ -499,7 +499,9 @@ void MainComponent::refreshDiagnostics()
         const double out = last.outLmcSeconds.toDouble();
         captureLine << "  (last: " << juce::String (in, 2)
                     << " s → "    << juce::String (out, 2)
-                    << " s, "     << juce::String (out - in, 2) << " s long)";
+                    << " s, "     << juce::String (out - in, 2) << " s long"
+                    << " · tape #" << juce::String ((juce::int64) last.tape.value())
+                    << ")";
     }
 
     preparationPane_->setDiagnostics (
