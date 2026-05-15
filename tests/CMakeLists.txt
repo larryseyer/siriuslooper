@@ -7,6 +7,7 @@ add_executable(SiriusTests
     ConstituentTests.cpp
     ArrangementTests.cpp
     RoleResolverTests.cpp
+    CaptureSessionTests.cpp
     RepetitionRulesTests.cpp
     PhraseTests.cpp
     TapeTests.cpp

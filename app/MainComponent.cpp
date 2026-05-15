@@ -294,6 +294,10 @@ MainComponent::MainComponent()
     playhead_.onValueChange = [this] { refreshPerformance(); refreshPreparation(); };
     addAndMakeVisible (playhead_);
 
+    armButton_.onClick  = [this] { onArmToggle(); };
+    addAndMakeVisible (armButton_);
+    refreshArmButton();
+
     undoButton_.onClick = [this] { onUndo(); };
     redoButton_.onClick = [this] { onRedo(); };
     addAndMakeVisible (undoButton_);
@@ -326,6 +330,8 @@ void MainComponent::resized()
     tabs_.setBounds (area);
 
     bottom = bottom.reduced (8, 4);
+    armButton_.setBounds (bottom.removeFromLeft (96));
+    bottom.removeFromLeft (8);
     undoButton_.setBounds (bottom.removeFromLeft (72));
     bottom.removeFromLeft (4);
     redoButton_.setBounds (bottom.removeFromLeft (72));
@@ -389,7 +395,16 @@ void MainComponent::refreshDiagnostics()
     if (undoStack_.canUndo())
         undoLine << " (next undo: " << juce::String (undoStack_.nextUndoLabel()) << ")";
 
-    preparationPane_->setDiagnostics (tierLine + "\n" + latencyLine + "\n" + undoLine);
+    juce::String captureLine ("Capture: ");
+    switch (captureSession_.state())
+    {
+        case CaptureState::Disarmed:    captureLine << "disarmed";                  break;
+        case CaptureState::Armed:       captureLine << "armed, no in-point set";    break;
+        case CaptureState::AwaitingOut: captureLine << "capturing — awaiting out";  break;
+    }
+
+    preparationPane_->setDiagnostics (
+        tierLine + "\n" + latencyLine + "\n" + undoLine + "\n" + captureLine);
 
     undoButton_.setEnabled (undoStack_.canUndo());
     redoButton_.setEnabled (undoStack_.canRedo());
@@ -397,6 +412,36 @@ void MainComponent::refreshDiagnostics()
     bottomInfo_.setText (
         juce::String (playheadValueToLmc (playhead_.getValue()).toDouble(), 2) + " s",
         juce::dontSendNotification);
+}
+
+void MainComponent::onArmToggle()
+{
+    // Coarse, decisive (white paper 14.6): one gesture, one toggle. From
+    // disarmed → armed; from any armed state → disarmed (cancels any
+    // pending in-point, per CaptureSession::disarm).
+    if (captureSession_.isArmed())
+        captureSession_.disarm();
+    else
+        captureSession_.arm();
+
+    refreshArmButton();
+    refreshDiagnostics();
+}
+
+void MainComponent::refreshArmButton()
+{
+    // Glanceable (white paper 14.5): label and tint communicate state. Red
+    // means live; neutral means stood down. The button is the same gesture
+    // in both states — tapping flips it.
+    const bool armed = captureSession_.isArmed();
+    armButton_.setButtonText (armed ? "Disarm" : "Arm");
+    armButton_.setColour (juce::TextButton::buttonColourId,
+                          armed ? juce::Colours::darkred
+                                : juce::Colours::darkgrey);
+    armButton_.setColour (juce::TextButton::textColourOffId,
+                          juce::Colours::white);
+    armButton_.setColour (juce::TextButton::textColourOnId,
+                          juce::Colours::white);
 }
 
 void MainComponent::onUndo()

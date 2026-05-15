@@ -3,6 +3,7 @@
 #include "CapabilityTier.h"
 #include "DemoSession.h"
 
+#include "sirius/CaptureSession.h"
 #include "sirius/LatencyBudget.h"
 #include "sirius/PerformanceView.h"
 #include "sirius/PluginScanner.h"
@@ -52,6 +53,10 @@ private:
     void onUndo();
     void onRedo();
 
+    // --- arm / disarm gesture (white paper 14.6 — coarse, decisive) ---
+    void onArmToggle();
+    void refreshArmButton();
+
     // --- plugin scanning ---
     void chooseFolderAndScan();
 
@@ -94,9 +99,13 @@ private:
 
     // --- bottom control bar ---
     juce::Slider     playhead_;
+    juce::TextButton armButton_   { "Arm" };
     juce::TextButton undoButton_  { "Undo" };
     juce::TextButton redoButton_  { "Redo" };
     juce::Label      bottomInfo_;
+
+    // --- capture state (white paper 14.5 / 14.6) ---
+    CaptureSession captureSession_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)
 };
