@@ -265,6 +265,66 @@ already held (same licensing model as the sister app OTTO; see
   is a thin letterboxing renderer that takes a `juce::Image`; producing
   that image from a `VideoFrame` is the FFmpeg-bound work above.
 
+### 2026-05-15 — Session directory format (Whitepaper V2 §7.8)
+
+- **Files:** `persistence/src/SessionFormat.cpp`,
+  `persistence/include/sirius/SessionFormat.h`, `app/MainComponent.cpp`
+  (Save/Load callers), eventually `persistence/src/TapeStore.cpp`.
+- **What was deferred:** Whitepaper V2 §7.8 says a session is a
+  directory `my-session.sirius/` containing:
+  ```
+  session.json            # the Constituent graph
+  lmc-discipline.json     # LMC discipline history (Part 4.5)
+  calibration/            # per-device latency + clock calibration
+      <device-id>.json
+  tapes/                  # the data layer — content-addressed
+      <tape-id-hash>.{caf,flac,mkv}
+  ```
+  Current code writes a single `session.sirius.json` file containing
+  only the Constituent graph. LMC discipline history and per-device
+  calibration are not persisted; `TapeStore` exists but is not
+  bundled into the same session unit. A session today is not the
+  self-contained "valid archival unit" §7.8 describes.
+- **Why deferred:** the plan's "Remaining open item" (line 273-277)
+  was to *check* the V2 worked example against M1 structs — that
+  check is done in commit (this commit). The actual file-format
+  refactor is a separate scope decision: it touches Save/Load
+  (which still has the unresolved macOS Load dialog TCC bug, see
+  next entry), and would change every saved session's on-disk shape.
+- **What's needed to finish:**
+  1. Add a `Session` aggregate type to `persistence/` that bundles
+     {root Constituent, optional LMC discipline history, optional
+     calibration records, references to the TapeStore-resident
+     audio data}. `SessionFormat::serialize/deserialize` operate on
+     `Session`, not bare Constituent.
+  2. Change Save to write a directory: create
+     `<chosen-path>/session.json`, `<chosen-path>/calibration/`, and
+     a `<chosen-path>/tapes/` symlink or copy from the live
+     TapeStore. JUCE's `File::createDirectory()` plus the existing
+     JSON serialization are sufficient.
+  3. Change Load to read a directory: detect the `.sirius/`
+     directory, parse the constituent JSON, materialize the
+     calibration records, attach the bundled `tapes/` to the
+     runtime TapeStore (likely via content-address verification:
+     hashes inside must match filenames).
+  4. Resolve the macOS Load dialog TCC bug first — switching Load
+     to "pick a directory" instead of "pick a file" may change
+     which TCC failure mode we hit, and we should avoid stacking
+     unknowns.
+- **Headless verification already done:** the Whitepaper V2
+  Appendix C consistency check is complete — every field used in
+  C.1 (twelve-bar blues) and C.2 (4-against-7 polymetric phrase)
+  is representable in the M1 structs. The V2 surface vocabulary
+  ("Section", "Phrase", "Loop", "Slice") maps onto Constituent +
+  the optional fields (`phraseMetadata`, `tapeReference`,
+  `repetitionRules.cardinality`); the engine has no separate Slice
+  type because §7.5 explicitly defines a slice as "a loop with
+  cardinality = Once," and `RepetitionRules::defaultOneShot()`
+  encodes that. The `is_role_fillable = false` on a Section in V2
+  C.1 is V2 being expository — Sections do not carry
+  PhraseMetadata, so they cannot be marked fillable, and the
+  default is "not fillable" for everything outside a phrase.
+
 ### 2026-05-15 — Mark Out should announce the new region visibly
 
 - **Files:** `app/MainComponent.cpp` (`onMarkOut`, `refreshDiagnostics`),
