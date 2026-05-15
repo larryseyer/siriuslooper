@@ -445,10 +445,14 @@ void MainComponent::chooseFileAndSave()
 
 void MainComponent::chooseFileAndLoad()
 {
+    // Empty pattern: show every file. Filtering by "*.json" or
+    // "*.sirius.json;*.json" caused macOS to grey out our saved files —
+    // replaceWithText writes raw bytes without setting the macOS "kind"
+    // metadata that NSOpenPanel uses when converting patterns to UTIs.
     sessionFileChooser_ = std::make_unique<juce::FileChooser> (
         "Load Sirius session...",
         juce::File::getSpecialLocation (juce::File::userDocumentsDirectory),
-        "*.json");
+        juce::String());
 
     sessionFileChooser_->launchAsync (
         juce::FileBrowserComponent::openMode,
