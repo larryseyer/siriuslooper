@@ -1,0 +1,59 @@
+#pragma once
+
+#include "sirius/TapeId.h"
+#include "sirius/TimelineViewState.h"
+
+#include <juce_gui_basics/juce_gui_basics.h>
+
+#include <functional>
+
+namespace sirius
+{
+
+/// The Preparation tab's timeline: a strip per input, Pills laid across.
+/// Pure renderer over a TimelineViewState — the selector decides what
+/// shows; this component decides how it looks. Click-to-arm is the only
+/// gesture wired today; group capture by chording arms is preserved by
+/// the data model (per-tape arm state on the host) and will be honoured
+/// once CaptureSession grows a per-tape mode (M8 work).
+class TimelineView final : public juce::Component
+{
+public:
+    /// Fired when the user clicks a strip's arm region. The host toggles
+    /// arm state for `tape` and re-pushes a refreshed TimelineViewState.
+    std::function<void (TapeId tape)> onArmClicked;
+
+    /// Fired when the user clicks anywhere on a strip outside the arm
+    /// region. The host shifts focus to `tape` without changing its arm
+    /// state — focus drives which TapeId the bottom bar's Mark In stamps.
+    std::function<void (TapeId tape)> onFocusClicked;
+
+    TimelineView() = default;
+
+    void setState (TimelineViewState newState);
+    const TimelineViewState& state() const noexcept { return state_; }
+
+    void paint     (juce::Graphics& g) override;
+    void mouseDown (const juce::MouseEvent& e) override;
+
+    /// Pixel dimensions exposed so a parent can size scrolling viewports.
+    static constexpr int rowHeight        = 52;
+    static constexpr int stripColumnWidth = 200;
+    static constexpr int rulerHeight      = 22;
+
+    int totalHeight() const;
+
+private:
+    juce::Rectangle<int> stripBounds (int rowIndex) const;
+    juce::Rectangle<int> armHitBox   (int rowIndex) const;
+    juce::Rectangle<int> contentArea (int rowIndex) const;
+
+    /// Maps an LMC-seconds value to the X coordinate on the content area.
+    int timeToX (Rational t) const;
+
+    TimelineViewState state_;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TimelineView)
+};
+
+} // namespace sirius

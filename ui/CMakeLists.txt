@@ -19,8 +19,10 @@ add_library(SiriusUi STATIC
     src/LatencyBudget.cpp
     src/PerformanceViewState.cpp
     src/PreparationViewState.cpp
+    src/TimelineViewState.cpp
     src/PerformanceView.cpp
-    src/PreparationView.cpp)
+    src/PreparationView.cpp
+    src/TimelineView.cpp)
 
 target_include_directories(SiriusUi PUBLIC include)
 

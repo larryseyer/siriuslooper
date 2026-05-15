@@ -32,6 +32,7 @@ add_executable(SiriusTests
     LatencyBudgetTests.cpp
     PerformanceViewStateTests.cpp
     PreparationViewStateTests.cpp
+    TimelineViewStateTests.cpp
     LmcElectionTests.cpp
     SessionMergeTests.cpp
     TransportTests.cpp

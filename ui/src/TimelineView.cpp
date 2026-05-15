@@ -1,0 +1,288 @@
+#include "sirius/TimelineView.h"
+
+#include <algorithm>
+
+namespace sirius
+{
+
+namespace
+{
+    const char* kindGlyph (InputKind k) noexcept
+    {
+        switch (k)
+        {
+            case InputKind::Audio:               return "AUD";
+            case InputKind::Video:               return "VID";
+            case InputKind::Midi:                return "MID";
+            case InputKind::Control:             return "CTL";
+            case InputKind::ParameterAutomation: return "PAR";
+            case InputKind::Transport:           return "TRN";
+            case InputKind::System:              return "SYS";
+        }
+        return "?";
+    }
+
+    juce::Colour kindColour (InputKind k) noexcept
+    {
+        // A small palette that keeps each kind visually distinct without
+        // shouting — the strip head is a glance, not a focal point. The
+        // hues track Reaper's track-colour convention loosely (audio cool,
+        // MIDI warm, automation green) so users carry intuition over.
+        switch (k)
+        {
+            case InputKind::Audio:               return juce::Colour (0xff4b7fc4);
+            case InputKind::Video:               return juce::Colour (0xff8b5fbf);
+            case InputKind::Midi:                return juce::Colour (0xffc47f4b);
+            case InputKind::Control:             return juce::Colour (0xff7a8b3f);
+            case InputKind::ParameterAutomation: return juce::Colour (0xff3fa07a);
+            case InputKind::Transport:           return juce::Colour (0xff6a6a8b);
+            case InputKind::System:              return juce::Colour (0xff8a8a8a);
+        }
+        return juce::Colours::grey;
+    }
+
+    int findRowIndexForTape (const TimelineViewState& s, TapeId t)
+    {
+        for (std::size_t i = 0; i < s.rows.size(); ++i)
+            if (s.rows[i].tapeId == t)
+                return static_cast<int> (i);
+        return -1;
+    }
+}
+
+void TimelineView::setState (TimelineViewState newState)
+{
+    state_ = std::move (newState);
+    repaint();
+}
+
+int TimelineView::totalHeight() const
+{
+    return rulerHeight + static_cast<int> (state_.rows.size()) * rowHeight;
+}
+
+juce::Rectangle<int> TimelineView::stripBounds (int rowIndex) const
+{
+    return { 0, rulerHeight + rowIndex * rowHeight, stripColumnWidth, rowHeight };
+}
+
+juce::Rectangle<int> TimelineView::armHitBox (int rowIndex) const
+{
+    // Right-aligned inside the strip column so it sits closest to the
+    // content area — the eye reads "this arm targets this row's content".
+    auto strip = stripBounds (rowIndex);
+    return { strip.getRight() - 56, strip.getY() + 16, 48, 20 };
+}
+
+juce::Rectangle<int> TimelineView::contentArea (int rowIndex) const
+{
+    return { stripColumnWidth, rulerHeight + rowIndex * rowHeight,
+             std::max (0, getWidth() - stripColumnWidth), rowHeight };
+}
+
+int TimelineView::timeToX (Rational t) const
+{
+    const auto contentWidth = std::max (0, getWidth() - stripColumnWidth);
+    const auto span = state_.endLmcSeconds - state_.startLmcSeconds;
+    if (! (span > Rational (0)) || contentWidth == 0)
+        return stripColumnWidth;
+    const double frac = ((t - state_.startLmcSeconds).toDouble())
+                      / (span.toDouble());
+    return stripColumnWidth
+         + static_cast<int> (std::round (frac * contentWidth));
+}
+
+void TimelineView::paint (juce::Graphics& g)
+{
+    const auto bg = getLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId);
+    g.fillAll (bg);
+
+    // --- Time ruler ---
+    {
+        juce::Rectangle<int> ruler { 0, 0, getWidth(), rulerHeight };
+        g.setColour (bg.brighter (0.08f));
+        g.fillRect (ruler);
+
+        g.setColour (juce::Colours::grey);
+        g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(),
+                                      11.0f, 0));
+        const auto span = state_.endLmcSeconds - state_.startLmcSeconds;
+        if (span > Rational (0))
+        {
+            // Honest tick spacing: every two LMC seconds. Coarse on purpose —
+            // performance-mode timelines aren't measurement instruments.
+            const double endSec = state_.endLmcSeconds.toDouble();
+            for (double s = state_.startLmcSeconds.toDouble();
+                 s <= endSec + 1e-6; s += 2.0)
+            {
+                const int x = timeToX (Rational (static_cast<std::int64_t> (s * 1000),
+                                                 1000));
+                g.drawVerticalLine (x, 4.0f, rulerHeight - 2.0f);
+                g.drawText (juce::String ((int) s) + "s",
+                            x + 2, 2, 40, rulerHeight - 4,
+                            juce::Justification::topLeft, false);
+            }
+        }
+        g.setColour (bg.darker (0.3f));
+        g.drawHorizontalLine (rulerHeight - 1, 0.0f, (float) getWidth());
+    }
+
+    // --- Track strips ---
+    g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(),
+                                  12.0f, 0));
+    for (std::size_t i = 0; i < state_.rows.size(); ++i)
+    {
+        const auto& row     = state_.rows[i];
+        const int   ri      = static_cast<int> (i);
+        const auto  strip   = stripBounds (ri);
+        const auto  content = contentArea (ri);
+
+        // Row backgrounds: alternating bands so dense rows stay legible.
+        const auto rowTint = (i % 2 == 0) ? bg.brighter (0.02f)
+                                          : bg.brighter (0.06f);
+        g.setColour (rowTint);
+        g.fillRect (strip);
+        g.fillRect (content);
+        g.setColour (bg.darker (0.3f));
+        g.drawHorizontalLine (strip.getBottom() - 1,
+                              0.0f, (float) getWidth());
+
+        // Kind colour band on the left edge of the strip — the glance affordance.
+        g.setColour (kindColour (row.kind));
+        g.fillRect (strip.getX(), strip.getY() + 2,
+                    4, strip.getHeight() - 4);
+
+        // Focused row gets a brighter left edge so the bottom bar's Mark In
+        // gesture has a clear referent.
+        if (row.isFocused)
+        {
+            g.setColour (juce::Colours::white);
+            g.fillRect (strip.getX() + 4, strip.getY() + 2,
+                        2, strip.getHeight() - 4);
+        }
+
+        // Kind glyph + display name.
+        g.setColour (juce::Colours::white);
+        g.drawText ("[" + juce::String (kindGlyph (row.kind)) + "]",
+                    strip.getX() + 12, strip.getY() + 4,
+                    36, 18, juce::Justification::centredLeft, false);
+        g.drawText (juce::String (row.displayName),
+                    strip.getX() + 12, strip.getY() + 22,
+                    strip.getWidth() - 80, 18,
+                    juce::Justification::centredLeft, false);
+
+        // Arm button (own rectangle so it can be hit-tested in mouseDown).
+        const auto arm = armHitBox (ri);
+        g.setColour (row.isArmed ? juce::Colours::darkred
+                                 : juce::Colours::darkgrey);
+        g.fillRoundedRectangle (arm.toFloat(), 4.0f);
+        g.setColour (juce::Colours::white);
+        g.drawText (row.isArmed ? juce::String ("Disarm") : juce::String ("Arm"),
+                    arm, juce::Justification::centred, false);
+
+        // Content area boundary on the left edge.
+        g.setColour (bg.darker (0.4f));
+        g.drawVerticalLine (stripColumnWidth, (float) strip.getY(),
+                            (float) strip.getBottom());
+    }
+
+    // --- Pills ---
+    g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(),
+                                  11.0f, 0));
+    for (const auto& pill : state_.pills)
+    {
+        const int primaryIdx = findRowIndexForTape (state_, pill.primaryTape);
+        if (primaryIdx < 0)
+            continue;
+
+        const auto content = contentArea (primaryIdx);
+        const int x1 = timeToX (pill.startLmcSeconds);
+        const int x2 = timeToX (pill.endLmcSeconds);
+        juce::Rectangle<int> pillRect { x1 + 1,
+                                        content.getY() + 4,
+                                        std::max (10, x2 - x1 - 2),
+                                        content.getHeight() - 8 };
+
+        const auto fill = juce::Colour (0xff2e4a6b);
+        g.setColour (fill);
+        g.fillRoundedRectangle (pillRect.toFloat(), 8.0f);
+        g.setColour (fill.brighter (0.4f));
+        g.drawRoundedRectangle (pillRect.toFloat(), 8.0f, 1.5f);
+
+        // OTTO 4-corner contract — top-left loop count, top-right ↻ toggle,
+        // bottom-left entrance, bottom-right exit, name in the middle.
+        const int pad = 6;
+        const auto inner = pillRect.reduced (pad, pad);
+
+        g.setColour (juce::Colours::white);
+        g.drawText (juce::String (pill.loopCount) + " loop"
+                        + (pill.loopCount == 1 ? juce::String() : juce::String ("s")),
+                    inner.getX(), inner.getY(),
+                    inner.getWidth() / 2, 14,
+                    juce::Justification::topLeft, false);
+
+        g.drawText (pill.phraseLoopActive ? juce::String ("loop on")
+                                          : juce::String ("once"),
+                    inner.getX() + inner.getWidth() / 2, inner.getY(),
+                    inner.getWidth() / 2, 14,
+                    juce::Justification::topRight, false);
+
+        g.drawText (juce::String (pill.entranceName),
+                    inner.getX(), inner.getBottom() - 14,
+                    inner.getWidth() / 2, 14,
+                    juce::Justification::bottomLeft, false);
+        g.drawText (juce::String (pill.exitName),
+                    inner.getX() + inner.getWidth() / 2, inner.getBottom() - 14,
+                    inner.getWidth() / 2, 14,
+                    juce::Justification::bottomRight, false);
+
+        g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(),
+                                      13.0f, juce::Font::bold));
+        g.drawText (juce::String (pill.name),
+                    pillRect, juce::Justification::centred, true);
+        g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(),
+                                      11.0f, 0));
+
+        // Membership outline — drawn on secondary rows the Pill claims, so
+        // a multi-tape phrase is visibly honest even though its atoms only
+        // render on the primary row.
+        for (const auto& tape : pill.memberTapes)
+        {
+            if (tape == pill.primaryTape)
+                continue;
+            const int idx = findRowIndexForTape (state_, tape);
+            if (idx < 0)
+                continue;
+            const auto secondary = contentArea (idx);
+            juce::Rectangle<int> outlineRect { x1 + 1,
+                                               secondary.getY() + 8,
+                                               std::max (10, x2 - x1 - 2),
+                                               secondary.getHeight() - 16 };
+            g.setColour (fill.brighter (0.4f));
+            g.drawRoundedRectangle (outlineRect.toFloat(), 6.0f, 1.0f);
+        }
+    }
+}
+
+void TimelineView::mouseDown (const juce::MouseEvent& e)
+{
+    const auto p = e.getPosition();
+    if (p.getY() < rulerHeight)
+        return;
+
+    const int rowIndex = (p.getY() - rulerHeight) / rowHeight;
+    if (rowIndex < 0 || rowIndex >= (int) state_.rows.size())
+        return;
+
+    const auto& row = state_.rows[static_cast<std::size_t> (rowIndex)];
+
+    if (armHitBox (rowIndex).contains (p))
+    {
+        if (onArmClicked) onArmClicked (row.tapeId);
+        return;
+    }
+
+    if (onFocusClicked) onFocusClicked (row.tapeId);
+}
+
+} // namespace sirius

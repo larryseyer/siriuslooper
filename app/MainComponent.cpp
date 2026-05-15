@@ -5,6 +5,8 @@
 #include "sirius/PreparationViewState.h"
 #include "sirius/SessionFormat.h"
 #include "sirius/TapeId.h"
+#include "sirius/TimelineView.h"
+#include "sirius/TimelineViewState.h"
 #include "sirius/VideoPreview.h"
 
 #include <stdexcept>
@@ -85,18 +87,21 @@ public:
         addAndMakeVisible (statusLabel_);
 
         addAndMakeVisible (preparationView_);
+        addAndMakeVisible (timelineView_);
         diagnosticsLabel_.setJustificationType (juce::Justification::topLeft);
         diagnosticsLabel_.setMinimumHorizontalScale (1.0f);
         addAndMakeVisible (diagnosticsLabel_);
     }
 
-    void setState (PreparationViewState s) { preparationView_.setState (std::move (s)); }
+    void setState (PreparationViewState s)    { preparationView_.setState (std::move (s)); }
+    void setTimelineState (TimelineViewState s) { timelineView_.setState  (std::move (s)); }
     void setDiagnostics (const juce::String& text) { diagnosticsLabel_.setText (text, juce::dontSendNotification); }
     void setStatus (const juce::String& text)      { statusLabel_.setText (text, juce::dontSendNotification); }
 
     juce::TextButton& saveButton()       { return saveButton_; }
     juce::TextButton& loadButton()       { return loadButton_; }
     juce::TextButton& reloadDemoButton() { return reloadDemoButton_; }
+    TimelineView&     timelineView()     { return timelineView_; }
 
     void resized() override
     {
@@ -113,6 +118,17 @@ public:
         area.removeFromTop (6);
 
         diagnosticsLabel_.setBounds (area.removeFromBottom (60));
+        area.removeFromBottom (6);
+
+        // The timeline gets the dominant share of vertical space — it's the
+        // surface the performer reaches for. The tree readout sits above it
+        // as a structural reference. Minimum heights guard tiny windows.
+        const int timelineMin = timelineView_.totalHeight() + 8;
+        const int timelineH   = std::max (timelineMin,
+                                          juce::jmin (area.getHeight() * 6 / 10,
+                                                      area.getHeight() - 80));
+        timelineView_.setBounds (area.removeFromBottom (timelineH));
+        area.removeFromBottom (6);
         preparationView_.setBounds (area);
     }
 
@@ -122,6 +138,7 @@ private:
     juce::TextButton reloadDemoButton_;
     juce::Label      statusLabel_;
     PreparationView  preparationView_;
+    TimelineView     timelineView_;
     juce::Label      diagnosticsLabel_;
 };
 
@@ -253,7 +270,10 @@ MainComponent::MainComponent()
       undoStack_ (demo_.root),
       sessionLengthSeconds_ (demo_.lengthLmcSeconds),
       tier_ (demoTier()),
-      tierPolicy_ (policyFor (tier_))
+      tierPolicy_ (policyFor (tier_)),
+      inputs_ (demo_.inputs),
+      focusedTape_ (! demo_.inputs.empty() ? demo_.inputs.front().tapeId
+                                           : TapeId (0))
 {
     // Demo edit so undo/redo have something to traverse: a renamed session.
     {
@@ -270,6 +290,8 @@ MainComponent::MainComponent()
     preparationPane_->saveButton().onClick       = [this] { chooseFileAndSave(); };
     preparationPane_->loadButton().onClick       = [this] { chooseFileAndLoad(); };
     preparationPane_->reloadDemoButton().onClick = [this] { reloadDemo(); };
+    preparationPane_->timelineView().onArmClicked   = [this] (TapeId t) { toggleArm  (t); };
+    preparationPane_->timelineView().onFocusClicked = [this] (TapeId t) { setFocused (t); };
     preparationPane_->setStatus ("");
     tabs_.addTab ("Preparation", juce::Colours::black, preparationPane_.get(), false);
 
@@ -316,6 +338,7 @@ MainComponent::MainComponent()
 
     refreshPerformance();
     refreshPreparation();
+    refreshTimeline();
     refreshDiagnostics();
 
     startTimerHz (30);
@@ -379,6 +402,59 @@ void MainComponent::refreshPerformance()
 void MainComponent::refreshPreparation()
 {
     preparationPane_->setState (selectPreparationView (*undoStack_.current()));
+    refreshTimeline();
+    refreshDiagnostics();
+}
+
+void MainComponent::refreshTimeline()
+{
+    preparationPane_->setTimelineState (
+        selectTimelineView (*undoStack_.current(),
+                            demo_.sessionToLmc,
+                            inputs_,
+                            armedTapesVec(),
+                            focusedTape_));
+}
+
+std::vector<TapeId> MainComponent::armedTapesVec() const
+{
+    std::vector<TapeId> v;
+    v.reserve (armedTapeIds_.size());
+    for (auto raw : armedTapeIds_)
+        v.push_back (TapeId (raw));
+    return v;
+}
+
+void MainComponent::toggleArm (TapeId tape)
+{
+    const auto raw = tape.value();
+    auto it = armedTapeIds_.find (raw);
+    if (it == armedTapeIds_.end())
+    {
+        // Arming a tape also implicitly focuses it: the performer's next
+        // gesture (Mark In) will target the freshly-armed input. This is
+        // the chord-arms-to-group story collapsed to its single-tape case.
+        armedTapeIds_.insert (raw);
+        focusedTape_ = tape;
+        if (! captureSession_.isArmed())
+            captureSession_.arm();
+    }
+    else
+    {
+        armedTapeIds_.erase (it);
+        if (armedTapeIds_.empty() && captureSession_.isArmed())
+            captureSession_.disarm();
+    }
+
+    refreshCaptureControls();
+    refreshTimeline();
+    refreshDiagnostics();
+}
+
+void MainComponent::setFocused (TapeId tape)
+{
+    focusedTape_ = tape;
+    refreshTimeline();
     refreshDiagnostics();
 }
 
@@ -439,16 +515,12 @@ void MainComponent::refreshDiagnostics()
 
 void MainComponent::onArmToggle()
 {
-    // Coarse, decisive (white paper 14.6): one gesture, one toggle. From
-    // disarmed → armed; from any armed state → disarmed (cancels any
-    // pending in-point, per CaptureSession::disarm).
-    if (captureSession_.isArmed())
-        captureSession_.disarm();
-    else
-        captureSession_.arm();
-
-    refreshCaptureControls();
-    refreshDiagnostics();
+    // Bottom-bar Arm targets the focused tape — the row whose strip head
+    // last received an Arm or Focus click. This keeps the one-handed
+    // gesture (Arm → Mark In → Mark Out) working from the bottom bar while
+    // letting per-row arm be the primary surface for selecting which input
+    // the gesture acts on.
+    toggleArm (focusedTape_);
 }
 
 void MainComponent::onMarkIn()
@@ -458,11 +530,12 @@ void MainComponent::onMarkIn()
     // is running, this becomes Lmc::now() (or the equivalent) and the
     // playhead drops out of the capture path entirely.
     const Rational t = playheadValueToLmc (playhead_.getValue());
-    // TapeId{0} is a placeholder until the track UI lands and the bottom
-    // bar can identify which input the gesture targets. It parallels the
-    // playhead-as-LMC-stand-in above: a real value flows through once the
-    // surrounding subsystem is wired.
-    captureSession_.markIn (t, sirius::TapeId { 0 });
+    // The focused tape — the row most recently armed or focus-clicked in
+    // the timeline strip column. Per the refined Mockup A, multi-arm is
+    // visual-only for now: only the focused tape's id stamps the region.
+    // Group-capture across all armed tapes is M8 work and will need a
+    // per-tape CaptureSession map; the data here is already future-shaped.
+    captureSession_.markIn (t, focusedTape_);
     refreshCaptureControls();
     refreshDiagnostics();
 }
@@ -588,7 +661,11 @@ void MainComponent::chooseFileAndLoad()
 void MainComponent::reloadDemo()
 {
     // Push the demo as a fresh edit — undoable to whatever was loaded before.
-    undoStack_.push (buildDemoSession().root, "reload demo");
+    // Input topology refreshes from the same source so descriptors stay in
+    // step with the loaded Constituent tree.
+    const auto rebuilt = buildDemoSession();
+    undoStack_.push (rebuilt.root, "reload demo");
+    inputs_ = rebuilt.inputs;
     refreshPerformance();
     refreshPreparation();
     preparationPane_->setStatus ("Reloaded the built-in demo session");

@@ -4,14 +4,17 @@
 #include "DemoSession.h"
 
 #include "sirius/CaptureSession.h"
+#include "sirius/InputDescriptor.h"
 #include "sirius/LatencyBudget.h"
 #include "sirius/PerformanceView.h"
 #include "sirius/PluginScanner.h"
+#include "sirius/TapeId.h"
 #include "sirius/UndoStack.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <memory>
+#include <unordered_set>
 
 namespace sirius
 {
@@ -47,7 +50,13 @@ private:
     // --- per-tick view refresh ---
     void refreshPerformance();
     void refreshPreparation();
+    void refreshTimeline();
     void refreshDiagnostics();
+
+    // --- per-tape arm + focus (refined Mockup A, this session's UX) ---
+    void toggleArm    (TapeId tape);
+    void setFocused   (TapeId tape);
+    std::vector<TapeId> armedTapesVec() const;
 
     // --- editing demo for undo/redo ---
     void onUndo();
@@ -111,6 +120,11 @@ private:
     // --- capture state (white paper 14.5 / 14.6) ---
     CaptureSession captureSession_;
     std::vector<CaptureRegion> capturedRegions_;
+
+    // --- input topology + per-tape arm/focus (this session) ---
+    std::vector<InputDescriptor>     inputs_;
+    std::unordered_set<std::int64_t> armedTapeIds_;
+    TapeId                           focusedTape_ { 0 };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)
 };
