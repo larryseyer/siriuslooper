@@ -2,121 +2,156 @@
 
 ## Current State
 
-Sirius Looper is a greenfield JUCE 8.x project being built milestone by milestone
-against the approved plan at
-`/Users/larryseyer/.claude/plans/we-have-written-a-declarative-pearl.md`.
-Done so far: Phase 0 (white paper V2), M0 (skeleton + CI), licensing, M1
-(conceptual-time core), M2 (real-time foundation + membrane math + ASRC — the
-headless-verifiable half), and most of M3 (repetition/phrase data model + render
-pipeline). **97 tests pass.** The next task is the **M3 arrangement primitives**.
+Sirius Looper is a JUCE 8.x project built milestone by milestone against the
+approved plan at `/Users/larryseyer/.claude/plans/we-have-written-a-declarative-pearl.md`.
 
-## What Was Done This Session
+**Status: every milestone except M6 (video) has its headless-verifiable half
+shipped.** Each milestone's operator-deferred half — real audio devices, real
+plugins on disk, real eyes-at-the-screen UI testing, real networking — is
+catalogued in `todo.md` against the milestone whose test commitment requires it.
 
-- **Assessed white paper V1**, produced **`Sirius Looper Whitepaper V2.md`** — 8
-  additive improvements (worked examples, block diagrams, plugin-host section,
-  render-pipeline perf note, storage sizing, file-format sketch, testing
-  philosophy appendix, trimmed decision log) plus **Appendix E** (a Sirius↔Reaper
-  terminology map, added at user request).
-- **M0**: CMake (≥3.22) + JUCE 8.0.12 + Catch2 3.15.0, standalone app shell,
-  GitHub Actions CI matrix (macOS/Windows/Linux).
-- **Licensing**: studied sister app OTTO at `/Users/larryseyer/AudioDevelopment/OTTO`;
-  Sirius uses the same model — AGPLv3 + Apple App Store exception, proprietary
-  Larry Seyer Acoustic Drum Library (separately licensed), JUCE/Ableton Link
-  commercial licenses **already held**. Files: `LICENSE`, `LICENSE-THIRD-PARTY.md`,
-  `SAMPLE-LICENSE.md`, `licenses/AGPL-3.0.txt`.
-- **Vendoring conversion**: switched from FetchContent to OTTO-style `external/`
-  vendoring — deps cloned as plain snapshots (gitignored, **not committed**),
-  built via `cmake/Dependencies.cmake`, repopulated by `bash/setup-deps.sh`.
-- **M1** — conceptual-time core (JUCE-free `SiriusCore`): `Rational`, `Meter`,
-  `TempoMap`, `Position`, `TimeDomain`, `Constituent`, `Tape`/`TapeEvent`.
-- **M2** — real-time engine (JUCE-free `SiriusEngine`): `LockFreeSpscQueue`,
-  `RetroactiveRing`, `Lmc`/`MonotonicClock`, `SampleClock`,
-  `AudioDeviceCalibration`, `Membrane` (latency compensation), `LoopRenderer`,
-  `Asrc` (libsoxr variable-rate). Measured soxr VR/HQ latency: ~2 ms — well
-  inside the <30 ms budget, so the custom-resampler fallback is not needed.
-- **M3 so far**: `RepetitionRules` (five dimensions as `std::variant`s),
-  `Phrase`/`PhraseMetadata`, `ConstituentId` + `TapeId` extracted to own headers,
-  `Constituent` extended (`repetitionRules`, `phraseMetadata`, `tapeReference`),
-  `RenderPipeline` (hierarchy rendering with polymetric domain composition).
+- M0 (skeleton + CI) — done; operator owes the FFmpeg spike + window-launch
+  verification + remote-push CI run.
+- M1 (conceptual-time core) — done.
+- M2 (real-time foundation, membrane, ASRC) — headless half done; operator
+  owes audio-device wiring + loopback calibration + the in→tape→loop test.
+- M3 (Constituent hierarchy, repetition, arrangement, render pipeline,
+  minimal functional UI) — done.
+- M4 (persistence + capability tiers + overload protection) — done.
+- M5 (plugin hosting, generic parameter view) — headless half done; operator
+  owes scanning real plugins + the parameter-automation round-trip test.
+- M6 (video) — **not started**; gated on the operator's FFmpeg spike.
+- M7 (full UI — Performance/Preparation views, sacred undo, latency
+  budget) — headless half done; operator owes wiring views into the app and
+  driving them with real gestures.
+- M8 (ensemble — LMC election, CRDT merge, transport messages) — headless
+  half done; operator owes the real network transport and the
+  two-node-partition-and-rejoin milestone test.
 
-## Key Decisions Made
+**178 tests pass. Zero compiler warnings introduced by our code.** The
+remaining warnings (one `-Wimplicit-float-conversion` in AsrcTests.cpp:43;
+two `-Wfloat-equal` in RationalTests.cpp:177 and the Catch2 decomposer it
+expands through) predate every M4+ commit.
+
+## What Was Done in the Most Recent Session
+
+In addition to M3, M4, M5 (all three covered in the prior continue.md), this
+session shipped M7 and M8.
+
+**M7 (commit `1d66cb1`):**
+
+- `ui/UndoStack` — multi-level undo/redo over `shared_ptr<const Constituent>`
+  snapshots. Push truncates the redo branch; depth cap drops the oldest;
+  every entry carries an optional label for white paper 14.7's "visible"
+  requirement; undo/redo on an empty branch are silent no-ops because a
+  performer's reflex hits them anyway.
+- `ui/LatencyBudget` — rolling-window latency tracker against the <30 ms
+  causal-coupling budget (14.8). Records measurements, reports mean/worst/
+  fraction-within-budget; absence of samples is reported as "meets budget"
+  rather than as silent failure.
+- `ui/PerformanceViewState` + `ui/PerformanceView` — the eyes-free
+  glanceable surface. The selector walks the Constituent tree like the
+  RenderPipeline does and reports the deepest *named container* the
+  playhead is inside as the foreground phrase, with a one-line cycle
+  status ("3 of 8", "loop 5", "once") and an honest "silent" report.
+- `ui/PreparationViewState` + `ui/PreparationView` — the dense readout.
+  One row per Constituent, depth-first with rising indent, surfacing
+  effect-chain presence, local meter, local tempo map, and role-fillable
+  flags.
+
+**M8 (commit `0ea111d`):**
+
+- `net/LmcElection` — Marzullo interval intersection on top of tier
+  dominance on top of anchor override. Throws on bad input (empty list,
+  inverted interval, more than one anchor). Within the dominant tier the
+  narrowest-interval node wins as master after falsetickers are removed.
+- `net/SessionMerge` — CRDT union semantics. Tape hashes union
+  (content-addressing makes collision impossible); Constituent versions
+  union (immutability eliminates conflict); active version is
+  last-writer-wins on a wall-clock timestamp. Merge is commutative,
+  associative, and idempotent — each property tested.
+- `net/Transport` — header-only data model for the three coordination
+  message kinds (LMC time announcement, marker event, transport state
+  change) as a `std::variant`. No wire, by design — that's the
+  operator-deferred half.
+
+## How To Test What's Shipped
+
+Everything below builds and runs from a clean checkout. From the repo root:
+
+```bash
+bash/setup-deps.sh                                  # only if external/ is empty
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+./build/tests/SiriusTests                           # expect 178/178 passing
+ctest --test-dir build                              # ctest's view of the same
+```
+
+The standalone macOS app is at:
+
+```
+build/app/SiriusLooper_artefacts/Release/Sirius Looper.app
+```
+
+Right now it hosts the `SessionInspector` from M3 (a demo Constituent tree
+driven by a scrub slider). M7's `PerformanceView` / `PreparationView` and
+M5's `GenericParameterView` are built into `Sirius::Ui` / `Sirius::Host` but
+not yet wired into the app's main window — that wiring is what the M7
+operator deferral asks for. The full operator-verification matrix lives in
+`todo.md`, milestone by milestone.
+
+## Repo Layout
+
+```
+core/         JUCE-free conceptual-time engine (Rational/Meter/TempoMap/
+              Position/TimeDomain/Constituent/RepetitionRules/Arrangement/
+              EffectChain/PluginDescriptor/ParameterAutomation)
+engine/       JUCE-free real-time layer (lock-free SPSC, retroactive ring,
+              LMC, sample clock, calibration, membrane, LoopRenderer, ASRC,
+              RenderPipeline, OverloadProtection)
+host/         JUCE plugin-host runtime (PluginScanner, GenericParameterView)
+persistence/  Session JSON format, content-addressed TapeStore
+ui/           JUCE-free state selectors + thin JUCE views for Performance
+              and Preparation, UndoStack, LatencyBudget
+net/          LMC election, CRDT session merge, transport message types
+              (JUCE-free, no real networking yet)
+app/          Standalone JUCE app shell + capability tier + demo session
+tests/        Catch2 — 178 test cases, 3843 assertions
+external/     Vendored deps (JUCE, Catch2, soxr) — gitignored; setup-deps.sh
+patches/      Local patches applied during setup-deps.sh
+licenses/     AGPLv3 + App Store exception, plus drum-library + JUCE notices
+```
+
+## Key Decisions Made Across the Project
 
 | Decision | Rationale |
 |----------|-----------|
-| AGPLv3 + App Store exception, OTTO licensing model | User: Sirius ships an embedded smaller OTTO (sfizz sampler + drum-library subset); same licenses, incl. samples |
-| `external/` vendoring, gitignored, `setup-deps.sh` | Match sister app OTTO; user explicitly asked |
-| Conceptual time = exact `Rational` (int64 num/den, overflow throws) | White paper's "exact by construction" — no floating point in the engine |
-| Engine core stays JUCE-free | Testability; the white paper's Appendix D verification philosophy |
-| Five repetition dimensions as `std::variant`s | Illegal combinations unrepresentable |
-| M2/M3 split: headless-verifiable vs operator-verified | Hardware/GUI testing is operator-run per CLAUDE.md; deferred items in `todo.md` |
-| ASRC uses soxr **variable-rate** path, not constant-rate | A continuous drift-correcting membrane needs VR; it's also the path the plan flagged for latency measurement |
-| `RepetitionRules`/`effect_chain` deferred out of M1's Constituent | They are M3/M5 subsystems; adding stubs in M1 would violate "no stubs" |
+| AGPLv3 + App Store exception, OTTO licensing model | Matches sister app OTTO; user explicitly said. |
+| `external/` vendoring, gitignored, `setup-deps.sh` | Matches OTTO. |
+| Conceptual time = exact `Rational` (int64 num/den, overflow throws) | White paper's "exact by construction." |
+| Engine core stays JUCE-free | Testability — Appendix D verification philosophy. |
+| Five repetition dimensions as `std::variant`s | Illegal combinations unrepresentable. |
+| Headless/operator split | Project convention — operator runs hardware/GUI tests. |
+| ASRC uses soxr **variable-rate** path | Continuous drift-correcting membrane; ~2 ms latency. |
+| Persistence depends on juce_core + juce_cryptography only | Lightweight, testable, gives JSON + File + SHA256. |
+| `JUCE_ENABLE_MODULE_SOURCE_GROUPS=OFF` | When ON, plain `add_library` targets that link a JUCE module pull every module .cpp into their build set, but JUCE's `HEADER_FILE_ONLY` fixup runs only for `juce_add_*` targets. Off costs only IDE source-group display. |
+| `CoreAudioKit` framework on macOS for SiriusHost | `juce_audio_processors.mm` uses `AUGenericView`. `juce_add_gui_app` adds the framework automatically; a plain library does not. |
+| Parameter automation is `Tape<ParameterEvent>` | White paper Part 7.7 recursion — the same Tape template carries audio and automation; "automation curves are Constituents over parameter tapes." |
+| UndoStack stores `shared_ptr<const Constituent>` only | Copy-on-write makes diffs unnecessary — the white paper's "trivial undo" claim made executable. |
+| `MergeableSession` keeps every version, picks active by LWW | Matches white paper 12.6 literally: "Tapes union, Constituents union, active selection LWW." |
+| Anchor override takes precedence over tier in election | White paper 12.4: musical authority outranks technical authority. |
 
-## Bugs Found / Fixed
+## Operator Verification — What's Pending
 
-- **soxr CMake breaks on the space in "Sirius Looper"** — unquoted `${PROJECT_SOURCE_DIR}`
-  and misuse of `CMAKE_SOURCE_DIR` under `add_subdirectory`. Fixed via
-  `patches/soxr-quote-paths.patch`, applied automatically by `setup-deps.sh`.
-- **soxr CMP0115 dev-warnings** — suppressed cleanly with a scoped
-  `CMAKE_POLICY_DEFAULT_CMP0115 OLD` in `Dependencies.cmake`.
-- **`Rational` overflow test was wrong** (not the code) — `-(INT64_MIN+1)` does
-  not overflow; corrected the test to the real boundary (`INT64_MIN` rejected at
-  construction).
-- **ASRC first measured 0 ms latency** — was using soxr's constant-rate path and
-  querying `soxr_delay()` before processing. Switched to the variable-rate path;
-  latency now measures correctly (~2 ms).
-- **Most-vexing-parse** in `RenderPipelineTests.cpp` `makeLoop` helper — fixed
-  with brace initialization.
-- **Duplicate-library link warning** — `SiriusCore` listed both directly and
-  transitively; dropped the redundant explicit link in `tests/CMakeLists.txt`.
+`todo.md` has structured entries against each milestone. The short list:
 
-## Files Modified
+- **M0** — install FFmpeg locally, write a small probe, confirm libav links on macOS/Windows/Linux. Launch `Sirius Looper.app` and confirm the window opens. Push to a GitHub remote and confirm the CI matrix goes green.
+- **M2** — wire `AudioDeviceManager` to the membranes, run a one-time loopback calibration, do the in→tape→loop test.
+- **M5** — install at least one VST3 and (on macOS) one AudioUnit; run `PluginScanner`; instantiate one of each; wire the parameter view to it; confirm a parameter movement records onto a `Tape<ParameterEvent>` and plays back.
+- **M7** — wire `PerformanceView` and `PreparationView` into the app's main window; hook `UndoStack` into every edit path; feed UI frame latencies to `LatencyBudget`.
+- **M8** — pick and implement a transport, hook each node's clock-discipline source into a `NodeClockEstimate`, run the two-node partition-and-rejoin milestone test.
 
-Repo layout now: `core/` (SiriusCore, JUCE-free), `engine/` (SiriusEngine,
-JUCE-free), `app/` (standalone shell), `tests/`, `cmake/`, `bash/`, `patches/`,
-`.github/workflows/`. White papers V1/V2 + all four license files at root.
-See `git log --oneline` — 11 commits this session, from `927f534` (white papers)
-through `e7909b6` (M3 render pipeline). `todo.md` tracks operator-verified
-deferrals (M0 FFmpeg spike / window launch / CI; M2 device wiring / loopback
-calibration / end-to-end audio test).
-
-## Next Steps (Priority Order)
-
-1. **M3 arrangement primitives** — `core/Arrangement.*`. White paper Part 11.3.
-   Most "primitives" are just Constituent-tree operations; the design sketch:
-   - `arrangement::sequence(parent, children)` — place children end-to-end
-     (each child's `conceptualIn` = previous child's `conceptualOut`).
-   - `arrangement::layer(parent, children)` — place children simultaneously
-     (all sharing the parent's span / starting at the same `conceptualIn`).
-   - `RoleSlot` — a role-fillable position (white paper 8.4 structured
-     improvisation): a placeholder resolved to a Constituent by `role` at play
-     time. This is the one genuinely-new type; keep it minimal for M3.
-   - Add golden tests; keep `core/` JUCE-free.
-2. **M3 minimal functional UI** — operator-verified (GUI testing is operator-run);
-   build the app shell out enough to exercise the Constituent tree + render
-   pipeline, then hand off launch verification to the operator via `todo.md`.
-3. **M4** — persistence & capability tiers (`persistence/`, `app/CapabilityTier`).
-   Then M5 (plugin hosting), M6 (video — needs the FFmpeg spike first), M7 (full
-   UI), M8 (ensemble).
-
-## Context the Next Session Needs
-
-- **IDE diagnostics are stale after every build** — clangd lags behind the
-  regenerated `compile_commands.json`. Trust `cmake --build` + `ctest`, not the
-  editor squiggles.
-- **`external/` is not committed** — a fresh clone must run `bash/setup-deps.sh`
-  first (clones JUCE/Catch2/soxr as snapshots, applies the soxr patch).
-- **The render pipeline's honest M3 limits** (documented in `RenderPipeline.h`):
-  only `FreeRunning` triggers emit reads — other triggers are *correctly dormant*
-  (no trigger subsystem yet, so they genuinely shouldn't sound). Cross-referential
-  phase, the mutation engine, termination-as-stop-event, and stateful triggers
-  are deliberately later subsystems — not stubs.
-- **Per-milestone workflow this session**: build a coherent chunk → all tests
-  green → `grep` changed files for TODO/FIXME/stub → single-line commit → report.
-  Each milestone task tracked via the Task tools.
-- Build is clean — zero compiler warnings is the bar.
-- Working on `main`, no feature branches (per user CLAUDE.md). Nothing pushed
-  (no remote configured — that's an operator decision).
+The architecture all the way down is now in place; what remains is the operator-run cross-section that exercises it on real hardware, real plugins, real network, and a real performer's hands.
 
 ## Commands to Run First
 
@@ -125,16 +160,16 @@ cd "/Users/larryseyer/Sirius Looper"
 bash/setup-deps.sh                                  # only if external/ is empty
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
-ctest --test-dir build                              # expect 97/97 passing
+./build/tests/SiriusTests                           # 178/178
 ```
 
 ## Open Questions
 
-- **Role-based slots scope**: how much machinery for `RoleSlot` in M3? The white
-  paper itself flags role-fillable phrases / structured-improvisation UX as a
-  novel, untested open question — so keep the M3 data model minimal and don't
-  over-build the resolution logic.
-- **Operator verification cadence**: M0 and M2 each left hardware/GUI items in
-  `todo.md`. At some point the operator should run them (launch the app window,
-  do the FFmpeg spike, wire + test real audio devices) — worth surfacing before
-  M6 (video) which depends on the FFmpeg spike.
+- **M6 video format strategy** — the plan flags a custom video tape format
+  + an intra-frame codec choice. Best decided after the FFmpeg spike, which
+  reveals what's cheap to read/write on every platform.
+- **M8 transport choice** — the plan deliberately does not commit. OSC over
+  UDP and Ableton Link's discovery layer are both plausible.
+- **Role-fillable phrase resolution** — the data model is in place; the
+  resolution logic (matching a `RoleSlot` against a pool of candidates at
+  play time) is a novel, untested UX question the white paper itself flags.
