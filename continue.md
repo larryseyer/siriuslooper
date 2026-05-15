@@ -143,6 +143,20 @@ open "build/app/SiriusLooper_artefacts/Release/Sirius Looper.app"
 | M8 — ensemble | unchanged: data model done; operator owes the real network transport and two-node test |
 | App wiring | **expanded**: bottom bar now drives the capture session; Load dialog filter bug still pending |
 
+**Operator-verification matrix:** each milestone with operator-deferred
+work has a dated block in `todo.md` enumerating files, what was deferred,
+why, what's needed to finish, and what headless verification has already
+been done. Direct pointers:
+
+- M0 / M2 / M3 / M5 / M6 / M7 / M8 operator-side work → `### 2026-05-14`
+  blocks in `todo.md` (one per milestone).
+- macOS Load-dialog TCC bug → `### 2026-05-15 — Load dialog still cannot
+  select .sirius.json on macOS`.
+- Capture-region promotion + visual feedback → `### 2026-05-15 — Mark
+  Out should announce the new region visibly`.
+- Session-as-directory format (V2 §7.8) → `### 2026-05-15 — Session
+  directory format`.
+
 ## What's Inside Each Library (additions this session)
 
 ```
@@ -213,6 +227,13 @@ Plugins / Video tabs unchanged.
 - **M8 transport choice** — unchanged. Plan deliberately does not
   commit. OSC over UDP and Ableton Link's discovery layer are still
   the two plausible candidates.
+- **Performer-side role-fillable phrase UX** — engine half shipped this
+  session as `RoleResolver`; the *runtime* UX (how does the performer
+  choose which eligible candidate fills a slot, in the moment, eyes-
+  free?) remains genuinely novel and untested per Whitepaper 15.3
+  ("Structured improvisation interfaces"). Likely needs a hardware-
+  control-surface decision (footswitch ordering, pad assignment, etc.)
+  before any UI work pays off.
 - **Capture-region promotion UX** — *new* this session. When a region
   is promoted to a Loop Constituent, where does it attach? Into the
   currently-focused Constituent? Into a "captures" inbox? Into the
