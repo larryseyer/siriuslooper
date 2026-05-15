@@ -161,24 +161,31 @@ public:
 
     void show (const juce::String& message)
     {
+        // Reset any in-flight fade from a previous announcement — otherwise
+        // a rapid second Mark Out would resume the prior fade curve instead
+        // of starting fresh at full alpha.
+        auto& animator = juce::Desktop::getInstance().getAnimator();
+        animator.cancelAnimation (this, false);
+
         text_ = message;
-        setVisible (true);
         setAlpha (1.0f);
+        setVisible (true);
+        toFront (false);   // Stay above siblings even if a tab repaint reordered.
         repaint();
-        juce::Desktop::getInstance().getAnimator().fadeOut (this, 1500);
+        animator.fadeOut (this, 1500);
     }
 
     void paint (juce::Graphics& g) override
     {
         auto bounds = getLocalBounds().toFloat();
-        g.setColour (juce::Colour (0xee1a1a1a));
-        g.fillRoundedRectangle (bounds, 8.0f);
+        g.setColour (juce::Colour (0xf21a1a1a));
+        g.fillRoundedRectangle (bounds, 10.0f);
         g.setColour (juce::Colour (0xffffd24a));
-        g.drawRoundedRectangle (bounds.reduced (0.5f), 8.0f, 1.0f);
+        g.drawRoundedRectangle (bounds.reduced (1.0f), 10.0f, 2.0f);
 
-        g.setColour (juce::Colours::white);
+        g.setColour (juce::Colour (0xffffd24a));
         g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(),
-                                      14.0f, juce::Font::bold));
+                                      16.0f, juce::Font::bold));
         g.drawText (text_, getLocalBounds(),
                     juce::Justification::centred, false);
     }
@@ -380,9 +387,12 @@ MainComponent::MainComponent()
     addAndMakeVisible (bottomInfo_);
 
     // Capture banner sits on top of the tabbed content (z-order: last
-    // addAndMakeVisible wins). Hidden by default; revealed by announceCapture.
+    // addAndMakeVisible wins). addAndMakeVisible flips visibility to true,
+    // so we explicitly hide it again — the banner only appears in response
+    // to a successful Mark Out, never at app start.
     captureBanner_ = std::make_unique<CaptureBanner>();
     addAndMakeVisible (captureBanner_.get());
+    captureBanner_->setVisible (false);
 
     setSize (1024, 720);
 
@@ -423,10 +433,12 @@ void MainComponent::resized()
 
     // Banner: top-centred over the tabbed content. Sits below the tab bar so
     // it doesn't occlude tab switching, above the body so it remains the
-    // visual top of stack within the active tab.
-    const int bw = 360;
-    const int bh = 36;
-    captureBanner_->setBounds ((getWidth() - bw) / 2, 44, bw, bh);
+    // visual top of stack within the active tab. Sized big enough that a
+    // glance can't miss it — white paper 14.5 wants the gesture confirmed
+    // through shape and position, not text legibility.
+    const int bw = 480;
+    const int bh = 52;
+    captureBanner_->setBounds ((getWidth() - bw) / 2, 40, bw, bh);
 }
 
 void MainComponent::timerCallback()
