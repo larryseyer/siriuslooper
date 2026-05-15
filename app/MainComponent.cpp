@@ -3,7 +3,10 @@
 #include "sirius/PerformanceViewState.h"
 #include "sirius/PreparationView.h"
 #include "sirius/PreparationViewState.h"
+#include "sirius/SessionFormat.h"
 #include "sirius/VideoPreview.h"
+
+#include <stdexcept>
 
 namespace sirius
 {
@@ -69,6 +72,17 @@ class MainComponent::PreparationPane final : public juce::Component
 public:
     PreparationPane()
     {
+        saveButton_.setButtonText ("Save...");
+        loadButton_.setButtonText ("Load...");
+        reloadDemoButton_.setButtonText ("Reload demo");
+        addAndMakeVisible (saveButton_);
+        addAndMakeVisible (loadButton_);
+        addAndMakeVisible (reloadDemoButton_);
+
+        statusLabel_.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
+        statusLabel_.setMinimumHorizontalScale (1.0f);
+        addAndMakeVisible (statusLabel_);
+
         addAndMakeVisible (preparationView_);
         diagnosticsLabel_.setJustificationType (juce::Justification::topLeft);
         diagnosticsLabel_.setMinimumHorizontalScale (1.0f);
@@ -77,17 +91,37 @@ public:
 
     void setState (PreparationViewState s) { preparationView_.setState (std::move (s)); }
     void setDiagnostics (const juce::String& text) { diagnosticsLabel_.setText (text, juce::dontSendNotification); }
+    void setStatus (const juce::String& text)      { statusLabel_.setText (text, juce::dontSendNotification); }
+
+    juce::TextButton& saveButton()       { return saveButton_; }
+    juce::TextButton& loadButton()       { return loadButton_; }
+    juce::TextButton& reloadDemoButton() { return reloadDemoButton_; }
 
     void resized() override
     {
         auto area = getLocalBounds().reduced (12);
+
+        auto topRow = area.removeFromTop (28);
+        saveButton_.setBounds       (topRow.removeFromLeft (84));
+        topRow.removeFromLeft (4);
+        loadButton_.setBounds       (topRow.removeFromLeft (84));
+        topRow.removeFromLeft (4);
+        reloadDemoButton_.setBounds (topRow.removeFromLeft (120));
+        topRow.removeFromLeft (12);
+        statusLabel_.setBounds      (topRow);
+        area.removeFromTop (6);
+
         diagnosticsLabel_.setBounds (area.removeFromBottom (60));
         preparationView_.setBounds (area);
     }
 
 private:
-    PreparationView preparationView_;
-    juce::Label     diagnosticsLabel_;
+    juce::TextButton saveButton_;
+    juce::TextButton loadButton_;
+    juce::TextButton reloadDemoButton_;
+    juce::Label      statusLabel_;
+    PreparationView  preparationView_;
+    juce::Label      diagnosticsLabel_;
 };
 
 // =============================================================================
@@ -232,6 +266,10 @@ MainComponent::MainComponent()
 
     // --- Preparation tab ---
     preparationPane_ = std::make_unique<PreparationPane>();
+    preparationPane_->saveButton().onClick       = [this] { chooseFileAndSave(); };
+    preparationPane_->loadButton().onClick       = [this] { chooseFileAndLoad(); };
+    preparationPane_->reloadDemoButton().onClick = [this] { reloadDemo(); };
+    preparationPane_->setStatus ("");
     tabs_.addTab ("Preparation", juce::Colours::black, preparationPane_.get(), false);
 
     // --- Plugins tab ---
@@ -379,6 +417,73 @@ void MainComponent::onRedo()
         refreshPerformance();
         refreshPreparation();
     }
+}
+
+void MainComponent::chooseFileAndSave()
+{
+    sessionFileChooser_ = std::make_unique<juce::FileChooser> (
+        "Save Sirius session as...",
+        juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
+            .getChildFile ("session.sirius.json"),
+        "*.sirius.json;*.json");
+
+    sessionFileChooser_->launchAsync (
+        juce::FileBrowserComponent::saveMode
+            | juce::FileBrowserComponent::warnAboutOverwriting,
+        [this] (const juce::FileChooser& fc)
+        {
+            const auto target = fc.getResult();
+            if (target == juce::File()) return;
+
+            const auto json = persistence::serializeSession (*undoStack_.current());
+            if (target.replaceWithText (json))
+                preparationPane_->setStatus ("Saved to " + target.getFullPathName());
+            else
+                preparationPane_->setStatus ("Failed to write " + target.getFullPathName());
+        });
+}
+
+void MainComponent::chooseFileAndLoad()
+{
+    sessionFileChooser_ = std::make_unique<juce::FileChooser> (
+        "Load Sirius session...",
+        juce::File::getSpecialLocation (juce::File::userDocumentsDirectory),
+        "*.sirius.json;*.json");
+
+    sessionFileChooser_->launchAsync (
+        juce::FileBrowserComponent::openMode,
+        [this] (const juce::FileChooser& fc)
+        {
+            const auto source = fc.getResult();
+            if (source == juce::File()) return;
+
+            const auto json = source.loadFileAsString();
+            try
+            {
+                auto loaded = persistence::deserializeSession (json);
+                // The white paper Part 14.7 rule: load is an edit; preserve
+                // the existing undo history rather than wiping it. The
+                // operator can undo back to whatever was on screen before.
+                undoStack_.push (loaded, "load " + source.getFileName().toStdString());
+                refreshPerformance();
+                refreshPreparation();
+                preparationPane_->setStatus ("Loaded " + source.getFileName());
+            }
+            catch (const std::runtime_error& e)
+            {
+                preparationPane_->setStatus (
+                    juce::String ("Load failed: ") + e.what());
+            }
+        });
+}
+
+void MainComponent::reloadDemo()
+{
+    // Push the demo as a fresh edit — undoable to whatever was loaded before.
+    undoStack_.push (buildDemoSession().root, "reload demo");
+    refreshPerformance();
+    refreshPreparation();
+    preparationPane_->setStatus ("Reloaded the built-in demo session");
 }
 
 void MainComponent::chooseFolderAndScan()

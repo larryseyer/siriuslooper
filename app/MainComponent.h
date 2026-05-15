@@ -55,6 +55,11 @@ private:
     // --- plugin scanning ---
     void chooseFolderAndScan();
 
+    // --- session save/load (round-trips the current undo-stack top) ---
+    void chooseFileAndSave();
+    void chooseFileAndLoad();
+    void reloadDemo();
+
     // --- session state (drives every view) ---
     DemoSession  demo_;
     UndoStack    undoStack_;
@@ -81,6 +86,7 @@ private:
     std::unique_ptr<PluginsPane> pluginsPane_;
     PluginScanner pluginScanner_;
     std::unique_ptr<juce::FileChooser> pluginFolderChooser_;
+    std::unique_ptr<juce::FileChooser> sessionFileChooser_;
 
     // --- Video tab ---
     class VideoPane;

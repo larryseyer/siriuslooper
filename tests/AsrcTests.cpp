@@ -40,8 +40,8 @@ TEST_CASE ("ASRC produces output at the set rate ratio", "[asrc]")
     constexpr std::size_t inputLen = 4800;
     std::vector<float> input (inputLen, 0.0f);
     for (std::size_t i = 0; i < inputLen; ++i)
-        input[i] = std::sin (2.0 * 3.14159265358979 * 100.0
-                             * static_cast<double> (i) / 24000.0);
+        input[i] = static_cast<float> (std::sin (2.0 * 3.14159265358979 * 100.0
+                                                 * static_cast<double> (i) / 24000.0));
 
     std::vector<float> output (inputLen * 4, 0.0f);
     const auto processed = asrc.process (input.data(), inputLen,

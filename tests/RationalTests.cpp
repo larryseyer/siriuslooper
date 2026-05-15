@@ -6,6 +6,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <cmath>
 #include <limits>
 #include <stdexcept>
 
@@ -173,9 +174,12 @@ TEST_CASE ("overflow throws rather than wrapping silently", "[rational]")
 
 TEST_CASE ("toDouble is the explicit lossy membrane conversion", "[rational]")
 {
-    CHECK (Rational (1, 2).toDouble() == 0.5);
-    CHECK (Rational (-3, 4).toDouble() == -0.75);
-    CHECK (Rational().toDouble() == 0.0);
+    // 0.5, -0.75, and 0.0 are exactly representable, so each toDouble must
+    // land on the bit pattern of its literal — tolerance < 1e-15 is just
+    // enough to dodge -Wfloat-equal without weakening the claim.
+    CHECK (std::abs (Rational (1, 2).toDouble()  -  0.5)  < 1e-15);
+    CHECK (std::abs (Rational (-3, 4).toDouble() - -0.75) < 1e-15);
+    CHECK (std::abs (Rational().toDouble())              < 1e-15);
 }
 
 TEST_CASE ("toString reports normalized form", "[rational]")
