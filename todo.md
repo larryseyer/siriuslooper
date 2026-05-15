@@ -1,5 +1,76 @@
 # Sirius Looper — Deferred Items
 
+### 2026-05-15 — M5: Plugin scanner crashes + scan-strategy redesign
+
+- **Files:** `host/src/PluginScanner.cpp`, `host/include/sirius/PluginScanner.h`,
+  eventually the app-level integration that triggers scans and the
+  persistence layer that caches scan results.
+- **Symptom (operator report, 2026-05-15):** the standalone app crashed
+  during a plugin-folder scan. Scan was taking the "usual LONG time" —
+  same UX problem Logic Pro exhibits when a system has thousands of
+  plugins installed. No crash log captured yet.
+- **What was deferred:** treating this as a session-of-its-own design
+  problem rather than wedging it into the current TimelineView-polish
+  session. Three intertwined pieces:
+  1. **Crash protection.** A scan that ploughs through every VST3/AU on
+     disk inevitably encounters at least one plugin whose constructor
+     throws, deadlocks, or segfaults. JUCE's `AudioPluginFormatManager`
+     instantiates plugins in-process; a bad plugin crashes the host.
+     The standard mitigation is out-of-process scanning — a small
+     child-process probe per plugin, with the parent timing it out and
+     marking the plugin as failed if the child dies. JUCE's
+     `KnownPluginList::scanAndAddDragAndDroppedFiles` and
+     `AudioPluginFormat::createPluginInstanceFromDescription` both have
+     async overloads; the child-process pattern is documented in
+     JUCE's `PluginListComponent` source.
+  2. **Light scan mode (file metadata only, no instantiation).** For
+     users with thousands of plugins, deep-scanning every one on first
+     launch is hostile. A "light" scan reads only what the OS can
+     cheaply tell us — bundle name, format, manufacturer string from
+     the Info.plist (AU) or `moduleinfo.json` (VST3 3.7+) — and defers
+     full instantiation (which is what discovers parameter counts,
+     factory presets, etc.) until the user actually drops the plugin
+     into an effect chain.
+  3. **Lazy-instantiate-on-first-use ("scan when loaded").** The
+     operator's "outside the box" idea: skip the upfront full-scan
+     entirely. Show every plugin the OS knows about (from the standard
+     paths) immediately; pay the per-plugin instantiation cost the
+     first time the user *uses* that plugin, and cache the result.
+     This is what Bitwig does. Plays well with light scan (#2) — light
+     scan populates the visible list, full scan happens on demand and
+     persists.
+- **Why deferred:** the current session is TimelineView operator
+  verification + small UI polish. Plugin-scanner redesign is its own
+  design problem (cache schema, child-process protocol, UI for
+  failed-plugin reporting, persistence-format migration since
+  `PluginScanner::Result` shape will change). Worth a dedicated session
+  with a brainstorm pass and a written design before code.
+- **What's needed to finish:**
+  1. **Capture a crash report.** Next time the scanner crashes, grab
+     the `~/Library/Logs/DiagnosticReports/Sirius Looper-*.crash` file
+     and attach it to this entry — that determines whether the crash
+     is in our scanner code, in JUCE's plugin loader, or in a specific
+     plugin's constructor.
+  2. **Design session (separate brainstorm):** decide between
+     out-of-process child scanning vs. an in-process try/catch +
+     watchdog timer, and decide whether to ship light-scan + lazy-load
+     together or sequentially.
+  3. **Implement crash protection first** — even an in-process
+     try/catch around `createPluginInstance` plus a per-plugin timeout
+     would have caught today's crash. Out-of-process can come later;
+     the immediate value is "scan completes even when a plugin
+     misbehaves."
+  4. **Then implement light scan as the default**, with a "deep scan
+     this one" gesture on the plugin row when the user wants the full
+     parameter list before loading.
+  5. **Lazy-instantiate-on-first-use** is the destination architecture;
+     ship it once the cache + UI surfaces from steps 3-4 exist.
+- **Headless verification already done for M5:** scanner
+  format-registration, descriptor structures, GenericParameterView
+  construction against a JUCE `AudioProcessor`. The instantiation /
+  scan-runtime path is the operator-deferred half and is precisely
+  where today's crash lives.
+
 ### 2026-05-14 — M0: Project skeleton & CI
 
 - **Files:** n/a (external/operator actions)
