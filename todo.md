@@ -201,3 +201,66 @@ already held (same licensing model as the sister app OTTO; see
   associativity, idempotence, last-writer-wins on the active version), and
   the `EnsembleMessage` variant (each kind constructs and pattern-matches
   cleanly) — 178 tests pass total across the whole project.
+
+### 2026-05-14 — M6: Video — operator verification
+
+- **Files:** `video/VideoFrame.h`, `video/VideoTape.h`,
+  `video/FrameMembrane.{h,cpp}`, `video/VideoPreview.{h,cpp}`, and the
+  (currently unwritten) FFmpeg decode/encode pipeline that produces and
+  consumes the bytes the data model stores.
+- **What was deferred:**
+  1. The FFmpeg spike still owed from M0: install FFmpeg locally, write a
+     small decode-one-frame probe, confirm libav* links cleanly via CMake
+     on macOS, Windows, and Linux. **M6's runtime cannot proceed without
+     this** — the data model is complete; the bytes are missing.
+  2. The decode pipeline that fills `VideoFrame::pixels` from a real video
+     source (camera input, file playback) and writes the metadata the tape
+     and membrane consume. Real plumbing — choose libav* directly or wrap
+     it behind a small abstraction layer.
+  3. The encode pipeline that takes a captured `VideoTape` and writes it
+     to disk in an intra-frame codec (white paper Part 6.5: roughly half
+     the storage cost of uncompressed, decode cost paid at read).
+  4. The conversion from a `VideoFrame` payload (any of the five pixel
+     formats) to a `juce::Image` for `VideoPreview::setFrame`. swscale or
+     equivalent does this trivially once linked.
+  5. The plan's milestone test: "frame-accurate playback test against a
+     known video file; confirm audio/video stay LMC-locked over a
+     multi-minute render."
+- **Why deferred:** every part requires FFmpeg installed locally and real
+  source material. Per project conventions, anything with a real
+  hardware/codec dependency is operator-run.
+- **What's needed to finish:**
+  1. Run the FFmpeg spike. Confirm linkage on the three platforms; pick a
+     decode entry point (probably `avformat_open_input` +
+     `avcodec_send_packet` / `avcodec_receive_frame`) and a swscale path
+     for pixel-format conversion to the five `VideoPixelFormat` values
+     the data model commits to.
+  2. Wire decoded frames onto a `VideoTape`: each `av_frame` becomes a
+     `VideoFrame` with width/height/format from the av_frame and a
+     `presentationLmcSeconds` computed from the av_frame's pts and the
+     stream's time_base. Append in order; the tape's
+     "non-decreasing LMC time" rule enforces correctness.
+  3. Drive `VideoPreview` from the tape: every animation tick, call
+     `findFrameAt(tape, currentLmcTime)`, convert the returned frame's
+     bytes to a `juce::Image` via swscale, hand to
+     `VideoPreview::setFrame`.
+  4. Validate `FrameMembrane` against real frame-rate-mismatched content:
+     a 24 fps clip played at 30 fps display should stutter on the
+     repeated frame; a 30 fps clip played at 24 fps display should skip
+     the dropped frame. The math is already tested; this confirms the
+     end-to-end pipeline preserves it.
+  5. Run the multi-minute audio/video LMC-lock test the plan asks for —
+     the membrane has the math; the runtime needs to honour it across a
+     long playback.
+
+- **Headless verification already done for M6:** the VideoFrame data
+  model (metadata + opaque bytes), `Tape<VideoFrame>` (same shared
+  template every Sirius tape uses), `findFrameAt` (the most-recent-frame-
+  at-or-before-query rule, with the empty-tape, before-first, on-frame,
+  between-frames, and past-end cases pinned down), and `FrameMembrane` /
+  `convertFrameRate` (exact-Rational nearest-frame selection, including
+  the awkward broadcast rates 23.976 / 29.97 / 59.94 staying exact, the
+  24→30 stuffing pattern, the 30→24 dropping pattern, and the offset-
+  start case) — 191 tests pass total. The `VideoPreview` JUCE component
+  is a thin letterboxing renderer that takes a `juce::Image`; producing
+  that image from a `VideoFrame` is the FFmpeg-bound work above.

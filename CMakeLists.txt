@@ -34,6 +34,9 @@ add_subdirectory(ui)
 # Ensemble — LMC election, CRDT session merge, transport messages.
 add_subdirectory(net)
 
+# Video — VideoFrame data model, frame-rate-conversion membrane, preview surface.
+add_subdirectory(video)
+
 # Standalone application shell.
 add_subdirectory(app)
 

@@ -31,7 +31,9 @@ add_executable(SiriusTests
     PreparationViewStateTests.cpp
     LmcElectionTests.cpp
     SessionMergeTests.cpp
-    TransportTests.cpp)
+    TransportTests.cpp
+    VideoTapeTests.cpp
+    FrameMembraneTests.cpp)
 
 target_compile_features(SiriusTests PRIVATE cxx_std_20)
 
@@ -44,6 +46,7 @@ target_link_libraries(SiriusTests PRIVATE
     Sirius::Host
     Sirius::Ui
     Sirius::Net
+    Sirius::Video
     Catch2::Catch2WithMain
     Threads::Threads)
 
