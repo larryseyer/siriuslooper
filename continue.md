@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-15
+# Session Continuation — 2026-05-15 (afternoon)
 
 ## Top-of-page summary
 
@@ -6,251 +6,228 @@ Sirius Looper is a JUCE 8.x project built milestone by milestone against the
 approved plan at
 `/Users/larryseyer/.claude/plans/we-have-written-a-declarative-pearl.md`.
 
-**Every milestone in the plan now has its headless-verifiable half shipped
-(M0 → M8) and the standalone app exercises most of it through a four-tab
-MainComponent.** 191 tests pass; the build is warning-free for any source we
-control. The remaining work is all operator-side hardware/network/codec
-validation, plus one known UX bug in the Save/Load dialog described below.
+This session shipped the **role-fillable phrase resolution** subsystem and
+the **performer-facing capture state machine** (arm/disarm + mark-in /
+mark-out) with full UI wiring, then closed out the plan's "Remaining open
+item" by completing the Whitepaper V2 worked-example consistency check.
+**213 tests pass; the build is warning-free for any source we control.**
+
+Three items are deferred to `todo.md` with full diagnostic detail:
+
+1. The macOS Load-dialog TCC bug (still unresolved — see below).
+2. The capture flow's visual-confirmation gap and region-promotion-to-
+   Constituent step (added this session).
+3. Session-as-directory format from Whitepaper V2 §7.8 (M4 expansion).
 
 ## ⚠ Open bug carried into the next session
 
-**Load dialog still cannot select `.sirius.json` files on macOS** even after
-the commit `f9deccc` filter fix. Two filter pattern have been tried:
+**Load dialog still cannot select `.sirius.json` files on macOS.** Even
+with the four `NS*FolderUsageDescription` keys in the Info.plist (commit
+`ff6935c`), the macOS NSOpenPanel greys out the saved file. The working
+hypothesis is that the ad-hoc-signed bundle is below macOS's trust
+threshold to receive a TCC permission prompt, so the plist keys are
+present but inert — no TCC record ever gets created. Save side works.
 
-- `*.sirius.json;*.json` — original (commit `cad8cb9`)
-- `*.json` — current (commit `f9deccc`)
+The diagnostic ladder, every prior attempt, and the three concrete
+next-step options (Developer ID signing + entitlements, investigate the
+`.png`-vs-`.json` asymmetry, or ship a drag-and-drop fallback path) live
+in `todo.md` under the **"2026-05-15 — Load dialog still cannot select
+`.sirius.json` on macOS"** entry. Start there.
 
-Neither lets the user pick the file. The save side works — files write to
-disk just fine. So the bug is purely in JUCE's load-side filter behaviour.
+## What shipped this session (commits past the deferred bug)
 
-**Things to try next session, in order of likelihood:**
+| Commit | Subject |
+|---|---|
+| `1713345` | feat: role-fillable phrase resolution — `findCandidatesFor` + `resolveFirst` |
+| `17915c4` | feat: CaptureSession state machine + Arm/Disarm button in bottom bar |
+| `2499273` | feat: Mark In / Mark Out buttons drive the capture session from the playhead |
+| `839bc73` | chore: defer capture-completion visual feedback + region promotion to `todo.md` |
+| `6d121d7` | chore: complete V2 worked-example consistency check; record §7.8 directory-format divergence |
 
-1. Empty filter (`""`) — show every file regardless of extension. Confirms
-   the file is selectable when no filter is applied. If yes, the filter
-   string is the problem; if no, something else is going on (security,
-   permissions, double-click vs single-click on macOS file picker).
-2. `"*"` instead of `"*.json"` — different wildcard syntax may behave
-   differently on macOS. JUCE's docs say semicolon-separated patterns, and
-   the pattern is converted to UTIs on macOS.
-3. Pass `nullptr` for the patterns argument — JUCE may treat that as "all
-   files allowed."
-4. Check the actual file on disk — `file /path/to/session.sirius.json` to
-   confirm it really is what we think it is. Possibility: the saved file
-   has no extension because `replaceWithText` ignored the suggested name's
-   extension somehow.
-5. Test with a sibling JSON file the user created with TextEdit — if that
-   one is selectable but our saved one isn't, the problem is in the file
-   itself (likely the macOS metadata "kind" attribute), not the filter.
-6. The macOS Save panel may have appended a sandbox-derived UTI to the
-   saved file. Check with `xattr -l` on the saved file.
+### Role-fillable phrase resolution (M3 follow-on)
 
-**Where the code lives:** `app/MainComponent.cpp`,
-`MainComponent::chooseFileAndLoad` (around the FileChooser construction).
-Save is `MainComponent::chooseFileAndSave` and is fine.
+`core/include/sirius/RoleResolver.h` exposes two pure functions over
+`Constituent::ChildPtr` pools:
 
-## Current State
+- `findCandidatesFor(slot, pool)` — returns every `ConstituentId` in
+  `pool` whose Constituent carries `PhraseMetadata`, is marked
+  `isRoleFillable`, and matches `slot.role()`. Stable order (pool's
+  enumeration order). Engine deliberately enumerates rather than picks
+  — Whitepaper 8.4 reserves the actual choice for the performer.
+- `resolveFirst(slot, pool)` — convenience: returns `slot` filled with
+  the first eligible candidate, or unchanged if none. The trivial
+  default policy.
+
+9 tests, 24 assertions. Pool order, role mismatch, `isRoleFillable=false`,
+non-phrase Constituents, null entries, and the no-match fallback are
+all pinned down.
+
+### Capture state machine + UI (white paper 14.5 / 14.6)
+
+`core/include/sirius/CaptureSession.h` is a pure state machine, JUCE-free.
+
+States: `Disarmed` (default), `Armed`, `AwaitingOut`. Events: `arm()`,
+`disarm()`, `markIn(Rational)`, `markOut(Rational) → optional<CaptureRegion>`,
+`cancel()`. `CaptureRegion = { Rational inLmcSeconds, outLmcSeconds }`.
+Default-constructed state is `Disarmed` — nothing is captured by
+surprise. 13 tests, 63 assertions; every transition (including
+no-ops, in-point replacement, and the t<=in rejection in markOut)
+pinned down.
+
+UI wiring in `app/MainComponent.cpp`:
+
+- Bottom bar (visible across all four tabs): **Arm | Mark In | Mark Out |
+  Undo | Redo | playhead | time**.
+- **Arm** flips red/grey, label flips Arm/Disarm.
+- **Mark In** enabled iff `isArmed()`. Multiple presses replace the
+  pending in-point.
+- **Mark Out** enabled iff `isCapturing()`. Successful close pushes the
+  `CaptureRegion` into `MainComponent::capturedRegions_`.
+- Preparation-tab diagnostics surface state textually:
+  `Capture: armed, no in-point set    Regions: 2  (last: 1.20 s → 4.50 s, 3.30 s long)`.
+
+**LMC time source:** the playhead value, until M2 audio wiring lands.
+Documented in `onMarkIn` / `onMarkOut` comments.
+
+**What's not yet wired:** when M2 wires the real audio path, the
+inbound membrane will gate writes to tape on `captureSession_.isArmed()`
+and `markIn`/`markOut` will receive real LMC times from the clock —
+not the playhead. A `CaptureRegion` will then become an undoable edit
+that adds a Loop Constituent to the current tree. Today the regions
+are RAM-only visualization. See `todo.md` "Mark Out should announce
+the new region visibly" — that entry has the promotion plan.
+
+### Whitepaper V2 Appendix C consistency check (plan's Remaining open item)
+
+The plan's "Remaining open item" was to verify V2 worked examples
+(C.1 twelve-bar blues, C.2 4-against-7 polymetric phrase) against
+the M1 `Constituent` / `Tape` struct definitions. **Check is
+complete: every field used in C.1 and C.2 is representable in the
+current structs.** Detailed mapping is in `todo.md`. One real
+divergence found and recorded: V2 §7.8 specifies a session as a
+directory (`my-session.sirius/` with `session.json`, `tapes/`,
+`calibration/`, `lmc-discipline.json`); code writes a single
+`session.sirius.json`. Refactor is described in `todo.md` and is
+gated on first resolving the Load dialog TCC bug.
+
+## Current Test / Build State
+
+**213 tests pass, 3983 assertions.** Zero compiler warnings from any
+source we control. Clean builds throughout this session — incremental
+builds were proven unreliable for this project (clangd / LaunchServices
+caching can mask real changes), and the rule is now memorialised in
+[user memory](file:///Users/larryseyer/.claude/projects/-Users-larryseyer-Sirius-Looper/memory/feedback_clean_builds.md).
+
+Run them yourself:
+
+```bash
+cd "/Users/larryseyer/Sirius Looper"
+rm -rf build && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+./build/tests/SiriusTests                           # 213/213
+open "build/app/SiriusLooper_artefacts/Release/Sirius Looper.app"
+```
+
+## Milestone status (changes from the prior session)
 
 | Milestone | Status |
 |---|---|
-| M0 — skeleton + CI | done; operator owes FFmpeg spike + window-launch + remote-push CI |
-| M1 — conceptual-time core | done |
-| M2 — real-time foundation, membrane, ASRC | headless half done; operator owes device wiring, loopback calibration, in→tape→loop test |
-| M3 — Constituent hierarchy + arrangement + render pipeline + minimal UI | done |
-| M4 — persistence + capability tiers + overload protection | done |
-| M5 — plugin hosting + parameter view | headless half done; operator owes real-plugin scan + automation round-trip |
-| M6 — video | data model + membrane done; operator owes the full FFmpeg pipeline |
-| M7 — full UI (Performance/Preparation/UndoStack/LatencyBudget) | done; operator owes gesture-loop wiring and real latency measurement |
-| M8 — ensemble (LMC election, CRDT merge, transport messages) | data model done; operator owes the real network transport and two-node test |
-| App wiring | done; **Load dialog filter bug above** |
+| M0 — skeleton + CI | unchanged: operator owes FFmpeg spike + window-launch + remote-push CI |
+| M1 — conceptual-time core | unchanged: done; V2 consistency check now also done |
+| M2 — real-time foundation, membrane, ASRC | unchanged: headless half done; operator owes device wiring, loopback calibration, in→tape→loop test |
+| M3 — Constituent hierarchy + arrangement + render pipeline + minimal UI | **expanded**: role-fillable resolution shipped (RoleResolver) |
+| M4 — persistence + capability tiers + overload protection | unchanged: done within current single-file scope; V2 §7.8 directory format deferred |
+| M5 — plugin hosting + parameter view | unchanged: operator owes real-plugin scan + automation round-trip |
+| M6 — video | unchanged: data model + membrane done; operator owes the full FFmpeg pipeline |
+| M7 — full UI | **expanded**: arm/disarm + mark-in/out gestures shipped; gesture-loop wiring and real latency measurement still operator-side |
+| M8 — ensemble | unchanged: data model done; operator owes the real network transport and two-node test |
+| App wiring | **expanded**: bottom bar now drives the capture session; Load dialog filter bug still pending |
 
-**191 tests pass. Zero compiler warnings from any source we control.** The
-three pre-existing float warnings in AsrcTests:43 and RationalTests:177 were
-cleaned in commit `cad8cb9`.
-
-## What's Inside Each Library
+## What's Inside Each Library (additions this session)
 
 ```
-core/         JUCE-free conceptual-time engine. Types: Rational, Meter,
-              TempoMap, Position, TimeDomain, Constituent, ConstituentId,
-              RepetitionRules (Trigger/Cardinality/Phase/Mutation/Termination
-              as std::variants), Phrase, Tape<T>, TapeId, TapeReference,
-              Arrangement (sequence/layer + RoleSlot), EffectChain,
-              EffectChainEntry, PluginDescriptor, ParameterEvent
-              (parameter automation tape payload).
-engine/       JUCE-free real-time layer. Types: LockFreeSpscQueue,
-              RetroactiveRing, Lmc, MonotonicClock, SampleClock,
-              AudioDeviceCalibration, Membrane (latency compensation),
-              LoopRenderer, Asrc (libsoxr wrapper), RenderPipeline,
-              OverloadProtection (priority-ladder shedding).
-persistence/  Session round-trip. Types: SessionFormat (Constituent-graph
-              JSON serialize/deserialize), TapeStore (content-addressed
-              blob store, SHA-256 filenames). Depends on Sirius::Core +
-              juce_core + juce_cryptography.
-host/         Plugin host runtime. Types: PluginScanner (VST3/AU/AUv3),
-              GenericParameterView (JUCE Component, one row per parameter,
-              two-way binding via AudioProcessorParameter::Listener).
-              Depends on Sirius::Core + juce_audio_processors +
-              juce_gui_basics + CoreAudioKit (macOS).
-ui/           Performer's instrument. Types: UndoStack (multi-level over
-              shared_ptr<const Constituent>), LatencyBudget (rolling
-              window vs <30 ms target), PerformanceViewState selector +
-              PerformanceView component, PreparationViewState selector +
-              PreparationView component.
-net/          Ensemble. Types: DisciplineTier, NodeClockEstimate,
-              ElectionResult, electLmc (Marzullo + tier dominance +
-              anchor override), MergeableSession, merge() (CRDT union),
-              activeVersions (LWW), EnsembleMessage (variant of
-              LmcTimeAnnouncement / MarkerEvent / TransportStateChange).
-video/        Video subsystem (headless half). Types: VideoFrameMetadata,
-              VideoFrame, VideoPixelFormat, VideoTape (alias for
-              Tape<VideoFrame>), findFrameAt, FrameMembrane (nearest-frame
-              rate conversion), convertFrameRate, VideoPreview component.
-app/          Standalone shell. Types: CapabilityTier + selectTier +
-              policyFor + TierPolicy (M4 startup assessment, JUCE-free),
-              DemoSession (builds the in-process demo Constituent tree),
-              MainComponent (the TabbedComponent host with Performance/
-              Preparation/Plugins/Video tabs and the bottom playhead +
-              undo/redo bar).
-tests/        Catch2 — 191 test cases, 3896 assertions.
-external/     Vendored deps (JUCE, Catch2, soxr) — gitignored. Run
-              bash/setup-deps.sh on a fresh checkout.
-patches/      patches/soxr-quote-paths.patch — fixes soxr's CMake when the
-              source path contains a space (the literal "Sirius Looper").
-licenses/     AGPLv3 + Apple App Store exception. Sample library separately
-              licensed.
+core/         Added: RoleResolver (findCandidatesFor + resolveFirst),
+              CaptureSession (Disarmed/Armed/AwaitingOut state machine
+              producing CaptureRegion on a successful markIn/markOut
+              pair). Both JUCE-free; both purely unit-tested.
+app/          MainComponent now owns a CaptureSession and a vector of
+              captured regions; bottom bar exposes Arm / Mark In /
+              Mark Out alongside the existing Undo / Redo and playhead.
+tests/        Added: RoleResolverTests.cpp (9 cases),
+              CaptureSessionTests.cpp (13 cases).
 ```
 
-## Operator-Verification Matrix (full detail in `todo.md`)
-
-Each milestone with operator-deferred work has a `### YYYY-MM-DD` block in
-`todo.md` enumerating files, what was deferred, why, what's needed to finish,
-and what headless verification has already been done. Short version:
-
-- **M0** — install FFmpeg + decode-one-frame probe on macOS/Win/Linux,
-  launch the app bundle and confirm the window opens, push to a GitHub
-  remote and confirm the CI matrix.
-- **M2** — wire `AudioDeviceManager` to the membrane code, run a one-time
-  loopback latency calibration, demonstrate the in→tape→mark→loop cycle.
-- **M5** — install at least one VST3 (and on macOS one AU), scan with
-  `PluginScanner`, instantiate via `AudioPluginFormatManager::createPluginInstance`,
-  bind a `GenericParameterView`, capture parameter movements onto a
-  `Tape<ParameterEvent>`, replay them.
-- **M6** — once the M0 FFmpeg spike is done: wire the decode pipeline that
-  fills `VideoFrame::pixels`, the encode pipeline that writes intra-frame
-  video tapes, the swscale conversion to `juce::Image` for `VideoPreview`,
-  the multi-minute audio/video LMC-lock test.
-- **M7** — wire `PerformanceView` and `PreparationView` into a real
-  gesture loop with actual edits (the demo just exercises the undo of a
-  rename), feed real frame-to-screen latency into `LatencyBudget` rather
-  than the current Timer-jitter proxy.
-- **M8** — pick a transport (OSC over UDP, Ableton Link's discovery, or
-  something custom), implement it against `EnsembleMessage`, wire per-node
-  clock-discipline sources to produce `NodeClockEstimate`s, run the
-  two-node partition-and-rejoin milestone test using `merge()` on rejoin.
+The other libraries are unchanged from the prior continuation.
 
 ## The Standalone App Today
 
-```bash
-cd "/Users/larryseyer/Sirius Looper"
-bash/setup-deps.sh                                  # only if external/ is empty
-cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build
-./build/tests/SiriusTests                           # expect 191/191
-open "build/app/SiriusLooper_artefacts/Release/Sirius Looper.app"
+Four tabs as before (Performance / Preparation / Plugins / Video) and
+the bottom control bar with the new capture-related buttons:
+
+```
+[ Arm | Mark In | Mark Out ] [ Undo | Redo ] [ ============= playhead ============= ] [ time ]
 ```
 
-The window has four tabs and a bottom control bar:
+Performance tab — unchanged from prior continuation; PerformanceView
+centered, updates as you drag the playhead.
 
-- **Performance** — `PerformanceView` centered. As you drag the playhead, the
-  foreground phrase name and cycle status update. White paper 14.5 glanceable.
-- **Preparation** — Save... / Load... / Reload-demo buttons + status label
-  at the top; `PreparationView` (the Constituent tree with kind/duration/
-  effect-chain/meter/tempo-map flags) in the middle; three-line diagnostics
-  at the bottom (tier + policy, UI tick jitter against the 30 ms budget,
-  undo state).
-- **Plugins** — registered formats, "Scan a plugin folder..." button
-  (`juce::FileChooser`, async), descriptor list. On macOS, default-location
-  scanning was *not* wired because `AudioUnitPluginFormat` ignores the
-  search path and enumerates every installed AU — that would hang the UI
-  while it sweeps the whole machine. The folder-scan button avoids it.
-- **Video** — `VideoPreview` with a status line about the pending FFmpeg
-  pipeline. Empty until M6's runtime half lands.
+Preparation tab — Save / Load / Reload-demo buttons + status label up
+top; PreparationView in the middle; the diagnostics block at the
+bottom is now four lines:
 
-Bottom bar across every tab: **Undo** / **Redo** buttons, playhead slider
-in 1/16-second ticks (the engine still sees only exact rationals; no double
-crosses into core/), and a numeric time readout.
-
-## Save / Load — what works, what doesn't
-
-- **Save** works. Click Save..., pick a name and folder, the file lands on
-  disk with a JSON serialization of the current undo-stack top.
-- **Load** is the bug above: the file picker shows files but won't let you
-  *select* the `.sirius.json` one. Status label was supposed to read
-  *"Loaded session.sirius.json"* on success or *"Load failed: <message>"*
-  on a malformed file (rule 3 — degradation announced, not silent).
-- **Reload demo** works — it pushes a fresh `buildDemoSession()` as an
-  undo entry, so Undo brings you back to whatever was on screen before.
-
-## Key Decisions Made Across the Project
-
-| Decision | Rationale |
-|----------|-----------|
-| AGPLv3 + App Store exception, OTTO licensing model | User explicitly asked. |
-| `external/` vendoring, gitignored, `setup-deps.sh` | Matches OTTO. |
-| Conceptual time = exact `Rational` (int64 num/den, overflow throws) | White paper's "exact by construction." |
-| Engine core stays JUCE-free | Appendix D verification philosophy. |
-| Five repetition dimensions as `std::variant`s | Illegal combinations unrepresentable. |
-| Headless/operator split | Project convention. |
-| ASRC uses soxr **variable-rate** path | Continuous drift-correcting membrane; ~2 ms latency. |
-| Persistence depends on juce_core + juce_cryptography | Lightweight, testable, gives JSON + File + SHA256. |
-| `JUCE_ENABLE_MODULE_SOURCE_GROUPS=OFF` | Plain `add_library` targets that link a JUCE module otherwise pull every module .cpp into their build set. |
-| `CoreAudioKit` framework on macOS for SiriusHost | `juce_audio_processors.mm` uses `AUGenericView`; `juce_add_gui_app` adds it automatically but a plain library does not. |
-| Parameter automation is `Tape<ParameterEvent>` | White paper 7.7 recursion. |
-| UndoStack stores `shared_ptr<const Constituent>` | Copy-on-write makes diffs unnecessary. |
-| `MergeableSession` keeps every version, picks active by LWW | Literal mapping of white paper 12.6. |
-| Anchor override takes precedence over tier in election | White paper 12.4: musical authority outranks technical. |
-| Playhead slider ticks in 1/16 second | Slider value → exact Rational without a double ever entering the engine. |
-| Load is an edit (pushes a new undo entry) | White paper 14.7: undo is sacred; load must not wipe history. |
-| AU default-location scan deliberately not wired in the Plugins tab | Would hang the UI sweeping every installed AU. |
-
-## Commands to Run First
-
-```bash
-cd "/Users/larryseyer/Sirius Looper"
-bash/setup-deps.sh                                  # only if external/ is empty
-cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build
-./build/tests/SiriusTests                           # 191/191
-open "build/app/SiriusLooper_artefacts/Release/Sirius Looper.app"
 ```
+Tier: Survival  (..., ring 5s)
+UI tick jitter: mean 0.42 ms, worst 1.78 ms, 100.0% within 30 ms
+Undo: 1 / 1
+Capture: disarmed    Regions: 0
+```
+
+Plugins / Video tabs unchanged.
 
 ## Suggested First Move Next Session
 
-1. **Fix the Load dialog filter bug.** The diagnostic ladder is at the top
-   of this file. Start with the empty filter `""` to confirm the file is
-   *selectable* when not filtered out; then re-introduce the right pattern.
-   Suspect ranked highest: macOS treats `*.json` as a UTI lookup that
-   doesn't match files whose system "kind" was set by `replaceWithText`
-   rather than by a proper Save panel.
+1. **The Load dialog TCC bug remains the top blocker for save/load
+   ergonomics.** See `todo.md` for the three concrete next-step options
+   — Developer ID + entitlements is the most likely path; the asymmetry
+   investigation (why `.png` was selectable while `.json` and `.md` were
+   not, in the same dialog) is the quickest diagnostic if you'd rather
+   not introduce signing yet.
 
-2. After that, the project has no remaining headless work the plan asked
-   for. The next thing of architectural value is whatever the operator
-   gets to next on the testing matrix — usually that means the FFmpeg
-   spike to unblock M6 video, or wiring real audio devices to unblock the
-   M2 in→tape→loop demonstration.
+2. After that, the priority deferral is **promotion of a CaptureRegion
+   into a Loop Constituent** (the third subitem of the "Mark Out should
+   announce the new region visibly" entry in `todo.md`). That makes
+   captures actually useful — currently a `Mark Out` produces a region
+   that evaporates on app exit. Promotion would push an undoable edit
+   onto the undo stack, attach the new Loop into the active phrase, and
+   would close the capture loop end-to-end. The visual-confirmation
+   work is subordinate to it.
 
-## Open Questions
+3. Then the **session-as-directory refactor** from V2 §7.8. Gated on the
+   Load-dialog bug being resolved first — that work touches the same
+   Save/Load code path.
 
-- **M6 video format strategy** — the plan flags a custom video tape format
-  + an intra-frame codec choice. Best decided after the FFmpeg spike.
-- **M8 transport choice** — the plan deliberately does not commit. OSC over
-  UDP and Ableton Link's discovery layer are both plausible.
-- **Role-fillable phrase resolution** — the data model is in place; the
-  resolution logic (matching a `RoleSlot` against a pool of candidates at
-  play time) is a novel, untested UX question the white paper itself
-  flags.
-- **Capture state machine** — the Performance view says "what is playing"
-  but the white paper 14.5 also calls for "what is captured, what is
-  about to happen." Those need a capture state machine that does not yet
-  exist; deliberately deferred because the audio device wiring (M2
-  operator-side) drives it.
+## Open Questions (carry-forward)
+
+- **M6 video format strategy** — unchanged. Custom video tape format +
+  intra-frame codec choice; best decided after the FFmpeg spike.
+- **M8 transport choice** — unchanged. Plan deliberately does not
+  commit. OSC over UDP and Ableton Link's discovery layer are still
+  the two plausible candidates.
+- **Capture-region promotion UX** — *new* this session. When a region
+  is promoted to a Loop Constituent, where does it attach? Into the
+  currently-focused Constituent? Into a "captures" inbox? Into the
+  root? White paper does not specify; this is a UX-flow decision the
+  operator will want input on.
+
+## Key Decisions Made This Session
+
+| Decision | Rationale |
+|----------|-----------|
+| Role resolution returns the eligible *set*, with `resolveFirst` as a trivial default policy | White paper 8.4 — the performer picks, not the engine. |
+| CaptureSession defaults to `Disarmed` | Safe-by-default; nothing captured by surprise. User feedback: "User MUST be able to arm and disarm." |
+| Arm button lives in the bottom bar, not a tab | Always reachable (14.6). |
+| Mark In / Mark Out are siblings of Arm, not modal alternatives | Same reasoning — coarse, decisive, always reachable; the buttons grey out when not valid for the current state. |
+| Playhead value used as LMC stand-in for the markIn/markOut buttons | The app has no separate LMC clock until M2 wires real audio; the playhead is the only Rational-seconds source. Documented in code. |
+| `CaptureSession::markOut` rejects t <= in | Likely accidental tap; let the performer try again with a valid out, don't silently close a zero-or-negative-length region. |
+| `disarm` from `AwaitingOut` discards the pending in-point | Hard stand-down. If the performer wants to keep the in-point but pause, they should `cancel` (returns to Armed) instead. |
+| V2 §7.8 directory format documented in `todo.md`, not refactored now | Stacking that refactor on top of the unresolved Load-dialog TCC bug increases the unknown surface. Sequence them: bug first, then refactor. |
