@@ -265,6 +265,35 @@ already held (same licensing model as the sister app OTTO; see
   is a thin letterboxing renderer that takes a `juce::Image`; producing
   that image from a `VideoFrame` is the FFmpeg-bound work above.
 
+### 2026-05-15 — Mark Out should announce the new region visibly
+
+- **Files:** `app/MainComponent.cpp` (`onMarkOut`, `refreshDiagnostics`),
+  possibly a new transient banner widget or a Performance-tab overlay.
+- **What was deferred:** when the performer clicks Mark Out and a
+  CaptureRegion is created, the only on-screen feedback is the textual
+  diagnostics line on the Preparation tab (`Regions: N (last: ...)`).
+  That is too subtle for a performance gesture (white paper 14.5 —
+  "shape, color, position, motion," not text). The performer should see
+  an unambiguous confirmation — a "Loop 3 captured" banner, a flash on
+  the playhead, the new region highlighted on a timeline strip, or all
+  three.
+- **Why deferred:** out of scope of the capture-state-machine commit
+  (`17915c4` + `2499273`); user wants other coding to move first.
+- **What's needed to finish:**
+  1. A transient on-screen confirmation. Suggested: a 1.5-second auto-
+     fading label at the top of whichever tab is active, plus an audible
+     click (white paper 14.9 — "every confirmation they need arrives
+     through hearing"). Audible click depends on M2 audio wiring.
+  2. A persistent capture-history widget on the Preparation tab — a
+     scrolling list of regions with in/out times, length, and a button
+     to promote the region into a Loop Constituent (which would push an
+     undoable edit onto the undo stack — white paper 14.7).
+  3. Promotion is the actual completion of the capture flow: a captured
+     region today lives only in `MainComponent::capturedRegions_` —
+     ephemeral RAM, not part of the session. Until promotion exists,
+     captures evaporate on app exit. Treat #3 as the priority of this
+     deferral; #1 and #2 are subordinate UX.
+
 ### 2026-05-15 — Load dialog still cannot select `.sirius.json` on macOS
 
 - **Files:** `app/MainComponent.cpp` (`chooseFileAndLoad`),
