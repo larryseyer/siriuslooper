@@ -1,5 +1,143 @@
 # Sirius Looper — Deferred Items
 
+### 2026-05-15 — OTTO Look-and-Feel integration (cross-app)
+
+- **Files:** new top-level shared module (location TBD — see open
+  question below), `ui/` (new `sirius::LookAndFeel` subclass),
+  `app/Main.cpp` (currently calls `juce::Desktop::getInstance()
+  .getDefaultLookAndFeel()` at line ~38 — replace with the shared
+  Sirius L&F), CMake wiring on both OTTO and Sirius sides.
+- **What was deferred:** wholesale visual integration with OTTO's
+  existing design system. Sirius today runs JUCE stock `LookAndFeel_V4`
+  with default colours and fonts; the user wants Sirius to visually
+  match OTTO so the two products read as one family.
+- **What OTTO already has (inventoried 2026-05-15):**
+  Located at `/Users/larryseyer/AudioDevelopment/OTTO`.
+  - **`src/otto-plugin/ui/OTTOColours.h`** (~240 lines):
+    - Layered dark-theme palette: `bg0`..`bg6` (darker = further back,
+      lighter = elevated). `bg0`/`bg1` are `0xff010000` (matches OTTO
+      logo background — operator-locked); `bg2` panels; `bg3` modals;
+      `bg4`/`bg5`/`bg6` interactive states.
+    - Named borders, text tiers (`textPrimary` / `Secondary` /
+      `Disabled` / `Inverse`).
+    - Accent: `accent = #00d4aa` (teal), `accentBright`, `accentDim`.
+    - **8 player colours**: coral, rose, gold, mint, orange, lavender,
+      leaf, sky. These map naturally to Sirius's per-tape identity —
+      the kind-colour band on TimelineView strip heads becomes a
+      player-colour band.
+    - Semantic state colors (success/warning/error), meter colors,
+      transport colors (`playActive = #4ade80`, `stopActive = #f87171`),
+      mute/solo/fill action colors, slider track/thumb, focus outline,
+      menu highlight.
+  - **`src/otto-plugin/ui/OTTOLookAndFeel.h/cpp`** (2154 lines):
+    - Subclass of `juce::LookAndFeel_V4`.
+    - Custom draw for: buttons (gradient backgrounds), text buttons,
+      toggle buttons, tick boxes, linear sliders, rotary knobs (270°
+      arc), labels (typography hierarchy by ComponentID), combo boxes,
+      popup menus (radial-gradient backgrounds, section headers, scroll
+      arrows), transport buttons (play/pause/stop), mute/solo buttons
+      with hue, pattern grid cells (OTTO-specific), focus outlines.
+    - Touch-first sizing — 44pt minimums (Apple HIG), HiDPI snap-to-
+      pixel helpers, 4px spacing grid, named border radii.
+    - Audio-pro section title convention: ALL CAPS, BOLD, CENTERED —
+      FabFilter/UAD/Waves visual language. Helpers
+      `applySectionTitleStyle(juce::Label&, text)` and
+      `drawSectionTitle(g, bounds, text)` are the single source.
+    - Roboto Condensed-based menu design tokens (`getMenuItemFont()`
+      etc.) — JUCE's PopupMenu and an OTTO-internal touch popup share
+      one tokenset.
+  - **`assets/Fonts/`**: 10 families bundled as TTF binary-data:
+    Roboto, Roboto Condensed, Orbitron, Bricolage Grotesque (5
+    weights), JetBrains Mono (3 weights), Montserrat, Open Sans,
+    Phosphor (icons), Playfair Display.
+- **Decision made this session:** **shared-submodule model.**
+  User picked this from a 4-option list (shared submodule / vendor
+  copy / extract subset / re-implement-native). Rationale: sister apps
+  that always ship together but sold individually — drift between
+  their visual identities is a permanent tax; one source of truth is
+  worth the one-time extraction cost.
+- **Open question (next session must decide first):** *where the
+  shared module physically lives.* Four candidates were ready to
+  present:
+  1. **New top-level repo** (e.g.
+     `~/AudioDevelopment/audio-ui-core/`). Cleanest separation; both
+     OTTO and Sirius pull via git submodule or CMake FetchContent.
+     One-time cost: extract code from OTTO into the new repo, update
+     OTTO to consume from it, add the consumer to Sirius. **Working
+     recommendation** — most-aligned with the "shared submodule"
+     answer.
+  2. **OTTO's `ui/` becomes the canonical home**, Sirius adds OTTO as
+     a submodule. Faster bootstrap but couples Sirius's CMake to all
+     of OTTO (HISE assets, sampler code) and OTTO becomes a hard
+     dependency for any Sirius build.
+  3. **Sirius hosts** the shared module, OTTO consumes. Unusual since
+     OTTO has the source today.
+  4. **Pragmatic two-stage**: vendor what Sirius needs from OTTO now
+     (commit as `ui/sirius/lookandfeel/` inside Sirius), and schedule
+     the extraction-into-shared-module as a follow-up cross-repo
+     session. Keeps Sirius UI velocity high; pays the refactor cost
+     once both apps are visually settled. **Pragmatic fallback** if
+     full shared-module setup is too much for one session.
+- **Why deferred:** wholesale L&F adoption + cross-repo submodule
+  setup is its own session-sized piece of work. The current session
+  is TimelineView operator verification + small polish items; mixing
+  the two bloats context.
+- **What's needed to finish:**
+  1. **Pick a module home** from the four options above. Working
+     recommendation: option 1 (new top-level repo). Pragmatic fallback:
+     option 4 (vendor first, extract later).
+  2. **If option 1:** create the new repo, extract `OTTOColours.h`,
+     `OTTOLookAndFeel.h/cpp` minus OTTO-specific widgets (pattern
+     cells, player badges), plus the font binary-data infrastructure,
+     into it. Rename namespace from `otto::` to whatever the shared
+     namespace is (`audiodev::ui::`? `larryseyer::ui::`? — open).
+     Update OTTO's CMake to consume from the shared module. Add the
+     shared module as a submodule to Sirius. Bind a `sirius::LookAndFeel`
+     subclass that extends the shared base with any Sirius-specific
+     widgets (timeline pills, tape strips). Install it in
+     `app/Main.cpp`.
+  3. **If option 4:** copy `OTTOColours.h` and a stripped
+     `OTTOLookAndFeel.h/cpp` (no pattern cells, no player badges) into
+     `ui/include/sirius/` and `ui/src/`, rename `otto::` to `sirius::`,
+     copy the relevant fonts from `OTTO/assets/Fonts/` to
+     `Resources/Fonts/`, wire them as JUCE binary-data, install the
+     L&F in `app/Main.cpp`. File a follow-up todo for the shared-module
+     extraction.
+  4. **Apply the L&F to TimelineView.** The strip-head kind-colour
+     band becomes one of OTTO's 8 player colours (per-tape identity).
+     Pills use the OTTO accent (`#00d4aa`) for the loop-on indicator,
+     the membership-outline uses `borderStrong`. Section title
+     convention (ALL CAPS BOLD CENTERED) applies to tab labels.
+  5. **Apply to the bottom bar.** Transport buttons (Arm / Mark In /
+     Mark Out / Undo / Redo) use OTTO's `drawButtonBackground` +
+     mute/solo/transport hue conventions — Arm shows red when armed
+     (mute family), Mark In/Out are accent-coloured action buttons.
+- **Open sub-decisions for the next session:**
+  - **Font subset.** OTTO ships 10 families; Sirius likely needs only
+    3–4 (Roboto for body, Orbitron for display, Roboto Condensed for
+    menus, JetBrains Mono for time/numeric readouts on the diagnostics
+    row). Pick which to bundle to keep the .app bundle small.
+  - **Shared namespace name.** Going from `otto::Colours::` to
+    `audiodev::ui::Colours::`? `larryseyer::ui::`? `aui::`? Naming
+    affects every call site in OTTO when the rename lands.
+  - **Player-colour → tape-id mapping.** OTTO has 8 player colours;
+    Sirius's demo uses tape ids 100/200/300/400. Need a stable
+    `getPlayerColour(tapeId)` mapping (modulo 8? a registered
+    per-tape colour stored in `InputDescriptor`?). The latter is
+    nicer for performer agency (operator picks the colour) but
+    larger scope.
+  - **Touch targets.** OTTO is touch-first (44pt min, iOS in scope).
+    Sirius is touch-friendly-on-iPad but desktop-primary for now.
+    Adopt OTTO's 44pt minimums anyway (no harm on desktop), or trim
+    to denser desktop sizing for Sirius? Working recommendation: keep
+    44pt — the eyes-free performance metaphor (white paper 14.4)
+    benefits from big targets even on desktop.
+- **Headless verification implications:** none of this changes the
+  testable `*ViewState` selectors — they remain JUCE-free. The L&F
+  affects only the renderer half (`TimelineView`, `PerformanceView`,
+  `PreparationView`, `MainComponent`). All 226 existing tests should
+  pass unchanged across the L&F swap.
+
 ### 2026-05-15 — M5: Plugin scanner crashes + scan-strategy redesign
 
 - **Files:** `host/src/PluginScanner.cpp`, `host/include/sirius/PluginScanner.h`,
