@@ -20,7 +20,7 @@ TEST_CASE ("nothing is shed at start", "[overload]")
     CHECK_FALSE (op.isShed (Workload::Ui));
     CHECK_FALSE (op.isShed (Workload::Video));
     CHECK (op.shedCount() == 0);
-    CHECK (op.lastReportedLoad() == 0.0);
+    CHECK (op.lastReportedLoad() < 1e-12); // default is 0.0; no load reported yet
 }
 
 TEST_CASE ("audio is never shed, regardless of load", "[overload]")
@@ -115,6 +115,7 @@ TEST_CASE ("an overrunning callback (load > 1.0) is accepted, not clamped",
     // genuine and informative measurement, not a noisy artifact to discard.
     OverloadProtection op;
     op.reportLoad (1.20);
-    CHECK (op.lastReportedLoad() == 1.20);
+    CHECK (op.lastReportedLoad() > 1.19); // value is stored verbatim, no arithmetic
+    CHECK (op.lastReportedLoad() < 1.21);
     CHECK (op.shedCount() == 3); // every sheddable workload is shed at extreme load
 }

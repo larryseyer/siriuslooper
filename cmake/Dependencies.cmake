@@ -20,7 +20,14 @@ if(NOT EXISTS "${JUCE_PATH}/CMakeLists.txt")
     message(FATAL_ERROR "JUCE not found at ${JUCE_PATH}. Run: bash/setup-deps.sh")
 endif()
 
-set(JUCE_ENABLE_MODULE_SOURCE_GROUPS ON CACHE BOOL "" FORCE)
+# JUCE_ENABLE_MODULE_SOURCE_GROUPS is OFF deliberately. When ON, JUCE attaches
+# every module .cpp/.mm file (not just the wrapper sources) as INTERFACE
+# sources of the module library and the juce_add_* helpers then patch them
+# with HEADER_FILE_ONLY so they aren't actually compiled. That fixup is not
+# applied to plain `add_library` targets that link a JUCE module — the
+# persistence layer is one — so the extra files end up in their build set and
+# the build fails. The setting only affects IDE source-group display.
+set(JUCE_ENABLE_MODULE_SOURCE_GROUPS OFF CACHE BOOL "" FORCE)
 set(JUCE_BUILD_EXTRAS OFF CACHE BOOL "" FORCE)
 set(JUCE_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 

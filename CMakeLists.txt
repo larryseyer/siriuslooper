@@ -22,6 +22,9 @@ add_subdirectory(core)
 # Real-time engine layer — JUCE-free real-time primitives, retroactive ring, LMC.
 add_subdirectory(engine)
 
+# Session persistence — Constituent-graph JSON, content-addressed tape store.
+add_subdirectory(persistence)
+
 # Standalone application shell.
 add_subdirectory(app)
 
