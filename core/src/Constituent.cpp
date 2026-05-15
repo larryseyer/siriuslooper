@@ -108,6 +108,20 @@ Constituent Constituent::withoutTapeReference() const
     return next;
 }
 
+Constituent Constituent::withEffectChain (EffectChain chain) const
+{
+    Constituent next (*this);
+    next.effectChain_ = std::move (chain);
+    return next;
+}
+
+Constituent Constituent::withoutEffectChain() const
+{
+    Constituent next (*this);
+    next.effectChain_.reset();
+    return next;
+}
+
 Constituent Constituent::withChildAdded (ChildPtr child) const
 {
     if (child == nullptr)

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sirius/ConstituentId.h"
+#include "sirius/EffectChain.h"
 #include "sirius/Meter.h"
 #include "sirius/Phrase.h"
 #include "sirius/Position.h"
@@ -70,6 +71,13 @@ public:
     const std::optional<TapeReference>& tapeReference() const noexcept { return tapeReference_; }
     bool isLoop() const noexcept { return tapeReference_.has_value(); }
 
+    /// The signal-processing chain attached to this Constituent (white paper
+    /// Part 7.7: "Effects are applied per-Constituent and are replaceable").
+    /// Present only when at least one effect has been added; absent means the
+    /// dry signal is passed through.
+    const std::optional<EffectChain>& effectChain() const noexcept { return effectChain_; }
+    bool hasEffectChain() const noexcept { return effectChain_.has_value(); }
+
     const std::vector<ChildPtr>& children() const noexcept { return children_; }
     bool isLeaf() const noexcept { return children_.empty(); }
 
@@ -91,6 +99,8 @@ public:
     Constituent withoutPhraseMetadata() const;
     Constituent withTapeReference (TapeReference reference) const;
     Constituent withoutTapeReference() const;
+    Constituent withEffectChain (EffectChain chain) const;
+    Constituent withoutEffectChain() const;
     Constituent withChildAdded (ChildPtr child) const;
     Constituent withChildReplaced (std::size_t index, ChildPtr child) const;
     Constituent withChildRemoved (std::size_t index) const;
@@ -106,6 +116,7 @@ private:
     RepetitionRules repetitionRules_;
     std::optional<PhraseMetadata> phraseMetadata_;
     std::optional<TapeReference> tapeReference_;
+    std::optional<EffectChain>   effectChain_;
     std::vector<ChildPtr> children_;
 };
 

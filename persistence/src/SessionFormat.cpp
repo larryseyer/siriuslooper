@@ -1,7 +1,9 @@
 #include "sirius/SessionFormat.h"
 
+#include "sirius/EffectChain.h"
 #include "sirius/Meter.h"
 #include "sirius/Phrase.h"
+#include "sirius/PluginDescriptor.h"
 #include "sirius/Position.h"
 #include "sirius/Rational.h"
 #include "sirius/RepetitionRules.h"
@@ -200,6 +202,27 @@ namespace
         if (s == "TensionRelease")     return GrammaticalLink::Kind::TensionRelease;
         if (s == "Punctuation")        return GrammaticalLink::Kind::Punctuation;
         fail (std::string ("unknown grammatical link kind \"") + s.toStdString() + "\"");
+    }
+
+    const char* pluginFormatToString (PluginFormat f)
+    {
+        switch (f)
+        {
+            case PluginFormat::Vst3:        return "Vst3";
+            case PluginFormat::AudioUnit:   return "AudioUnit";
+            case PluginFormat::AudioUnitV3: return "AudioUnitV3";
+            case PluginFormat::Clap:        return "Clap";
+        }
+        return "Vst3";
+    }
+
+    PluginFormat pluginFormatFromString (const juce::String& s)
+    {
+        if (s == "Vst3")        return PluginFormat::Vst3;
+        if (s == "AudioUnit")   return PluginFormat::AudioUnit;
+        if (s == "AudioUnitV3") return PluginFormat::AudioUnitV3;
+        if (s == "Clap")        return PluginFormat::Clap;
+        fail (std::string ("unknown plugin format \"") + s.toStdString() + "\"");
     }
 
     // --- variant dimensions ---------------------------------------------------
@@ -445,6 +468,68 @@ namespace
         return out;
     }
 
+    juce::var pluginDescriptorToVar (const PluginDescriptor& d)
+    {
+        auto obj = makeObject();
+        obj->setProperty ("format",       pluginFormatToString (d.format));
+        obj->setProperty ("uniqueId",     juce::String (d.uniqueId));
+        obj->setProperty ("name",         juce::String (d.name));
+        obj->setProperty ("manufacturer", juce::String (d.manufacturer));
+        obj->setProperty ("filePath",     juce::String (d.filePath));
+        return objectVar (obj);
+    }
+
+    PluginDescriptor pluginDescriptorFromVar (const juce::var& v)
+    {
+        PluginDescriptor d;
+        d.format       = pluginFormatFromString (requireProperty (v, "format").toString());
+        d.uniqueId     = requireProperty (v, "uniqueId").toString().toStdString();
+        d.name         = requireProperty (v, "name").toString().toStdString();
+        d.manufacturer = requireProperty (v, "manufacturer").toString().toStdString();
+        d.filePath     = requireProperty (v, "filePath").toString().toStdString();
+        return d;
+    }
+
+    juce::var effectChainEntryToVar (const EffectChainEntry& e)
+    {
+        auto obj = makeObject();
+        obj->setProperty ("plugin",      pluginDescriptorToVar (e.descriptor));
+        obj->setProperty ("displayName", juce::String (e.displayName));
+        obj->setProperty ("state",       juce::String (e.stateBase64));
+        obj->setProperty ("bypassed",    e.bypassed);
+        return objectVar (obj);
+    }
+
+    EffectChainEntry effectChainEntryFromVar (const juce::var& v)
+    {
+        EffectChainEntry e;
+        e.descriptor  = pluginDescriptorFromVar (requireProperty (v, "plugin"));
+        e.displayName = requireProperty (v, "displayName").toString().toStdString();
+        e.stateBase64 = requireProperty (v, "state").toString().toStdString();
+        e.bypassed    = bool (requireProperty (v, "bypassed"));
+        return e;
+    }
+
+    juce::var effectChainToVar (const EffectChain& chain)
+    {
+        juce::Array<juce::var> entries;
+        for (const auto& entry : chain.entries())
+            entries.add (effectChainEntryToVar (entry));
+        auto obj = makeObject();
+        obj->setProperty ("entries", entries);
+        return objectVar (obj);
+    }
+
+    EffectChain effectChainFromVar (const juce::var& v)
+    {
+        const auto& entries = requireProperty (v, "entries");
+        if (! entries.isArray()) fail ("effectChain.entries must be an array");
+        EffectChain out;
+        for (int i = 0; i < entries.size(); ++i)
+            out = out.withAppended (effectChainEntryFromVar (entries[i]));
+        return out;
+    }
+
     // --- Constituent ----------------------------------------------------------
 
     juce::var constituentToVar (const Constituent& c)
@@ -461,6 +546,7 @@ namespace
         if (c.localTempoMap())  obj->setProperty ("tempoMap", tempoMapToVar  (*c.localTempoMap()));
         if (c.phraseMetadata()) obj->setProperty ("phrase",   phraseMetadataToVar (*c.phraseMetadata()));
         if (c.tapeReference())  obj->setProperty ("tape",     tapeReferenceToVar  (*c.tapeReference()));
+        if (c.effectChain())    obj->setProperty ("effects",  effectChainToVar    (*c.effectChain()));
 
         juce::Array<juce::var> kids;
         for (const auto& child : c.children())
@@ -489,6 +575,8 @@ namespace
             c = c.withPhraseMetadata (phraseMetadataFromVar (phrase));
         if (auto tape = optionalProperty (v, "tape"); ! tape.isVoid())
             c = c.withTapeReference (tapeReferenceFromVar (tape));
+        if (auto effects = optionalProperty (v, "effects"); ! effects.isVoid())
+            c = c.withEffectChain (effectChainFromVar (effects));
 
         const auto& kids = requireProperty (v, "children");
         if (! kids.isArray()) fail ("constituent.children must be an array");

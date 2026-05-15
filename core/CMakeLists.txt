@@ -15,7 +15,8 @@ add_library(SiriusCore STATIC
     src/TimeDomain.cpp
     src/Constituent.cpp
     src/RepetitionRules.cpp
-    src/Arrangement.cpp)
+    src/Arrangement.cpp
+    src/EffectChain.cpp)
 
 target_include_directories(SiriusCore PUBLIC include)
 
