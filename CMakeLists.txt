@@ -28,6 +28,9 @@ add_subdirectory(persistence)
 # Plugin host — VST3/AU scanning, generic parameter view (JUCE runtime).
 add_subdirectory(host)
 
+# The performer's instrument — undo, latency budget, performance/preparation views.
+add_subdirectory(ui)
+
 # Standalone application shell.
 add_subdirectory(app)
 
