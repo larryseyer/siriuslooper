@@ -1,143 +1,202 @@
-# Session Continuation — 2026-05-15 (afternoon)
+# Session Continuation — 2026-05-15 (evening)
 
 ## Top-of-page summary
 
-Sirius Looper is a JUCE 8.x project built milestone by milestone against the
-approved plan at
-`/Users/larryseyer/.claude/plans/we-have-written-a-declarative-pearl.md`.
+The kickoff design discussion that the prior session scheduled — the
+**track / input UX** — converged on a clean separation between the
+**performer-facing UI vocabulary** (the user's words, mostly Reaper-
+derived) and the **data-model vocabulary** (the white paper's words,
+unchanged). Two important UI-layer names were named on purpose this
+session: **Track** (= a UI strip representing one input) and **Pill**
+(= the visual representation of a Phrase Constituent — name and look
+derived from OTTO, which Sirius will ship bundled inside as the
+rhythm device / click track). Neither term enters `core/`.
 
-This session shipped the **role-fillable phrase resolution** subsystem and
-the **performer-facing capture state machine** (arm/disarm + mark-in /
-mark-out) with full UI wiring, then closed out the plan's "Remaining open
-item" by completing the Whitepaper V2 worked-example consistency check.
-**213 tests pass; the build is warning-free for any source we control.**
+With vocabulary settled, the session shipped the **data-model
+groundwork** the kickoff brief asked for: an `InputKind` enum, an
+`InputDescriptor` struct, and a `TapeId` retrofit on `CaptureRegion`
+and `CaptureSession::markIn`. UI mockups deferred to the next session
+by design.
 
-**Next session opens with a design discussion**, not code. The user has
-asked for a professional approach to how Sirius Looper presents its
-*inputs* — the "tracks" the system sees, in the user's vocabulary. The
-white paper specifies the input topology in §6.2 (one tape per input,
-audio / video / MIDI / control / automation / transport / system) but
-the current UI surfaces none of it, and `CaptureRegion` itself is
-missing the `TapeId` field that says which input a captured region came
-from. Full kickoff brief is in **"Suggested First Move Next Session §0"
-— design the track / input UX**, below.
+**219 tests pass (up from 213); 4031 assertions (up from 3983); zero
+compiler warnings from sources we control.** Build is clean from
+`rm -rf build` through `cmake --build build`.
 
-Three items are deferred to `todo.md` with full diagnostic detail
-and sequenced after the kickoff:
+**Next session opens with the UI design work** — the actual Pill
+placement on a song timeline, the track-strip visual grammar, the
+per-track-vs-group arm question, and where Loop Constituents appear
+in the UI relative to the Pill that contains them. Detailed kickoff
+brief at **"Suggested First Move Next Session §0"** below.
 
-1. The macOS Load-dialog TCC bug (still unresolved — see below).
-2. The capture flow's visual-confirmation gap and region-promotion-to-
-   Constituent step (added this session). **Gated on the kickoff**: a
-   Loop Constituent needs to point at the real `TapeId` it was
-   captured from, which doesn't exist until the Track model lands.
-3. Session-as-directory format from Whitepaper V2 §7.8 (M4 expansion).
+This session's plan is preserved at
+`/Users/larryseyer/.claude/plans/read-continue-md-and-the-delightful-torvalds.md`
+and is the authoritative reference for the vocabulary decisions, the
+Pill visual contract, and the storage-cost addendum.
 
-## ⚠ Open bug carried into the next session
+## Vocabulary, settled
 
-**Load dialog still cannot select `.sirius.json` files on macOS.** Even
-with the four `NS*FolderUsageDescription` keys in the Info.plist (commit
-`ff6935c`), the macOS NSOpenPanel greys out the saved file. The working
-hypothesis is that the ad-hoc-signed bundle is below macOS's trust
-threshold to receive a TCC permission prompt, so the plist keys are
-present but inert — no TCC record ever gets created. Save side works.
+These three words now have stable agreed meanings. They are
+**conversation + UI vocabulary**, not white-paper terms. The white
+paper is treated as solid; this layer sits on top of it.
 
-The diagnostic ladder, every prior attempt, and the three concrete
-next-step options (Developer ID signing + entitlements, investigate the
-`.png`-vs-`.json` asymmetry, or ship a drag-and-drop fallback path) live
-in `todo.md` under the **"2026-05-15 — Load dialog still cannot select
-`.sirius.json` on macOS"** entry. Start there.
+| Spoken / UI word | What it actually is in code |
+|---|---|
+| **Track** | A `Tape` plus its `InputDescriptor` (one row in the input topology). UI-layer label for an input strip; **no `Track` type in `core/`**. |
+| **Pill** | The visual representation of a `Constituent` carrying `PhraseMetadata` (a Phrase, per white paper §8). UI-layer label only; the data type stays `Constituent`. Name + look come from OTTO (`/Users/larryseyer/AudioDevelopment/OTTO`); in Sirius the *shape* carries over, the *content* expands to the full Phrase Constituent. |
+| **Region** | Reaper word the user may use casually; closest match in Sirius is a Phrase Constituent (i.e. a Pill). |
 
-## What shipped this session (commits past the deferred bug)
+### Pill visual contract (recorded so the data model does not foreclose it)
+
+A Pill is a horizontal capsule on a song timeline arranged in rows
+similar to Reaper tracks (but rows are not "tracks" in the data sense).
+Each Pill surfaces:
+
+- **Top-left** — loops within this Phrase (count or compact list).
+  Backed by §7.2 (a Phrase Constituent contains Loops).
+- **Top-right** — phrase loop on/off. Backed by §10 repetition rules,
+  collapsed glanceably to a toggle.
+- **Bottom-left** — leading (entrance) phrase. Backed by §8.5
+  grammatical links and §8.7 (entrance is part of the phrase).
+- **Bottom-right** — exit phrase. Backed by §8.7.
+- **Center, vertically and horizontally** — Pill name from
+  `PhraseMetadata`.
+
+Future UI question: §8.5 allows multiple grammatical links; four
+corners imply one *primary* entrance and one *primary* exit. The
+preparation-mode surface will need a way to expose the rest.
+
+### Reserved future-commitment: OTTO bundled inside Sirius
+
+OTTO will ship inside Sirius as the rhythm device / click track. The
+Pill idiom carries over from OTTO directly. **Licensing is IDENTICAL
+to OTTO's** — re-use the existing license verbatim; do not design a
+new one. Saved as a project memory at
+`.claude/projects/-Users-larryseyer-Sirius-Looper/memory/project_sirius_branding_and_otto.md`.
+
+**Project shorthand in conversation is "Sirius"** (the on-disk name
+`Sirius Looper` and the white-paper title stay as they are; this is
+just spoken vocabulary).
+
+## What shipped this session
 
 | Commit | Subject |
 |---|---|
-| `1713345` | feat: role-fillable phrase resolution — `findCandidatesFor` + `resolveFirst` |
-| `17915c4` | feat: CaptureSession state machine + Arm/Disarm button in bottom bar |
-| `2499273` | feat: Mark In / Mark Out buttons drive the capture session from the playhead |
-| `839bc73` | chore: defer capture-completion visual feedback + region promotion to `todo.md` |
-| `6d121d7` | chore: complete V2 worked-example consistency check; record §7.8 directory-format divergence |
+| `e222208` | feat: InputKind + InputDescriptor; CaptureRegion + markIn carry TapeId |
 
-### Role-fillable phrase resolution (M3 follow-on)
+### `InputKind` enum (new)
 
-`core/include/sirius/RoleResolver.h` exposes two pure functions over
-`Constituent::ChildPtr` pools:
+`core/include/sirius/InputKind.h` — seven values, one per category in
+the white paper §6.2 enumeration of input sources: `Audio`, `Video`,
+`Midi`, `Control`, `ParameterAutomation`, `Transport`, `System`. Header-
+only. JUCE-free. Comment names the data-layer / structure-layer split
+and pins down that `Tape<T>` does not know about `InputKind`.
 
-- `findCandidatesFor(slot, pool)` — returns every `ConstituentId` in
-  `pool` whose Constituent carries `PhraseMetadata`, is marked
-  `isRoleFillable`, and matches `slot.role()`. Stable order (pool's
-  enumeration order). Engine deliberately enumerates rather than picks
-  — Whitepaper 8.4 reserves the actual choice for the performer.
-- `resolveFirst(slot, pool)` — convenience: returns `slot` filled with
-  the first eligible candidate, or unchanged if none. The trivial
-  default policy.
+### `InputDescriptor` struct (new)
 
-9 tests, 24 assertions. Pool order, role mismatch, `isRoleFillable=false`,
-non-phrase Constituents, null entries, and the no-match fallback are
-all pinned down.
+`core/include/sirius/InputDescriptor.h` — free-standing metadata that
+pairs a `TapeId` with `InputKind`, a `std::string displayName`, and
+`std::optional<int> channelOrPortIndex` (intentionally optional —
+`Transport` and `System` tapes have no channel or port concept).
 
-### Capture state machine + UI (white paper 14.5 / 14.6)
+The descriptor honors white paper §7.2: `Tape<T>` stays heavy,
+immutable data and does not know about descriptors; the descriptor
+points *at* a tape by id. A session-level descriptor registry can come
+later when there is a UI to populate it.
 
-`core/include/sirius/CaptureSession.h` is a pure state machine, JUCE-free.
+### `CaptureRegion` retrofit + `CaptureSession::markIn` signature
 
-States: `Disarmed` (default), `Armed`, `AwaitingOut`. Events: `arm()`,
-`disarm()`, `markIn(Rational)`, `markOut(Rational) → optional<CaptureRegion>`,
-`cancel()`. `CaptureRegion = { Rational inLmcSeconds, outLmcSeconds }`.
-Default-constructed state is `Disarmed` — nothing is captured by
-surprise. 13 tests, 63 assertions; every transition (including
-no-ops, in-point replacement, and the t<=in rejection in markOut)
-pinned down.
+`core/include/sirius/CaptureSession.h` and `core/src/CaptureSession.cpp`:
 
-UI wiring in `app/MainComponent.cpp`:
+- `CaptureRegion` is now `{ TapeId tape, Rational inLmcSeconds,
+  Rational outLmcSeconds }`. The original `{ in, out }` shipped without
+  a tape identity — the bug I planted last session, now closed.
+- `CaptureSession::markIn` grew a `TapeId` parameter:
+  `bool markIn (Rational t, TapeId tape)`. `AwaitingOut` now pins both
+  `pendingIn_` *and* `pendingTape_`; both are cleared together on
+  `disarm` / `cancel` / a successful `markOut`.
+- `markOut` signature is unchanged. It stamps the **last** pinned tape
+  into the returned region — so a performer who marks an in on track 2,
+  changes their mind, and re-marks on track 5 before committing,
+  produces a region carrying track 5.
+- New accessor `pendingTape()` mirrors `pendingIn()`.
 
-- Bottom bar (visible across all four tabs): **Arm | Mark In | Mark Out |
-  Undo | Redo | playhead | time**.
-- **Arm** flips red/grey, label flips Arm/Disarm.
-- **Mark In** enabled iff `isArmed()`. Multiple presses replace the
-  pending in-point.
-- **Mark Out** enabled iff `isCapturing()`. Successful close pushes the
-  `CaptureRegion` into `MainComponent::capturedRegions_`.
-- Preparation-tab diagnostics surface state textually:
-  `Capture: armed, no in-point set    Regions: 2  (last: 1.20 s → 4.50 s, 3.30 s long)`.
+### Test coverage
 
-**LMC time source:** the playhead value, until M2 audio wiring lands.
-Documented in `onMarkIn` / `onMarkOut` comments.
+- `tests/InputDescriptorTests.cpp` (new, 5 test cases): construction
+  + equality of fields, optional channel absent for Transport / System,
+  parameter-automation / control / video round-trip, unicode-in-
+  displayName preserved.
+- `tests/CaptureSessionTests.cpp` updated: every existing test now
+  passes a `TapeId` into `markIn`; a *new* case
+  `"markOut stamps the tape that was pinned by the *last* markIn"`
+  pins down the switch-tracks-before-committing semantics; the second-
+  `markIn` test grew two sections covering same-tape and different-
+  tape replacement.
 
-**What's not yet wired:** when M2 wires the real audio path, the
-inbound membrane will gate writes to tape on `captureSession_.isArmed()`
-and `markIn`/`markOut` will receive real LMC times from the clock —
-not the playhead. A `CaptureRegion` will then become an undoable edit
-that adds a Loop Constituent to the current tree. Today the regions
-are RAM-only visualization. See `todo.md` "Mark Out should announce
-the new region visibly" — that entry has the promotion plan.
+### `MainComponent` integration (documented placeholder)
 
-### Whitepaper V2 Appendix C consistency check (plan's Remaining open item)
+`app/MainComponent.cpp:onMarkIn` passes `sirius::TapeId{0}` as a
+documented placeholder until the track UI lands and the bottom bar can
+identify which input the gesture targets. The comment parallels the
+existing playhead-as-LMC-stand-in pattern — a real value flows through
+once the surrounding subsystem is wired.
 
-The plan's "Remaining open item" was to verify V2 worked examples
-(C.1 twelve-bar blues, C.2 4-against-7 polymetric phrase) against
-the M1 `Constituent` / `Tape` struct definitions. **Check is
-complete: every field used in C.1 and C.2 is representable in the
-current structs.** Detailed mapping is in `todo.md`. One real
-divergence found and recorded: V2 §7.8 specifies a session as a
-directory (`my-session.sirius/` with `session.json`, `tapes/`,
-`calibration/`, `lmc-discipline.json`); code writes a single
-`session.sirius.json`. Refactor is described in `todo.md` and is
-gated on first resolving the Load dialog TCC bug.
+## Conceptual moments worth preserving
 
-## Current Test / Build State
+These came up in conversation this session and matter for next time.
 
-**213 tests pass, 3983 assertions.** Zero compiler warnings from any
-source we control. Clean builds throughout this session — incremental
-builds were proven unreliable for this project (clangd / LaunchServices
-caching can mask real changes), and the rule is now memorialised in
-[user memory](file:///Users/larryseyer/.claude/projects/-Users-larryseyer-Sirius-Looper/memory/feedback_clean_builds.md).
+### 1. The "track" word is the one Reaper term Sirius rejects
 
-Run them yourself:
+Whitepaper Appendix E.2 explicitly carves out "track" as a trap word:
+Reaper's track conflates four jobs Sirius deliberately splits —
+recording destination (→ **tape**), content container (→
+**Constituents**), FX chain (→ each Constituent's `effect_chain`),
+automation (→ **parameter tapes**). The user explicitly elected to
+keep "track" as a UI-only word for performer comfort while keeping
+the four-way split intact in code. Both halves of the decision are
+important.
+
+### 2. "Tape" ≠ "Reaper Track"
+
+Mid-session the user asked, "When you say 'tape', is that the same
+thing as what I am calling a Reaper Track?" The right answer is no —
+a tape is one of the four jobs a Reaper Track does (the recording-
+destination job), and even on that one job tapes behave differently
+(always recording, never armed, append-only, immutable). The other
+three jobs live elsewhere in Sirius. When the user says "track" in
+conversation, the data behind it is **one Tape + one InputDescriptor**;
+the Constituents that play *from* that tape live separately.
+
+### 3. Storage cost is not a new problem
+
+Mid plan-approval the user paused to ask whether timestamping every
+event makes files explode. The answer (now in the plan file under
+"Storage cost") is that `TapeEvent` is the **API** shape, not the
+**on-disk** format. Audio tapes will use codec-native files
+(WAV/CAF/FLAC) with a tape header carrying `start_lmc` + `sample_rate`;
+per-sample timestamps are *computed* on query, not stored. Storage
+volume is the same order of magnitude as any DAW (~0.52 GB/hour/
+channel uncompressed PCM; ~0.26 GB/hour/channel FLAC; §6.5 has the
+arithmetic). Sparse-event tapes (MIDI / control / automation /
+transport / system) *do* carry per-event timestamps because events
+are irregular, but their volume is kilobytes per hour. The on-disk
+tape format is **not yet built** — current implementation is RAM-
+only `std::vector<Event>` — and is the right thing to commit to when
+the V2 §7.8 session-as-directory refactor lands (currently deferred
+behind the macOS Load-dialog TCC bug).
+
+## Current test / build state
+
+**219 tests pass, 4031 assertions** (prior baseline: 213 / 3983).
+Zero compiler warnings from any source we control. Clean builds
+throughout, per the user-memory rule about incremental builds being
+unreliable in this project.
 
 ```bash
 cd "/Users/larryseyer/Sirius Looper"
 rm -rf build && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
-./build/tests/SiriusTests                           # 213/213
+./build/tests/SiriusTests                            # 219/219
 open "build/app/SiriusLooper_artefacts/Release/Sirius Looper.app"
 ```
 
@@ -146,214 +205,146 @@ open "build/app/SiriusLooper_artefacts/Release/Sirius Looper.app"
 | Milestone | Status |
 |---|---|
 | M0 — skeleton + CI | unchanged: operator owes FFmpeg spike + window-launch + remote-push CI |
-| M1 — conceptual-time core | unchanged: done; V2 consistency check now also done |
-| M2 — real-time foundation, membrane, ASRC | unchanged: headless half done; operator owes device wiring, loopback calibration, in→tape→loop test |
-| M3 — Constituent hierarchy + arrangement + render pipeline + minimal UI | **expanded**: role-fillable resolution shipped (RoleResolver) |
-| M4 — persistence + capability tiers + overload protection | unchanged: done within current single-file scope; V2 §7.8 directory format deferred |
-| M5 — plugin hosting + parameter view | unchanged: operator owes real-plugin scan + automation round-trip |
-| M6 — video | unchanged: data model + membrane done; operator owes the full FFmpeg pipeline |
-| M7 — full UI | **expanded**: arm/disarm + mark-in/out gestures shipped; gesture-loop wiring and real latency measurement still operator-side |
-| M8 — ensemble | unchanged: data model done; operator owes the real network transport and two-node test |
-| App wiring | **expanded**: bottom bar now drives the capture session; Load dialog filter bug still pending |
+| M1 — conceptual-time core | unchanged: done |
+| M2 — real-time foundation, membrane, ASRC | unchanged: headless half done; operator owes device wiring + loopback calibration + in→tape→loop test |
+| M3 — Constituent hierarchy + arrangement + render pipeline + minimal UI | **expanded**: input-topology metadata (InputKind + InputDescriptor) shipped; CaptureRegion + markIn now carry TapeId |
+| M4 — persistence + capability tiers + overload protection | unchanged: done within current single-file scope; §7.8 directory format still deferred |
+| M5 — plugin hosting + parameter view | unchanged |
+| M6 — video | unchanged |
+| M7 — full UI | unchanged in code; **enabled** in data model — track-strip UI work is now unblocked from the data side |
+| M8 — ensemble | unchanged |
 
-**Operator-verification matrix:** each milestone with operator-deferred
-work has a dated block in `todo.md` enumerating files, what was deferred,
-why, what's needed to finish, and what headless verification has already
-been done. Direct pointers:
+## The standalone app today
 
-- M0 / M2 / M3 / M5 / M6 / M7 / M8 operator-side work → `### 2026-05-14`
-  blocks in `todo.md` (one per milestone).
-- macOS Load-dialog TCC bug → `### 2026-05-15 — Load dialog still cannot
-  select .sirius.json on macOS`.
-- Capture-region promotion + visual feedback → `### 2026-05-15 — Mark
-  Out should announce the new region visibly`.
-- Session-as-directory format (V2 §7.8) → `### 2026-05-15 — Session
-  directory format`.
-
-## What's Inside Each Library (additions this session)
-
-```
-core/         Added: RoleResolver (findCandidatesFor + resolveFirst),
-              CaptureSession (Disarmed/Armed/AwaitingOut state machine
-              producing CaptureRegion on a successful markIn/markOut
-              pair). Both JUCE-free; both purely unit-tested.
-app/          MainComponent now owns a CaptureSession and a vector of
-              captured regions; bottom bar exposes Arm / Mark In /
-              Mark Out alongside the existing Undo / Redo and playhead.
-tests/        Added: RoleResolverTests.cpp (9 cases),
-              CaptureSessionTests.cpp (13 cases).
-```
-
-The other libraries are unchanged from the prior continuation.
-
-## The Standalone App Today
-
-Four tabs as before (Performance / Preparation / Plugins / Video) and
-the bottom control bar with the new capture-related buttons:
+Unchanged visually from the prior session. Four tabs (Performance /
+Preparation / Plugins / Video) with the bottom control bar:
 
 ```
 [ Arm | Mark In | Mark Out ] [ Undo | Redo ] [ ============= playhead ============= ] [ time ]
 ```
 
-Performance tab — unchanged from prior continuation; PerformanceView
-centered, updates as you drag the playhead.
+The only functional difference is invisible: regions produced by
+`Mark Out` now silently carry `TapeId{0}` as a placeholder. The
+Preparation-tab diagnostics block does not yet render the tape id;
+that is part of the next session's UI work.
 
-Preparation tab — Save / Load / Reload-demo buttons + status label up
-top; PreparationView in the middle; the diagnostics block at the
-bottom is now four lines:
+## Suggested first move next session
 
-```
-Tier: Survival  (..., ring 5s)
-UI tick jitter: mean 0.42 ms, worst 1.78 ms, 100.0% within 30 ms
-Undo: 1 / 1
-Capture: disarmed    Regions: 0
-```
+### 0. KICKOFF — UI design: track strip + Pill placement (user-requested)
 
-Plugins / Video tabs unchanged.
+**The data model is ready; this is now the UI session.** Specific
+questions to walk through, in approximately this order:
 
-## Suggested First Move Next Session
+1. **Track-strip visual layout.** Horizontal rows on a song timeline
+   à la Reaper. Each row represents one Tape + InputDescriptor.
+   What's on the strip? The user has previously implied: kind icon /
+   color, display name, level meter for audio, frame preview for
+   video, blinking dot for armed-and-capturing, retroactive-ring
+   depth indicator. Mockup-comparison time.
 
-### 0. KICKOFF — design the track / input UX (user-requested priority)
+2. **Heterogeneous-type visual grammar.** Audio, video, MIDI,
+   control, parameter automation, transport, system tapes share one
+   row idiom but need distinct visuals — color band, kind icon, and
+   maybe row height. The Pill placement above the strip should be
+   the same across kinds.
 
-**Before any further code, the next session opens with a design
-discussion of how Sirius Looper presents its inputs to the user.** The
-user flagged this directly at the end of the prior session: *"We have
-not discussed the user interface... and the concept of 'tracks' which
-is what I'm calling the various 'inputs' Sirius Looper 'sees'."* The
-current UI surfaces zero of the input topology, and the gap shows up
-in the code already shipped.
+3. **Where Pills live.** On the song timeline, anchored to a row
+   (which means a tape; but a Pill is a Phrase Constituent that may
+   contain content from *multiple* tapes — so anchoring is a UI
+   choice, not a data fact). Open question: do Pills span rows
+   visually, or live on a "primary" row?
 
-**What the white paper specifies (§6.2):** every signal is a tape,
-one tape per input, all carrying the uniform format
-`TapeEvent { conceptual_timestamp, lmc_timestamp, tape_id, payload }`.
-The taxonomy is explicit:
+4. **Per-track vs group arm.** Today `CaptureSession` is monolithic
+   and `MainComponent` passes `TapeId{0}` as a placeholder. The next
+   step *might* be a per-tape `CaptureSession` map + group-arm
+   gesture, *or* it might be a track selector that the global session
+   pulls its TapeId from. Both are viable; the UI mockup will force
+   a choice.
 
-- **Audio inputs** — one tape per channel, dense PCM payload
-- **Video inputs** — one tape per camera, frame payload
-- **MIDI inputs** — one tape per port, event payload
-- **Control surface events** — footswitches, knobs, pads, faders
-- **Parameter automation** — one tape per automatable parameter
-- **Transport events** — session start, tempo changes, section markers
-- **System events** — clock discipline changes, device hot-plugs
+5. **Where Loop Constituents appear** when a CaptureRegion is
+   promoted. Inbox? On the originating row? On a focused phrase?
+   White paper does not pin this down; see Open Questions.
 
-**What the data model has:** `Tape<T>` (generic), `TapeId`,
-`TapeReference`, `Tape<VideoFrame>`, `Tape<ParameterEvent>`. The
-*shape* of the model matches the white paper; specific payload types
-beyond Video and Parameter (audio frames, MIDI events, control events,
-transport events, system events) are not yet declared.
+**Recommended deliverable shape:** three or four ASCII / image
+mockups, side-by-side, of one tab (probably Preparation expanded
+into a timeline view) showing the same content under different
+layout choices. User picks a direction; only then does JUCE code
+start. The point is the layout decision, not the code.
 
-**Three concrete gaps that need design decisions before code:**
+### 1. Once the UI direction is picked
 
-1. **`CaptureRegion` is missing `TapeId`.** I shipped it this session
-   as `{ inLmcSeconds, outLmcSeconds }` — no field saying which input
-   the region came from. That is a bug I planted; before the capture
-   flow is professional it must be `{ TapeId tape, Rational in,
-   Rational out }`. One-commit fix once the broader Track model lands.
+The promotion of `CaptureRegion` → Loop Constituent (a `todo.md`
+entry from the prior session) is now **partially unblocked**: a
+region knows its `TapeId`, which is what a Loop's `TapeReference`
+needs. Promotion is gated only on the UI choosing where the new
+Loop attaches. That's another reason this is a UI-first session.
 
-2. **No "track" / input-descriptor concept exists in code.** No
-   `InputDescriptor { TapeId, kind (Audio/Video/MIDI/Control/...), display
-   name, channel index, … }`, no list of tracks anywhere, no UI surface
-   for "here are the inputs Sirius sees." The white paper does not
-   name the descriptor type; the design choice is ours.
+### 2. macOS Load-dialog TCC bug (still blocked)
 
-3. **The capture state machine is monolithic.** One arm-state, one
-   pending in-point, globally. The white paper architecture is
-   per-tape: each tape always running, with its own retroactive ring.
-   Arming and marking are really per-track gestures, possibly grouped
-   (e.g. "arm tracks 1 + 3"), not a single global toggle. Once the
-   `Track` model exists, `CaptureSession` either becomes per-track
-   or wraps a `std::map<TapeId, CaptureSession>` with group commands.
-
-**Recommended sequencing (tradeoff): build the data model first, then
-talk UI.** Pure-data steps in `core/`:
-
-1. Declare an `InputKind` enum (Audio / Video / Midi / Control /
-   ParameterAutomation / Transport / System).
-2. Declare a `Track` (or `InputDescriptor`) struct with `TapeId`,
-   `InputKind`, display name, and any kind-specific channel / port
-   index. JUCE-free, plain data, testable.
-3. Retrofit `CaptureRegion` to carry `TapeId`.
-4. Keep the existing global `CaptureSession` for now and add per-track
-   when M2 (real audio path) is operator-wired. Avoids designing per-
-   track gestures against no real audio.
-
-UI work follows the data model and is the right place for the
-user's "professional approach" judgement — track strip layout, per-
-track arm vs. group arm, MIDI vs. audio visual distinction, video
-preview as a track, are all open. Expect the next session to start
-with a side-by-side comparison of three or four UI mockups before any
-JUCE code is touched.
-
-**Related open questions to bring into the kickoff** (already in the
-Open Questions section below): performer-side role-fillable phrase UX
-and capture-region promotion UX. Both overlap with the track-strip
-question — wherever tracks live in the UI is also a candidate home
-for the role-slot eligible-candidate list and the captured-region
-inbox.
-
-### 1. Load dialog TCC bug (deferred from prior session)
-
-The Load dialog TCC bug remains the top blocker for save/load
-ergonomics. See `todo.md` for the three concrete next-step options
-— Developer ID + entitlements is the most likely path; the asymmetry
-investigation (why `.png` was selectable while `.json` and `.md` were
-not, in the same dialog) is the quickest diagnostic if you'd rather
-not introduce signing yet.
-
-### 2. CaptureRegion → Loop Constituent promotion
-
-The priority capture-flow deferral is **promotion of a CaptureRegion
-into a Loop Constituent** (the third subitem of the "Mark Out should
-announce the new region visibly" entry in `todo.md`). That makes
-captures actually useful — currently a `Mark Out` produces a region
-that evaporates on app exit. Promotion would push an undoable edit
-onto the undo stack, attach the new Loop into the active phrase, and
-would close the capture loop end-to-end. **Gated on the Track model
-above**, because a Loop Constituent's `TapeReference` needs to point
-at the actual `TapeId` the region was captured from.
+Unchanged from the prior session. See `todo.md`:
+*"2026-05-15 — Load dialog still cannot select `.sirius.json` on
+macOS"*. Three concrete next steps remain on the table; the
+Developer-ID + entitlements path is the most likely fix; the
+`.png`-vs-`.json` asymmetry is the quickest diagnostic if you want
+to investigate before adding signing.
 
 ### 3. Session-as-directory refactor (V2 §7.8)
 
-Gated on the Load-dialog bug being resolved first — that work touches
-the same Save/Load code path.
+Still gated on the Load-dialog bug being resolved first — same code
+path. Also the natural moment to commit to the on-disk tape format
+(see *"Storage cost"* discussion above).
 
-## Open Questions (carry-forward)
+## Open questions (carry-forward)
 
-- **Track / input UI design** — *the umbrella user-experience question
-  for the next session.* Promoted to "Suggested First Move §0" above.
-  Subsumes the per-track-vs-global arm question, the track-strip
-  visual layout, the MIDI/audio/video kind distinction, and how a
-  track surfaces its retroactive ring depth and current capture state.
-  The user has explicitly asked for a "professional approach" here —
-  expect mockups before code.
-- **M6 video format strategy** — unchanged. Custom video tape format +
-  intra-frame codec choice; best decided after the FFmpeg spike.
-- **M8 transport choice** — unchanged. Plan deliberately does not
-  commit. OSC over UDP and Ableton Link's discovery layer are still
-  the two plausible candidates.
-- **Performer-side role-fillable phrase UX** — engine half shipped this
-  session as `RoleResolver`; the *runtime* UX (how does the performer
-  choose which eligible candidate fills a slot, in the moment, eyes-
-  free?) remains genuinely novel and untested per Whitepaper 15.3
-  ("Structured improvisation interfaces"). Likely needs a hardware-
-  control-surface decision (footswitch ordering, pad assignment, etc.)
-  before any UI work pays off. Likely lives inside the track UI once
-  that exists — a role-fillable phrase is per-track content.
-- **Capture-region promotion UX** — *new* last session. When a region
-  is promoted to a Loop Constituent, where does it attach? Into the
-  currently-focused Constituent? Into a "captures" inbox? Into the
-  root? White paper does not specify; the answer is downstream of
-  the track-UI decision and should be made together with it.
+- **Track-strip UI** — promoted to §0 above. All sub-questions
+  (per-track arm gestures, kind-distinct visuals, Pill anchoring,
+  level meter inclusion) live there.
+- **Where promoted Loop Constituents attach** — the user has not
+  said. Likely answered together with the track-strip design.
+- **Performer-side role-fillable phrase UX** — engine shipped last
+  session (`RoleResolver`); the runtime UX (footswitch ordering,
+  pad assignment) remains genuinely novel. Likely lives on / near
+  the track strip once it exists.
+- **M6 video format strategy** — unchanged.
+- **M8 transport choice** — unchanged.
+- **Multiple grammatical links per Pill** — the four-corner contract
+  shows one entrance + one exit; §8.5 allows N of each. Preparation
+  mode needs a way to expose the rest. Open.
 
-## Key Decisions Made This Session
+## Key decisions made this session
 
 | Decision | Rationale |
 |----------|-----------|
-| Role resolution returns the eligible *set*, with `resolveFirst` as a trivial default policy | White paper 8.4 — the performer picks, not the engine. |
-| CaptureSession defaults to `Disarmed` | Safe-by-default; nothing captured by surprise. User feedback: "User MUST be able to arm and disarm." |
-| Arm button lives in the bottom bar, not a tab | Always reachable (14.6). |
-| Mark In / Mark Out are siblings of Arm, not modal alternatives | Same reasoning — coarse, decisive, always reachable; the buttons grey out when not valid for the current state. |
-| Playhead value used as LMC stand-in for the markIn/markOut buttons | The app has no separate LMC clock until M2 wires real audio; the playhead is the only Rational-seconds source. Documented in code. |
-| `CaptureSession::markOut` rejects t <= in | Likely accidental tap; let the performer try again with a valid out, don't silently close a zero-or-negative-length region. |
-| `disarm` from `AwaitingOut` discards the pending in-point | Hard stand-down. If the performer wants to keep the in-point but pause, they should `cancel` (returns to Armed) instead. |
-| V2 §7.8 directory format documented in `todo.md`, not refactored now | Stacking that refactor on top of the unresolved Load-dialog TCC bug increases the unknown surface. Sequence them: bug first, then refactor. |
+| "Track" is UI-only; no `Track` type in `core/` | Whitepaper Appendix E.2 rejects the word in the data model because Reaper's track conflates four jobs Sirius keeps split. UI-only keeps the performer's vocabulary while honoring the split. |
+| Data model first, no UI this session | Sequencing recommendation from the prior continue.md §0 — smallest unknown surface, lets UI work be informed by real types. |
+| `CaptureSession` stays global; per-tape deferred to M2 | Per-tape capture gestures only make sense with a track UI to drive them. The data model required to make per-tape possible later is just `CaptureRegion` carrying `TapeId` — which we added. |
+| New tape payload types (Audio / MIDI / Control / Transport / System) deferred | They're real DSP commitments gated on M2 (audio path) and on per-protocol design. `InputKind` + `InputDescriptor` is sufficient metadata to drive next session's UI design. |
+| `InputDescriptor` is free-standing; `Tape<T>` unchanged | Honors white paper §7.2: tapes are heavy data, descriptors are light metadata. Tape<T> does not know about descriptors. |
+| `markIn` grows `TapeId` param; `AwaitingOut` pins both pendingIn and pendingTape | The tape identity is part of the gesture from the moment it's made. `markOut` stamps the *last* pinned tape, which matches the switch-tracks-before-committing performer scenario. |
+| `MainComponent` uses `TapeId{0}` as documented placeholder | Parallels the existing playhead-as-LMC-stand-in pattern. Real TapeIds flow through once track UI lands. |
+| "Pill" reserved as the UI word for Phrase Constituent; OTTO 4-corner contract codified | OTTO ships bundled inside Sirius (confirmed); reusing the visual idiom buys familiarity at zero cost. Content expands beyond OTTO's MIDI patterns to the full Phrase Constituent. |
+| Storage strategy discussion — answered, deferred | `TapeEvent` is the API, not on-disk. Audio uses codec files with computed timestamps; sparse-event tapes carry per-event timestamps. Real commitment lands with the V2 §7.8 directory refactor. |
+| Project shorthand "Sirius"; licensing IDENTICAL to OTTO's | User explicit. Saved as a project memory. |
+
+## Commands to restore working state next session
+
+```bash
+cd "/Users/larryseyer/Sirius Looper"
+rm -rf build && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+./build/tests/SiriusTests
+# expect: 219 / 219 pass, 4031 assertions
+```
+
+Authoritative references for the next session:
+
+- This file (`continue.md`).
+- The session plan:
+  `/Users/larryseyer/.claude/plans/read-continue-md-and-the-delightful-torvalds.md`.
+- `todo.md` — open deferrals, Load-dialog bug, session-as-directory
+  format, region-promotion plan.
+- `Sirius Looper Whitepaper V2.md` §6 (tapes), §8 (phrases),
+  §14 (the performer's instrument), Appendix E (Reaper terminology
+  map).
+- Project memory:
+  `.claude/projects/-Users-larryseyer-Sirius-Looper/memory/project_sirius_branding_and_otto.md`.
