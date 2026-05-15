@@ -264,3 +264,64 @@ already held (same licensing model as the sister app OTTO; see
   start case) — 191 tests pass total. The `VideoPreview` JUCE component
   is a thin letterboxing renderer that takes a `juce::Image`; producing
   that image from a `VideoFrame` is the FFmpeg-bound work above.
+
+### 2026-05-15 — Load dialog still cannot select `.sirius.json` on macOS
+
+- **Files:** `app/MainComponent.cpp` (`chooseFileAndLoad`),
+  `app/CMakeLists.txt` (the `PLIST_TO_MERGE` TCC keys).
+- **What was deferred:** the macOS NSOpenPanel greys out
+  `session.sirius.json` (and `.md` files) in `~/Downloads` no matter what
+  is tried. Save side writes the file fine; only Load is broken.
+- **What was already attempted (all failed):**
+  1. Filter `*.sirius.json;*.json` (commit `cad8cb9`).
+  2. Filter `*.json` (commit `f9deccc`).
+  3. Filter empty `juce::String()` (commit `c041936`). JUCE source review
+     showed this is *worse* — when `filters.size()==0`, the
+     `shouldEnableURL` delegate in
+     `juce_FileChooser_mac.mm:279-288` falls through to a
+     directory-only allow, so every non-directory greys out.
+  4. Filter `"*"` (uncommitted). JUCE source says this should pass both
+     `createAllowedTypesArray` (returns `nil`, no UTI restriction) and
+     the delegate's `matchesWildcard` check, allowing every file. In
+     practice the file was still greyed.
+  5. Non-native dialog via the `useOSNativeDialogBox=false` constructor
+     parameter (uncommitted). It worked but the UI is unacceptable and
+     additionally triggered the macOS TCC prompt for Downloads — which
+     is the diagnostic clue the bug isn't in the filter at all.
+  6. Added the four protected-folder TCC keys
+     (`NSDownloadsFolderUsageDescription`,
+     `NSDocumentsFolderUsageDescription`,
+     `NSDesktopFolderUsageDescription`,
+     `NSRemovableVolumesUsageDescription`) to the Info.plist via
+     JUCE's `PLIST_TO_MERGE`. Verified the keys land in
+     `Contents/Info.plist`. Still greyed.
+- **Working hypothesis:** the ad-hoc-signed bundle
+  (`codesign -dv` reports `flags=0x20002(adhoc,linker-signed)`,
+  `Signature=adhoc`, no entitlements) is not trusted enough by macOS
+  to receive the TCC permission prompt at all, so the keys we added
+  are present but inert. `tccutil reset` against the bundle ID does
+  nothing because no TCC record exists. The combination of "no
+  Developer ID signature + protected folder + ad-hoc bundle" appears
+  to be the failure mode.
+- **What's needed to finish:**
+  1. Sign the bundle with a Developer ID Application certificate (or
+     enable the hardened runtime + entitlements at minimum) so macOS
+     issues a TCC prompt. Quickest test: `codesign --sign - --deep
+     --force --entitlements <plist> "Sirius Looper.app"` with a
+     minimal entitlements file containing
+     `com.apple.security.files.user-selected.read-write`.
+  2. Or: investigate why `Elephant.png` was selectable while
+     `.sirius.json` / `.md` were greyed in the same panel. That
+     asymmetry suggests macOS may be applying a file-type-class
+     allowlist (images pass, opaque-data files don't) when the bundle
+     is below the trust threshold — independent of the JUCE filter.
+  3. Or: ship the load via a drag-and-drop target on the Preparation
+     pane (`FileDragAndDropTarget`) as a secondary path. The user
+     drags `session.sirius.json` from Finder onto the app window;
+     bypasses NSOpenPanel entirely. Save stays as-is.
+- **Out of scope until then:** continuing with the rest of the headless
+  coding work. Returning to this bug after that is finished.
+- **State left in tree:** `app/CMakeLists.txt` has the TCC keys
+  committed; `app/MainComponent.cpp::chooseFileAndLoad` is restored to
+  the simple `"*.json"` filter (matches the f9deccc baseline before the
+  empty-filter experiment).

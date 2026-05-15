@@ -21,7 +21,20 @@ juce_add_gui_app(SiriusLooper
     PRODUCT_NAME "Sirius Looper"
     COMPANY_NAME "Larry Seyer"
     BUNDLE_ID com.larryseyer.siriuslooper
-    VERSION ${PROJECT_VERSION})
+    VERSION ${PROJECT_VERSION}
+    # macOS TCC: without these usage-description keys the system silently
+    # greys out files in the user's Downloads / Documents / Desktop folders
+    # and on removable volumes, even with NSOpenPanel.
+    PLIST_TO_MERGE "<plist version=\"1.0\"><dict>\
+<key>NSDownloadsFolderUsageDescription</key>\
+<string>Sirius Looper needs access to your Downloads folder so you can load and save session files there.</string>\
+<key>NSDocumentsFolderUsageDescription</key>\
+<string>Sirius Looper needs access to your Documents folder so you can load and save session files there.</string>\
+<key>NSDesktopFolderUsageDescription</key>\
+<string>Sirius Looper needs access to your Desktop so you can load and save session files there.</string>\
+<key>NSRemovableVolumesUsageDescription</key>\
+<string>Sirius Looper needs access to removable volumes so you can load and save session files on external drives.</string>\
+</dict></plist>")
 
 target_sources(SiriusLooper PRIVATE
     Main.cpp
