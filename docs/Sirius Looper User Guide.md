@@ -189,9 +189,9 @@ to the existing Phrases.
   affordance. Today the Preparation tab still surfaces tape rows by
   default. Future versions move tapes underneath a phrase-centric
   primary view.
-- **Naming and editing Phrases.** Today Phrases get a default name
-  (`capture`); editing the role / intent / grammar is a future
-  Preparation-pane feature.
+- **Naming and editing Phrases.** Today minted Phrases get a default
+  *role* of `capture` and an empty name; editing the name / role / intent /
+  grammar is a future Preparation-pane feature.
 - **Capture-history widget.** Superseded by auto-promotion — captures
   are now Pills on the timeline, which serve the same need as a
   history list.

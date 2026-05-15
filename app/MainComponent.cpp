@@ -793,6 +793,13 @@ void MainComponent::onRedo()
         // If the prior onUndo restored AwaitingOut, redo must clear it again or
         // the next Mark Out would close a phantom region and create a duplicate
         // Loop on top of the just-redone tree.
+        //
+        // Edge case: if the operator set a *new* Mark In after the undo (i.e.
+        // pendingIn now diverges from the restore point), this cancel still
+        // fires and silently discards the fresh in-point. The redone tree is
+        // the authoritative state in that case — the operator's "I'm starting
+        // a different capture" intent loses to the "go back to the promoted
+        // state" intent. Worth noting; not currently surfaced to the operator.
         if (undoStack_.currentEntryRestorePoint().has_value())
             captureSession_.cancel();
 

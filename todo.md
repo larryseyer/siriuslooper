@@ -1,5 +1,44 @@
 # Sirius Looper — Deferred Items
 
+### 2026-05-15 — DemoSession intro/outro violate Phrase-vs-Loop convention
+
+- **Files:** `app/DemoSession.cpp` (lines ~46-80), possibly
+  `tests/PreparationViewStateTests.cpp` and
+  `tests/TimelineViewStateTests.cpp` if any view-state assertions
+  depend on the current intro/outro shape.
+- **What was deferred:** The capture-promotion design (see
+  `docs/superpowers/specs/2026-05-15-capture-promotion-design.md` §1)
+  and the user guide chapter 1 both teach the convention "a Loop is a
+  leaf with `TapeReference`; a Phrase is a container with
+  `PhraseMetadata`; a Loop is never standalone in the tree." The
+  middle phrase in `DemoSession::buildDemoSession()` (the verse with
+  two layered Loop children) honours this. **The intro and outro do
+  not** — both attach `PhraseMetadata` *and* `TapeReference` to the
+  same Constituent, making them Phrase-AND-Loop hybrids that fit
+  neither category cleanly.
+- **Why deferred:** Restructuring intro/outro into Phrase shells with
+  single Loop children may touch view-state snapshot tests
+  (`PerformanceViewStateTests`, `TimelineViewStateTests`,
+  `PreparationViewStateTests`) and the `Regions:` diagnostic output
+  could shift. Worth doing as a focused commit, not at the tail of
+  the capture-promotion work session.
+- **Operational consequence today:** capturing into intro or outro
+  (Mark In with the playhead inside their span) lands a new Loop child
+  inside a Constituent that already has its own `TapeReference`. The
+  banner shows "Loop added to intro" — UX is fine; the data shape is
+  the inconsistency. `promotion::promote` still works correctly.
+- **What's needed to finish:**
+  1. Rewrite intro and outro to be Phrase-only shells, each containing
+     one `TapeReference`-bearing Loop child (mirror the verse's
+     structure).
+  2. Update any view-state test expectations that depend on the prior
+     shape.
+  3. Once green, the `findHostRecursive` walk in `core/src/Promotion.cpp`
+     could optionally tighten to `isPhrase() && !tapeReference()` —
+     the convention then becomes guarded by both the data and the
+     code, not just the data.
+- **Surfaced by:** final code review of capture-promotion (Important #1).
+
 ### 2026-05-15 — Shared-placement-with-per-instance-overlays architecture
 
 - **Files:** `core/include/sirius/Arrangement.h`,
