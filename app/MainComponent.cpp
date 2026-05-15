@@ -156,8 +156,20 @@ class MainComponent::CaptureBanner final : public juce::Component
 public:
     CaptureBanner()
     {
-        setInterceptsMouseClicks (false, false);
+        // Banner intercepts clicks while visible so the operator can tap it to
+        // undo a too-early Mark Out. Once the fade animator drives visibility
+        // to false, JUCE stops routing clicks here and the underlying tabbed
+        // content receives them again.
+        setInterceptsMouseClicks (true, false);
         setVisible (false);
+    }
+
+    std::function<void()> onUndoRequested;
+
+    void mouseDown (const juce::MouseEvent&) override
+    {
+        if (isVisible() && onUndoRequested)
+            onUndoRequested();
     }
 
     void show (const juce::String& message)
@@ -189,6 +201,16 @@ public:
                                       16.0f, juce::Font::bold));
         g.drawText (text_, getLocalBounds(),
                     juce::Justification::centred, false);
+
+        // Quieter right-aligned hint — same amber as the main label but with
+        // reduced alpha and a smaller font so it reads as guidance, not a
+        // prominent button.
+        g.setColour (juce::Colour (0xffffd24a).withAlpha (0.65f));
+        g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(),
+                                      12.0f, juce::Font::bold));
+        g.drawText ("\xe2\x86\xb6 Undo",
+                    getLocalBounds().reduced (12, 0),
+                    juce::Justification::centredRight, false);
     }
 
 private:
@@ -408,6 +430,7 @@ MainComponent::MainComponent()
     captureBanner_ = std::make_unique<CaptureBanner>();
     addAndMakeVisible (captureBanner_.get());
     captureBanner_->setVisible (false);
+    captureBanner_->onUndoRequested = [this] { onUndo(); };
 
     setSize (1024, 720);
 
