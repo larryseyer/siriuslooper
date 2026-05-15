@@ -149,6 +149,7 @@ PromotionResult promote (const Constituent&   root,
             .newRoot        = std::move (newRoot),
             .addedLoopId    = loopId,
             .mintedPhraseId = std::nullopt,
+            .hostPhraseName = hit->hostName,
             .undoLabel      = std::move (label),
         };
     }
@@ -181,6 +182,7 @@ PromotionResult promote (const Constituent&   root,
         .newRoot        = std::move (newRoot),
         .addedLoopId    = loopId,
         .mintedPhraseId = phraseId,
+        .hostPhraseName = std::nullopt,
         .undoLabel      = "capture phrase",
     };
 }

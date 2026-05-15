@@ -97,6 +97,7 @@ TEST_CASE ("promote into an existing Phrase adds a Loop child, no Phrase mint",
     CHECK_FALSE (result.mintedPhraseId.has_value());
     CHECK (result.addedLoopId.value() == 1000);  // first Counter id
     CHECK (result.undoLabel == "capture loop into verse");
+    CHECK (result.hostPhraseName.value() == "verse");
 
     // The new root should have one top-level child (the verse, copy-on-write
     // replaced) which now itself has one child (the Loop).
@@ -124,6 +125,7 @@ TEST_CASE ("promote on an empty root mints a Phrase containing one Loop",
                            IdAllocator (std::ref (counter)));
 
     REQUIRE (result.mintedPhraseId.has_value());
+    REQUIRE_FALSE (result.hostPhraseName.has_value());
     CHECK (result.mintedPhraseId->value() == 1000);  // first id minted (Phrase)
     CHECK (result.addedLoopId.value()     == 1001);  // second id minted (Loop)
     CHECK (result.undoLabel == "capture phrase");

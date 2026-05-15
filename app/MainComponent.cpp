@@ -688,27 +688,8 @@ void MainComponent::announceCapture (const CaptureRegion& region,
     }
     else
     {
-        // Walk the new root to recover the host Phrase's display name for
-        // the banner. Cheap — root is small at M3.
-        std::string hostName;
-        std::function<void (const Constituent&)> findLoop;
-        findLoop = [&] (const Constituent& c)
-        {
-            for (const auto& child : c.children())
-            {
-                if (child->id() == result.addedLoopId)
-                {
-                    hostName = c.name();
-                    return;
-                }
-                findLoop (*child);
-                if (! hostName.empty()) return;
-            }
-        };
-        findLoop (*undoStack_.current());
-
         msg << "Loop added to "
-            << (hostName.empty() ? juce::String ("phrase") : juce::String (hostName))
+            << juce::String (result.hostPhraseName.value())
             << "  ·  "
             << juce::String (seconds, 2) << " s  ·  tape #"
             << juce::String ((juce::int64) region.tape.value());

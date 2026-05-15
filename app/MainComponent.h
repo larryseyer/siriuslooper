@@ -126,6 +126,8 @@ private:
 
     // --- capture state (white paper 14.5 / 14.6) ---
     CaptureSession captureSession_;
+    // Message-thread only — promotion's allocateId callback is called from
+    // onMarkOut on the JUCE message thread, never from the audio thread.
     std::int64_t   nextConstituentId_ { 0 };
 
     // --- input topology + per-tape arm/focus (this session) ---

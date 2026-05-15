@@ -26,6 +26,7 @@ struct PromotionResult
     Constituent newRoot;
     ConstituentId addedLoopId { 0 };
     std::optional<ConstituentId> mintedPhraseId;
+    std::optional<std::string>   hostPhraseName;  // present iff a host Phrase was found
     std::string undoLabel;
 };
 
