@@ -25,6 +25,9 @@ add_subdirectory(engine)
 # Session persistence — Constituent-graph JSON, content-addressed tape store.
 add_subdirectory(persistence)
 
+# Plugin host — VST3/AU scanning, generic parameter view (JUCE runtime).
+add_subdirectory(host)
+
 # Standalone application shell.
 add_subdirectory(app)
 

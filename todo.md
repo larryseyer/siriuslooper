@@ -80,3 +80,43 @@ already held (same licensing model as the sister app OTTO; see
   the demo tree is constructed with the verified `arrangement::sequence` /
   `arrangement::layer` primitives. The UI is a pure view over verified core +
   engine code — no new untested logic, only JUCE rendering of it.
+
+### 2026-05-14 — M5: Plugin hosting milestone test
+
+- **Files:** `host/PluginScanner.{h,cpp}`, `host/GenericParameterView.{h,cpp}`,
+  and the app integration that hosts a scanned plugin's processor and shows
+  its parameter view.
+- **What was deferred:**
+  1. The plan's milestone-test commitment: "scan and instantiate at least one
+     real plugin of each supported format (VST3 on every platform, AudioUnit
+     on macOS); confirm parameter automation round-trips through a parameter
+     tape."
+  2. Wiring the GenericParameterView into the app's SessionInspector (or a
+     successor panel) so the operator can actually drive a hosted plugin and
+     see/edit its parameters.
+  3. Optional CLAP and AUv3 hosting — explicitly gated as best-effort by the
+     plan; not in any milestone gate.
+- **Why deferred:** every part requires real plugin binaries installed on the
+  test machine and a real-audio path; per project conventions hardware/GUI
+  testing is operator-run.
+- **What's needed to finish:**
+  1. Have real plugins installed (at least one VST3; on macOS at least one
+     AudioUnit). Run a PluginScanner, confirm both formats appear in
+     `descriptors` with sensible names/manufacturers and no entries in
+     `failedFiles`.
+  2. Instantiate one via JUCE's `AudioPluginFormatManager::createPluginInstance`
+     using the descriptor's `uniqueId` and `filePath`, attach the resulting
+     `AudioProcessor` to a GenericParameterView in a small host harness,
+     confirm sliders match the plugin's parameter count and respond to drag.
+  3. With the plugin running through the audio path, move a parameter slider
+     while recording onto a `Tape<ParameterEvent>` and play back; confirm the
+     replayed events drive the plugin parameter and the view reflects the
+     replay.
+
+- **Headless verification already done for M5:** PluginDescriptor and
+  EffectChain (copy-on-write, persistence round-trip, exhaustive variant
+  coverage), ParameterEvent (range invariant, tape append-forward, the
+  Constituent-over-parameter-tape recursion), PluginScanner's format
+  registration (VST3 always; AudioUnit on macOS), and GenericParameterView's
+  construction against a JUCE `AudioProcessor` — 146 tests pass. The
+  hosted-plugin runtime that connects them is the operator-verified half.

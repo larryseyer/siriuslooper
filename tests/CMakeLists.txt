@@ -23,7 +23,8 @@ add_executable(SiriusTests
     SessionFormatTests.cpp
     TapeStoreTests.cpp
     EffectChainTests.cpp
-    ParameterAutomationTests.cpp)
+    ParameterAutomationTests.cpp
+    PluginScannerTests.cpp)
 
 target_compile_features(SiriusTests PRIVATE cxx_std_20)
 
@@ -33,6 +34,7 @@ target_link_libraries(SiriusTests PRIVATE
     Sirius::Engine
     Sirius::AppCore
     Sirius::Persistence
+    Sirius::Host
     Catch2::Catch2WithMain
     Threads::Threads)
 
