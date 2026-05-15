@@ -55,7 +55,9 @@ private:
 
     // --- arm / disarm gesture (white paper 14.6 — coarse, decisive) ---
     void onArmToggle();
-    void refreshArmButton();
+    void onMarkIn();
+    void onMarkOut();
+    void refreshCaptureControls();
 
     // --- plugin scanning ---
     void chooseFolderAndScan();
@@ -99,13 +101,16 @@ private:
 
     // --- bottom control bar ---
     juce::Slider     playhead_;
-    juce::TextButton armButton_   { "Arm" };
-    juce::TextButton undoButton_  { "Undo" };
-    juce::TextButton redoButton_  { "Redo" };
+    juce::TextButton armButton_      { "Arm" };
+    juce::TextButton markInButton_   { "Mark In" };
+    juce::TextButton markOutButton_  { "Mark Out" };
+    juce::TextButton undoButton_     { "Undo" };
+    juce::TextButton redoButton_     { "Redo" };
     juce::Label      bottomInfo_;
 
     // --- capture state (white paper 14.5 / 14.6) ---
     CaptureSession captureSession_;
+    std::vector<CaptureRegion> capturedRegions_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)
 };

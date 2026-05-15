@@ -294,9 +294,13 @@ MainComponent::MainComponent()
     playhead_.onValueChange = [this] { refreshPerformance(); refreshPreparation(); };
     addAndMakeVisible (playhead_);
 
-    armButton_.onClick  = [this] { onArmToggle(); };
+    armButton_.onClick     = [this] { onArmToggle(); };
+    markInButton_.onClick  = [this] { onMarkIn(); };
+    markOutButton_.onClick = [this] { onMarkOut(); };
     addAndMakeVisible (armButton_);
-    refreshArmButton();
+    addAndMakeVisible (markInButton_);
+    addAndMakeVisible (markOutButton_);
+    refreshCaptureControls();
 
     undoButton_.onClick = [this] { onUndo(); };
     redoButton_.onClick = [this] { onRedo(); };
@@ -330,11 +334,15 @@ void MainComponent::resized()
     tabs_.setBounds (area);
 
     bottom = bottom.reduced (8, 4);
-    armButton_.setBounds (bottom.removeFromLeft (96));
-    bottom.removeFromLeft (8);
-    undoButton_.setBounds (bottom.removeFromLeft (72));
+    armButton_.setBounds      (bottom.removeFromLeft (96));
     bottom.removeFromLeft (4);
-    redoButton_.setBounds (bottom.removeFromLeft (72));
+    markInButton_.setBounds   (bottom.removeFromLeft (88));
+    bottom.removeFromLeft (4);
+    markOutButton_.setBounds  (bottom.removeFromLeft (88));
+    bottom.removeFromLeft (12);
+    undoButton_.setBounds     (bottom.removeFromLeft (72));
+    bottom.removeFromLeft (4);
+    redoButton_.setBounds     (bottom.removeFromLeft (72));
     bottom.removeFromLeft (8);
     bottomInfo_.setBounds (bottom.removeFromRight (220));
     playhead_.setBounds (bottom);
@@ -400,7 +408,21 @@ void MainComponent::refreshDiagnostics()
     {
         case CaptureState::Disarmed:    captureLine << "disarmed";                  break;
         case CaptureState::Armed:       captureLine << "armed, no in-point set";    break;
-        case CaptureState::AwaitingOut: captureLine << "capturing — awaiting out";  break;
+        case CaptureState::AwaitingOut:
+            captureLine << "capturing — in at "
+                        << juce::String (captureSession_.pendingIn()->toDouble(), 2)
+                        << " s";
+            break;
+    }
+    captureLine << "    Regions: " << juce::String ((int) capturedRegions_.size());
+    if (! capturedRegions_.empty())
+    {
+        const auto& last = capturedRegions_.back();
+        const double in  = last.inLmcSeconds.toDouble();
+        const double out = last.outLmcSeconds.toDouble();
+        captureLine << "  (last: " << juce::String (in, 2)
+                    << " s → "    << juce::String (out, 2)
+                    << " s, "     << juce::String (out - in, 2) << " s long)";
     }
 
     preparationPane_->setDiagnostics (
@@ -424,24 +446,60 @@ void MainComponent::onArmToggle()
     else
         captureSession_.arm();
 
-    refreshArmButton();
+    refreshCaptureControls();
     refreshDiagnostics();
 }
 
-void MainComponent::refreshArmButton()
+void MainComponent::onMarkIn()
 {
-    // Glanceable (white paper 14.5): label and tint communicate state. Red
-    // means live; neutral means stood down. The button is the same gesture
-    // in both states — tapping flips it.
-    const bool armed = captureSession_.isArmed();
+    // The playhead position is the LMC time source while the M2 audio
+    // device wiring is still operator-deferred — once a real LMC clock
+    // is running, this becomes Lmc::now() (or the equivalent) and the
+    // playhead drops out of the capture path entirely.
+    const Rational t = playheadValueToLmc (playhead_.getValue());
+    captureSession_.markIn (t);
+    refreshCaptureControls();
+    refreshDiagnostics();
+}
+
+void MainComponent::onMarkOut()
+{
+    const Rational t = playheadValueToLmc (playhead_.getValue());
+    if (auto region = captureSession_.markOut (t))
+        capturedRegions_.push_back (*region);
+
+    refreshCaptureControls();
+    refreshDiagnostics();
+}
+
+void MainComponent::refreshCaptureControls()
+{
+    // Glanceable (white paper 14.5): label, tint, and enabled state
+    // communicate the capture state at a glance. Red means live, grey
+    // means stood down. Mark In / Mark Out enable only when valid for the
+    // current state — invalid gestures simply cannot be issued.
+    const auto state = captureSession_.state();
+    const bool armed       = state != CaptureState::Disarmed;
+    const bool capturing   = state == CaptureState::AwaitingOut;
+
     armButton_.setButtonText (armed ? "Disarm" : "Arm");
     armButton_.setColour (juce::TextButton::buttonColourId,
                           armed ? juce::Colours::darkred
                                 : juce::Colours::darkgrey);
-    armButton_.setColour (juce::TextButton::textColourOffId,
-                          juce::Colours::white);
-    armButton_.setColour (juce::TextButton::textColourOnId,
-                          juce::Colours::white);
+    armButton_.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+    armButton_.setColour (juce::TextButton::textColourOnId,  juce::Colours::white);
+
+    // Mark In: available while armed (Armed and AwaitingOut both accept it
+    // — the second tap replaces the pending in-point).
+    markInButton_.setEnabled (armed);
+
+    // Mark Out: only valid when a capture is in progress.
+    markOutButton_.setEnabled (capturing);
+    markOutButton_.setColour (juce::TextButton::buttonColourId,
+                              capturing ? juce::Colours::darkgreen
+                                        : juce::Colours::darkgrey);
+    markOutButton_.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+    markOutButton_.setColour (juce::TextButton::textColourOnId,  juce::Colours::white);
 }
 
 void MainComponent::onUndo()
