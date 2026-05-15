@@ -7,6 +7,7 @@
 #include "sirius/Constituent.h"
 #include "sirius/Position.h"
 #include "sirius/Rational.h"
+#include "sirius/TapeId.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -121,4 +122,34 @@ TEST_CASE ("the stack caps depth at the configured maximum, dropping the oldest"
     // Undoing all the way reaches "1", not "0" — the oldest entry was dropped.
     while (stack.canUndo()) stack.undo();
     CHECK (stack.current()->name() == "1");
+}
+
+TEST_CASE ("UndoStack carries an optional CaptureRestorePoint per entry",
+           "[undo][promotion]")
+{
+    using sirius::CaptureRestorePoint;
+    using sirius::TapeId;
+
+    UndoStack stack (makeRoot (1, "initial"));
+
+    // A non-promotion push leaves the current entry's restore point empty.
+    stack.push (makeRoot (2, "rename"), "rename phrase");
+    CHECK_FALSE (stack.currentEntryRestorePoint().has_value());
+
+    // A promotion push attaches a restore point.
+    const CaptureRestorePoint rp { Rational (3, 2), TapeId (200) };
+    stack.push (makeRoot (3, "after promote"), "capture phrase", rp);
+
+    REQUIRE (stack.currentEntryRestorePoint().has_value());
+    CHECK (stack.currentEntryRestorePoint()->pendingIn  == Rational (3, 2));
+    CHECK (stack.currentEntryRestorePoint()->pendingTape.value() == 200);
+
+    // Undo returns to the prior (rename) entry — no restore point there.
+    stack.undo();
+    CHECK_FALSE (stack.currentEntryRestorePoint().has_value());
+
+    // Redo returns to the promotion entry — restore point reappears.
+    stack.redo();
+    REQUIRE (stack.currentEntryRestorePoint().has_value());
+    CHECK (stack.currentEntryRestorePoint()->pendingTape.value() == 200);
 }

@@ -1,14 +1,29 @@
 #pragma once
 
 #include "sirius/Constituent.h"
+#include "sirius/Rational.h"
+#include "sirius/TapeId.h"
 
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
 namespace sirius
 {
+
+/// Captured-state snapshot recorded with a promotion entry so that undoing
+/// the promotion can restore CaptureSession to AwaitingOut with the
+/// original in-point intact (white paper Part 14.7 — "undo is sacred",
+/// extended to capture-state for the auto-promotion flow). Non-promotion
+/// edits omit this; only entries pushed via the three-arg UndoStack::push
+/// overload carry it.
+struct CaptureRestorePoint
+{
+    Rational pendingIn;
+    TapeId   pendingTape;
+};
 
 /// Multi-level undo/redo over immutable Constituent roots (white paper Part
 /// 14.7: "undo is sacred"). Because every edit in the system is copy-on-write
@@ -44,6 +59,17 @@ public:
     /// if `nextRoot` is null.
     void push (RootPtr nextRoot, std::string label = {});
 
+    /// Records a promotion edit. Behaves exactly like the two-argument push
+    /// (truncates redo, advances current) but additionally attaches a
+    /// CaptureRestorePoint to the new entry, so undo can restore
+    /// CaptureSession::AwaitingOut state on the way back.
+    void push (RootPtr nextRoot, std::string label, CaptureRestorePoint restore);
+
+    /// The CaptureRestorePoint of the current entry, or nullopt if the current
+    /// entry was a non-promotion edit (or the initial baseline). Stable across
+    /// undo/redo: the field belongs to the entry, not to the stack cursor.
+    const std::optional<CaptureRestorePoint>& currentEntryRestorePoint() const noexcept;
+
     bool canUndo() const noexcept { return currentIndex_ > 0; }
     bool canRedo() const noexcept { return currentIndex_ + 1 < entries_.size(); }
 
@@ -73,6 +99,7 @@ private:
     {
         RootPtr     root;
         std::string label;
+        std::optional<CaptureRestorePoint> captureRestore;  // promotion entries only
     };
 
     std::vector<Entry> entries_;
