@@ -4,6 +4,7 @@
 #include "sirius/PreparationView.h"
 #include "sirius/PreparationViewState.h"
 #include "sirius/SessionFormat.h"
+#include "sirius/TapeId.h"
 #include "sirius/VideoPreview.h"
 
 #include <stdexcept>
@@ -457,7 +458,11 @@ void MainComponent::onMarkIn()
     // is running, this becomes Lmc::now() (or the equivalent) and the
     // playhead drops out of the capture path entirely.
     const Rational t = playheadValueToLmc (playhead_.getValue());
-    captureSession_.markIn (t);
+    // TapeId{0} is a placeholder until the track UI lands and the bottom
+    // bar can identify which input the gesture targets. It parallels the
+    // playhead-as-LMC-stand-in above: a real value flows through once the
+    // surrounding subsystem is wired.
+    captureSession_.markIn (t, sirius::TapeId { 0 });
     refreshCaptureControls();
     refreshDiagnostics();
 }

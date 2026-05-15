@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sirius/Rational.h"
+#include "sirius/TapeId.h"
 
 #include <optional>
 
@@ -31,9 +32,12 @@ enum class CaptureState
 /// A closed capture region — the bookmark pair produced by a successful
 /// markIn / markOut sequence. The performer (or a higher-level subsystem)
 /// turns this into a Loop or Slice Constituent referencing the tape that
-/// was running between the two timestamps.
+/// was running between the two timestamps. The `tape` field names *which*
+/// input tape the region came from — pinned at markIn time and carried
+/// through to markOut.
 struct CaptureRegion
 {
+    TapeId tape;
     Rational inLmcSeconds;
     Rational outLmcSeconds;
 };
@@ -68,12 +72,16 @@ public:
     /// pending in-point is discarded — disarming is a hard stand-down.
     void disarm();
 
-    /// Mark an in-point at LMC time `t`. From Armed, transitions to
-    /// AwaitingOut. From AwaitingOut, *replaces* the pending in-point and
-    /// stays in AwaitingOut (the performer is allowed to slide the in-
-    /// point before committing). From Disarmed, ignored. Returns true iff
-    /// the in-point was accepted.
-    bool markIn (Rational t);
+    /// The current pending tape, if one is set. nullopt outside
+    /// AwaitingOut.
+    const std::optional<TapeId>& pendingTape() const noexcept { return pendingTape_; }
+
+    /// Mark an in-point at LMC time `t` on tape `tape`. From Armed,
+    /// transitions to AwaitingOut. From AwaitingOut, *replaces* both the
+    /// pending in-point and pending tape (the performer may slide the
+    /// in-point and may also switch tracks before committing). From
+    /// Disarmed, ignored. Returns true iff the in-point was accepted.
+    bool markIn (Rational t, TapeId tape);
 
     /// Mark an out-point at LMC time `t`. From AwaitingOut with t >
     /// pendingIn, transitions to Armed and returns the closed
@@ -89,6 +97,7 @@ public:
 private:
     CaptureState state_ { CaptureState::Disarmed };
     std::optional<Rational> pendingIn_;
+    std::optional<TapeId> pendingTape_;
 };
 
 } // namespace sirius
