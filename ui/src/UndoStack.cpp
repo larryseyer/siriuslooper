@@ -66,7 +66,7 @@ void UndoStack::push (RootPtr nextRoot, std::string label, CaptureRestorePoint r
     }
 }
 
-const std::optional<CaptureRestorePoint>&
+std::optional<CaptureRestorePoint>
 UndoStack::currentEntryRestorePoint() const noexcept
 {
     return entries_[currentIndex_].captureRestore;

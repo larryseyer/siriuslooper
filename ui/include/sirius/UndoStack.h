@@ -68,7 +68,13 @@ public:
     /// The CaptureRestorePoint of the current entry, or nullopt if the current
     /// entry was a non-promotion edit (or the initial baseline). Stable across
     /// undo/redo: the field belongs to the entry, not to the stack cursor.
-    const std::optional<CaptureRestorePoint>& currentEntryRestorePoint() const noexcept;
+    ///
+    /// Returned by value (not by reference) so callers can safely interleave
+    /// this with push()/undo()/redo(). Any push() may reallocate or erase
+    /// from entries_ (depth-cap eviction, redo-branch truncation), which
+    /// would invalidate a reference into the vector. The optional is small
+    /// (~24-32 bytes, trivially copyable) so the copy is negligible.
+    std::optional<CaptureRestorePoint> currentEntryRestorePoint() const noexcept;
 
     bool canUndo() const noexcept { return currentIndex_ > 0; }
     bool canRedo() const noexcept { return currentIndex_ + 1 < entries_.size(); }
