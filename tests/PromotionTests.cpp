@@ -62,7 +62,7 @@ TEST_CASE ("promote throws when any Constituent id appears more than once",
     // the shared id. The guard must catch this.
     auto sharedPhrase = std::make_shared<const Constituent> (
         Constituent (ConstituentId (42), Position(), Position (Rational (4)))
-            .withPhraseMetadata (PhraseMetadata { "verse", "" }));
+            .withPhraseMetadata (PhraseMetadata { .role = "verse" }));
 
     Constituent root = sirius::arrangement::sequence (emptyRoot(),
                                                       { sharedPhrase, sharedPhrase });
