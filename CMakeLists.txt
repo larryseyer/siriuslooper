@@ -31,6 +31,9 @@ add_subdirectory(host)
 # The performer's instrument — undo, latency budget, performance/preparation views.
 add_subdirectory(ui)
 
+# Ensemble — LMC election, CRDT session merge, transport messages.
+add_subdirectory(net)
+
 # Standalone application shell.
 add_subdirectory(app)
 

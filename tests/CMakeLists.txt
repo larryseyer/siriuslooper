@@ -28,7 +28,10 @@ add_executable(SiriusTests
     UndoStackTests.cpp
     LatencyBudgetTests.cpp
     PerformanceViewStateTests.cpp
-    PreparationViewStateTests.cpp)
+    PreparationViewStateTests.cpp
+    LmcElectionTests.cpp
+    SessionMergeTests.cpp
+    TransportTests.cpp)
 
 target_compile_features(SiriusTests PRIVATE cxx_std_20)
 
@@ -40,6 +43,7 @@ target_link_libraries(SiriusTests PRIVATE
     Sirius::Persistence
     Sirius::Host
     Sirius::Ui
+    Sirius::Net
     Catch2::Catch2WithMain
     Threads::Threads)
 

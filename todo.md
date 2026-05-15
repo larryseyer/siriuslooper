@@ -120,3 +120,84 @@ already held (same licensing model as the sister app OTTO; see
   registration (VST3 always; AudioUnit on macOS), and GenericParameterView's
   construction against a JUCE `AudioProcessor` — 146 tests pass. The
   hosted-plugin runtime that connects them is the operator-verified half.
+
+### 2026-05-14 — M7: The performer's instrument — operator verification
+
+- **Files:** `ui/PerformanceView.{h,cpp}`, `ui/PreparationView.{h,cpp}`, the
+  app integration that drives them.
+- **What was deferred:**
+  1. Wiring `PerformanceView` and `PreparationView` into the standalone app
+     in place of `SessionInspector`, and switching between cognitive modes
+     (Performance vs Preparation, white paper 14.4) with a single gesture.
+  2. Driving `UndoStack` with real edit operations — bind a global
+     keyboard/footswitch undo and redo, plumb it through every editing path,
+     and confirm a multi-step session of edits undoes and redoes cleanly.
+  3. Integrating `LatencyBudget` with the UI's frame-loop and announcing
+     when the rolling window falls below the budget (white paper 13.3
+     rule 3, 14.8). The budget is measurable; the announcement surface
+     belongs to the running app.
+- **Why deferred:** every part requires the operator at the screen and a
+  real gesture loop — eyes-free operation, glance tests, and trust-budget
+  feel are all human-perceptual qualities.
+- **What's needed to finish:**
+  1. Add a Performance/Preparation toggle to the main window; route the
+     same `Constituent` root to `selectPerformanceView` and
+     `selectPreparationView` on every update.
+  2. Hook the undo stack into every Constituent-producing edit path, push
+     a label per edit, and confirm undo/redo land on the right snapshots.
+  3. Measure UI-event-to-paint latency, feed each frame to
+     `LatencyBudget`, and surface the rolling `fractionWithinBudget` in
+     the Preparation view's diagnostics row.
+
+- **Headless verification already done for M7:** UndoStack (push/undo/redo,
+  redo-branch invalidation, depth cap, null guards), LatencyBudget (band
+  thresholds, rolling window, invalid input rejected), the Performance and
+  Preparation view-state selectors (deepest named container wins as
+  foreground phrase, cycle-status formatting for the three cardinalities,
+  full depth-first row enumeration with effect-chain and role-fillable
+  flags) — 163 tests pass. The JUCE Components are thin renderers over
+  those verified state structs.
+
+### 2026-05-14 — M8: Ensemble — operator verification
+
+- **Files:** `net/LmcElection.{h,cpp}`, `net/SessionMerge.{h,cpp}`,
+  `net/Transport.h`, plus the (currently unwritten) network transport that
+  carries the message types over real sockets.
+- **What was deferred:**
+  1. The plan's milestone test: "two-node partition-and-rejoin test
+     confirming clean CRDT merge with no audio loss" — requires two real
+     machines, a real network, and a real way to induce and lift a
+     partition.
+  2. The transport implementation itself: real sockets, frame format,
+     reliability, discovery, monitoring previews. None of this exists yet;
+     the message data types are written and tested but no wire goes
+     anywhere.
+  3. Per-node interval *measurement* feeding `LmcElection`. The election
+     consumes intervals; the platform-specific code that *produces* an
+     interval from each node's clock-discipline source (GPS, NTP, audio
+     word clock, quartz, software estimate) is the operator-side
+     contribution.
+- **Why deferred:** every part requires real networking and real clocks.
+  Per project conventions, hardware-dependent and network-dependent work
+  is operator-run.
+- **What's needed to finish:**
+  1. Pick a transport (the plan does not commit to one; OSC over UDP and
+     Ableton Link's own discovery layer are plausible candidates).
+     Implement send/receive against `EnsembleMessage` with a small
+     reliable-multicast or per-message-type semantics.
+  2. Wire each node's clock-discipline source through to a
+     `NodeClockEstimate`. Run `electLmc` on every topology change. Honour
+     the result — slaves discipline against the master's broadcast time
+     announcements.
+  3. Use `MergeableSession::merge` on rejoin. The two-node milestone test:
+     start with a shared session, partition the network, have each node
+     edit different (and the same) Constituents, rejoin, merge, confirm
+     no audio loss and no rewritten tape data.
+
+- **Headless verification already done for M8:** LmcElection (anchor
+  override beats tier, tier dominance beats numerical majority, Marzullo
+  discards falsetickers and picks the narrowest-interval master),
+  SessionMerge (tape-hash union, version union, commutativity,
+  associativity, idempotence, last-writer-wins on the active version), and
+  the `EnsembleMessage` variant (each kind constructs and pattern-matches
+  cleanly) — 178 tests pass total across the whole project.
