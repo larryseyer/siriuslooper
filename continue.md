@@ -12,11 +12,24 @@ mark-out) with full UI wiring, then closed out the plan's "Remaining open
 item" by completing the Whitepaper V2 worked-example consistency check.
 **213 tests pass; the build is warning-free for any source we control.**
 
-Three items are deferred to `todo.md` with full diagnostic detail:
+**Next session opens with a design discussion**, not code. The user has
+asked for a professional approach to how Sirius Looper presents its
+*inputs* — the "tracks" the system sees, in the user's vocabulary. The
+white paper specifies the input topology in §6.2 (one tape per input,
+audio / video / MIDI / control / automation / transport / system) but
+the current UI surfaces none of it, and `CaptureRegion` itself is
+missing the `TapeId` field that says which input a captured region came
+from. Full kickoff brief is in **"Suggested First Move Next Session §0"
+— design the track / input UX**, below.
+
+Three items are deferred to `todo.md` with full diagnostic detail
+and sequenced after the kickoff:
 
 1. The macOS Load-dialog TCC bug (still unresolved — see below).
 2. The capture flow's visual-confirmation gap and region-promotion-to-
-   Constituent step (added this session).
+   Constituent step (added this session). **Gated on the kickoff**: a
+   Loop Constituent needs to point at the real `TapeId` it was
+   captured from, which doesn't exist until the Track model lands.
 3. Session-as-directory format from Whitepaper V2 §7.8 (M4 expansion).
 
 ## ⚠ Open bug carried into the next session
@@ -200,28 +213,119 @@ Plugins / Video tabs unchanged.
 
 ## Suggested First Move Next Session
 
-1. **The Load dialog TCC bug remains the top blocker for save/load
-   ergonomics.** See `todo.md` for the three concrete next-step options
-   — Developer ID + entitlements is the most likely path; the asymmetry
-   investigation (why `.png` was selectable while `.json` and `.md` were
-   not, in the same dialog) is the quickest diagnostic if you'd rather
-   not introduce signing yet.
+### 0. KICKOFF — design the track / input UX (user-requested priority)
 
-2. After that, the priority deferral is **promotion of a CaptureRegion
-   into a Loop Constituent** (the third subitem of the "Mark Out should
-   announce the new region visibly" entry in `todo.md`). That makes
-   captures actually useful — currently a `Mark Out` produces a region
-   that evaporates on app exit. Promotion would push an undoable edit
-   onto the undo stack, attach the new Loop into the active phrase, and
-   would close the capture loop end-to-end. The visual-confirmation
-   work is subordinate to it.
+**Before any further code, the next session opens with a design
+discussion of how Sirius Looper presents its inputs to the user.** The
+user flagged this directly at the end of the prior session: *"We have
+not discussed the user interface... and the concept of 'tracks' which
+is what I'm calling the various 'inputs' Sirius Looper 'sees'."* The
+current UI surfaces zero of the input topology, and the gap shows up
+in the code already shipped.
 
-3. Then the **session-as-directory refactor** from V2 §7.8. Gated on the
-   Load-dialog bug being resolved first — that work touches the same
-   Save/Load code path.
+**What the white paper specifies (§6.2):** every signal is a tape,
+one tape per input, all carrying the uniform format
+`TapeEvent { conceptual_timestamp, lmc_timestamp, tape_id, payload }`.
+The taxonomy is explicit:
+
+- **Audio inputs** — one tape per channel, dense PCM payload
+- **Video inputs** — one tape per camera, frame payload
+- **MIDI inputs** — one tape per port, event payload
+- **Control surface events** — footswitches, knobs, pads, faders
+- **Parameter automation** — one tape per automatable parameter
+- **Transport events** — session start, tempo changes, section markers
+- **System events** — clock discipline changes, device hot-plugs
+
+**What the data model has:** `Tape<T>` (generic), `TapeId`,
+`TapeReference`, `Tape<VideoFrame>`, `Tape<ParameterEvent>`. The
+*shape* of the model matches the white paper; specific payload types
+beyond Video and Parameter (audio frames, MIDI events, control events,
+transport events, system events) are not yet declared.
+
+**Three concrete gaps that need design decisions before code:**
+
+1. **`CaptureRegion` is missing `TapeId`.** I shipped it this session
+   as `{ inLmcSeconds, outLmcSeconds }` — no field saying which input
+   the region came from. That is a bug I planted; before the capture
+   flow is professional it must be `{ TapeId tape, Rational in,
+   Rational out }`. One-commit fix once the broader Track model lands.
+
+2. **No "track" / input-descriptor concept exists in code.** No
+   `InputDescriptor { TapeId, kind (Audio/Video/MIDI/Control/...), display
+   name, channel index, … }`, no list of tracks anywhere, no UI surface
+   for "here are the inputs Sirius sees." The white paper does not
+   name the descriptor type; the design choice is ours.
+
+3. **The capture state machine is monolithic.** One arm-state, one
+   pending in-point, globally. The white paper architecture is
+   per-tape: each tape always running, with its own retroactive ring.
+   Arming and marking are really per-track gestures, possibly grouped
+   (e.g. "arm tracks 1 + 3"), not a single global toggle. Once the
+   `Track` model exists, `CaptureSession` either becomes per-track
+   or wraps a `std::map<TapeId, CaptureSession>` with group commands.
+
+**Recommended sequencing (tradeoff): build the data model first, then
+talk UI.** Pure-data steps in `core/`:
+
+1. Declare an `InputKind` enum (Audio / Video / Midi / Control /
+   ParameterAutomation / Transport / System).
+2. Declare a `Track` (or `InputDescriptor`) struct with `TapeId`,
+   `InputKind`, display name, and any kind-specific channel / port
+   index. JUCE-free, plain data, testable.
+3. Retrofit `CaptureRegion` to carry `TapeId`.
+4. Keep the existing global `CaptureSession` for now and add per-track
+   when M2 (real audio path) is operator-wired. Avoids designing per-
+   track gestures against no real audio.
+
+UI work follows the data model and is the right place for the
+user's "professional approach" judgement — track strip layout, per-
+track arm vs. group arm, MIDI vs. audio visual distinction, video
+preview as a track, are all open. Expect the next session to start
+with a side-by-side comparison of three or four UI mockups before any
+JUCE code is touched.
+
+**Related open questions to bring into the kickoff** (already in the
+Open Questions section below): performer-side role-fillable phrase UX
+and capture-region promotion UX. Both overlap with the track-strip
+question — wherever tracks live in the UI is also a candidate home
+for the role-slot eligible-candidate list and the captured-region
+inbox.
+
+### 1. Load dialog TCC bug (deferred from prior session)
+
+The Load dialog TCC bug remains the top blocker for save/load
+ergonomics. See `todo.md` for the three concrete next-step options
+— Developer ID + entitlements is the most likely path; the asymmetry
+investigation (why `.png` was selectable while `.json` and `.md` were
+not, in the same dialog) is the quickest diagnostic if you'd rather
+not introduce signing yet.
+
+### 2. CaptureRegion → Loop Constituent promotion
+
+The priority capture-flow deferral is **promotion of a CaptureRegion
+into a Loop Constituent** (the third subitem of the "Mark Out should
+announce the new region visibly" entry in `todo.md`). That makes
+captures actually useful — currently a `Mark Out` produces a region
+that evaporates on app exit. Promotion would push an undoable edit
+onto the undo stack, attach the new Loop into the active phrase, and
+would close the capture loop end-to-end. **Gated on the Track model
+above**, because a Loop Constituent's `TapeReference` needs to point
+at the actual `TapeId` the region was captured from.
+
+### 3. Session-as-directory refactor (V2 §7.8)
+
+Gated on the Load-dialog bug being resolved first — that work touches
+the same Save/Load code path.
 
 ## Open Questions (carry-forward)
 
+- **Track / input UI design** — *the umbrella user-experience question
+  for the next session.* Promoted to "Suggested First Move §0" above.
+  Subsumes the per-track-vs-global arm question, the track-strip
+  visual layout, the MIDI/audio/video kind distinction, and how a
+  track surfaces its retroactive ring depth and current capture state.
+  The user has explicitly asked for a "professional approach" here —
+  expect mockups before code.
 - **M6 video format strategy** — unchanged. Custom video tape format +
   intra-frame codec choice; best decided after the FFmpeg spike.
 - **M8 transport choice** — unchanged. Plan deliberately does not
@@ -233,12 +337,13 @@ Plugins / Video tabs unchanged.
   free?) remains genuinely novel and untested per Whitepaper 15.3
   ("Structured improvisation interfaces"). Likely needs a hardware-
   control-surface decision (footswitch ordering, pad assignment, etc.)
-  before any UI work pays off.
-- **Capture-region promotion UX** — *new* this session. When a region
+  before any UI work pays off. Likely lives inside the track UI once
+  that exists — a role-fillable phrase is per-track content.
+- **Capture-region promotion UX** — *new* last session. When a region
   is promoted to a Loop Constituent, where does it attach? Into the
   currently-focused Constituent? Into a "captures" inbox? Into the
-  root? White paper does not specify; this is a UX-flow decision the
-  operator will want input on.
+  root? White paper does not specify; the answer is downstream of
+  the track-UI decision and should be made together with it.
 
 ## Key Decisions Made This Session
 
