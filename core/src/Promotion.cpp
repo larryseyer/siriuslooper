@@ -109,9 +109,17 @@ PromotionResult promote (const Constituent&   root,
         const Rational clampedInLmc  = std::max (region.inLmcSeconds,  hit->hostStartLmc);
         const Rational clampedOutLmc = std::min (region.outLmcSeconds, hit->hostEndLmc);
 
+        // Post-clamp invariant: loopOut > loopIn. Holds because Mark In is inside
+        // [hostStart, hostEnd) by virtue of being on this branch, so
+        // clampedInLmc <= lmcAtMarkIn < hostEnd; and region.out > region.in (defensive
+        // throw at function top), so clampedOutLmc > clampedInLmc. Constituent's
+        // constructor would otherwise throw std::invalid_argument on reversed bounds.
         const Position loopIn  (clampedInLmc  - hit->hostStartLmc);
         const Position loopOut (clampedOutLmc - hit->hostStartLmc);
 
+        // Loop carries no name or role: a leaf with TapeReference is enough to
+        // identify it; the timeline derives display from the TapeReference, and
+        // editing names/roles is a future Preparation-pane feature.
         Constituent loop (loopId, loopIn, loopOut);
         loop = loop.withTapeReference (
             TapeReference (region.tape,
