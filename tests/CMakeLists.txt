@@ -17,7 +17,8 @@ add_executable(SiriusTests
     MembraneTests.cpp
     LoopRendererTests.cpp
     AsrcTests.cpp
-    RenderPipelineTests.cpp)
+    RenderPipelineTests.cpp
+    CapabilityTierTests.cpp)
 
 target_compile_features(SiriusTests PRIVATE cxx_std_20)
 
@@ -25,6 +26,7 @@ target_compile_features(SiriusTests PRIVATE cxx_std_20)
 # Core's headers and library along transitively — no need to list it twice.
 target_link_libraries(SiriusTests PRIVATE
     Sirius::Engine
+    Sirius::AppCore
     Catch2::Catch2WithMain
     Threads::Threads)
 

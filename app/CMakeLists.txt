@@ -1,3 +1,22 @@
+# -----------------------------------------------------------------------------
+# SiriusAppCore — JUCE-free application logic
+# -----------------------------------------------------------------------------
+# The startup capability assessment is a pure decision from measured hardware
+# to a locked tier (white paper Part 13.1). Keeping it JUCE-free here — the
+# platform-specific hardware probing is the operator-run half of M4 — means the
+# assessment ladder is exhaustively unit-testable in the headless harness.
+add_library(SiriusAppCore STATIC
+    CapabilityTier.cpp)
+
+target_include_directories(SiriusAppCore PUBLIC .)
+
+target_compile_features(SiriusAppCore PUBLIC cxx_std_20)
+
+add_library(Sirius::AppCore ALIAS SiriusAppCore)
+
+# -----------------------------------------------------------------------------
+# SiriusLooper — the standalone application
+# -----------------------------------------------------------------------------
 juce_add_gui_app(SiriusLooper
     PRODUCT_NAME "Sirius Looper"
     COMPANY_NAME "Larry Seyer"
@@ -17,6 +36,7 @@ target_compile_definitions(SiriusLooper PRIVATE
 
 target_link_libraries(SiriusLooper PRIVATE
     Sirius::Engine
+    Sirius::AppCore
     juce::juce_gui_extra
     juce::juce_recommended_config_flags
     juce::juce_recommended_lto_flags
