@@ -172,3 +172,39 @@ TEST_CASE ("promote with playhead in a gap between Phrases mints a fresh Phrase"
     CHECK (result.newRoot.children()[0]->id().value() == 10);
     CHECK (result.newRoot.children()[1]->id().value() == result.mintedPhraseId->value());
 }
+
+TEST_CASE ("promote clamps Loop bounds to the host Phrase when region extends past",
+           "[promotion][straddle]")
+{
+    auto verse = std::make_shared<const Constituent> (
+        Constituent (ConstituentId (10), Position (Rational (2)), Position (Rational (6)))
+            .withName ("verse")
+            .withPhraseMetadata (PhraseMetadata { .role = "verse" }));
+
+    Constituent root = emptyRoot().withChildAdded (verse);
+
+    // Mark In = 4 (inside verse [2,6)), Mark Out = 9 (well past verse).
+    // Mark In wins: host is verse; Loop must be clamped to [4,6) in LMC,
+    // which is [2,4) in verse-local conceptual time.
+    const CaptureRegion region { TapeId (200), Rational (4), Rational (9) };
+    Counter counter;
+
+    auto result = promote (root, identityMap(), region, /*lmcAtMarkIn*/ Rational (4),
+                           IdAllocator (std::ref (counter)));
+
+    REQUIRE_FALSE (result.mintedPhraseId.has_value());
+    REQUIRE (result.newRoot.children().size() == 1);
+    const auto& placedVerse = *result.newRoot.children()[0];
+    REQUIRE (placedVerse.children().size() == 1);
+    const auto& loop = *placedVerse.children()[0];
+
+    // Conceptual bounds are clamped to the verse's local time domain.
+    CHECK (loop.conceptualIn()  == Position (Rational (2)));   // (4 - 2)
+    CHECK (loop.conceptualOut() == Position (Rational (4)));   // (6 - 2), clipped from 9
+
+    // TapeReference keeps the *unclamped* original LMC times — the audio
+    // beyond the host boundary still exists on the tape and remains
+    // referenceable; only the Constituent's structural placement is clipped.
+    CHECK (loop.tapeReference()->tapeIn  == Rational (4));
+    CHECK (loop.tapeReference()->tapeOut == Rational (9));
+}
