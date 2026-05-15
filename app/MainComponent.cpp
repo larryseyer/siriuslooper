@@ -745,7 +745,9 @@ void MainComponent::onUndo()
             // operator can immediately Mark Out again at a different time, or
             // hit Disarm to abandon. Tape samples between the original Mark
             // In and any future Mark Out are still on the always-running tape.
-            captureSession_.arm();  // ensure not Disarmed (no-op if already armed)
+            // If a new pending-In was set after the promotion, it is replaced — undo
+            // authoritatively restores the pre-promotion in-point.
+            captureSession_.arm();  // idempotent: only acts from Disarmed
             captureSession_.markIn (restoreOnLeave->pendingIn,
                                     restoreOnLeave->pendingTape);
         }
@@ -762,8 +764,19 @@ void MainComponent::onRedo()
     if (undoStack_.canRedo())
     {
         undoStack_.redo();
+
+        // Symmetric to onUndo: redo of a promotion entry replays the
+        // post-promotion CaptureSession state, which is Armed-with-no-pending-In.
+        // If the prior onUndo restored AwaitingOut, redo must clear it again or
+        // the next Mark Out would close a phantom region and create a duplicate
+        // Loop on top of the just-redone tree.
+        if (undoStack_.currentEntryRestorePoint().has_value())
+            captureSession_.cancel();
+
         refreshPerformance();
         refreshPreparation();
+        refreshCaptureControls();
+        refreshDiagnostics();
     }
 }
 
