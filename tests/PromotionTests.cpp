@@ -141,6 +141,8 @@ TEST_CASE ("promote on an empty root mints a Phrase containing one Loop",
     CHECK (loop.id().value() == 1001);
     REQUIRE (loop.tapeReference().has_value());
     CHECK (loop.tapeReference()->tape.value() == 300);
+    CHECK (loop.tapeReference()->tapeIn  == Rational (4));
+    CHECK (loop.tapeReference()->tapeOut == Rational (8));
     CHECK (loop.conceptualIn()  == Position());                      // local-to-Phrase
     CHECK (loop.conceptualOut() == Position (Rational (4)));         // duration of region
 }

@@ -145,7 +145,12 @@ PromotionResult promote (const Constituent&   root,
                             ? std::string ("capture loop")
                             : "capture loop into " + hit->hostName;
 
-        return PromotionResult { std::move (newRoot), loopId, std::nullopt, std::move (label) };
+        return PromotionResult {
+            .newRoot        = std::move (newRoot),
+            .addedLoopId    = loopId,
+            .mintedPhraseId = std::nullopt,
+            .undoLabel      = std::move (label),
+        };
     }
 
     // Mint case — no Phrase contained Mark In. Create a fresh Phrase at the
@@ -172,9 +177,12 @@ PromotionResult promote (const Constituent&   root,
     Constituent newRoot = root.withChildAdded (
         std::make_shared<const Constituent> (newPhrase));
 
-    return PromotionResult { std::move (newRoot), loopId,
-                             std::optional<ConstituentId> (phraseId),
-                             std::string ("capture phrase") };
+    return PromotionResult {
+        .newRoot        = std::move (newRoot),
+        .addedLoopId    = loopId,
+        .mintedPhraseId = phraseId,
+        .undoLabel      = "capture phrase",
+    };
 }
 
 } // namespace sirius::promotion
