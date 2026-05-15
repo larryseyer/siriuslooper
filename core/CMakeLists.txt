@@ -14,7 +14,8 @@ add_library(SiriusCore STATIC
     src/Position.cpp
     src/TimeDomain.cpp
     src/Constituent.cpp
-    src/RepetitionRules.cpp)
+    src/RepetitionRules.cpp
+    src/Arrangement.cpp)
 
 target_include_directories(SiriusCore PUBLIC include)
 
