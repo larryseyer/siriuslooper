@@ -56,6 +56,12 @@ void TimelineView::setState (TimelineViewState newState)
     repaint();
 }
 
+void TimelineView::setPlayhead (std::optional<Rational> lmcSeconds)
+{
+    playhead_ = lmcSeconds;
+    repaint();
+}
+
 int TimelineView::totalHeight() const
 {
     return rulerHeight + static_cast<int> (state_.rows.size()) * rowHeight;
@@ -260,6 +266,33 @@ void TimelineView::paint (juce::Graphics& g)
                                                secondary.getHeight() - 16 };
             g.setColour (fill.brighter (0.4f));
             g.drawRoundedRectangle (outlineRect.toFloat(), 6.0f, 1.0f);
+        }
+    }
+
+    // --- Playhead overlay ---
+    // Drawn last so it sits on top of the rows + pills, matching DAW
+    // convention (Reaper, Pro Tools). Suppressed when the playhead is
+    // outside the visible LMC span or no playhead is set at all.
+    if (playhead_.has_value())
+    {
+        const auto p = *playhead_;
+        if (p >= state_.startLmcSeconds && p <= state_.endLmcSeconds)
+        {
+            const int x = timeToX (p);
+            const int top    = rulerHeight;
+            const int bottom = totalHeight();
+
+            g.setColour (juce::Colour (0xffffd24a));
+            g.fillRect (juce::Rectangle<int> { x - 1, top, 2, bottom - top });
+
+            // A small downward chevron in the ruler band makes the head of
+            // the playhead readable as a "this is where the gesture lands"
+            // marker rather than a generic vertical guide.
+            juce::Path head;
+            head.addTriangle ((float) x - 5.0f, 2.0f,
+                              (float) x + 5.0f, 2.0f,
+                              (float) x,        (float) (rulerHeight - 2));
+            g.fillPath (head);
         }
     }
 }

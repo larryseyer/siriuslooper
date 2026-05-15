@@ -6,6 +6,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <functional>
+#include <optional>
 
 namespace sirius
 {
@@ -33,6 +34,13 @@ public:
     void setState (TimelineViewState newState);
     const TimelineViewState& state() const noexcept { return state_; }
 
+    /// Set the playhead position in LMC seconds. Pass `std::nullopt` to
+    /// hide the overlay entirely. The playhead is renderer state, not
+    /// view-state — the timeline's structure is selector-derived, the
+    /// playhead is a gesture surface and lives with the renderer.
+    void setPlayhead (std::optional<Rational> lmcSeconds);
+    const std::optional<Rational>& playhead() const noexcept { return playhead_; }
+
     void paint     (juce::Graphics& g) override;
     void mouseDown (const juce::MouseEvent& e) override;
 
@@ -51,7 +59,8 @@ private:
     /// Maps an LMC-seconds value to the X coordinate on the content area.
     int timeToX (Rational t) const;
 
-    TimelineViewState state_;
+    TimelineViewState        state_;
+    std::optional<Rational>  playhead_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TimelineView)
 };

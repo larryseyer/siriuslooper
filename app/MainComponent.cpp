@@ -95,6 +95,7 @@ public:
 
     void setState (PreparationViewState s)    { preparationView_.setState (std::move (s)); }
     void setTimelineState (TimelineViewState s) { timelineView_.setState  (std::move (s)); }
+    void setTimelinePlayhead (std::optional<Rational> t) { timelineView_.setPlayhead (t); }
     void setDiagnostics (const juce::String& text) { diagnosticsLabel_.setText (text, juce::dontSendNotification); }
     void setStatus (const juce::String& text)      { statusLabel_.setText (text, juce::dontSendNotification); }
 
@@ -414,6 +415,8 @@ void MainComponent::refreshTimeline()
                             inputs_,
                             armedTapesVec(),
                             focusedTape_));
+    preparationPane_->setTimelinePlayhead (
+        playheadValueToLmc (playhead_.getValue()));
 }
 
 std::vector<TapeId> MainComponent::armedTapesVec() const
