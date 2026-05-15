@@ -299,7 +299,7 @@ Authoritative references for the next session:
 - `todo.md` — Load-dialog bug, session-as-directory format, plugin
   scanner redesign (new), OTTO L&F integration (new), Mark Out
   capture-history widget + Loop promotion gesture.
-- `Sirius Looper Whitepaper V2.md` §6 (tapes), §8 (phrases), §14
+- `docs/Sirius Looper Whitepaper V2.md` §6 (tapes), §8 (phrases), §14
   (the performer's instrument), Appendix E (Reaper terminology map).
 - OTTO source at `/Users/larryseyer/AudioDevelopment/OTTO` —
   particularly `src/otto-plugin/ui/OTTOColours.h` and

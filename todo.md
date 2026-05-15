@@ -1,5 +1,54 @@
 # Sirius Looper — Deferred Items
 
+### 2026-05-15 — Shared-placement-with-per-instance-overlays architecture
+
+- **Files:** `core/include/sirius/Arrangement.h`,
+  `core/src/Arrangement.cpp`, `core/include/sirius/Constituent.h`
+  (possibly), `ui/src/TimelineViewState.cpp`,
+  `ui/include/sirius/UndoStack.h`, `core/src/Promotion.cpp` (the
+  runtime guard added by the capture-promotion design goes away),
+  `docs/Sirius Looper User Guide.md` (Roadmap section + a new chapter
+  once the feature lands).
+- **What was deferred:** shared-placement semantics for repeated
+  Phrases. Today `arrangement::sequence` (`core/src/Arrangement.cpp:60`)
+  creates per-placement Constituent copies via `placedAt` — each
+  placement is a distinct Constituent object that happens to share the
+  same id. The user model requires shared-by-reference with
+  per-instance overlay buckets so common layers (drums, bass, rhythm,
+  harmony) propagate across all verse instances while differentiating
+  layers (vocals, fills) attach to one placement only.
+- **Why deferred:** load-bearing for repeated-section workflows
+  (verse × 3, chorus × 4) but bigger than the capture-promotion
+  brainstorm — touches Arrangement, possibly Constituent, the
+  TimelineViewState selector, undo semantics across instances, and
+  the renderer. Capture promotion ships single-instance-correct in
+  the meantime; the runtime guard in `promotion::promote` ensures
+  multi-instance cases throw loudly until this is settled. See
+  `docs/superpowers/specs/2026-05-15-capture-promotion-design.md` §3
+  for the guard.
+- **What's needed to finish:**
+    1. Settle Path B from the brainstorm: the arrangement layer
+       becomes a sequence of `(Phrase ChildPtr, Position, optional
+       overlay-children)` tuples. The Phrase ChildPtr is shared
+       across placements.
+    2. Design the per-instance overlay UX — where overlays attach in
+       the data model, how the timeline distinguishes shared vs
+       overlay rendering, whether overlays are themselves Phrase-shaped
+       or a new struct.
+    3. Design the "fork this placement into its own Phrase" gesture —
+       the escape hatch for the rare "this verse is special" case.
+    4. Decide undo semantics across instances: one undo entry =
+       all-instances revert, or per-instance? Both have arguments.
+    5. Extend `promotion::promote` to handle the multi-instance case
+       — remove the runtime guard, propagate Loop adds across all
+       Constituents matching the host id, handle overlay vs shared
+       attachment based on operator gesture.
+    6. Update `selectTimelineView` to render shared vs forked
+       placements distinguishably.
+- **Prerequisite for:** full multi-instance capture/promotion,
+  Loop/Pill rendering for repeated phrases, the user-guide chapter on
+  "Repeating song sections."
+
 ### 2026-05-15 — OTTO Look-and-Feel integration (cross-app)
 
 - **Files:** new top-level shared module (location TBD — see open
@@ -234,7 +283,7 @@
 
 **Resolved:** Ableton Link license procurement — the proprietary license is
 already held (same licensing model as the sister app OTTO; see
-`LICENSE-THIRD-PARTY.md`). No procurement action is outstanding.
+`docs/LICENSE-THIRD-PARTY.md`). No procurement action is outstanding.
 
 ### 2026-05-14 — M2: Membranes & always-running tape
 
@@ -534,34 +583,17 @@ already held (same licensing model as the sister app OTTO; see
   PhraseMetadata, so they cannot be marked fillable, and the
   default is "not fillable" for everything outside a phrase.
 
-### 2026-05-15 — Mark Out should announce the new region visibly
+### 2026-05-15 — Mark Out should announce the new region visibly — SUPERSEDED
 
-- **Files:** `app/MainComponent.cpp` (`onMarkOut`, `refreshDiagnostics`),
-  possibly a new transient banner widget or a Performance-tab overlay.
-- **What was deferred:** when the performer clicks Mark Out and a
-  CaptureRegion is created, the only on-screen feedback is the textual
-  diagnostics line on the Preparation tab (`Regions: N (last: ...)`).
-  That is too subtle for a performance gesture (white paper 14.5 —
-  "shape, color, position, motion," not text). The performer should see
-  an unambiguous confirmation — a "Loop 3 captured" banner, a flash on
-  the playhead, the new region highlighted on a timeline strip, or all
-  three.
-- **Why deferred:** out of scope of the capture-state-machine commit
-  (`17915c4` + `2499273`); user wants other coding to move first.
-- **What's needed to finish:**
-  1. A transient on-screen confirmation. Suggested: a 1.5-second auto-
-     fading label at the top of whichever tab is active, plus an audible
-     click (white paper 14.9 — "every confirmation they need arrives
-     through hearing"). Audible click depends on M2 audio wiring.
-  2. A persistent capture-history widget on the Preparation tab — a
-     scrolling list of regions with in/out times, length, and a button
-     to promote the region into a Loop Constituent (which would push an
-     undoable edit onto the undo stack — white paper 14.7).
-  3. Promotion is the actual completion of the capture flow: a captured
-     region today lives only in `MainComponent::capturedRegions_` —
-     ephemeral RAM, not part of the session. Until promotion exists,
-     captures evaporate on app exit. Treat #3 as the priority of this
-     deferral; #1 and #2 are subordinate UX.
+- **Status:** Items 1 and 3 of this entry are superseded by the
+  capture-promotion design at
+  `docs/superpowers/specs/2026-05-15-capture-promotion-design.md`.
+  Item 1 (transient on-screen confirmation) shipped earlier this
+  session as the CaptureBanner. Item 3 (promotion) is the subject of
+  the design doc. Item 2 (persistent capture-history widget) is
+  superseded — auto-promotion makes captures Pills on the timeline,
+  serving the same need as a history list. No further action on this
+  entry; it is preserved for context only.
 
 ### 2026-05-15 — Load dialog still cannot select `.sirius.json` on macOS
 
