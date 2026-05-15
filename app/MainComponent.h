@@ -108,6 +108,11 @@ private:
     class VideoPane;
     std::unique_ptr<VideoPane> videoPane_;
 
+    // --- transient capture announcement (white paper 14.5 — glanceable) ---
+    class CaptureBanner;
+    std::unique_ptr<CaptureBanner> captureBanner_;
+    void announceCapture (const CaptureRegion& region, int loopNumber);
+
     // --- bottom control bar ---
     juce::Slider     playhead_;
     juce::TextButton armButton_      { "Arm" };

@@ -144,6 +144,50 @@ private:
 };
 
 // =============================================================================
+// CaptureBanner — transient on-screen confirmation for a Mark Out gesture.
+// Painted on top of the tabbed content so the performer's eyes don't have to
+// drop to the diagnostics row to know the loop landed (white paper 14.5 —
+// "shape, color, position, motion," not text). Click-through so the gesture
+// underneath remains uninterrupted.
+// =============================================================================
+class MainComponent::CaptureBanner final : public juce::Component
+{
+public:
+    CaptureBanner()
+    {
+        setInterceptsMouseClicks (false, false);
+        setVisible (false);
+    }
+
+    void show (const juce::String& message)
+    {
+        text_ = message;
+        setVisible (true);
+        setAlpha (1.0f);
+        repaint();
+        juce::Desktop::getInstance().getAnimator().fadeOut (this, 1500);
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        auto bounds = getLocalBounds().toFloat();
+        g.setColour (juce::Colour (0xee1a1a1a));
+        g.fillRoundedRectangle (bounds, 8.0f);
+        g.setColour (juce::Colour (0xffffd24a));
+        g.drawRoundedRectangle (bounds.reduced (0.5f), 8.0f, 1.0f);
+
+        g.setColour (juce::Colours::white);
+        g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(),
+                                      14.0f, juce::Font::bold));
+        g.drawText (text_, getLocalBounds(),
+                    juce::Justification::centred, false);
+    }
+
+private:
+    juce::String text_;
+};
+
+// =============================================================================
 // PluginsPane — registered formats, folder-scan button, descriptor list
 // =============================================================================
 class MainComponent::PluginsPane final : public juce::Component
@@ -335,6 +379,11 @@ MainComponent::MainComponent()
     bottomInfo_.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
     addAndMakeVisible (bottomInfo_);
 
+    // Capture banner sits on top of the tabbed content (z-order: last
+    // addAndMakeVisible wins). Hidden by default; revealed by announceCapture.
+    captureBanner_ = std::make_unique<CaptureBanner>();
+    addAndMakeVisible (captureBanner_.get());
+
     setSize (1024, 720);
 
     refreshPerformance();
@@ -371,6 +420,13 @@ void MainComponent::resized()
     bottom.removeFromLeft (8);
     bottomInfo_.setBounds (bottom.removeFromRight (220));
     playhead_.setBounds (bottom);
+
+    // Banner: top-centred over the tabbed content. Sits below the tab bar so
+    // it doesn't occlude tab switching, above the body so it remains the
+    // visual top of stack within the active tab.
+    const int bw = 360;
+    const int bh = 36;
+    captureBanner_->setBounds ((getWidth() - bw) / 2, 44, bw, bh);
 }
 
 void MainComponent::timerCallback()
@@ -549,10 +605,24 @@ void MainComponent::onMarkOut()
 {
     const Rational t = playheadValueToLmc (playhead_.getValue());
     if (auto region = captureSession_.markOut (t))
+    {
         capturedRegions_.push_back (*region);
+        announceCapture (*region, static_cast<int> (capturedRegions_.size()));
+    }
 
     refreshCaptureControls();
     refreshDiagnostics();
+}
+
+void MainComponent::announceCapture (const CaptureRegion& region, int loopNumber)
+{
+    const double in  = region.inLmcSeconds.toDouble();
+    const double out = region.outLmcSeconds.toDouble();
+    juce::String msg;
+    msg << "Loop " << loopNumber << " captured  ·  "
+        << juce::String (out - in, 2) << " s  ·  tape #"
+        << juce::String ((juce::int64) region.tape.value());
+    captureBanner_->show (msg);
 }
 
 void MainComponent::refreshCaptureControls()
