@@ -112,3 +112,61 @@ TEST_CASE ("promote into an existing Phrase adds a Loop child, no Phrase mint",
     CHECK (addedLoop.tapeReference()->tapeIn        == Rational (3));
     CHECK (addedLoop.tapeReference()->tapeOut       == Rational (5));
 }
+
+TEST_CASE ("promote on an empty root mints a Phrase containing one Loop",
+           "[promotion][mint]")
+{
+    Constituent root = emptyRoot();
+    const CaptureRegion region { TapeId (300), Rational (4), Rational (8) };
+    Counter counter;
+
+    auto result = promote (root, identityMap(), region, /*lmcAtMarkIn*/ Rational (4),
+                           IdAllocator (std::ref (counter)));
+
+    REQUIRE (result.mintedPhraseId.has_value());
+    CHECK (result.mintedPhraseId->value() == 1000);  // first id minted (Phrase)
+    CHECK (result.addedLoopId.value()     == 1001);  // second id minted (Loop)
+    CHECK (result.undoLabel == "capture phrase");
+
+    REQUIRE (result.newRoot.children().size() == 1);
+    const auto& mintedPhrase = *result.newRoot.children()[0];
+    CHECK (mintedPhrase.id().value() == 1000);
+    REQUIRE (mintedPhrase.isPhrase());
+    CHECK (mintedPhrase.phraseMetadata()->role == "capture");
+    CHECK (mintedPhrase.conceptualIn()  == Position (Rational (4)));
+    CHECK (mintedPhrase.conceptualOut() == Position (Rational (8)));
+
+    REQUIRE (mintedPhrase.children().size() == 1);
+    const auto& loop = *mintedPhrase.children()[0];
+    CHECK (loop.id().value() == 1001);
+    REQUIRE (loop.tapeReference().has_value());
+    CHECK (loop.tapeReference()->tape.value() == 300);
+    CHECK (loop.conceptualIn()  == Position());                      // local-to-Phrase
+    CHECK (loop.conceptualOut() == Position (Rational (4)));         // duration of region
+}
+
+TEST_CASE ("promote with playhead in a gap between Phrases mints a fresh Phrase",
+           "[promotion][mint]")
+{
+    auto verse = std::make_shared<const Constituent> (
+        Constituent (ConstituentId (10), Position (Rational (0)), Position (Rational (4)))
+            .withName ("verse")
+            .withPhraseMetadata (PhraseMetadata { .role = "verse" }));
+
+    Constituent root = emptyRoot().withChildAdded (verse);
+
+    // Mark In at LMC = 10, far past the verse. No host.
+    const CaptureRegion region { TapeId (300), Rational (10), Rational (12) };
+    Counter counter;
+
+    auto result = promote (root, identityMap(), region, /*lmcAtMarkIn*/ Rational (10),
+                           IdAllocator (std::ref (counter)));
+
+    REQUIRE (result.mintedPhraseId.has_value());
+    CHECK (result.undoLabel == "capture phrase");
+
+    // Root now has two children: the original verse and the new Phrase.
+    REQUIRE (result.newRoot.children().size() == 2);
+    CHECK (result.newRoot.children()[0]->id().value() == 10);
+    CHECK (result.newRoot.children()[1]->id().value() == result.mintedPhraseId->value());
+}

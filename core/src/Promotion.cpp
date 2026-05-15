@@ -1,5 +1,6 @@
 #include "sirius/Promotion.h"
 
+#include "sirius/Phrase.h"
 #include "sirius/TapeReference.h"
 
 #include <algorithm>
@@ -147,8 +148,33 @@ PromotionResult promote (const Constituent&   root,
         return PromotionResult { std::move (newRoot), loopId, std::nullopt, std::move (label) };
     }
 
-    // Mint case (no host) — implemented in Task 4.
-    throw std::logic_error ("sirius::promotion::promote: mint path not yet implemented");
+    // Mint case — no Phrase contained Mark In. Create a fresh Phrase at the
+    // song root, sized to the captured region (1:1 conceptual ↔ LMC for M3),
+    // containing one Loop child whose conceptual bounds run from 0 to the
+    // region's duration in the new Phrase's local time.
+    const auto phraseId = allocateId();
+    const auto loopId   = allocateId();
+
+    const Position phraseIn  (region.inLmcSeconds);
+    const Position phraseOut (region.outLmcSeconds);
+    const Position loopIn;                                     // start of phrase-local
+    const Position loopOut (region.outLmcSeconds - region.inLmcSeconds);
+
+    Constituent loop (loopId, loopIn, loopOut);
+    loop = loop.withTapeReference (
+        TapeReference (region.tape,
+                       region.inLmcSeconds, region.outLmcSeconds));
+
+    Constituent newPhrase (phraseId, phraseIn, phraseOut);
+    newPhrase = newPhrase.withPhraseMetadata (PhraseMetadata { .role = "capture" })
+                         .withChildAdded (std::make_shared<const Constituent> (loop));
+
+    Constituent newRoot = root.withChildAdded (
+        std::make_shared<const Constituent> (newPhrase));
+
+    return PromotionResult { std::move (newRoot), loopId,
+                             std::optional<ConstituentId> (phraseId),
+                             std::string ("capture phrase") };
 }
 
 } // namespace sirius::promotion
