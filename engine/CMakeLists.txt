@@ -15,7 +15,8 @@ add_library(SiriusEngine STATIC
     src/Membrane.cpp
     src/LoopRenderer.cpp
     src/Asrc.cpp
-    src/RenderPipeline.cpp)
+    src/RenderPipeline.cpp
+    src/OverloadProtection.cpp)
 
 target_include_directories(SiriusEngine PUBLIC include)
 

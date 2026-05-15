@@ -18,7 +18,8 @@ add_executable(SiriusTests
     LoopRendererTests.cpp
     AsrcTests.cpp
     RenderPipelineTests.cpp
-    CapabilityTierTests.cpp)
+    CapabilityTierTests.cpp
+    OverloadProtectionTests.cpp)
 
 target_compile_features(SiriusTests PRIVATE cxx_std_20)
 
