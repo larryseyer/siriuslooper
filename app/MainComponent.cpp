@@ -9,6 +9,7 @@
 #include "sirius/TimelineViewState.h"
 #include "sirius/VideoPreview.h"
 
+#include <functional>
 #include <stdexcept>
 
 namespace sirius
@@ -327,6 +328,20 @@ MainComponent::MainComponent()
       focusedTape_ (! demo_.inputs.empty() ? demo_.inputs.front().tapeId
                                            : TapeId (0))
 {
+    // Seed nextConstituentId_ to one past the maximum id present in the
+    // initial demo session, so promotion's allocateId callback never collides
+    // with an existing id.
+    {
+        std::function<void (const Constituent&)> walk = [&] (const Constituent& c)
+        {
+            if (c.id().value() >= nextConstituentId_)
+                nextConstituentId_ = c.id().value() + 1;
+            for (const auto& child : c.children())
+                walk (*child);
+        };
+        walk (*undoStack_.current());
+    }
+
     // Demo edit so undo/redo have something to traverse: a renamed session.
     {
         const auto renamed = std::make_shared<const Constituent> (
@@ -562,16 +577,33 @@ void MainComponent::refreshDiagnostics()
                         << " s";
             break;
     }
-    captureLine << "    Regions: " << juce::String ((int) capturedRegions_.size());
-    if (! capturedRegions_.empty())
+    int loopCount = 0;
+    std::optional<TapeId> lastTape;
+    Rational lastIn  { 0 }, lastOut { 0 };
+    std::function<void (const Constituent&)> count;
+    count = [&] (const Constituent& c)
     {
-        const auto& last = capturedRegions_.back();
-        const double in  = last.inLmcSeconds.toDouble();
-        const double out = last.outLmcSeconds.toDouble();
+        if (const auto& ref = c.tapeReference())
+        {
+            ++loopCount;
+            lastTape = ref->tape;
+            lastIn   = ref->tapeIn;
+            lastOut  = ref->tapeOut;
+        }
+        for (const auto& child : c.children())
+            count (*child);
+    };
+    count (*undoStack_.current());
+
+    captureLine << "    Regions: " << juce::String (loopCount);
+    if (lastTape.has_value())
+    {
+        const double in  = lastIn.toDouble();
+        const double out = lastOut.toDouble();
         captureLine << "  (last: " << juce::String (in, 2)
                     << " s → "    << juce::String (out, 2)
                     << " s, "     << juce::String (out - in, 2) << " s long"
-                    << " · tape #" << juce::String ((juce::int64) last.tape.value())
+                    << " · tape #" << juce::String ((juce::int64) lastTape->value())
                     << ")";
     }
 
@@ -618,22 +650,70 @@ void MainComponent::onMarkOut()
     const Rational t = playheadValueToLmc (playhead_.getValue());
     if (auto region = captureSession_.markOut (t))
     {
-        capturedRegions_.push_back (*region);
-        announceCapture (*region, static_cast<int> (capturedRegions_.size()));
+        const sirius::CaptureRestorePoint restorePoint {
+            region->inLmcSeconds, region->tape };
+
+        auto result = promotion::promote (
+            *undoStack_.current(),
+            demo_.sessionToLmc,
+            *region,
+            region->inLmcSeconds,
+            [this] { return ConstituentId (nextConstituentId_++); });
+
+        undoStack_.push (
+            std::make_shared<const Constituent> (std::move (result.newRoot)),
+            result.undoLabel,
+            restorePoint);
+
+        announceCapture (*region, result);
+        refreshPerformance();
+        refreshPreparation();
     }
 
     refreshCaptureControls();
     refreshDiagnostics();
 }
 
-void MainComponent::announceCapture (const CaptureRegion& region, int loopNumber)
+void MainComponent::announceCapture (const CaptureRegion& region,
+                                     const promotion::PromotionResult& result)
 {
-    const double in  = region.inLmcSeconds.toDouble();
-    const double out = region.outLmcSeconds.toDouble();
+    const double seconds = (region.outLmcSeconds - region.inLmcSeconds).toDouble();
     juce::String msg;
-    msg << "Loop " << loopNumber << " captured  ·  "
-        << juce::String (out - in, 2) << " s  ·  tape #"
-        << juce::String ((juce::int64) region.tape.value());
+
+    if (result.mintedPhraseId.has_value())
+    {
+        msg << "Phrase captured  ·  "
+            << juce::String (seconds, 2) << " s  ·  tape #"
+            << juce::String ((juce::int64) region.tape.value());
+    }
+    else
+    {
+        // Walk the new root to recover the host Phrase's display name for
+        // the banner. Cheap — root is small at M3.
+        std::string hostName;
+        std::function<void (const Constituent&)> findLoop;
+        findLoop = [&] (const Constituent& c)
+        {
+            for (const auto& child : c.children())
+            {
+                if (child->id() == result.addedLoopId)
+                {
+                    hostName = c.name();
+                    return;
+                }
+                findLoop (*child);
+                if (! hostName.empty()) return;
+            }
+        };
+        findLoop (*undoStack_.current());
+
+        msg << "Loop added to "
+            << (hostName.empty() ? juce::String ("phrase") : juce::String (hostName))
+            << "  ·  "
+            << juce::String (seconds, 2) << " s  ·  tape #"
+            << juce::String ((juce::int64) region.tape.value());
+    }
+
     captureBanner_->show (msg);
 }
 

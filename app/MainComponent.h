@@ -8,6 +8,7 @@
 #include "sirius/LatencyBudget.h"
 #include "sirius/PerformanceView.h"
 #include "sirius/PluginScanner.h"
+#include "sirius/Promotion.h"
 #include "sirius/TapeId.h"
 #include "sirius/UndoStack.h"
 
@@ -111,7 +112,8 @@ private:
     // --- transient capture announcement (white paper 14.5 — glanceable) ---
     class CaptureBanner;
     std::unique_ptr<CaptureBanner> captureBanner_;
-    void announceCapture (const CaptureRegion& region, int loopNumber);
+    void announceCapture (const CaptureRegion& region,
+                          const promotion::PromotionResult& result);
 
     // --- bottom control bar ---
     juce::Slider     playhead_;
@@ -124,7 +126,7 @@ private:
 
     // --- capture state (white paper 14.5 / 14.6) ---
     CaptureSession captureSession_;
-    std::vector<CaptureRegion> capturedRegions_;
+    std::int64_t   nextConstituentId_ { 0 };
 
     // --- input topology + per-tape arm/focus (this session) ---
     std::vector<InputDescriptor>     inputs_;
