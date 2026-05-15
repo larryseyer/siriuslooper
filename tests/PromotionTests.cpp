@@ -75,3 +75,40 @@ TEST_CASE ("promote throws when any Constituent id appears more than once",
                  IdAllocator (std::ref (counter))),
         std::logic_error);
 }
+
+TEST_CASE ("promote into an existing Phrase adds a Loop child, no Phrase mint",
+           "[promotion][host]")
+{
+    // Build a root with a single Phrase "verse" spanning [2, 6) seconds.
+    auto verse = std::make_shared<const Constituent> (
+        Constituent (ConstituentId (10), Position (Rational (2)), Position (Rational (6)))
+            .withName ("verse")
+            .withPhraseMetadata (PhraseMetadata { .role = "verse" }));
+
+    Constituent root = emptyRoot().withChildAdded (verse);
+
+    // Mark In at LMC = 3 (inside verse), Mark Out at LMC = 5 (still inside).
+    const CaptureRegion region { TapeId (200), Rational (3), Rational (5) };
+    Counter counter;
+
+    auto result = promote (root, identityMap(), region, /*lmcAtMarkIn*/ Rational (3),
+                           IdAllocator (std::ref (counter)));
+
+    CHECK_FALSE (result.mintedPhraseId.has_value());
+    CHECK (result.addedLoopId.value() == 1000);  // first Counter id
+    CHECK (result.undoLabel == "capture loop into verse");
+
+    // The new root should have one top-level child (the verse, copy-on-write
+    // replaced) which now itself has one child (the Loop).
+    REQUIRE (result.newRoot.children().size() == 1);
+    const auto& placedVerse = *result.newRoot.children()[0];
+    CHECK (placedVerse.id().value() == 10);
+    REQUIRE (placedVerse.children().size() == 1);
+
+    const auto& addedLoop = *placedVerse.children()[0];
+    CHECK (addedLoop.id().value() == 1000);
+    REQUIRE (addedLoop.tapeReference().has_value());
+    CHECK (addedLoop.tapeReference()->tape.value()  == 200);
+    CHECK (addedLoop.tapeReference()->tapeIn        == Rational (3));
+    CHECK (addedLoop.tapeReference()->tapeOut       == Rational (5));
+}
