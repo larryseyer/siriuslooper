@@ -732,9 +732,28 @@ void MainComponent::onUndo()
 {
     if (undoStack_.canUndo())
     {
+        // The entry we are about to leave (the current top) is the one whose
+        // restore point applies — undoing a promotion entry restores the
+        // CaptureSession state that existed before that promotion fired.
+        const auto restoreOnLeave = undoStack_.currentEntryRestorePoint();
+
         undoStack_.undo();
+
+        if (restoreOnLeave.has_value())
+        {
+            // Re-enter AwaitingOut with the original Mark In intact. The
+            // operator can immediately Mark Out again at a different time, or
+            // hit Disarm to abandon. Tape samples between the original Mark
+            // In and any future Mark Out are still on the always-running tape.
+            captureSession_.arm();  // ensure not Disarmed (no-op if already armed)
+            captureSession_.markIn (restoreOnLeave->pendingIn,
+                                    restoreOnLeave->pendingTape);
+        }
+
         refreshPerformance();
         refreshPreparation();
+        refreshCaptureControls();
+        refreshDiagnostics();
     }
 }
 
