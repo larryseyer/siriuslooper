@@ -55,3 +55,28 @@ already held (same licensing model as the sister app OTTO; see
   78 tests pass. The libsoxr variable-rate latency measurement the plan asked
   for: reported delay ~2.1 ms, impulse-response latency ~0.04 ms — both
   comfortably inside the <30 ms trust budget.
+
+### 2026-05-14 — M3: Minimal functional UI
+
+- **Files:** `app/SessionInspector.{h,cpp}`, `app/DemoSession.{h,cpp}`,
+  `app/Main.cpp`
+- **What was deferred:**
+  1. Operator verification that the session-inspector window launches: the
+     Constituent tree renders as an indented hierarchy, the playhead slider
+     scrubs, and the "loops sounding" panel updates as it moves.
+- **Why deferred:** GUI testing is operator-run per project conventions; the
+  build produces a valid `Sirius Looper.app` bundle but the window was not
+  launched in this environment.
+- **What's needed to finish:**
+  1. Launch `build/app/SiriusLooper_artefacts/Release/Sirius Looper.app`.
+     Confirm: the demo tree shows the session with intro/verse/outro phrases
+     (verse holding two layered loops); dragging the playhead from 0 to 24 s
+     moves the active-reads panel through intro -> verse (2 loops) -> outro;
+     the read positions advance monotonically within each phrase.
+
+- **Headless verification already done for M3 UI:** the inspector is built on
+  the same RenderPipeline exercised by 105 passing unit tests (incl. the
+  arrangement integration test that pins down sequenced end-to-end playback);
+  the demo tree is constructed with the verified `arrangement::sequence` /
+  `arrangement::layer` primitives. The UI is a pure view over verified core +
+  engine code — no new untested logic, only JUCE rendering of it.

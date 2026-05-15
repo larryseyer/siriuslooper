@@ -1,27 +1,9 @@
+#include "SessionInspector.h"
+
 #include <juce_gui_extra/juce_gui_extra.h>
 
 namespace sirius
 {
-
-class MainComponent final : public juce::Component
-{
-public:
-    MainComponent()
-    {
-        setSize (960, 600);
-    }
-
-    void paint (juce::Graphics& g) override
-    {
-        g.fillAll (getLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId));
-        g.setColour (juce::Colours::white);
-        g.setFont (juce::FontOptions (28.0f));
-        g.drawText ("Sirius Looper", getLocalBounds(), juce::Justification::centred, false);
-    }
-
-private:
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)
-};
 
 class SiriusLooperApplication final : public juce::JUCEApplication
 {
@@ -58,7 +40,7 @@ private:
                               DocumentWindow::allButtons)
         {
             setUsingNativeTitleBar (true);
-            setContentOwned (new MainComponent(), true);
+            setContentOwned (new SessionInspector(), true);
             setResizable (true, true);
             centreWithSize (getWidth(), getHeight());
             setVisible (true);
