@@ -22,7 +22,8 @@ add_executable(SiriusTests
     OverloadProtectionTests.cpp
     SessionFormatTests.cpp
     TapeStoreTests.cpp
-    EffectChainTests.cpp)
+    EffectChainTests.cpp
+    ParameterAutomationTests.cpp)
 
 target_compile_features(SiriusTests PRIVATE cxx_std_20)
 
