@@ -1,15 +1,32 @@
-# Session Continuation — 2026-05-16 (Sessions A + B landed; next = Session C)
+# Session Continuation — 2026-05-16 (shared-placement milestone shipped end-to-end)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
 > project's auto-memory (`MEMORY.md` + `*.md` in the memory dir) are
 > loaded automatically and contain the rules. This file is the
-> *state*: what just happened, what is ready to verify, and what to
-> start on next.
+> *state*: what just shipped, what's verified, and what to start on
+> next.
 
 ---
 
-## 0. Quick orientation
+## 0. Headline
+
+**Shared-placement milestone is complete.** The verse plays three
+times in the demo, all three placements share one underlying Phrase
+via pointer-identity, the operator can long-press Mark In to attach
+an overlay to a single placement only, and can right-click `"Vary
+this one"` to fork a placement off its shared lineage. Tie-bar,
+overlay-dot, and prime-mark visuals on the timeline make the three
+states glanceable without text. Every user-facing string passes
+spec §15 musician-vocabulary review.
+
+Sessions A + B + C, ten tasks of the plan
+`docs/superpowers/plans/2026-05-16-shared-placement.md`, **all
+shipped and operator-verified end-to-end.**
+
+---
+
+## 1. Quick orientation
 
 **Sirius Looper** is a real-time looping / arrangement application
 for musicians, built in JUCE/C++20 with a strict separation between
@@ -19,272 +36,182 @@ a JUCE-free conceptual-time core (`core/`) and the audio/UI layers
 Authoritative reading, in order:
 
 1. **`/Users/larryseyer/.claude/CLAUDE.md`** — global engineering
-   rules. Already auto-loaded.
-2. **`docs/superpowers/plans/2026-05-16-shared-placement.md`** —
-   *the* plan being executed. Tasks 1–6 shipped (Sessions A and B);
-   Session C picks up at Task 7. Tasks 7 and 8 are the first
-   operator-verification gates of the milestone for the new long-press
-   and fork gestures — brief the operator on each *before* writing
-   any code so they can keep the `.app` open.
-3. **`docs/superpowers/specs/2026-05-16-shared-placement-design.md`**
-   — the spec the plan implements. §15 (musician-language QA
-   checklist) is the bar every new UI string is reviewed against;
-   Task 7 introduces the §11-template banner copy and is where §15
-   becomes line-by-line.
-4. **`docs/superpowers/plans/2026-05-15-capture-promotion.md`** —
-   the prior plan, structural template. Its Self-Review section is
-   the model for what the shared-placement plan's Task 10 will
-   produce.
-5. **`docs/Sirius Looper Whitepaper V2.md`** — conceptual model.
-   Parts VII (Constituent unifying abstraction) and IX (arrangement)
-   are load-bearing background.
-6. **`docs/Sirius Looper User Guide.md`** — operator-facing how-to.
-   Task 9 adds a Roadmap line about "repeating song sections"; the
-   full chapter is deferred until operator verification confirms the
-   gestures feel right.
-7. **`todo.md`** — deferred-work register.
-   - The shared-placement SUPERSEDED entry stays SUPERSEDED; the
-     plan's Task 10 will mark it IMPLEMENTED once the full milestone
-     ships at the end of Session C.
-   - 2026-05-16 entry "Hoist Shared-path splice out of `promote()`"
-     (added by Session A) remains an open follow-up, not blocking.
+   rules (auto-loaded).
+2. **`todo.md`** — deferred-work register. Several new entries from
+   this milestone's code reviews — see §3 below.
+3. **`docs/superpowers/plans/2026-05-16-shared-placement.md`** — the
+   plan that just shipped. All 10 tasks are now `[x]`. The plan's
+   Self-Review section is at the bottom.
+4. **`docs/superpowers/specs/2026-05-16-shared-placement-design.md`**
+   — the spec the plan implemented. §15 (musician-language QA
+   checklist) is the bar every UI string was reviewed against.
+5. **`docs/superpowers/plans/2026-05-15-capture-promotion.md`** — the
+   prior plan; structural template still useful for the next
+   milestone.
+6. **`docs/Sirius Looper Whitepaper V2.md`** — conceptual model.
+   Parts VII (Constituent abstraction) and IX (arrangement) are
+   load-bearing background.
+7. **`docs/Sirius Looper User Guide.md`** — operator-facing how-to.
+   Task 9 added a Roadmap line about "Repeating song sections"; the
+   full chapter is deferred until the gestures get long-form real-
+   use testing.
 
 **Project policies that override defaults** (full text in CLAUDE.md
-and in the auto-memory):
+and auto-memory):
 
 - **Work directly on `master`.** No feature branches unless asked.
-- **Commits AND pushes are authorized.** Claude commits to master
-  and pushes to `origin/master` as deliverables land. No PRs (trunk
-  push only). No `--force`. No `--no-verify`. See memory
-  `feedback-claude-commits-and-pushes-master`. `bash/bu.sh` is the
-  user's *local* backup tool — Claude does not run it.
+- **Commits AND pushes are authorized.** Claude commits + pushes to
+  `origin/master` as deliverables land. No PRs, no `--force`, no
+  `--no-verify`. See memory `feedback-claude-commits-and-pushes-master`.
+  `bash/bu.sh` is the user's *local* backup tool — Claude doesn't run
+  it.
 - **Single-line commit messages**, format `<type>: <short title>`.
   No Co-Authored-By trailer.
 - **Never run `open ...` or any GUI-launching command.** Operator-
-  side `.app` verification is something the *user* runs at their
-  terminal. **This is relevant again in Session C at Tasks 7 and 8.**
+  side `.app` verification is the user's job.
 - **Hide internals from the musician.** Every new UI string is
-  checked against spec §15. No tape numbers, no "wrapper", no
-  "placement", no "fork" in default-flow operator surfaces. See
-  memory `feedback-hide-internals-from-musician`.
+  checked against spec §15.
 
 ---
 
-## 1. What just shipped (Session B execution, 2026-05-16)
+## 2. What just shipped — Session C, 2026-05-16
 
-Three commits on master, all pushed to `origin/master`:
+Five commits on master, all pushed to `origin/master`:
 
 | SHA       | Subject                                                                                       |
 |-----------|-----------------------------------------------------------------------------------------------|
-| `f309e2c` | feat: TimelineViewState — wrapper-aware Pills with sharedSiblings/overlays/forked             |
-| `503bab0` | feat: TimelineView — tie-bar across shared placements + overlay dot + fork prime              |
-| `74d0463` | feat: DemoSession — verse plays three times via shared placement                              |
+| `dd1c28c` | feat: MainComponent — long-press Mark In requests Overlay; banner uses §11 musician copy      |
+| `38667d0` | feat: fork — 'Vary this one' context menu on placement Pills                                  |
+| `6429029` | docs: todo.md — log Task 7 value_or→jassert + Task 8 refreshAll() follow-ups                  |
+| `138b35b` | docs: user guide — Roadmap line for repeating song sections                                   |
+| (Task 10) | (Task 10 commits are this handoff + the todo.md IMPLEMENTED flip; see below)                  |
 
-**Test suite:** 244 / 4214 → **250 / 4269** assertions, all green.
+**Full milestone arc** (Sessions A + B + C, 8 feature commits + 3
+docs commits):
 
-**What's now live in the codebase:**
-- `PillState` (in `ui/include/sirius/TimelineViewState.h`) gains three
-  new fields:
-  - `sharedSiblings: std::vector<ConstituentId>` — populated by the
-    selector's post-pass; non-empty iff this wrapper shares its
-    underlying Phrase via pointer-identity with ≥1 other wrapper.
-  - `hasOverlays: bool` — true iff the wrapper has ≥2 children (the
-    shared Phrase plus instance-only overlay Loops).
-  - `isForked: bool` — true iff the wrapper's role is
-    `"forked-placement"`.
-- `sirius::selectTimelineView` is now wrapper-aware. It emits **one
-  Pill per wrapper** (suppressing the shared child) with content
-  (`name`, `loopCount`, `primaryTape`, `memberTapes`,
-  `phraseLoopActive`, `entranceName`, `exitName`) sourced from the
-  shared Phrase. A second pass groups placement wrappers by raw
-  `const Constituent*` pointer-identity and populates each Pill's
-  `sharedSiblings` with the other ids in its group. Forked wrappers
-  are intentionally excluded from grouping (their wrapperSharedKey
-  entry is never inserted).
-- `ui/src/TimelineView.cpp` (the JUCE renderer) now draws three
-  visual marks on top of the existing pill paint:
-  - **Tie-bar:** a 2px light-blue horizontal bar 6px above the pill
-    row, spanning the leftmost-start to rightmost-end of each shared
-    group. Group key is the minimum wrapper id (stable across paint
-    frames). Skipped if all members are off-screen (sentinel guarded).
-  - **Overlay-dot:** 6px orange filled circle at each wrapper Pill's
-    top-right when `hasOverlays`. Silent visual signal, no text.
-  - **Prime mark:** 14pt bold white apostrophe above forked Pills.
-    Font state restored to the per-pill loop's 11pt after the draw
-    (prevents bleed into the membership-outline pass below).
-- `DemoSession` is now a **24-whole-note** session with **three verse
-  placements** at offsets 3/9/15, all sharing the same underlying
-  verse Phrase (id 20) via `arrangement::sequenceShared`. Wrapper ids
-  are 51/52/53. Verse contains layered loops 21 (rhythm, tape 200,
-  Rational(6)) and 22 (lead, tape 300, Rational(3) — half-length on
-  purpose). Intro (id 10, tape 100) and outro (id 30, tape 400) keep
-  their pre-Session-B hybrid-via-`layer` shape (a separate `todo.md`
-  cleanup item from 2026-05-15 still open).
+| SHA       | Session | Subject                                                                                       |
+|-----------|---------|-----------------------------------------------------------------------------------------------|
+| `936582f` | A       | feat: arrangement — sequenceShared + isPlacementWrapper predicate                             |
+| `d8a2479` | A       | feat: promotion — AttachmentMode + pointer-aware guard + wrapper-aware host walk              |
+| `b59a76e` | A       | docs: promotion — justify promote() length per CLAUDE.md function-size rule                   |
+| `f309e2c` | B       | feat: TimelineViewState — wrapper-aware Pills with sharedSiblings/overlays/forked             |
+| `503bab0` | B       | feat: TimelineView — tie-bar across shared placements + overlay dot + fork prime              |
+| `74d0463` | B       | feat: DemoSession — verse plays three times via shared placement                              |
+| `dd1c28c` | C       | feat: MainComponent — long-press Mark In requests Overlay; banner uses §11 musician copy      |
+| `38667d0` | C       | feat: fork — 'Vary this one' context menu on placement Pills                                  |
+| `138b35b` | C       | docs: user guide — Roadmap line for repeating song sections                                   |
 
-### Session B execution notes (carry-over context for Session C)
+**Test suite:** 235 / 4145 → **250 / 4269** assertions, all green.
 
-- **The plan-vs-implementation divergence pattern continues.** Task 5
-  required identifier substitutions for `pillTopY` / `pillRowTopY()` /
-  `x2` that the plan only described as placeholders — the implementer
-  correctly mapped them to `pillRect.getY()` and a
-  `contentArea(idx).getY() + 4` derivation, and also silenced a JUCE
-  Font deprecation that the plan's verbatim `juce::Font(14.0f, bold)`
-  introduced (replaced with the codebase-consistent
-  `juce::FontOptions(getDefaultMonospacedFontName(), 14.0f, bold)`).
-  Session A's lesson holds for Session C: **read the plan's inlined
-  code critically, trace tests by hand if anything looks off, and
-  treat the codebase's prior style as authoritative when the plan
-  conflicts with it.**
-
-- **No collateral test breakage** at Task 6 despite the plan warning
-  that PerformanceViewState/TimelineViewState tests might have
-  hard-coded the old 12-whole-note length. Verified by
-  `grep -rn buildDemoSession tests/` — only `DemoSessionTests.cpp`
-  consumes it. The selector tests build their own fixtures.
-
-- **Operator gate at Task 5 passed cleanly.** The visual state at that
-  point had no shared siblings / overlays / forks yet (single-verse
-  demo), so the gate was effectively a no-regression check on
-  intro/verse/outro. The tie-bar visual now has real content to
-  display (3 wrappers post-Task-6) but its first end-to-end visual
-  verification is Task 10's job.
-
-### Worth doing before Session C kicks off (optional)
-
-The operator may want to launch the `.app` once to see the tie-bar
-work for the first time. Not strictly required — Task 10 verifies it
-end-to-end — but a natural moment:
-
-```bash
-open "/Users/larryseyer/Sirius Looper/build/app/SiriusLooper_artefacts/Release/Sirius Looper.app"
-```
-
-On the Preparation tab, expect:
-- Three verse pills spanning the middle of the timeline.
-- A light-blue horizontal tie-bar 6 px above them, connecting all
-  three.
-- No orange dot (no overlays in the demo yet — Task 7 introduces the
-  long-press gesture that creates them).
-- No prime mark (no forks yet — Task 8 introduces the fork gesture).
-
-If the tie-bar reads as "these three are the same phrase" without
-needing words, the visual design holds. If it reads as decoration,
-note it in `todo.md` and **keep going** — tuning is a follow-up;
-do not rewrite the plan mid-execution.
+**Operator gates passed:** Task 5 (tie-bar no-regression), Task 7
+(four §11 banner scenarios), Task 8 (five-step fork gesture script),
+Task 10 (end-to-end milestone walkthrough).
 
 ---
 
-## 2. Next pick — Session C (Tasks 7–10)
+## 3. Known follow-ups (from milestone code reviews — in `todo.md`)
 
-**Goal:** long-press capture wiring → fork gesture → user-guide
-Roadmap line → end-to-end verification + plan Self-Review.
+Three review-surfaced cleanups, none blocking, all individually small:
 
-Session C's four tasks (the plan's Tasks 7–10, lines 1751–end):
+1. **Hoist Shared-path splice out of `promote()`** (Session A
+   review). Extract the pointer-identity-preserving Shared splice
+   into a private anonymous-namespace helper; drops `promote()` from
+   ~226 to ~165 lines. Surfaced 2026-05-16, commit `b59a76e`-era.
 
-- **Task 7 — MainComponent long-press capture + §11 banner copy**
-  (`app/MainComponent.cpp`, possibly `app/MainComponent.h`,
-  `tests/MainComponentTests.cpp` if any exist).
-  Wires the long-press gesture to set `pendingOverlay_ = true`
-  (the latch landed in Session A; this task connects the gesture).
-  Updates the capture banner copy to the §11 template
-  ("Overlay added to verse" vs "Added to verse"). **Operator-
-  verification gate.** This is the first task with line-by-line §15
-  vocabulary review — every banner string must pass the musician-
-  language test. Brief the operator on what gestures to try and what
-  banner text to expect *before* committing.
+2. **`announceCapture` Overlay branch: `value_or` → `jassert`**
+   (Session C Task 7 review). Replace defensive `value_or`
+   fallbacks with `jassert` so debug builds catch contract
+   regressions loudly rather than rendering silently-wrong banner
+   copy. Surfaced 2026-05-16, commit `dd1c28c`.
 
-- **Task 8 — Fork gesture: data path + minimal UI surface**
-  (`core/src/Arrangement.cpp` or a new `core/src/Fork.cpp`,
-  `tests/ForkTests.cpp`, `app/MainComponent.cpp`).
-  Introduces the role-replacement that turns one of N shared
-  wrappers into a `"forked-placement"`. Once the data path is
-  tested headlessly, adds a minimal trigger (likely a context-menu
-  item on the wrapper). **Operator-verification gate.** The prime
-  mark renderer is already live (Task 5); this task makes it
-  actually appear.
+3. **Extract `MainComponent::refreshAll()`** (Session C Task 8
+   review). The four-call refresh sequence is duplicated at five
+   sites; collapse to one helper. Surfaced 2026-05-16, commit
+   `38667d0`.
 
-- **Task 9 — User-guide Roadmap update**
-  (`docs/Sirius Looper User Guide.md`).
-  Adds a single Roadmap line about "repeating song sections" so the
-  user-guide acknowledges the feature exists without committing to a
-  full chapter. The full chapter is deferred until operator
-  verification confirms the gestures feel right (per the memory
-  `project_user_guide_alongside_whitepaper.md`). Headless; no gate.
+Plus the pre-existing items already in `todo.md`:
 
-- **Task 10 — End-to-end verification + plan Self-Review**
-  (no code changes; documentation + a final test run).
-  Final operator gate: walk through the complete capture → promote
-  → overlay → fork cycle on the demo. Writes a Self-Review section
-  at the bottom of the plan (matches the structural template of the
-  2026-05-15 capture-promotion plan's Self-Review). Marks the
-  `todo.md` SUPERSEDED entry as IMPLEMENTED.
-
-### Execution method
-
-Same as Sessions A and B: `superpowers:subagent-driven-development`.
-Dispatch one fresh subagent per task, two-stage review (spec
-compliance then code quality) between tasks, commit + push from the
-main session. Surface operator gates via `AskUserQuestion` after
-the implementer reports DONE; commit + push after the operator
-confirms.
-
-### Operator-gate script for Task 7 (to brief before committing)
-
-After Task 7's implementation step but before the commit, hand the
-operator this script. The exact gesture sequence depends on the
-final long-press wiring; the placeholder below is a starting point
-that Session C should refine when the wiring details land:
-
-> **You'll need to do a visual check before I can commit Task 7.**
-> 1. Quit the running `.app` if open.
-> 2. From the project root:
->    ```
->    rm -rf build
->    cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
->    cmake --build build
->    open build/app/SiriusLooper_artefacts/Release/Sirius\ Looper.app
->    ```
-> 3. The Preparation tab shows three verse pills with a tie-bar
->    connecting them (from Sessions A+B).
-> 4. Place the playhead inside one verse instance.
-> 5. **Short-press capture** — Mark In + Mark Out as you would today.
->    Banner should read something like "Added to verse" (no internal
->    vocabulary — no "wrapper", no "placement", no "shared"). The
->    Loop should appear on all three verse pills (shared add).
-> 6. **Long-press capture** — same gesture but hold for >X ms before
->    Mark In. Banner should read something like "Overlay added to
->    verse" (note the word "Overlay" — that's the only sanctioned
->    user-facing term for the per-instance attachment). An orange
->    dot should appear on the one verse pill you captured into.
-> 7. Confirm both banner strings pass spec §15: no "wrapper", no
->    "placement", no "fork", no tape numbers, no data-model
->    vocabulary.
-
-### Operator-gate script for Task 8 (to brief before committing)
-
-To be written when the fork gesture's UI surface (context-menu item?
-double-tap? long-press-and-hold?) is decided in Task 8's design pass.
-The verification is: after triggering the fork on one wrapper, that
-wrapper's pill should grow a small white prime mark above it and
-drop out of the tie-bar group. The other two wrappers stay tied to
-each other.
-
-### Reasonable session boundaries
-
-Session C is bigger than Session B (four tasks vs three, two operator
-gates vs one, and Task 7's banner-copy work is the first task that
-needs line-by-line §15 review). Plan for it as its own session unless
-context budget is generous.
-
-After Session C, the shared-placement milestone is done. Next major
-milestone TBD (open candidates from `todo.md`: OTTO Look-and-Feel
-integration, M5 plugin scanner crash + redesign, session directory
-format, marketing-site assets, intro/outro Phrase-vs-Loop convention
-cleanup).
+- **2026-05-15 — DemoSession intro/outro Phrase-vs-Loop convention**
+  (intro/outro are hybrids; the milestone's verse uses the strict
+  Phrase-shell-with-Loop-child shape).
+- **2026-05-15 — Session directory format** (Whitepaper V2 §7.8).
+- **2026-05-15 — Load dialog macOS TCC issue.**
+- **2026-05-15 — OTTO Look-and-Feel integration**.
+- **2026-05-15 — Marketing site asset gaps.**
+- **2026-05-15 — M5 plugin scanner redesign.**
+- Various M2/M3/M5/M6/M7/M8 operator-verification deferrals.
 
 ---
 
-## 3. Build + test state (current head: `74d0463`)
+## 4. Next milestone — candidates
+
+The shared-placement milestone closes a major architectural arc.
+The next big-topic candidates, in roughly priority order:
+
+1. **Persistence: session-format encoding of sharing.** Today the
+   on-disk session.json shape (Whitepaper V2 §7.8) doesn't account
+   for placement wrappers or the shared `ChildPtr` invariant. A
+   session with verse × 3 would serialize the verse Phrase three
+   times and lose pointer-identity on reload. Needs:
+   - A serialization scheme that emits each Phrase once and
+     references it from wrappers by id.
+   - A deserialization step that re-establishes the
+     `enforceSharedInstancesAreShared` invariant before promote()
+     ever runs.
+   - The directory-format work already deferred in `todo.md` is the
+     natural place to land this — they're coupled.
+
+2. **OTTO L&F integration.** Big, well-scoped, sister-app-aligned.
+   Has a four-option design choice already enumerated in `todo.md`
+   (shared-submodule decided; module location TBD between
+   new-top-level-repo / OTTO-canonical / Sirius-canonical / vendor-
+   first).
+
+3. **The full "Repeating song sections" user-guide chapter.** Task 9
+   added a Roadmap bullet; the full chapter lands once the gestures
+   have been used in real performance and the language stabilises.
+   Needs operator time-on-instrument, not implementation time.
+
+4. **Spec §16 open items** (frozen during this milestone but worth
+   revisiting):
+   - Desktop accelerator: Option-click on Mark In for overlay,
+     parallel to the long-press touch gesture.
+   - Per-instance metadata beyond overlay Loops (per-placement
+     entrance/exit characters? Per-placement automation?).
+   - Phrase-shaped overlays (today overlays are Loops only).
+
+5. **M5 plugin scanner crash + redesign.** Lower priority unless
+   the user's plugin folder grows again.
+
+6. **The three code-quality follow-ups in §3.** Bundleable as one
+   focused refactor commit; or distribute across the next milestone
+   as touched-while-passing-by opportunities (favouring the
+   `refreshAll()` extraction, since the next milestone will almost
+   certainly add a sixth refresh-quartet site).
+
+---
+
+## 5. Architectural ground truth (now enforced end-to-end)
+
+| Invariant | Source | Status |
+|---|---|---|
+| Loops are leaves with `TapeReference`; Phrases are containers with `PhraseMetadata`. No hybrid Constituents (except intro/outro, tracked). | `[demoSession][shape]` test + `findHostRecursive`. | Enforced for verse/wrappers; intro/outro still hybrid (tracked). |
+| Wrappers are Phrases (role `"placement"`). Forked wrappers are Phrases (role `"forked-placement"`). Overlay Loops are leaves. | Spec §1, Task 1 predicate. | Enforced — `isPlacementWrapper`, `sequenceShared`, deep-copy with fresh ids. |
+| Constituents are immutable; every edit is copy-on-write with shared subtrees. | `Constituent.h` docstring. | Preserved through promote() (pointer-identity-preserving splice) and fork (deep-copy of shared subtree). |
+| `ConstituentId` duplicates are legal iff via the same `shared_ptr`, illegal otherwise. | Spec §3, Task 2 guard. | Enforced at runtime — `enforceSharedInstancesAreShared`. |
+| M3 simplification (1:1 conceptual ↔ LMC, no tempo map inverse yet). | Carry-over. | Preserved through every Session A/B/C splice. |
+| Promotion result carries `hostPhraseName`, `resolvedMode`, `overlayPlacementIndex`, `mintedPhraseId`. | Task 3. | Live — banner reads all four via §11 templates (Task 7). |
+| iOS is a first-class target. | Project memory. | Long-press gesture (touch-friendly) chosen over desktop-modifier-click. |
+| Operator vocabulary rule §15. | Spec §15. | Enforced via greps + line-by-line review at every UI-touching task (4-9); end-to-end verified at Task 10. |
+| TimelineView Pills emit one-per-wrapper for placement and forked wrappers. | Task 4. | Live, with pointer-identity grouping for sharedSiblings. |
+| Tie-bar grouping stable across paint frames via min-id key. | Task 5. | Explicit comment at the key-derivation site. |
+| Demo: 24 whole notes, verse × 3 via shared Phrase id 20. | Task 6. | Pinned by `[demoSession][shape]` and `[demoSession][shared]`. |
+| Long-press Mark In ≥ 500 ms = Overlay request; release resets. | Task 7. | `kOverlayLongPressMs = 500`; lambda timer; orange tint confirms upgrade. |
+| Fork gesture: right-click / Ctrl-click / touch-long-press a Pill → `"Vary this one"` menu → deep-copy with fresh ids + role flip. | Task 8. | Wired through `TimelineView::onPillContextMenuRequested`. |
+
+---
+
+## 6. Build + test state
 
 ```bash
 cd "/Users/larryseyer/Sirius Looper"
@@ -292,96 +219,50 @@ cmake --build build --target SiriusTests        # incremental
 ./build/tests/SiriusTests                       # expect 250 / 4269
 ```
 
-After Session C completes, expect roughly **+5 to +10 test cases**
-(Task 8's headless fork-data tests are the main contributor;
-Task 10's Self-Review pins the exact deltas).
-
-Task 7 may need a clean rebuild (`rm -rf build && cmake -B build ...`)
-before the operator verifies — gesture wiring changes don't always
-pick up cleanly through Ninja's incremental.
+The `.app` is fresh from Task 10's clean Release rebuild at
+`build/app/SiriusLooper_artefacts/Release/Sirius\ Looper.app`. No
+warnings from any Sirius source (only the usual JUCE/Catch2
+upstream noise).
 
 ---
 
-## 4. Architectural ground truth (carry-over from Session A, updated for Session B)
-
-| Invariant | Source | Status |
-|---|---|---|
-| Loops are leaves with `TapeReference`; Phrases are containers with `PhraseMetadata`. No hybrid Constituents (except the still-open intro/outro `todo.md` cleanup). | `[demoSession][shape]` test + `findHostRecursive`. | Enforced for verse/wrappers; intro/outro remain hybrids (tracked). |
-| Wrappers are Phrases (not hybrids). Overlay Loops are leaves (not hybrids). | Spec §1. | Enforced — `isPlacementWrapper` predicate + `sequenceShared`. |
-| Constituents are immutable; every edit is copy-on-write with shared subtrees. | `Constituent.h` docstring. | Preserved — Shared splice preserves pointer identity through edits. |
-| `ConstituentId` duplicates are legal iff via the same `shared_ptr`, illegal otherwise. | Plan Task 2. | Enforced — `enforceSharedInstancesAreShared`. |
-| M3 simplification (1:1 conceptual ↔ LMC, no tempo map inverse yet). | Carry-over. | Preserved. |
-| Promotion result carries `hostPhraseName`, `resolvedMode`, `overlayPlacementIndex`. | Plan Task 3. | Live — banner can read all three. §11 template lands in Task 7. |
-| iOS is a first-class target. | Project memory `project_sirius_branding_and_otto.md`. | Carry-over — long-press (not desktop modifier) lands in Task 7. |
-| Operator-vocabulary rule: every UI string passes the §15 musician-language test. | Memory `feedback-hide-internals-from-musician`. | Tasks 4–6 introduced no UI strings. **Task 7 is the first task that needs line-by-line §15 review on every banner string.** |
-| TimelineView Pills emit one-per-wrapper (not one-per-Constituent) for placement and forked wrappers. | Plan Task 4. | Enforced — `selectTimelineView` post-pass groups by pointer-identity; forked wrappers excluded. |
-| Tie-bar grouping is stable across paint frames via min-id key. | Plan Task 5. | Enforced — explicit comment at the key derivation site. |
-| Demo: 24 whole notes, verse plays 3× via shared Phrase id 20. | Plan Task 6. | Enforced — `[demoSession][shape]` + `[demoSession][shared]` tests pin both shape and pointer-identity. |
-
----
-
-## 5. Open questions for the operator (only if they come up)
-
-The plan freezes all three of spec §16's open items. The
-operator-interaction points during Session C are:
-
-- **Task 7 gate:** is the §11 banner copy comprehensible without
-  internal vocabulary? Does the long-press gesture feel discoverable?
-- **Task 8 gate:** is the fork trigger discoverable, and does the
-  prime mark read as "this one is its own thing now"?
-- **Task 10 gate:** does the full capture → promote → overlay → fork
-  cycle on the demo feel coherent end-to-end?
-
-If something feels wrong during operator verification, capture it in
-`todo.md` and **keep going**. Tuning is a follow-up; do not rewrite
-the plan mid-execution.
-
----
-
-## 6. Authoritative references
+## 7. Authoritative references
 
 - `~/.claude/CLAUDE.md` — global rules (auto-loaded).
 - `~/.claude/projects/-Users-larryseyer-Sirius-Looper/memory/MEMORY.md`
   — auto-memory index (auto-loaded).
 - This file (`continue.md`) — session state.
-- `todo.md` — deferred items register. Shared-placement architecture
-  entry stays SUPERSEDED until Task 10 marks it IMPLEMENTED;
-  Shared-splice extraction (Session-A entry, 2026-05-16) stays open.
-- `docs/superpowers/plans/2026-05-16-shared-placement.md` — **the
-  plan being executed.** Tasks 7–10 are next. Task 3's inlined
-  Shared-path splice (plan lines ~741–751) is wrong; the shipped
-  code in `core/src/Promotion.cpp:230-289` is the correct shape.
-  Task 5's verbatim `juce::Font(14.0f, bold)` was superseded in-tree
-  by `juce::FontOptions(getDefaultMonospacedFontName(), 14.0f, bold)`
-  to match codebase style and silence deprecation.
+- `todo.md` — deferred items register. Shared-placement entry now
+  marked SUPERSEDED-AND-IMPLEMENTED 2026-05-16. Three new
+  code-review-surfaced entries from this milestone.
+- `docs/superpowers/plans/2026-05-16-shared-placement.md` — the
+  shipped plan. All 10 tasks done; Self-Review at the bottom.
 - `docs/superpowers/specs/2026-05-16-shared-placement-design.md` —
-  the spec the plan implements. §15 is the QA bar Task 7 hits
-  line-by-line.
+  the spec, fully implemented.
 - `docs/superpowers/plans/2026-05-15-capture-promotion.md` — prior
-  plan, structural template. Self-Review section is the model for
-  Task 10's deliverable.
+  plan; still the structural template for future plans.
 - `docs/Sirius Looper Whitepaper V2.md` — conceptual model.
 - `docs/Sirius Looper User Guide.md` — operator-facing how-to.
-  Roadmap line added by Task 9; full chapter is deferred.
+  Roadmap bullet on "Repeating song sections" updated this session;
+  full chapter deferred.
 
 ### Project memory files (auto-loaded)
 
 - `feedback_clean_builds.md` — always `rm -rf build` before GUI
-  testing. Relevant at Tasks 7 and 8 operator gates.
-- `feedback_arm_disarm_is_required.md` — performer-facing arm/disarm
-  gesture is mandatory.
+  testing.
+- `feedback_arm_disarm_is_required.md` — performer-facing
+  arm/disarm gesture is mandatory.
 - `feedback_defer_big_design_to_own_session.md` — when a major new
   design topic surfaces mid-session, write a comprehensive `todo.md`
-  entry and stay on the current path. Used in Session A to defer
-  the Shared-splice extraction.
+  entry and stay on the current path. Applied multiple times in
+  Sessions A–C.
 - `feedback_claude_commits_and_pushes_master.md` — Claude commits
-  and pushes to master. No PRs, no force-push. `bu.sh` is local-
-  backup only and Claude doesn't run it.
-- `feedback_hide_internals_from_musician.md` — Operator UI shows
-  phrases and loops only; no tapes, no data-model vocabulary in
-  default flow; advanced surfaces are opt-in. Spec §15 is the QA
-  checklist. **Task 7 is where the §15 review becomes line-by-line.**
+  and pushes to master. No PRs, no force-push.
+- `feedback_hide_internals_from_musician.md` — Spec §15 is the QA
+  checklist. Enforced end-to-end this milestone.
 - `project_sirius_branding_and_otto.md` — sister apps with shared
   visual identity (deferred to its own session).
 - `project_user_guide_alongside_whitepaper.md` — user guide doc
-  lives in `docs/`, paired with the white paper.
+  lives in `docs/`, paired with the white paper. Roadmap updated;
+  full chapter deferred per the policy of "land the feature, write
+  the chapter once real use confirms the language."
