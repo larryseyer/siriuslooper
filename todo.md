@@ -1,5 +1,60 @@
 # Sirius Looper — Deferred Items
 
+### 2026-05-16 — CI green on Linux + Windows (clean up latent strictness errors)
+
+- **Files:** `persistence/src/SessionFormat.cpp` (lines 248, 279, 305,
+  308, 337, 425, 452, 556, 563 — nine sites), plus any further error
+  layers that surface once these clear.
+- **Status:** macOS CI green; Linux + Windows still red but the
+  remaining errors are pre-existing strictness issues that Apple
+  Clang masks. **Not blocking anything Claude or the operator does
+  on macOS** — the dev loop, headless tests, and `.app` smoke test
+  all run locally on Apple Clang where these compile fine. CI green
+  is the right target before bringing the project to a non-Apple
+  collaborator or expanding the runner matrix.
+- **What's deferred:** GCC and MSVC report `conversion from 'int64_t'
+  ... to 'const juce::var' is ambiguous` at nine call sites that
+  pass a bare `std::int64_t` (the `ConstituentId::value()` return
+  type) into `juce::DynamicObject::setProperty(name, value)`. JUCE's
+  `var` constructor takes `int`, `int64`, `bool`, and others; on
+  ambiguous integer widths, stricter compilers refuse to pick.
+  Apple Clang silently picks `juce::int64`.
+- **What was already done this session:**
+  Promotion.cpp designated-initializer order fixed in commit
+  `8dcf39d` (was the first layer of errors; clearing it exposed
+  this second layer). `actions/checkout@v4 → @v5` bump in `9e94873`
+  removed an unrelated deprecation warning.
+- **Fix shape (mechanical):**
+  Cast the int64 explicitly at the call site so overload resolution
+  is unambiguous on every compiler. Either:
+  ```cpp
+  obj->setProperty ("ref", static_cast<juce::int64> (id));
+  ```
+  or use JUCE's own type for the storage:
+  ```cpp
+  juce::int64 id = c.id().value();
+  obj->setProperty ("ref", id);
+  ```
+  Pick one and apply uniformly across the nine sites. A grep for
+  `setProperty.*\.value\(\)` across `persistence/src/` should
+  catch every offender; widen to other modules if any of them
+  also call `setProperty` with raw int64.
+- **What's needed to finish:**
+  1. Apply the cast at the nine sites in `SessionFormat.cpp`.
+  2. Local sanity build on macOS (must stay green).
+  3. Push and watch one CI run end-to-end. If Linux + Windows
+     surface a *third* layer of errors, repeat the same pattern:
+     fix, push, watch. This is the cost of a long Apple-Clang-only
+     dev period coming home to roost.
+  4. Optional belt-and-suspenders: add an `-Werror` build mode
+     gated behind `-DSIRIUS_STRICT=ON` and run it on macOS CI too,
+     so the next divergence is caught locally instead of by a CI
+     email loop.
+- **Don't pursue inside another milestone session:** worth handling
+  as its own focused 30-60 minute pass — the fix is mechanical but
+  there may be successive layers, and interleaving with feature
+  work makes the diffs hard to bisect later.
+
 ### 2026-05-16 — Developer ID signing milestone (its own session)
 
 - **Why this is its own session:** signing / notarization is a
