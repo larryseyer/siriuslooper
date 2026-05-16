@@ -1,6 +1,8 @@
 #include "sirius/TimelineView.h"
 
 #include <algorithm>
+#include <limits>
+#include <unordered_map>
 
 namespace sirius
 {
@@ -249,6 +251,36 @@ void TimelineView::paint (juce::Graphics& g)
         g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(),
                                       11.0f, 0));
 
+        if (pill.hasOverlays)
+        {
+            // Small filled circle at the pill's top-right corner — "something
+            // extra lives here on this one only." No text; the dot is the
+            // signal, matched to the white paper's glanceable principle.
+            const int dotR = 3;
+            g.setColour (juce::Colours::orange.withAlpha (0.9f));
+            g.fillEllipse (juce::Rectangle<float> (
+                static_cast<float> (x2 - dotR * 2 - 4),
+                static_cast<float> (pillRect.getY() + 4),
+                static_cast<float> (dotR * 2),
+                static_cast<float> (dotR * 2)));
+        }
+
+        if (pill.isForked)
+        {
+            // Prime mark — a small upright tick above the pill, signaling
+            // "this one is its own thing now." Distinct from the tie-bar
+            // (horizontal) and the overlay dot (round) so the three marks
+            // read independently at a glance.
+            g.setColour (juce::Colours::white.withAlpha (0.85f));
+            g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(),
+                                          14.0f, juce::Font::bold));
+            g.drawText ("'",
+                        juce::Rectangle<int> (x2 - 14, pillRect.getY() - 14, 12, 14),
+                        juce::Justification::centred, false);
+            g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(),
+                                          11.0f, 0));
+        }
+
         // Membership outline — drawn on secondary rows the Pill claims, so
         // a multi-tape phrase is visibly honest even though its atoms only
         // render on the primary row.
@@ -267,6 +299,45 @@ void TimelineView::paint (juce::Graphics& g)
             g.setColour (fill.brighter (0.4f));
             g.drawRoundedRectangle (outlineRect.toFloat(), 6.0f, 1.0f);
         }
+    }
+
+    // Tie-bar: a thin horizontal mark across the top of each group of shared
+    // placement wrappers. Surfaces "these are the same phrase" visually so the
+    // operator's mental model is shape-and-position, not text. Drawn once per
+    // group, spanning the leftmost shared pill's start to the rightmost's end.
+    std::unordered_map<std::int64_t, std::vector<const PillState*>> tieGroups;
+    for (const auto& pill : state_.pills)
+        if (! pill.sharedSiblings.empty())
+        {
+            // Group key: minimum id in the group (own id and siblings). The
+            // smallest id stays stable across paint frames so the same set
+            // always coalesces under one entry.
+            std::int64_t key = pill.id.value();
+            for (const auto& s : pill.sharedSiblings)
+                if (s.value() < key) key = s.value();
+            tieGroups[key].push_back (&pill);
+        }
+
+    g.setColour (juce::Colours::lightblue.withAlpha (0.75f));
+    for (const auto& [key, members] : tieGroups)
+    {
+        juce::ignoreUnused (key);
+        if (members.size() < 2) continue;
+        int leftX  = std::numeric_limits<int>::max();
+        int rightX = std::numeric_limits<int>::min();
+        int topY   = std::numeric_limits<int>::max();
+        for (const auto* p : members)
+        {
+            leftX  = std::min (leftX,  timeToX (p->startLmcSeconds));
+            rightX = std::max (rightX, timeToX (p->endLmcSeconds));
+            const int idx = findRowIndexForTape (state_, p->primaryTape);
+            if (idx >= 0)
+                topY = std::min (topY, contentArea (idx).getY() + 4);
+        }
+        if (topY == std::numeric_limits<int>::max())
+            continue;
+        // Sit 6 px above the top edge of the (highest) pill in the group.
+        g.fillRect (juce::Rectangle<int> (leftX, topY - 6, rightX - leftX, 2));
     }
 
     // --- Playhead overlay ---
