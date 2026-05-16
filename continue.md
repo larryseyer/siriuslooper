@@ -76,7 +76,7 @@ and auto-memory):
 
 ## 2. What just shipped — Session C, 2026-05-16
 
-Five commits on master, all pushed to `origin/master`:
+Six commits on master, all pushed to `origin/master`:
 
 | SHA       | Subject                                                                                       |
 |-----------|-----------------------------------------------------------------------------------------------|
@@ -84,7 +84,8 @@ Five commits on master, all pushed to `origin/master`:
 | `38667d0` | feat: fork — 'Vary this one' context menu on placement Pills                                  |
 | `6429029` | docs: todo.md — log Task 7 value_or→jassert + Task 8 refreshAll() follow-ups                  |
 | `138b35b` | docs: user guide — Roadmap line for repeating song sections                                   |
-| (Task 10) | (Task 10 commits are this handoff + the todo.md IMPLEMENTED flip; see below)                  |
+| `019b776` | docs: continue.md — shared-placement shipped end-to-end                                       |
+| `713bf16` | docs: todo.md — shared-placement implementation complete (SUPERSEDED → IMPLEMENTED)           |
 
 **Full milestone arc** (Sessions A + B + C, 8 feature commits + 3
 docs commits):
@@ -99,7 +100,10 @@ docs commits):
 | `74d0463` | B       | feat: DemoSession — verse plays three times via shared placement                              |
 | `dd1c28c` | C       | feat: MainComponent — long-press Mark In requests Overlay; banner uses §11 musician copy      |
 | `38667d0` | C       | feat: fork — 'Vary this one' context menu on placement Pills                                  |
+| `6429029` | C       | docs: todo.md — log Task 7 value_or→jassert + Task 8 refreshAll() follow-ups                  |
 | `138b35b` | C       | docs: user guide — Roadmap line for repeating song sections                                   |
+| `019b776` | C       | docs: continue.md — shared-placement shipped end-to-end                                       |
+| `713bf16` | C       | docs: todo.md — shared-placement implementation complete                                      |
 
 **Test suite:** 235 / 4145 → **250 / 4269** assertions, all green.
 
