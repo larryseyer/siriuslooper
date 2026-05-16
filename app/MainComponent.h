@@ -45,6 +45,9 @@ public:
     void resized() override;
     void paint (juce::Graphics& g) override;
 
+    void mouseDown (const juce::MouseEvent& e) override;
+    void mouseUp   (const juce::MouseEvent& e) override;
+
 private:
     void timerCallback() override;
 
@@ -130,6 +133,18 @@ private:
     // onMarkOut on the JUCE message thread, never from the audio thread.
     std::int64_t   nextConstituentId_ { 0 };
     bool           pendingOverlay_ { false };
+    /// Snapshot of pendingOverlay_ taken in onMarkOut just before promote()
+    /// consumes the flag. announceCapture() reads this to distinguish the
+    /// Overlay-downgraded-to-Shared case ("no section here yet") from a plain
+    /// Shared capture, per spec §11 row 4.
+    bool           lastRequestWasOverlay_ { false };
+
+    /// 500 ms long-press detector on Mark In. The press starts a timer; if
+    /// the user releases before the timer fires, the capture stays Shared
+    /// (the default). If the timer fires, pendingOverlay_ is set true and
+    /// the next Mark Out resolves to Overlay (see promote()).
+    static constexpr int kOverlayLongPressMs = 500;
+    std::unique_ptr<juce::Timer> longPressTimer_;
 
     // --- input topology + per-tape arm/focus (this session) ---
     std::vector<InputDescriptor>     inputs_;

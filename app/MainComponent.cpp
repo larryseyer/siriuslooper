@@ -17,6 +17,18 @@ namespace sirius
 
 namespace
 {
+    /// Small local Timer subclass — Sirius's vendored JUCE has no
+    /// FunctionTimer. Holds a captured callable and invokes it on each
+    /// timerCallback. The long-press detector uses startTimer(ms) once and
+    /// stopTimer()s itself in the callback, so the one-shot semantics live
+    /// in the caller, not here.
+    class FunctionTimer : public juce::Timer
+    {
+    public:
+        std::function<void()> onTimer;
+        void timerCallback() override { if (onTimer) onTimer(); }
+    };
+
     /// The playhead slider works in sixteenths of an LMC second so its value
     /// converts to an exact Rational — the engine still never sees a double.
     constexpr int ticksPerSecond = 16;
@@ -412,6 +424,12 @@ MainComponent::MainComponent()
     addAndMakeVisible (armButton_);
     addAndMakeVisible (markInButton_);
     addAndMakeVisible (markOutButton_);
+
+    // Long-press on Mark In: hold ≥ 500 ms to request Overlay. Mark In fires
+    // at click (onClick); the long-press timer upgrades the pending mode if
+    // the user keeps holding past the threshold, before they Mark Out.
+    markInButton_.addMouseListener (this, false);
+
     refreshCaptureControls();
 
     undoButton_.onClick = [this] { onUndo(); };
@@ -477,6 +495,41 @@ void MainComponent::resized()
     const int bw = 480;
     const int bh = 52;
     captureBanner_->setBounds ((getWidth() - bw) / 2, 40, bw, bh);
+}
+
+void MainComponent::mouseDown (const juce::MouseEvent& e)
+{
+    if (e.eventComponent != &markInButton_) return;
+
+    pendingOverlay_ = false;  // every press starts Shared until proven otherwise
+
+    auto t = std::make_unique<FunctionTimer>();
+    auto* raw = t.get();
+    raw->onTimer = [this, raw]
+    {
+        raw->stopTimer();
+        pendingOverlay_ = true;
+        // Visual feedback: tint the Mark In button to confirm the upgrade.
+        // No banner here — the banner fires at Mark Out, with the resolved
+        // mode reflected in the §11 template.
+        markInButton_.setColour (juce::TextButton::buttonColourId,
+                                 juce::Colours::orange.darker());
+    };
+    longPressTimer_ = std::move (t);
+    longPressTimer_->startTimer (kOverlayLongPressMs);
+}
+
+void MainComponent::mouseUp (const juce::MouseEvent& e)
+{
+    if (e.eventComponent != &markInButton_) return;
+    if (longPressTimer_)
+    {
+        longPressTimer_->stopTimer();
+        longPressTimer_.reset();
+    }
+    // Restore the button colour if it was tinted — removeColour drops the
+    // override so the LookAndFeel default takes effect again.
+    markInButton_.removeColour (juce::TextButton::buttonColourId);
 }
 
 void MainComponent::timerCallback()
@@ -676,6 +729,7 @@ void MainComponent::onMarkOut()
         const sirius::CaptureRestorePoint restorePoint {
             region->inLmcSeconds, region->tape };
 
+        lastRequestWasOverlay_ = pendingOverlay_;
         auto result = promotion::promote (
             *undoStack_.current(),
             demo_.sessionToLmc,
@@ -705,24 +759,55 @@ void MainComponent::onMarkOut()
 void MainComponent::announceCapture (const CaptureRegion& region,
                                      const promotion::PromotionResult& result)
 {
-    const double seconds = (region.outLmcSeconds - region.inLmcSeconds).toDouble();
+    // Spec §11 — four templates only. No tape numbers. No durations. No mode
+    // indicators. The musician sees what landed, in their own vocabulary.
+    juce::ignoreUnused (region);  // intentional: region details are plumbing
+
     juce::String msg;
 
-    if (result.mintedPhraseId.has_value())
+    const bool wasOverlay = result.resolvedMode == promotion::AttachmentMode::Overlay;
+    // Note: a "downgrade with no host AND no minted phrase" should not happen
+    // in practice — the Shared path always mints when no host exists. The
+    // downgrade case below covers the Overlay→Shared path landing in the mint
+    // branch, where `mintedPhraseId` IS set; the banner still wants the
+    // "no section here yet" phrasing per §11 row 4.
+
+    if (wasOverlay)
     {
-        msg << "Phrase captured  ·  "
-            << juce::String (seconds, 2) << " s  ·  tape #"
-            << juce::String ((juce::int64) region.tape.value());
+        // "Added to verse 2 only"  (placement ordinal from the data field)
+        const juce::String hostName =
+            result.hostPhraseName.value_or (std::string ("the phrase here"));
+        const auto idx = result.overlayPlacementIndex.value_or (0u);
+        msg << "Added to " << hostName << " " << static_cast<int> (idx) << " only";
+    }
+    else if (result.mintedPhraseId.has_value() && ! result.hostPhraseName.has_value())
+    {
+        // Two §11 rows produce this branch:
+        //   - Shared + mint (no host found anywhere): "New phrase captured"
+        //   - Overlay requested but downgraded AND fell through to mint:
+        //     "Added — no section here yet"
+        // We disambiguate by whether the operator's pending request was Overlay
+        // (pendingOverlay_ was true at promote() time and got consumed there;
+        // we reach the consumed-state here, so check the prior value via a
+        // cached copy that onMarkOut sets before clearing).
+        msg = lastRequestWasOverlay_
+              ? juce::String ("Added — no section here yet")
+              : juce::String ("New phrase captured");
+    }
+    else if (result.hostPhraseName.has_value())
+    {
+        // Shared, host found — the bread-and-butter case.
+        msg << "Added to " << juce::String (*result.hostPhraseName);
+        if (lastRequestWasOverlay_)
+            msg << " — no section here yet";
     }
     else
     {
-        msg << "Loop added to "
-            << juce::String (result.hostPhraseName.value())
-            << "  ·  "
-            << juce::String (seconds, 2) << " s  ·  tape #"
-            << juce::String ((juce::int64) region.tape.value());
+        // Defensive: no host, no mint — shouldn't reach here, but stay safe.
+        msg = "Added";
     }
 
+    lastRequestWasOverlay_ = false;
     captureBanner_->show (msg);
 }
 
