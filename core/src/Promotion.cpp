@@ -61,7 +61,12 @@ namespace
         const Rational startLmc = parentToLmc (c.conceptualIn().wholeNotes());
         const Rational endLmc   = parentToLmc (c.conceptualOut().wholeNotes());
 
-        if (c.isPhrase() && lmcAtMarkIn >= startLmc && lmcAtMarkIn < endLmc)
+        // Hybrid Phrase+Loop Constituents are forbidden hosts: a Loop is a
+        // leaf, so its parent must be a pure Phrase container. Falling back to
+        // mint when a hybrid would otherwise win keeps the captured Loop
+        // attached to a structurally valid parent.
+        if (c.isPhrase() && ! c.tapeReference().has_value()
+            && lmcAtMarkIn >= startLmc && lmcAtMarkIn < endLmc)
             deepestSoFar = HostHit { currentPath, startLmc, endLmc, c.name() };
 
         const auto childMap = childMapping (c, parentToLmc);

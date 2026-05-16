@@ -6,11 +6,16 @@
 # platform-specific hardware probing is the operator-run half of M4 — means the
 # assessment ladder is exhaustively unit-testable in the headless harness.
 add_library(SiriusAppCore STATIC
-    CapabilityTier.cpp)
+    CapabilityTier.cpp
+    DemoSession.cpp)
 
 target_include_directories(SiriusAppCore PUBLIC .)
 
 target_compile_features(SiriusAppCore PUBLIC cxx_std_20)
+
+# DemoSession's deps (Constituent, Arrangement, TempoMap, InputDescriptor) all
+# live in Sirius::Core. Public so headers travel with the library.
+target_link_libraries(SiriusAppCore PUBLIC Sirius::Core)
 
 add_library(Sirius::AppCore ALIAS SiriusAppCore)
 
@@ -38,7 +43,6 @@ juce_add_gui_app(SiriusLooper
 
 target_sources(SiriusLooper PRIVATE
     Main.cpp
-    DemoSession.cpp
     MainComponent.cpp)
 
 target_compile_definitions(SiriusLooper PRIVATE

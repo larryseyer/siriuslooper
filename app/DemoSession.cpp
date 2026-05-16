@@ -43,18 +43,19 @@ namespace
 
 DemoSession buildDemoSession()
 {
-    // intro and outro are role-bearing phrases too — single-tape Pills, the
-    // dominant case in solo looping. Giving them PhraseMetadata is honest
-    // to white paper Part VIII: a phrase is a unit of musical thought; a
-    // leaf "intro" that plays one tape slice is still a phrase.
-    const auto intro = std::make_shared<const Constituent> (
+    // Every top-level child of the session is a Phrase *container* — never a
+    // Phrase-and-Loop hybrid. Even single-tape sections (intro, outro) wrap
+    // their tape in a child Loop so the rule "Loops are leaves; Phrases are
+    // containers" holds uniformly across the tree.
+    const Constituent introPhraseShell =
         Constituent (ConstituentId (10), Position(), Position (Rational (3)))
             .withName ("intro")
             .withPhraseMetadata (phraseMeta ("intro",
                                              EntranceCharacter::Downbeat,
-                                             ExitCharacter::HandOff))
-            .withTapeReference (TapeReference (TapeId (100),
-                                               Rational (0), Rational (6))));
+                                             ExitCharacter::HandOff));
+    const auto intro = std::make_shared<const Constituent> (
+        arrangement::layer (introPhraseShell,
+            { makeLoop (11, "intro", Rational (3), 100) }));
 
     // The middle phrase is a layer of two simultaneous loops — a rhythm bed and
     // a lead line — so the demo exercises both arrangement primitives and the
@@ -70,14 +71,15 @@ DemoSession buildDemoSession()
             { makeLoop (21, "verse: rhythm", Rational (6), 200),
               makeLoop (22, "verse: lead",   Rational (3), 300) }));
 
-    const auto outro = std::make_shared<const Constituent> (
+    const Constituent outroPhraseShell =
         Constituent (ConstituentId (30), Position(), Position (Rational (3)))
             .withName ("outro")
             .withPhraseMetadata (phraseMeta ("outro",
                                              EntranceCharacter::Downbeat,
-                                             ExitCharacter::Resolution))
-            .withTapeReference (TapeReference (TapeId (400),
-                                               Rational (0), Rational (6))));
+                                             ExitCharacter::Resolution));
+    const auto outro = std::make_shared<const Constituent> (
+        arrangement::layer (outroPhraseShell,
+            { makeLoop (31, "outro", Rational (3), 400) }));
 
     // The three phrases run end-to-end under the session: intro [0,3),
     // verse [3,9), outro [9,12) — twelve whole notes total.

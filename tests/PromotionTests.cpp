@@ -14,6 +14,7 @@
 #include "sirius/Position.h"
 #include "sirius/Rational.h"
 #include "sirius/TapeId.h"
+#include "sirius/TapeReference.h"
 #include "sirius/TempoMap.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -28,6 +29,7 @@ using sirius::PhraseMetadata;
 using sirius::Position;
 using sirius::Rational;
 using sirius::TapeId;
+using sirius::TapeReference;
 using sirius::TempoMap;
 using sirius::promotion::IdAllocator;
 using sirius::promotion::promote;
@@ -209,6 +211,45 @@ TEST_CASE ("promote clamps Loop bounds to the host Phrase when region extends pa
     // referenceable; only the Constituent's structural placement is clipped.
     CHECK (loop.tapeReference()->tapeIn  == Rational (4));
     CHECK (loop.tapeReference()->tapeOut == Rational (9));
+}
+
+TEST_CASE ("promote refuses a hybrid Phrase+Loop Constituent as host and mints instead",
+           "[promotion][host][hybrid-rejection]")
+{
+    // A hybrid carries both PhraseMetadata and TapeReference on a single
+    // Constituent. The convention treats Loops as leaves and Phrases as
+    // containers, so a hybrid is structurally invalid as a host: attaching a
+    // captured Loop as its child would make a Loop a child of a Loop. The
+    // host search must reject it; promote() must fall back to minting a
+    // fresh Phrase wrapper at the root.
+    auto hybrid = std::make_shared<const Constituent> (
+        Constituent (ConstituentId (10), Position (Rational (2)), Position (Rational (6)))
+            .withName ("hybrid")
+            .withPhraseMetadata (PhraseMetadata { .role = "verse" })
+            .withTapeReference (TapeReference (TapeId (999),
+                                               Rational (0), Rational (8))));
+
+    Constituent root = emptyRoot().withChildAdded (hybrid);
+
+    // Mark In = 3 LMC (inside the hybrid's span). If the host search were
+    // permissive, the hybrid would win and the result would have no minted
+    // Phrase. The tightened predicate must drive promote() into the mint path.
+    const CaptureRegion region { TapeId (200), Rational (3), Rational (5) };
+    Counter counter;
+
+    auto result = promote (root, identityMap(), region, /*lmcAtMarkIn*/ Rational (3),
+                           IdAllocator (std::ref (counter)));
+
+    REQUIRE (result.mintedPhraseId.has_value());
+    REQUIRE_FALSE (result.hostPhraseName.has_value());
+    CHECK (result.undoLabel == "capture phrase");
+
+    // Root now has two children: the original hybrid (untouched) and the
+    // freshly minted Phrase carrying the captured Loop.
+    REQUIRE (result.newRoot.children().size() == 2);
+    CHECK (result.newRoot.children()[0]->id().value() == 10);
+    CHECK (result.newRoot.children()[0]->children().empty());  // hybrid unchanged
+    CHECK (result.newRoot.children()[1]->id().value() == result.mintedPhraseId->value());
 }
 
 TEST_CASE ("promote throws on a zero-duration or reversed region",

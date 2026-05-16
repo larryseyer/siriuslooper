@@ -23,6 +23,7 @@ add_executable(SiriusTests
     AsrcTests.cpp
     RenderPipelineTests.cpp
     CapabilityTierTests.cpp
+    DemoSessionTests.cpp
     OverloadProtectionTests.cpp
     SessionFormatTests.cpp
     TapeStoreTests.cpp
