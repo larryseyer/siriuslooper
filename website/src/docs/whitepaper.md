@@ -1,15 +1,15 @@
 ---
 layout: doc.njk
-title: White Paper V1
-subtitle: A Reference Architecture for Time-Domain Audio/Video Looping (Version 1.0)
-description: The historical predecessor to White Paper V2. Establishes the conceptual foundation — phrases, loops, retroactive capture, and the first articulation of looping as the capture and repetition of musical ideas.
-permalink: /docs/whitepaper-v1/
-sourceFile: Sirius Looper Whitepaper V1.md
-order: 3
+title: White Paper
+subtitle: A Reference Architecture for Time-Domain Audio/Video Looping
+description: The canonical design thesis. Conceptual time, the Logical Master Clock, the Membrane, the Constituent tree, and the trade-offs that make Sirius Looper possible.
+permalink: /docs/whitepaper/
+sourceFile: Sirius Looper Whitepaper V2.md
+order: 2
 ---
 **Status:** Draft for review
-**Version:** 1.0
-**License:** TBD (intended for permissive public release)
+**Version:** 2.0
+**License:** The Sirius Looper software is licensed under AGPLv3 with an Apple App Store distribution exception. The bundled Larry Seyer Acoustic Drum Library selection is proprietary and separately licensed. See `../LICENSE`, `LICENSE-THIRD-PARTY.md`, and `SAMPLE-LICENSE.md`. This document — the white paper — is offered for permissive public release.
 
 ---
 
@@ -52,6 +52,17 @@ The result is a looper that can do things existing loopers cannot — including 
 - **Part XV:** What This Architecture Enables
 - **Appendix A:** Glossary
 - **Appendix B:** Decision Log
+- **Appendix C:** Worked Examples
+- **Appendix D:** Verification and Proof
+- **Appendix E:** Sirius Looper and Reaper — A Terminology Map
+
+---
+
+### A note on terminology
+
+This architecture introduces its own vocabulary — *tape*, *Constituent*, *membrane*, *phrase* — because the concepts it names do not exist, or do not exist in the same shape, in conventional audio software. That vocabulary is load-bearing and is used precisely throughout.
+
+But most readers come to this paper already fluent in the vocabulary of a DAW, and the DAW whose terminology is clearest and most widely shared is **Reaper**. To make the paper easier to read, the core terms are glossed at their first formal definition with their nearest Reaper equivalent — e.g. *tape (≈ Reaper: an always-recording track's source media)*. **Appendix E** gives the complete mapping, and — just as importantly — states where each analogy holds and where it breaks. The Reaper terms are an on-ramp, not a synonym list: where Sirius diverges from the DAW model, it diverges deliberately, and Appendix E says so.
 
 ---
 
@@ -188,6 +199,8 @@ When a sample must be produced for the audio interface at the next callback, the
 
 This pipeline is executed only at the membrane, only when needed, and only with the precision the membrane requires. Above this layer, the engine knows nothing of samples, frames, or absolute time.
 
+**A performance note, because steps 2–3 could be misread as expensive.** "Unroll each position's hierarchical context" does not mean re-deriving the entire conceptual-to-numerical mapping for every sample, or even for every callback. The mapping from a Constituent's conceptual time to LMC time is a piecewise function of the tempo maps and meters *above* it in the tree. That function changes only when one of those tempo maps, meters, or structural boundaries changes — an editing event, not an audio event. The membrane therefore **memoizes the unrolled mapping per active Constituent** and invalidates a cache entry only when something in that Constituent's hierarchical context above it changes. In steady-state playback — the overwhelmingly common case — steps 2 and 3 are a cache lookup and a single linear (or piecewise-quadratic, under a tempo ramp) evaluation. This is what makes the conceptual-time architecture compatible with the sub-30ms response budget of Part XIV: the symbolic machinery is paid for at edit time, not at audio time.
+
 ### 3.7 Editing is symbolic
 
 A consequence worth noting: **editing a loop boundary does not change a number from 47.832 to 47.913. It changes a *reference* from "the downbeat of bar 3" to "the second eighth of bar 3."** Edits are operations on conceptual structures, not on numbers. This makes editing exact, deterministic, and free of representation artifacts.
@@ -284,6 +297,36 @@ The engine has exactly two membrane layers — one inbound, one outbound.
 
 In between, the engine operates entirely in conceptual time.
 
+The shape of the whole signal path:
+
+```
+   PHYSICAL                  MEMBRANE                 CONCEPTUAL ENGINE
+   ─────────                 ────────                 ─────────────────
+
+  audio in ─┐
+  video in ─┼──▶  INBOUND MEMBRANE  ──▶  TAPES  ──┐
+  MIDI in  ─┘     · device timestamp              │   (append-only,
+  control  ─┘     · → LMC time                    │    immutable,
+                  · ASRC / frame-rate conv.       │    source of truth)
+                  · latency compensation          │
+                                                  ▼
+                                          CONSTITUENT HIERARCHY
+                                          (loop→phrase→section
+                                           →song→set; conceptual
+                                           time throughout)
+                                                  │
+  audio out ◀─┐                                   ▼
+  video out ◀─┼──  OUTBOUND MEMBRANE  ◀──  RENDER PIPELINE
+  MIDI out  ◀─┘    · conceptual → LMC time        (unroll active
+                   · LMC → device sample index     positions,
+                   · ASRC / frame-rate conv.       memoized)
+                   · latency compensation
+
+         └──────── numerical time ────────┘└──── conceptual time ────┘
+```
+
+The engine has exactly two places where numerical time exists — the two membranes. Everything to the right of them is concept.
+
 ### 5.3 Continuous async sample-rate conversion at the membranes
 
 The membranes are where conceptual time meets the physical reality of an audio interface running at "48 kHz" that is actually running at some slightly different rate. Bridging this is the job of **continuous async sample-rate conversion (ASRC)** at each membrane.
@@ -320,6 +363,14 @@ The rendering pipeline aims at this future time, not the present.
 
 Device latencies are typically reliable on CoreAudio and ASIO, less reliable on WASAPI, and effectively absent on USB Class-Compliant on some platforms. To handle this generally, the system performs a **one-time loopback calibration per device**: output a known click, capture it back, measure the round-trip in samples, store the result. Subsequent sessions on the same device read the stored calibration.
 
+### 5.6 The system owns the membrane; it is not a guest in someone else's
+
+This architecture assumes the system **owns the audio and video devices directly** — it is a standalone application driving the hardware, not a plugin running inside a host. This is a deliberate and load-bearing assumption, and it deserves to be stated rather than left implicit.
+
+A plugin running inside a DAW does not own the membrane. The host owns the device, the host owns the transport, and the host hands the plugin a sample-counted buffer with a host-defined notion of "now." A plugin built on this architecture would have to treat the host's transport as just another imperfect substrate — disciplinable, but not authoritative — and in practice it would be fighting the host for control of timing it cannot actually have. The conceptual-time engine still works as a plugin; the LMC does not, because the LMC's whole purpose is to discipline a membrane the plugin is not allowed to touch. **The honest deployment of this architecture is the standalone application.**
+
+This does not mean the system rejects plugins. It means the relationship is inverted: **the system is a plugin *host*, not a plugin.** Third-party plugins (VST3, AU, CLAP, AUv3) live inside Constituent effect chains (Part VII), entirely *downstream* of the membrane. By the time audio reaches a hosted plugin it is already numerical, already disciplined, already rendered against the LMC. The hosted plugin processes samples; it never sees conceptual time and never participates in the LMC. The membrane is upstream of all hosting, and the hosting boundary is exactly the boundary at which the system's timing guarantees stop and the plugin's own behavior begins.
+
 ---
 
 # Part VI — The Tape
@@ -328,7 +379,7 @@ This is the architectural inversion at the heart of the system's storage model.
 
 ### 6.1 Everything is always recorded
 
-The looper is not "armed" or "recording" or "in standby." From the moment the user opens a session, **every input is being captured to a tape, continuously, until the session ends.** The tapes run whether the user has any plans to use them or not. They run during silence. They run during conversation. They run during the act of thinking.
+The looper is not "armed" or "recording" or "in standby." From the moment the user opens a session, **every input is being captured to a tape, continuously, until the session ends.** A *tape* is roughly what a Reaper user would picture as a single track's recorded source media — one continuous stream per input — except that it is never armed and never disarmed: it always records, and once written it is never edited (Appendix E). The tapes run whether the user has any plans to use them or not. They run during silence. They run during conversation. They run during the act of thinking.
 
 This is not an exotic recording mode. It is the default — the only — mode. Storage is cheap; ideas are precious. The architecture refuses to lose ideas.
 
@@ -383,6 +434,8 @@ Three reasonable strategies for tape storage:
 
 The tier system (Part XIII) chooses among these at startup based on measured hardware capability.
 
+**The sizing, concretely, because "storage is cheap" deserves real numbers.** One channel of uncompressed audio at 48 kHz / 24-bit is 144 KB/s — about **0.52 GB per hour per channel**. A typical solo rig with 8 input channels recording continuously produces ~4.1 GB/hour; an 8-hour session day is ~33 GB. Lossless compression (FLAC) roughly halves this to ~2 GB/hour for the same 8 channels. Video dwarfs audio: one 1080p stream in an intra-frame codec runs 50–220 Mbit/s — **22–100 GB/hour per camera** — which is why video tape strategy is tiered far more aggressively than audio. The retroactive ring (Part 6.4) lives in RAM, so its depth is bounded by available memory, not disk: at 8 channels uncompressed, **one minute of ring costs ~69 MB**, ten minutes ~690 MB. The four capability tiers (Part XIII) set ring depth precisely against this arithmetic — seconds on a tight memory budget, minutes on a lavish one.
+
 ### 6.6 Tapes are local
 
 Tape data lives on the machine that captured it, always. The network carries only coordination metadata. This is non-negotiable and is justified fully in Part XII.
@@ -395,7 +448,7 @@ If the tape is the source of truth, the Constituent is the thing the system actu
 
 ### 7.1 The unifying abstraction
 
-Every musical object in the system is a **Constituent**. A loop is a Constituent. A phrase is a Constituent. A section is a Constituent. A song is a Constituent. A set is a Constituent. They share a common structure:
+Every musical object in the system is a **Constituent**. A loop is a Constituent. A phrase is a Constituent. A section is a Constituent. A song is a Constituent. A set is a Constituent. They share a common structure. (Reaper splits these jobs across several distinct types — *media item*, *region*, *folder track* — each with its own rules; the Constituent is the one recursive type that does all of those jobs, and a few Reaper has no type for. See Appendix E.)
 
 ```
 Constituent {
@@ -436,6 +489,28 @@ Performance arrangement (the outermost Constituent)
 
 This is the *typical* organization. The data model does not enforce it strictly: any Constituent may contain any other Constituent as long as the time-domain relationships are coherent. A bed that persists through several phrases may live directly at the section level, alongside its phrases, not inside any of them.
 
+The crucial structural fact — that **Constituents are structure and tapes are data**, and the two layers never mix — is easier seen than said:
+
+```
+   STRUCTURE LAYER                          DATA LAYER
+   (Constituents: light, immutable,         (Tapes: heavy, append-only,
+    copy-on-write, serialize to JSON)        immutable, addressed by ID)
+
+   Set
+    └─ Song
+        └─ Section
+            ├─ Phrase "verse"
+            │   ├─ Loop A ──────────ref────────▶  Tape 3  (audio, ch.1)
+            │   └─ Slice B ────────ref────────▶  Tape 5  (audio, ch.2)
+            └─ Phrase "chorus"
+                ├─ Loop C ──────────ref────────▶  Tape 3  (same tape,
+                │                                          different slice)
+                └─ Loop C.fx ───────ref────────▶  Tape 9  (parameter
+                                                            automation)
+```
+
+Every Constituent holds only `conceptual_in`/`conceptual_out` references — into tapes (at the loop level) or into other Constituents (above it). No Constituent ever holds audio. This is what makes the structure layer cost kilobytes while the data layer costs gigabytes, and it is why two loops can reference the same tape from different points without any duplication.
+
 ### 7.3 Constituents are immutable; edits are copy-on-write
 
 Editing a Constituent — trimming its boundaries, changing its effects, modifying its repetition rules, replacing its children — does not modify it. It produces a **new Constituent** with the modifications, sharing the same source references where applicable. The old version is preserved in the edit history.
@@ -444,7 +519,7 @@ This makes undo trivial. It makes branching alternatives trivial. It makes "show
 
 ### 7.4 Loops within the hierarchy
 
-A loop is the Constituent type that directly references tape data. Its specifics:
+A loop is the Constituent type that directly references tape data — the rough equivalent of a Reaper *media item* with "loop source" enabled, pointing into a track's source media. The resemblance is real but partial: a Sirius loop carries the five-axis repetition rules of Part X, where a Reaper item carries a single loop-source checkbox. Its specifics:
 
 - `children` is empty (or contains overlays; see effects below)
 - `conceptual_in` and `conceptual_out` reference positions on its source tape(s)
@@ -472,6 +547,28 @@ This is closer to how a screenwriter thinks about a scene than how a sound engin
 - **Effect parameters are themselves automatable.** Parameter automation is data on a tape. Automation curves are Constituents over parameter tapes. The recursion holds at every level.
 - **Render is deterministic.** The same Constituent tree applied to the same tapes produces the same output, forever.
 
+### 7.8 Session and file format
+
+"Serializes to kilobytes of JSON" is asserted above; it is worth sketching what that actually means on disk. A session is a **directory**, not a single file:
+
+```
+my-session.sirius/
+├── session.json          # the Constituent graph — the entire structure layer
+├── lmc-discipline.json    # LMC discipline history (Part 4.5), archival metadata
+├── calibration/           # per-device latency + clock calibration records
+│   └── <device-id>.json
+└── tapes/                 # the data layer — content-addressed, immutable
+    ├── <tape-id-hash>.caf
+    ├── <tape-id-hash>.flac
+    └── <tape-id-hash>.mkv
+```
+
+`session.json` is the whole structure layer — every Constituent, with its `id`, conceptual boundaries, local tempo map and meter, anchor, repetition rules, metadata, and child references. Because Constituents are immutable and copy-on-write, the file is *append-mostly*: editing produces new Constituent versions; old versions remain for undo and branching. A complex full-evening set is still well under a megabyte.
+
+Tape files are **content-addressed by ID**: a tape's filename is derived from its identity, never from its musical role. Two sessions that reference the same captured take share the same tape file. A tape file, once written, is never rewritten — only appended to during the live session, then sealed. This is what makes save/load trivial, makes sessions safely copyable, and makes a session directory a valid archival unit on its own: the structure and the data it depends on travel together, and nothing inside is mutable history pretending to be current state.
+
+A session directory is also the natural unit of the CRDT merge described in Part XII: merging two divergent copies is a union of tape files (no conflict possible — different IDs) plus a union of Constituent versions (no conflict possible — immutability).
+
 ---
 
 # Part VIII — Phrases
@@ -481,6 +578,8 @@ The phrase is the unit of musical thought. It deserves its own treatment.
 ### 8.1 What a phrase is
 
 A phrase is a **complete musical utterance with its own identity, internal arc, and relationship to surrounding utterances.** It is the unit at which a musician *thinks* about music. When a performer says "let me try that part again," the part is a phrase. When they say "I want a fill here," the fill is a phrase. When they say "the verse is too long," the verse is a phrase.
+
+Reaper has no single object for this. The closest a Reaper user could point to is a *region* (a named span on the timeline) or a *folder track* (a group of items) — but a phrase is neither a span nor a folder; it is a musical utterance that carries role, intent, and grammatical relationships as first-class data, and that owns its own internal time domain. Appendix E maps the partial overlap; this Part describes what has no Reaper equivalent at all.
 
 Phrases are not defined by their content alone. They are defined by their *role* in a larger musical structure. Two completely different sets of notes can both be "the chorus" — they share a role and a structural position, while differing in content.
 
@@ -1064,67 +1163,212 @@ The hope is that other developers — those building loopers as commercial produ
 
 # Appendix B — Decision Log
 
-The following decisions were made during the design process. They appear in roughly the order made, with brief justification. This log is offered for readers who want to understand *why* the architecture is what it is.
+An index of the architecture's load-bearing decisions, each with a pointer to the Part that argues it. The reasoning lives in the body; this log exists only to make the decision *set* scannable in one place.
 
-1. **Absolute time is the master timebase at the membrane**; audio and video are both flawed substrates rendered against it.
-2. **A loop conceptually is a position interval over tape data**, not a sample count or frame count.
-3. **Time-domain at the core, sample-domain at the membrane.** Continuous ASRC bridges the two.
-4. **Latency compensation is architectural.** Every tape event carries its true capture time; one-time loopback calibration per device.
-5. **Everything is always recorded.** The tape, not the loop, is the source of truth.
-6. **All inputs are tapes** — audio, video, MIDI, control, parameter automation, system events — sharing one uniform event format.
-7. **Tapes are append-only and immutable.** All editing happens elsewhere.
-8. **Tapes are local; they never traverse the network** as primary data.
-9. **System sizes itself once at startup**, locks a capability tier for the session.
-10. **Capability tiers** (Lavish → Comfortable → Tight → Survival) govern format, effect strategy, ring depth, ASRC quality.
-11. **Unbreakable rules**: audio never glitches; tape integrity is sacred; degradation is announced.
-12. **The Logical Master Clock (LMC)** is a software construct above all hardware clocks.
-13. **Discipline hierarchy**: GPS → PTP → NTP → Link → local CPU monotonic.
-14. **Distributed LMC election** uses Marzullo interval-intersection, not median voting.
-15. **Anchor node override**: musical authority outranks technical tier.
-16. **Local LMC and ensemble LMC are distinct domains.**
-17. **Mixing and monitoring are always local.** Audio that has crossed the network is no longer disciplinable.
-18. **CRDT-compatible session state.**
-19. **Graceful ensemble degradation to solo recording.**
-20. **A loop is an idea; ideas are worth repeating.**
-21. **Repetition is regenerator feedback** between performer and system.
-22. **Five repetition dimensions**: trigger, cardinality, phase, mutation, termination.
-23. **Mutation exists to sustain engagement, not to add complexity.** Its art is invisibility.
-24. **Termination matches attention decay.**
-25. **The looper trusts the user.**
-26. **The looper's scope ends at the membrane.** Mixing, routing, effects topology are downstream.
-27. **Arrangement is creation, not processing.** The looper handles arrangement natively.
-28. **Inspiration is fragile** and is the design target.
-29. **Defaults are sacred.**
-30. **Reversibility replaces precision.**
-31. **Latency budget for trust**: <30ms for consequence; <10ms for one's own.
-32. **Two cognitive states, one continuous instrument.**
-33. **Glanceable, not readable** during performance.
-34. **Coarse decisive controls** for performance; **fine precise controls** for preparation.
-35. **Undo is the most accessible operation.**
-36. **Eyes-free operation is the highest live-performance UI goal.**
+**Time and the membrane**
+1. Absolute time is the master timebase *at the membrane*; audio and video are both flawed substrates rendered against it. — *Part II, IV*
+2. Time is a concept, not a number; the engine manipulates it symbolically, numerical time exists only at the membrane. — *Part III*
+3. The PPQ problem, polymetric reconciliation, and accumulated rounding all dissolve under conceptual time. — *Part 3.3*
+4. Time domains form a tree (session → song → section → phrase → loop → cycle); each level may declare its own meter and tempo. — *Part 3.4, IX*
+5. Editing is symbolic — operations on conceptual structures, not on numbers. — *Part 3.7*
+6. The render pipeline's conceptual→numerical mapping is memoized; symbolic machinery is paid for at edit time, not audio time. — *Part 3.6*
+7. The LMC is a software construct above all hardware clocks; it disciplines the membrane, not the engine's internal time. — *Part IV*
+8. Discipline hierarchy: GPS → PTP → NTP → Link → local CPU monotonic. — *Part 4.2*
+9. The system owns the membrane — it is a standalone application and a plugin *host*, not a plugin. — *Part 5.6*
+10. Time-domain at the core, sample-domain at the membrane; continuous ASRC bridges the two. — *Part 5.3*
+11. Latency compensation is architectural; every tape event carries its true capture time; one-time loopback calibration per device. — *Part 5.5*
 
-— *Subsequent decisions adding the phrase, conceptual-time, and polymetric layers:*
+**The tape and the Constituent**
+12. Everything is always recorded; the tape, not the loop, is the source of truth. — *Part VI*
+13. All inputs are tapes — audio, video, MIDI, control, automation, system events — one uniform event format. — *Part 6.2*
+14. Tapes are append-only and immutable; all editing happens elsewhere. — *Part 6.3*
+15. Tapes are local; they never traverse the network as primary data. — *Part 6.6, XII*
+16. The Constituent is the unifying abstraction — tape slices, loops, phrases, sections, songs, sets share one structure. — *Part VII*
+17. Constituents are structure; tapes are data; the layers never mix. — *Part 7.2*
+18. Constituents are immutable; edits are copy-on-write. — *Part 7.3*
+19. Identity persists across content revision. — *Part 7.6*
+20. A session is a directory: a Constituent-graph document plus content-addressed tape files. — *Part 7.8*
 
-37. **A phrase is a musical utterance; a loop is a mechanism it may use.** Phrase is the unit of musical thought.
-38. **A phrase may contain multiple loops, non-looped tape slices, and silence as content.**
-39. **Loops within a phrase may live in different time domains** (polymetric and polytemporal coexistence).
-40. **The Constituent is the unifying abstraction.** Tape slices, loops, phrases, sections, songs, sets all share one structure.
-41. **The Constituent hierarchy** is recommended (loop → phrase → section → song → set) but not strictly enforced.
-42. **Identity persists across content revision.** A phrase remains "the verse" through edits.
-43. **Time is a concept, not a number.** The engine manipulates time symbolically; numerical time exists only at the membrane.
-44. **The PPQ problem dissolves under conceptual time.** No shared grid is needed for tuplets, polyrhythm, or micro-timing.
-45. **The hierarchy of time domains** — session, song, section, phrase, loop, cycle — each may have its own meter and tempo.
-46. **Constituents in different time domains meet at parent boundaries**, not internally.
-47. **Meter is a property of each Constituent**, not a global session constraint.
-48. **Micro-timing is preserved exactly** because conceptual time has no quantization grid.
-49. **The LMC's role is precisely defined**: it disciplines the membrane, not the engine's internal time.
-50. **Editing is symbolic.** Operations on time are operations on conceptual structures, not on numbers.
-51. **Phrases carry role and intent metadata** that persists across content edits.
-52. **Phrases are interchangeable by role**, enabling structured improvisation.
-53. **Grammatical relationships between phrases** (call/response, theme/variation, etc.) are first-class metadata.
-54. **A song is a narrative, not a sequence.** Structurally complete, performatively variable.
-55. **Arrangement happens at the phrase level and above**, not at the loop level.
-56. **The set list is the outermost Constituent.** An entire concert is a single Constituent graph.
+**The phrase**
+21. A phrase is a musical utterance; a loop is a mechanism it may use. The phrase is the unit of musical thought. — *Part I, VIII*
+22. A phrase may contain multiple loops, non-looped slices, sub-phrases, and silence as content. — *Part 8.2*
+23. Meter is a property of each Constituent, not a global session constraint. — *Part 9.6*
+24. Loops within a phrase may live in different time domains; they meet at parent boundaries. — *Part IX*
+25. Micro-timing is preserved exactly — conceptual time has no quantization grid. — *Part 9.7*
+26. Phrases carry role and intent metadata; they are interchangeable by role, enabling structured improvisation. — *Part 8.3–8.4*
+27. Grammatical relationships between phrases are first-class metadata. — *Part 8.5*
+
+**Repetition and arrangement**
+28. A loop is an idea; ideas are worth repeating. Repetition is regenerator feedback between performer and system. — *Part X*
+29. Five repetition dimensions: trigger, cardinality, phase, mutation, termination. — *Part 10.1*
+30. Mutation exists to sustain engagement, not to add complexity; its art is invisibility. — *Part 10.3*
+31. Termination matches attention decay. — *Part 10.4*
+32. Arrangement is creation, not processing; it happens at the phrase level and above. — *Part I, XI*
+33. A song is a narrative, not a sequence — structurally complete, performatively variable. — *Part 11.4*
+34. The set list is the outermost Constituent; an entire concert is a single Constituent graph. — *Part 11.5*
+
+**Resources, ensemble, and the performer**
+35. The system sizes itself once at startup and locks a capability tier (Lavish → Comfortable → Tight → Survival). — *Part XIII*
+36. Unbreakable rules: audio never glitches; tape integrity is sacred; degradation is announced. — *Part 13.3*
+37. Distributed LMC election uses Marzullo interval-intersection, not median voting; tier dominance governs; the anchor-node override lets musical authority outrank technical tier. — *Part 12.3–12.4*
+38. Local LMC and ensemble LMC are distinct domains. — *Part 12.5*
+39. Session state is CRDT-compatible; the network carries coordination, never audio. — *Part 12.6, 12.8*
+40. Ensemble failure degrades gracefully to a full-fidelity solo recording. — *Part 12.7*
+41. The looper trusts the user; inspiration is fragile and is the design target; defaults are sacred; reversibility replaces precision. — *Part I, XIV*
+42. Latency budget for trust: <30ms for consequence, <10ms for one's own. — *Part 14.8*
+43. Two cognitive states, one continuous instrument; glanceable not readable; coarse controls for performance, fine for preparation; undo is the most accessible operation; eyes-free is the highest live-performance UI goal. — *Part XIV*
+
+---
+
+# Appendix C — Worked Examples
+
+The body of this paper is abstract by intent. This appendix grounds it: two concrete pieces of music, each expressed as an actual Constituent graph. Notation is informal — `Constituent { ... }` with the fields of Part 7.1 — but every field shown is a real field.
+
+### C.1 A twelve-bar blues
+
+A standard twelve-bar blues in 4/4, performed as: a four-bar intro, three twelve-bar choruses, a four-bar outro. The performer captured one drum loop, one bass loop, and three distinct guitar phrases live.
+
+```
+Song "Slow Blues in G" {
+    local_meter   = 4/4
+    local_tempo   = 72 BPM (flat)
+    children:
+
+    Section "intro" {              conceptual_in = bar 1,  conceptual_out = bar 5
+        Loop drums_A   { ref Tape:drums  ; repetition: forever, quantized-to-bar }
+        Loop bass_A    { ref Tape:bass   ; repetition: forever, quantized-to-bar }
+    }
+
+    Section "chorus" {             conceptual_in = bar 5,  conceptual_out = bar 17
+        is_role_fillable = false
+        Loop drums_A   { ref Tape:drums  ; repetition: forever }
+        Loop bass_A    { ref Tape:bass   ; repetition: forever }
+        Phrase guitar  { role = "chorus-lead" ; is_role_fillable = true }
+            // the role is filled at performance time by one of:
+            //   Phrase "head"      (statement)
+            //   Phrase "solo-1"    (variation of head)
+            //   Phrase "solo-2"    (variation of head)
+    }
+
+    Section "chorus" { ... }       // same structure, conceptual_out = bar 29
+    Section "chorus" { ... }       //                  conceptual_out = bar 41
+
+    Section "outro" {              conceptual_in = bar 41, conceptual_out = bar 45
+        Loop drums_A { repetition: { cardinality: until-condition,
+                                     termination: fade-over-2-bars } }
+        Loop bass_A  { repetition: { termination: continue-until-natural-end } }
+        Slice tag    { ref Tape:guitar ; repetition: once }   // a one-shot final lick
+    }
+}
+```
+
+Three things to notice. First, `drums_A` and `bass_A` are the *same Constituents* reused across sections — the structure layer references them, it does not copy them. Second, the chorus's `guitar` slot is **role-fillable**: the song's structure is fixed at four sections, but which guitar phrase fills each chorus is chosen in the moment (Part 8.4). Two performances of this song share their skeleton and diverge in their content. Third, the outro shows three different *termination* rules (Part 10.1) coexisting in one section — the drums fade, the bass rings out naturally, the final lick is a one-shot.
+
+### C.2 A 4-against-7 polymetric phrase
+
+A single phrase in the style of Steve Reich or a Meshuggah verse: a 4/4 drum pattern and a 7/8 melodic ostinato running simultaneously, captured as two loops in **different time domains** inside one phrase.
+
+```
+Phrase "interlock" {
+    conceptual_in  = (its parent section's) bar 9
+    conceptual_out = (its parent section's) bar 17     // 8 bars of 4/4 at the section's tempo
+    local_meter    = 4/4
+    local_tempo    = 96 BPM
+    children:
+
+    Loop drums {
+        ref Tape:drums
+        local_meter = 4/4                  // inherits the phrase's domain
+        local_tempo = (inherited)
+        repetition  = { trigger: free-running, cardinality: forever,
+                        phase: quantized-to-grid }
+    }                                      // → 8 cycles fit the phrase exactly
+
+    Loop ostinato {
+        ref Tape:synth
+        local_meter = 7/8                  // its OWN time domain
+        local_tempo = 96 BPM (eighth-note = the phrase's eighth-note)
+        anchor_to_parent = align-at-start
+        repetition  = { trigger: free-running, cardinality: forever,
+                        phase: free }
+    }
+}
+```
+
+The drum loop lives in the phrase's own 4/4 domain; eight of its bars exactly span the phrase. The ostinato lives in its **own 7/8 domain**, sharing only the eighth-note pulse. Over the phrase's 8 bars of 4/4 (64 eighth-notes), the 7/8 ostinato completes 64 ÷ 7 ≈ 9 + 1/7 cycles — it does *not* land evenly, and that non-alignment is the musical point.
+
+Because both loops are described in conceptual time, the 4-against-7 relationship is **exact by definition** (Part 9.3): the engine never approximates it onto a shared grid, so the interlock that begins the phrase is bit-identical to the interlock at the phrase's hundredth repetition. The two domains meet only at the phrase's boundaries (Part 9.5); what they do inside is each their own affair. Rendering reconciles both to LMC absolute time independently at the membrane.
+
+---
+
+# Appendix D — Verification and Proof
+
+This architecture makes two claims that are unusually strong for audio software: that the engine is **exact by construction**, and that render is **deterministic** — the same Constituent graph applied to the same tapes produces the same output, forever. Claims that strong are worthless unless they are *proven*, continuously, by the test suite. This appendix states how.
+
+### D.1 The golden-render regression test
+
+The central test is simple to state: take a fixed Constituent graph and a fixed set of tape files, render them to audio, and assert the output is **byte-identical** to a stored reference render. Because the engine is conceptual and deterministic, there is exactly one correct answer, and it never changes. Any diff is a regression — and because the comparison is byte-exact, there is no tolerance threshold to argue about, no "close enough." A library of these golden cases — one per musical feature (basic loop, polymetric phrase, tempo ramp, role-filled arrangement, automation curve) — is the spine of the suite.
+
+### D.2 The core is testable because it is JUCE-free and real-time-free
+
+The conceptual-time engine and the Constituent/tape model are a pure library with no audio-framework dependency and no real-time constraint. This is a deliberate architectural choice in service of *verifiability*: the entire symbolic core can be exercised in a plain unit-test harness, at any speed, with exact rational arithmetic, with no audio device and no membrane involved. The "exact by construction" claim is therefore checkable directly — rational positions are compared for exact equality, not approximate.
+
+### D.3 What each layer proves
+
+- **Core (conceptual time, Constituents, tapes):** exactness. Rational arithmetic round-trips; unrolling a position through a hierarchy and back is the identity; copy-on-write edits never mutate a shared ancestor.
+- **Membrane (LMC, ASRC, latency):** discipline. Calibration converges; latency compensation places a captured click at its true conceptual time; ASRC introduces no DC offset or spectral artifact above the spec floor.
+- **Engine (render pipeline):** determinism — the golden-render suite of D.1.
+- **Ensemble (election, CRDT):** convergence. A partition-and-rejoin of two divergent session copies merges with no human conflict resolution and no rewritten tape data (Part 12.6).
+
+### D.4 The discipline this imposes
+
+A test in this suite must encode *why* a behavior matters, not merely *what* it does. "The polymetric phrase renders" is a weak test; "the 4-against-7 phrase is bit-identical at cycle 1 and cycle 100, proving no accumulated drift" is a test that fails exactly when the architecture's core promise is broken. The suite is the architecture's claims, made executable.
+
+---
+
+# Appendix E — Sirius Looper and Reaper: A Terminology Map
+
+Most readers arrive fluent in a DAW. Reaper has the clearest and most widely shared vocabulary, so this appendix maps Sirius's terms onto Reaper's. The goal is a faster on-ramp — *not* the claim that the two systems are the same. Where the analogy breaks, the break is the interesting part, and it is stated explicitly.
+
+### E.1 The mapping
+
+| Sirius term | Nearest Reaper term | Holds / breaks |
+|---|---|---|
+| **Tape** | An always-recording track's **source media** (the recorded file) | *Holds:* one continuous stream per input. *Breaks:* a Reaper track records only when armed and its source files are editable targets; a tape is never armed/disarmed and is append-only and immutable — never edited. |
+| **TapeEvent** | A sample, frame, or event inside the source media | *Breaks:* every tape event carries two timestamps — conceptual and LMC — not a sample index. |
+| **Retroactive ring** | Pre-roll record buffer | *Breaks:* Reaper's pre-roll is bounded and tied to arming; the ring is the default, always-on mode, and capture reaches backward into it. |
+| **Constituent** | *No single equivalent* — does the jobs of **media item**, **region**, and **folder track** at once | *Breaks:* Reaper uses three distinct types with three rule sets; Sirius unifies them into one recursive, immutable, copy-on-write type. |
+| **Loop** (Constituent) | A **media item** with "loop source" enabled | *Holds:* references source media with an in/out. *Breaks:* a loop carries the five-axis repetition rules of Part X; a Reaper item has a single loop-source checkbox. |
+| **Non-looped tape slice** | A **media item** (loop source off) | *Holds:* closely. |
+| **`conceptual_in` / `conceptual_out`** | Item position + length; take start offset | *Breaks:* stored as exact rational conceptual positions, not seconds or samples. |
+| **`effect_chain`** | Track **FX chain** / take FX | *Holds:* a chain of plugins. *Breaks:* attaches to a Constituent at *any* level of the hierarchy, not just a track. |
+| **`repetition_rules`** | The "loop source" toggle, plus manual editing | *Breaks:* five orthogonal axes (trigger, cardinality, phase, mutation, termination); Reaper has nothing equivalent. |
+| **Parameter automation tape** | An **envelope** (track or take automation) | *Breaks:* an envelope is itself a Constituent over a parameter tape — the model is recursive. |
+| **Phrase** | A **region**, or a **folder track** of items | *Breaks:* a phrase is neither a span nor a folder; it is a musical utterance carrying role, intent, and grammatical links, owning its own internal time domain. |
+| **Section** | A **region** | *Holds:* a named structural span. *Breaks:* it is a Constituent with its own tempo map and repetition rules. |
+| **Song** | A **project**, or a top-level region | *Holds:* roughly. |
+| **Set** | A sequence of **projects** (or subprojects) | *Breaks:* Sirius keeps one recursive model instead of nesting project files. |
+| **Performance arrangement** | *No equivalent* | The outermost Constituent — an entire concert as one graph. |
+| **Session** | A **project** (`.RPP`) | *Breaks:* a session is a *directory* — a Constituent-graph document plus content-addressed tape files (Part 7.8). |
+| **Tempo map** | The project **tempo / time-signature envelope** | *Breaks:* in Sirius it is per-Constituent, conceptual, and nestable — every level may have its own. |
+| **LMC (Logical Master Clock)** | The project timebase / master clock | *Breaks:* Reaper has no honest absolute-time master *above* the audio sample clock; the LMC is exactly that. |
+| **Membrane** | *No equivalent* | The boundary where conceptual time becomes numerical time. Reaper has no analogue because it never leaves numerical time. |
+| **Capability tier** | *No equivalent* | A startup-selected fidelity profile sized to the hardware. |
+
+### E.2 The one term that does *not* map cleanly: "track"
+
+A Reaper **track** is the workhorse of that DAW, and it is worth being explicit about why Sirius has no single equivalent. A Reaper track simultaneously is: a recording destination, a container for media items, an FX chain, and a host for automation envelopes. Sirius deliberately *splits* those four jobs:
+
+- recording destination → the **tape** (one per input, always on)
+- container for content → **Constituents** (loops, phrases, sections…)
+- FX chain → each Constituent's **`effect_chain`**
+- automation → **parameter tapes**, themselves wrapped in Constituents
+
+This split is not incidental — it is the architectural inversion of Part VI and Part VII. Reaper's track conflates the **data layer** (what was recorded) with the **structure layer** (how it is organized for playback). Sirius keeps those layers strictly separate (Part 7.2): tapes are heavy, immutable data; Constituents are light, immutable structure that only *references* tapes. So when a Reaper user reaches for "track," the Sirius answer is "which job do you mean?" — and the paper's vocabulary names each job separately on purpose.
+
+### E.3 How to use this map
+
+When reading this paper, treat the Reaper term as a *first approximation* that gets you into the right neighbourhood, then let the "breaks" column — and the Part that defines the Sirius term — correct the picture. When *talking* about a Sirius design with someone fluent in Reaper, the map runs the same way: lead with the Reaper word to establish footing, then name the divergence, because the divergence is almost always the point.
 
 ---
 
