@@ -147,6 +147,65 @@
 - **Surfaced by:** code-quality review of commit `d8a2479` (Tasks 2+3
   joint commit).
 
+### 2026-05-16 — `announceCapture` Overlay branch: replace `value_or` fallbacks with `jassert`
+
+- **Files:** `app/MainComponent.cpp` (the `announceCapture` Overlay
+  branch in the §11 templates, around line 780).
+- **What was deferred:** the Overlay branch uses
+  `result.hostPhraseName.value_or("the phrase here")` and
+  `result.overlayPlacementIndex.value_or(0u)`. Both fallbacks are
+  unreachable by contract — when `resolvedMode == Overlay`, promote()
+  guarantees both fields are populated (a wrapper was located and the
+  placement ordinal computed). If the invariant ever broke, the banner
+  would render `"Added to the phrase here 0 only"` — silently wrong
+  copy that violates CLAUDE.md philosophy rule 8 ("fail loud").
+- **What's needed to finish:**
+  1. Replace `value_or` with direct dereference, gated by `jassert
+     (result.hostPhraseName.has_value() && result.overlayPlacementIndex
+     .has_value());` so debug builds catch contract regressions loudly.
+  2. Re-verify the four banner scenarios still read correctly on
+     operator gate.
+- **Why deferred:** shipped Task 7 commit (`dd1c28c`) as the plan
+  specified plus the dead-`wasDowngrade` deletion. The `value_or` ->
+  `jassert` swap is a small follow-up that turns an unreachable-but-
+  silent failure mode into an unreachable-but-loud one.
+- **Operational consequence today:** none. The branch is unreachable
+  in practice; tests + operator gate pass cleanly.
+- **Surfaced by:** code-quality review of commit `dd1c28c` (Task 7).
+
+### 2026-05-16 — Extract `MainComponent::refreshAll()` and use it everywhere
+
+- **Files:** `app/MainComponent.h`, `app/MainComponent.cpp`.
+- **What was deferred:** the four-line refresh sequence
+  ```
+  refreshPerformance();
+  refreshPreparation();
+  refreshCaptureControls();
+  refreshDiagnostics();
+  ```
+  is duplicated at five call sites (`MainComponent.cpp:525-528`,
+  `:938-941`, `:966-969`, `:1013-1016`, and partials at `:821-826`
+  / `:1085-1086`). Task 8 (`38667d0`) was the fifth duplication.
+- **What's needed to finish:**
+  1. Add `void refreshAll();` to the private section of
+     `MainComponent.h` with a one-line docstring.
+  2. Define it in `MainComponent.cpp` as the four-call sequence.
+  3. Replace each existing call site with a single `refreshAll();`
+     invocation. Inspect partial-sequence sites (`:821-826` etc.) to
+     decide whether they should also collapse to `refreshAll()` or
+     stay partial.
+  4. Verify the full suite still green (250 cases) and the operator
+     gate scenarios still verify (capture → tie-bar, fork → prime
+     mark, undo → restore).
+- **Why deferred:** Task 8 was an "add the fifth copy" moment, not a
+  "refactor four prior copies" moment. Code-quality reviewer flagged
+  it as Important but Approved-with-follow-ups; the surgical-changes
+  rule said to ship the plan-delta now and extract in a focused
+  refactor commit.
+- **Operational consequence today:** none. Every refresh fires
+  correctly; the only cost is the file's growing repetition.
+- **Surfaced by:** code-quality review of commit `38667d0` (Task 8).
+
 ### 2026-05-15 — OTTO Look-and-Feel integration (cross-app)
 
 - **Files:** new top-level shared module (location TBD — see open
