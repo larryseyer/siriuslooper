@@ -1,9 +1,76 @@
+# === Build outputs ===
 build/
+build-*/
 cmake-build-*/
+out/
 .cache/
-.DS_Store
-*.user
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+compile_commands.json
+*.dir/
 
-# Vendored third-party dependencies — present on disk, not committed.
-# Populated by `bash/setup-deps.sh` (matches the sister app OTTO's layout).
+# === Compiled artifacts ===
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.dSYM/
+
+# === Plugin bundles (built locally) ===
+*.vst3/
+*.component/
+*.aaxplugin/
+*.app/
+
+# === IDE / editor ===
+*.user
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+DerivedData/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcworkspace/xcuserdata/
+*.xcuserstate
+
+# === OS junk ===
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+
+# === Credentials & signing (never commit these) ===
+.env
+.env.*
+!.env.example
+local.cmake
+*.pem
+*.p12
+*.key
+*.cer
+*.mobileprovision
+*.provisionprofile
+*.p8
+secrets/
+
+# === Logs ===
+*.log
+
+# === Session-scratch tooling ===
+.claude/
+
+# === Vendored third-party dependencies ===
+# Present on disk, not committed. Populated by `bash/setup-deps.sh`
+# (matches the sister app OTTO's layout).
 external/
