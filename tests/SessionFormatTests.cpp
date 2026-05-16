@@ -22,6 +22,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <juce_core/juce_core.h>
+
 #include <memory>
 #include <stdexcept>
 #include <variant>
@@ -295,6 +297,35 @@ TEST_CASE ("a v1 document is rejected by the v2 loader",
     CHECK_THROWS_AS (
         sirius::persistence::deserializeSession (R"({ "version": 1, "root": {} })"),
         std::runtime_error);
+}
+
+TEST_CASE ("a shared session round-trips through an actual file on disk",
+           "[sessionformat][sharing][disk]")
+{
+    // The in-memory round-trip cases above prove serializeSession /
+    // deserializeSession agree about the JSON shape. This case adds the
+    // juce::File wrappers (replaceWithText / loadFileAsString) used by
+    // MainComponent::chooseFileAndSave / chooseFileAndLoad, so the full save
+    // / load path the operator uses is covered without launching the .app.
+    const auto original = sharedVerseTree (3);
+    const auto json = sirius::persistence::serializeSession (*original);
+
+    auto tmp = juce::File::createTempFile (".sirius.json");
+    REQUIRE (tmp.replaceWithText (json));
+
+    const auto loadedJson = tmp.loadFileAsString();
+    REQUIRE (loadedJson == json);
+
+    const auto round = sirius::persistence::deserializeSession (loadedJson);
+    tmp.deleteFile();
+
+    REQUIRE (round->children().size() == 3);
+    const auto a = round->children()[0]->children()[0].get();
+    const auto b = round->children()[1]->children()[0].get();
+    const auto c = round->children()[2]->children()[0].get();
+    CHECK (a == b);
+    CHECK (a == c);
+    CHECK (a->id() == ConstituentId (20));
 }
 
 TEST_CASE ("a v2 document with two full objects sharing an id fails loud",
