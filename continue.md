@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-16 (shared-placement milestone shipped end-to-end)
+# Session Continuation — 2026-05-16 (session format v2 — shared-placement now round-trips through save/load)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -11,18 +11,25 @@
 
 ## 0. Headline
 
-**Shared-placement milestone is complete.** The verse plays three
-times in the demo, all three placements share one underlying Phrase
-via pointer-identity, the operator can long-press Mark In to attach
-an overlay to a single placement only, and can right-click `"Vary
-this one"` to fork a placement off its shared lineage. Tie-bar,
-overlay-dot, and prime-mark visuals on the timeline make the three
-states glanceable without text. Every user-facing string passes
-spec §15 musician-vocabulary review.
+**Session format v2 shipped.** The serializer now emits each shared
+ChildPtr once, with subsequent occurrences encoded as
+`{ "ref": <id> }`. The deserializer rebuilds pointer-identity from
+the refs and runs `promotion::enforceSharedInstancesAreShared` on
+the loaded root before returning, so any document that lies about
+its sharing fails loud at load time rather than at the next edit.
+The verse × 3 demo now round-trips through Save / Load with the
+three wrappers still pointing at one Phrase.
 
-Sessions A + B + C, ten tasks of the plan
-`docs/superpowers/plans/2026-05-16-shared-placement.md`, **all
-shipped and operator-verified end-to-end.**
+Single commit on master, pushed: `a1b6ed3` —
+`feat: session format v2 — preserve shared-placement
+pointer-identity on load`. Test suite 255 / 4277 (was 250 / 4269);
+five new sections under `[sessionformat][sharing]`.
+
+The shared-placement milestone from earlier today (Sessions A + B +
+C, ten tasks of `docs/superpowers/plans/2026-05-16-shared-placement.md`)
+remains shipped — this session's work extended that milestone's
+in-memory invariant across the persistence boundary so it survives
+save and load.
 
 ---
 
@@ -152,18 +159,14 @@ Plus the pre-existing items already in `todo.md`:
 The shared-placement milestone closes a major architectural arc.
 The next big-topic candidates, in roughly priority order:
 
-1. **Persistence: session-format encoding of sharing.** Today the
-   on-disk session.json shape (Whitepaper V2 §7.8) doesn't account
-   for placement wrappers or the shared `ChildPtr` invariant. A
-   session with verse × 3 would serialize the verse Phrase three
-   times and lose pointer-identity on reload. Needs:
-   - A serialization scheme that emits each Phrase once and
-     references it from wrappers by id.
-   - A deserialization step that re-establishes the
-     `enforceSharedInstancesAreShared` invariant before promote()
-     ever runs.
-   - The directory-format work already deferred in `todo.md` is the
-     natural place to land this — they're coupled.
+1. **Persistence: session-format encoding of sharing — DONE
+   2026-05-16, commit `a1b6ed3`.** Each shared Phrase is now emitted
+   once with `{ "ref": <id> }` for repeat occurrences; the loader
+   rebuilds pointer-identity and runs the shared-instance guard
+   before returning. The directory-format work remains deferred in
+   `todo.md` (calibration / LMC discipline / tape bundling / TCC
+   bug); the shared-encoding concern is no longer one of its
+   blockers.
 
 2. **OTTO L&F integration.** Big, well-scoped, sister-app-aligned.
    Has a four-option design choice already enumerated in `todo.md`

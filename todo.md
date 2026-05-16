@@ -685,6 +685,13 @@ already held (same licensing model as the sister app OTTO; see
 
 ### 2026-05-15 — Session directory format (Whitepaper V2 §7.8)
 
+- **Update 2026-05-16:** `session.json` now serializes shared
+  placements correctly (format bumped to v2, commit `a1b6ed3`). The
+  remaining work in this entry is the *directory wrapper*: bundling
+  LMC discipline history, per-device calibration, and the TapeStore-
+  resident audio into the same `.sirius/` archival unit. The
+  shared-encoding concern that previously blocked this entry is
+  resolved.
 - **Files:** `persistence/src/SessionFormat.cpp`,
   `persistence/include/sirius/SessionFormat.h`, `app/MainComponent.cpp`
   (Save/Load callers), eventually `persistence/src/TapeStore.cpp`.
