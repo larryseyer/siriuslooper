@@ -74,8 +74,15 @@ and auto-memory):
   it.
 - **Single-line commit messages**, format `<type>: <short title>`.
   No Co-Authored-By trailer.
-- **Never run `open ...` or any GUI-launching command.** Operator-
-  side `.app` verification is the user's job.
+- **Claude can build AND launch the `.app`.** Updated 2026-05-16:
+  `open .../Sirius\ Looper.app` is allowed as a smoke-test step
+  after a build, and as an automated verification path when the
+  headless test harness can't reach the behaviour. Interactive GUI
+  gestures (mouse, long-press, dialog navigation) still need a
+  human — Claude states the limit and hands back rather than
+  pretending the launch covered them. Quit cleanly with
+  `osascript -e 'tell application "Sirius Looper" to quit'`.
+  Memory: `feedback-can-launch-app`.
 - **Hide internals from the musician.** Every new UI string is
   checked against spec §15.
 
