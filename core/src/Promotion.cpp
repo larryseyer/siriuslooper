@@ -108,6 +108,9 @@ namespace
     }
 }
 
+// Exceeds the 100-line default because Overlay / Shared / Mint are three
+// exhaustive, mutually structured paths the plan inlines together; splitting
+// them would scatter the decision shape that this function exists to make.
 PromotionResult promote (const Constituent&   root,
                          const TempoMap&      sessionToLmc,
                          const CaptureRegion& region,
