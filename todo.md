@@ -762,6 +762,32 @@ already held (same licensing model as the sister app OTTO; see
   serving the same need as a history list. No further action on this
   entry; it is preserved for context only.
 
+### 2026-05-16 — GUI smoke-test script blocked by the same signing issue
+
+- **Files:** `bash/smoke-persistence.sh` (committed but inert today).
+- **What was deferred:** end-to-end GUI verification of the Save / Load
+  buttons via `osascript` + System Events. The script clicks Save,
+  navigates `NSSavePanel`, clicks Load, navigates `NSOpenPanel`, then
+  reads the status banner from the accessibility tree to confirm
+  `Saved` / `Loaded`. It would close the last gap the headless
+  `SiriusTests "[sessionformat]"` cases cannot reach.
+- **Why deferred:** macOS denies `tell process "Sirius Looper"` with
+  AppleScript error `-25211` because the bundle is ad-hoc-signed
+  (`codesign -dv` reports `flags=0x20002(adhoc,linker-signed)`).
+  `tell process "Finder"` works from the same shell; this is
+  process-specific, not a TCC scope issue. Same root cause as the next
+  entry (Load dialog file-greying).
+- **What's needed to finish:** Developer ID Application signing on the
+  `.app`, OR an entitlement / hardened-runtime configuration that
+  brings the bundle above the trust threshold. Resolving the next
+  entry's signing problem unblocks this entry automatically.
+- **State left in tree:** `bash/smoke-persistence.sh` is committed and
+  executable, with a header documenting the precondition. It exits
+  `2` ("window-1 never appeared") on an ad-hoc bundle because the
+  window-count poll times out before System Events ever talks to the
+  process. After signing, the loop should succeed and the script
+  drives the full round-trip.
+
 ### 2026-05-15 — Load dialog still cannot select `.sirius.json` on macOS
 
 - **Files:** `app/MainComponent.cpp` (`chooseFileAndLoad`),
