@@ -1,0 +1,97 @@
+---
+layout: base.njk
+title: ""
+bodyClass: home
+permalink: /
+---
+
+<section class="hero">
+  <div class="container">
+    <p class="hero-kicker">Reference architecture · macOS · v0.1.0 · in development</p>
+    <h1>Capture continuously. Compose retroactively.</h1>
+    <p class="hero-lede">
+      Sirius Looper is a performance looper for serious musicians.
+      Every input is captured to an always-running tape, so the moment is
+      already recorded by the time the gesture to keep it arrives.
+      Mark in. Mark out. Move the in-point backward to catch the pickup
+      note you didn't mark. Compose phrases from material that has
+      already happened, instead of fighting to start a take on the
+      downbeat.
+    </p>
+
+    <form class="signup-form" method="post" novalidate>
+      <input type="email" name="email" required placeholder="your@email.com" aria-label="Email address">
+      <input type="text" class="honeypot" name="company" tabindex="-1" autocomplete="off" aria-hidden="true">
+      <button type="submit" class="btn btn-primary">Notify me</button>
+    </form>
+    <p class="signup-status" role="status" aria-live="polite"></p>
+
+    <div class="hero-cta" style="margin-top:1.25rem;">
+      <a href="/docs/whitepaper-v2/" class="btn btn-ghost">Read the white paper →</a>
+      <a href="/features/" class="btn btn-ghost">See the features →</a>
+    </div>
+
+    <div class="tape-illo" aria-hidden="true">
+      <svg viewBox="0 0 880 120" role="img" aria-label="Animated illustration of a tape with a moving capture region">
+        <rect class="tape-base" x="0" y="40" width="880" height="40" rx="6"/>
+        {% for i in range(0, 23) %}
+          <line class="tape-tick" x1="{{ i * 40 }}" y1="40" x2="{{ i * 40 }}" y2="48"/>
+          <line class="tape-tick" x1="{{ i * 40 }}" y1="72" x2="{{ i * 40 }}" y2="80"/>
+        {% endfor %}
+        <g class="tape-marker">
+          <rect class="tape-region" x="220" y="40" width="180" height="40" rx="4"/>
+          <line class="tape-playhead" x1="400" y1="32" x2="400" y2="88"/>
+          <polygon class="tape-playhead" points="394,28 406,28 400,38" fill="currentColor"/>
+        </g>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container">
+    <h2>Three things existing loopers can't do.</h2>
+    <p class="section-lede">
+      Every existing looper quantizes time to a single grid, locks you
+      into one meter per loop, and demands you hit Record at the exact
+      moment a phrase begins. Sirius does none of that.
+    </p>
+
+    <div class="pillars">
+      <div class="pillar">
+        <div class="pillar-icon" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h14m0 0l-4-4m4 4l-4 4"/><path d="M21 6v12" stroke-linecap="round"/></svg>
+        </div>
+        <h3>Retroactive capture</h3>
+        <p>The tape was always running. Mark Out closes a region — and you can move the in-point backward to grab the pickup note you didn't mark.</p>
+      </div>
+      <div class="pillar">
+        <div class="pillar-icon" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="7" cy="12" r="3"/><circle cx="17" cy="12" r="3"/><path d="M10 12h4"/></svg>
+        </div>
+        <h3>Polymetric phrases</h3>
+        <p>A 4/4 drum loop and a 7/8 ostinato live in one phrase without approximation. Each in its own meter; they meet at phrase boundaries.</p>
+      </div>
+      <div class="pillar">
+        <div class="pillar-icon" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 18c3-6 6-12 9-12s6 6 9 12"/></svg>
+        </div>
+        <h3>Micro-timing preserved</h3>
+        <p>Swing, pocket, the deliberate behind-the-beat feel — captured at substrate precision. Nothing is quantized away. Nothing is smoothed.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="band">
+  <div class="container">
+    <h2>Built on first principles.</h2>
+    <p>
+      Time, inside the engine, is concept — not number. The system reasons
+      about positions and relationships symbolically and renders to
+      numerical samples only at the membrane where audio meets the
+      interface. Everything else follows from that decision.
+    </p>
+    <a href="/architecture/" class="btn btn-ghost">Read the architecture →</a>
+  </div>
+</section>

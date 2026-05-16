@@ -694,3 +694,53 @@ already held (same licensing model as the sister app OTTO; see
   committed; `app/MainComponent.cpp::chooseFileAndLoad` is restored to
   the simple `"*.json"` filter (matches the f9deccc baseline before the
   empty-filter experiment).
+
+---
+
+### 2026-05-15 — Marketing site asset gaps (siriuslooper.com)
+
+The v0 website was scaffolded under `/website/` (Eleventy, deploys to
+`gh-pages` via `.github/workflows/pages.yml`, custom domain
+`siriuslooper.com`). The following placeholders shipped and need real
+assets before public launch:
+
+- **Logo / wordmark:** Currently a typographic mark in Orbitron with a
+  teal accent on the "S". Replace with a commissioned mark or designed
+  wordmark. Files to update: `website/src/_includes/base.njk` (header
+  brand + footer brand markup), `website/src/assets/img/favicon.svg`.
+
+- **App screenshots:** None on the site. Add once GUI is past operator
+  verification for milestone M3+ (TimelineView + CaptureBanner +
+  four-tab UI). Drop captures into `website/src/assets/img/screens/`
+  and wire into `index.njk` and `features.njk`.
+
+- **Demo video:** None on the site. Record once retroactive capture
+  and polymetric phrases are demoable end-to-end. Embed in `index.njk`
+  hero (replace the SVG tape illustration) or `features.njk`.
+
+- **Open Graph card:** Site references `/assets/img/og.png` in
+  `base.njk` meta tags; file does not exist. Generate a 1200×630 PNG
+  with the wordmark on `#0a0a0a` once the logo lands.
+
+- **Self-hosted webfonts:** `base.njk` currently loads Orbitron,
+  Inter, and JetBrains Mono from Google Fonts. Per the original plan,
+  swap to woff2 subsets under `website/src/assets/fonts/` and
+  `@font-face` declarations in `site.css` for speed and deploy
+  stability.
+
+- **Email signup endpoint:** `website/src/_data/site.json#signupEndpoint`
+  is empty. Pick a provider (ConvertKit recommended for proper
+  double-opt-in newsletter; Formspree for a simple inbox), paste the
+  form-action URL into `signupEndpoint`, redeploy.
+
+- **GitHub repo URL verification:** Site assumes
+  `https://github.com/larryseyer/SiriusLooper` (matches the
+  user/slug convention used for OTTO). If the parallel push session
+  used a different repo name, update `website/src/_data/site.json#github`
+  and the `View source on GitHub` link in `doc.njk`.
+
+- **Custom domain DNS + Pages config (operator step):** Add A records
+  to GitHub's apex-domain IPs (185.199.108–111.153) at the registrar
+  for `siriuslooper.com`, then in repo Settings → Pages set source =
+  `gh-pages` branch, custom domain = `siriuslooper.com`, Enforce HTTPS
+  on. Verify with `dig siriuslooper.com +short`.

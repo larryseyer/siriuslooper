@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{% if title %}{{ title }} · {{ site.title }}{% else %}{{ site.title }} — {{ site.tagline }}{% endif %}</title>
+  <meta name="description" content="{{ description or site.description }}">
+
+  <link rel="canonical" href="{{ (page.url or '/') | absoluteUrl(site.url) }}">
+  <link rel="icon" type="image/svg+xml" href="/assets/img/favicon.svg">
+  <link rel="alternate icon" href="/assets/img/favicon.svg">
+
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="{{ site.title }}">
+  <meta property="og:title" content="{% if title %}{{ title }} · {{ site.title }}{% else %}{{ site.title }}{% endif %}">
+  <meta property="og:description" content="{{ description or site.description }}">
+  <meta property="og:url" content="{{ (page.url or '/') | absoluteUrl(site.url) }}">
+  <meta property="og:image" content="{{ '/assets/img/og.png' | absoluteUrl(site.url) }}">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{% if title %}{{ title }} · {{ site.title }}{% else %}{{ site.title }}{% endif %}">
+  <meta name="twitter:description" content="{{ description or site.description }}">
+  <meta name="twitter:image" content="{{ '/assets/img/og.png' | absoluteUrl(site.url) }}">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="/assets/css/site.css">
+
+  {% block head %}{% endblock %}
+</head>
+<body class="page-{{ bodyClass or 'default' }}">
+  <a href="#main" class="skip-link">Skip to main content</a>
+
+  <header class="site-header" role="banner">
+    <div class="container header-row">
+      <a href="/" class="brand" aria-label="{{ site.title }} home">
+        <span class="brand-mark"><span class="brand-mark-accent">S</span>IRIUS</span>
+        <span class="brand-suffix">LOOPER</span>
+      </a>
+      <nav class="site-nav" aria-label="Primary">
+        <a href="/features/"{% if page.url == '/features/' %} aria-current="page"{% endif %}>Features</a>
+        <a href="/architecture/"{% if page.url == '/architecture/' %} aria-current="page"{% endif %}>Architecture</a>
+        <a href="/docs/user-guide/"{% if page.url and page.url.startsWith('/docs/') %} aria-current="page"{% endif %}>Docs</a>
+        <a href="/about/"{% if page.url == '/about/' %} aria-current="page"{% endif %}>About</a>
+        <a href="{{ site.github }}" class="nav-external" rel="noopener">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" role="main">
+    {% block content %}{{ content | safe }}{% endblock %}
+  </main>
+
+  <footer class="site-footer" role="contentinfo">
+    <div class="container footer-grid">
+      <div class="footer-block">
+        <div class="footer-brand"><span class="brand-mark-accent">S</span>IRIUS LOOPER</div>
+        <p class="footer-tag">{{ site.tagline }}</p>
+      </div>
+      <div class="footer-block">
+        <h4>Product</h4>
+        <ul>
+          <li><a href="/features/">Features</a></li>
+          <li><a href="/architecture/">Architecture</a></li>
+          <li><a href="/docs/user-guide/">User Guide</a></li>
+        </ul>
+      </div>
+      <div class="footer-block">
+        <h4>Reference</h4>
+        <ul>
+          <li><a href="/docs/whitepaper-v2/">White Paper V2</a></li>
+          <li><a href="/docs/whitepaper-v1/">White Paper V1</a></li>
+          <li><a href="{{ site.github }}" rel="noopener">Source (GitHub)</a></li>
+        </ul>
+      </div>
+      <div class="footer-block">
+        <h4>Sister project</h4>
+        <ul>
+          <li><a href="{{ site.otto }}" rel="noopener">OTTO</a></li>
+          <li><a href="/about/">About</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="container footer-meta">
+      <small>© {{ site.year }} {{ site.author }}. Source released under AGPLv3 with App Store and sample-library exceptions.</small>
+    </div>
+  </footer>
+
+  <script src="/assets/js/signup.js" defer></script>
+</body>
+</html>

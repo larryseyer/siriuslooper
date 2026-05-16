@@ -1,0 +1,108 @@
+---
+layout: base.njk
+title: Architecture
+description: Time as concept, not number. The Logical Master Clock, the Membrane, and the Constituent tree — the first-principles design that makes Sirius Looper possible.
+bodyClass: architecture
+permalink: /architecture/
+---
+
+<section class="hero">
+  <div class="container">
+    <p class="hero-kicker">Architecture</p>
+    <h1>Time as concept, not number.</h1>
+    <p class="hero-lede">
+      Every other architectural decision in Sirius Looper depends on
+      internalizing one fact: there is no true time on any computer,
+      only the best disciplined approximation. The system reasons about
+      time symbolically — and renders to numerical samples only at the
+      boundary where audio meets the interface.
+    </p>
+    <div class="hero-cta">
+      <a href="/docs/whitepaper-v2/" class="btn btn-primary">Read White Paper V2 →</a>
+      <a href="/docs/whitepaper-v1/" class="btn btn-ghost">Read White Paper V1 →</a>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container" style="max-width: 920px;">
+
+    <div class="arch-block">
+      <h3>The Logical Master Clock</h3>
+      <blockquote>
+        Inside the engine, time is a concept — a structure of positions
+        and relationships, nested hierarchies, intentional offsets. It
+        only becomes a number at the membrane where the system meets
+        the audio interface.
+        <cite>Whitepaper V2 · Part II</cite>
+      </blockquote>
+      <p class="arch-prose">
+        The Logical Master Clock is the single, continuous reference for
+        the system — but it is not a sample counter and it is not an
+        audio clock. Audio clocks drift, round, and accumulate error;
+        the LMC does not, because it does not commit to a number until
+        it has to.
+      </p>
+    </div>
+
+    <div class="arch-block">
+      <h3>The Membrane</h3>
+      <blockquote>
+        The membrane is the boundary between conceptual time inside the
+        engine and numerical time at the audio interface. Inside, time
+        is exact symbolic structure. Outside, it is sample frames. The
+        membrane is where one becomes the other.
+        <cite>Whitepaper V2 · Part III</cite>
+      </blockquote>
+      <p class="arch-prose">
+        Hosting third-party plugins downstream of the membrane is a
+        deliberate trade: plugins are numerical, so their timing
+        guarantees evaporate. But they see audio that has already been
+        disciplined, so they cannot reach back and corrupt the
+        upstream model.
+      </p>
+    </div>
+
+    <div class="arch-block">
+      <h3>Constituents — one tree, every level</h3>
+      <blockquote>
+        Tape, Loop, Phrase, Section, Song, Set. Every node in the
+        arrangement is a Constituent. Same operations apply at every
+        level; arrangement is recursive because the data model is.
+        <cite>Whitepaper V2 · Part IV</cite>
+      </blockquote>
+      <p class="arch-prose">
+        The Constituent tree is what makes phrases composable. A
+        Section is a sequence of Phrases. A Song is a sequence of
+        Sections. A Set is a sequence of Songs. The same edit, the
+        same transform, the same undo — at any depth.
+      </p>
+    </div>
+
+    <div class="arch-block">
+      <h3>Trust the performer absolutely</h3>
+      <blockquote>
+        The looper's job is not to constrain, not to guide, not to
+        second-guess, not to protect them from their own choices. The
+        user is a musician. They know what they want, when they want
+        it, and how they want it.
+        <cite>Whitepaper V2 · §1.5</cite>
+      </blockquote>
+      <p class="arch-prose">
+        That trust is enforced architecturally. Mark Out always
+        succeeds. The tape was always running. The undo stack is
+        lossless. There is no "you can't do that" — only "here is
+        what you just did."
+      </p>
+    </div>
+
+  </div>
+</section>
+
+<section class="band">
+  <div class="container">
+    <h2>The short version isn't the whole story.</h2>
+    <p>The white paper goes deep on conceptual time, drift, ensemble synchronization, and the trade-offs that don't appear above. It's a design thesis, not a sales pitch.</p>
+    <a href="/docs/whitepaper-v2/" class="btn btn-primary">Read White Paper V2 →</a>
+  </div>
+</section>

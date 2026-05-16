@@ -1,0 +1,14 @@
+{
+  "name": "siriuslooper-website",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Marketing and documentation site for Sirius Looper (siriuslooper.com).",
+  "scripts": {
+    "build": "eleventy",
+    "serve": "eleventy --serve --port=8080",
+    "clean": "rm -rf _site"
+  },
+  "devDependencies": {
+    "@11ty/eleventy": "^3.0.0"
+  }
+}
