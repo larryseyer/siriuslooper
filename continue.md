@@ -1,338 +1,231 @@
-# Session Continuation — 2026-05-16 (Developer ID signing shipped; next session is auto-testing setup)
+# Session Continuation — 2026-05-16 (auto-testing infrastructure shipped end-to-end)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
 > project's auto-memory (`MEMORY.md` + `*.md` in the memory dir) are
 > loaded automatically and contain the rules. This file is the
-> *state*: what just shipped, what's verified, and what to start on
-> next.
+> *state*: what just shipped and what's queued next.
 
 ---
 
 ## 0. Headline
 
-**This session shipped Developer ID signing for Sirius (Xcode-gen path)**
-— commit `128913a` on master, pushed. The `cmake -B build-xcode -G Xcode`
-build now produces a `Sirius Looper.app` signed as
-`Developer ID Application: Larry Seyer (RR5DY39W4Q)` with hardened
-runtime (`flags=0x10000`) and the `com.apple.security.device.audio-input`
-entitlement. The default `cmake -B build` (Unix Makefiles) dev loop is
-unchanged — still ad-hoc-signed, still fast. Notarization is wired in
-behind `-DSIRIUS_NOTARIZE=ON` (post-build `notarytool submit --wait` →
-`stapler staple` → `spctl` verify). One-time `notarytool` keychain
-profile `sirius-notary` set up against Apple ID `itunes@larryseyer.com`.
+**Auto-testing infrastructure milestone shipped end-to-end** on master
+this session. Three commits, all pushed:
 
-**Process note:** the manual Xcode-UI configuration was the verification
-harness — operator drove Signing & Capabilities through the IDE to prove
-the cert + entitlements actually produce a Gatekeeper-acceptable bundle,
-then I encoded the same settings into `app/CMakeLists.txt` so they
-survive `cmake -B build-xcode -G Xcode` regeneration.
+| SHA       | Subject                                                                                      |
+|-----------|----------------------------------------------------------------------------------------------|
+| `4e8a1df` | fix: smoke-persistence.sh — direct binary launch + recursive AX walk + dialog-targeted clicks |
+| `f68aa3c` | feat: bash/autotest.sh — local 4-phase macOS verification driver                              |
+| (next)    | feat: ci-macos-signed.yml — signed-build + smoke CI workflow + this doc update                |
 
-**OTTO backport — partial.** Same CMake block + entitlements file added
-to `OTTO/src/otto-plugin/CMakeLists.txt` and
-`OTTO/src/otto-plugin/OTTOPlugin.macos.entitlements` mid-session, but
-another Claude is working OTTO concurrently — Sirius did not test the
-OTTO end-to-end. The edits are on disk; the other Claude may merge or
-revise them.
+**Phase A — `bash/smoke-persistence.sh` patched and verified.** Five
+AppleScript / Launch Services landmines worked around (catalogued in
+§2). Round-trips Save → Load against the signed bundle, exits 0 with
+"refs in file: 2" proving v2 shared-encoding ran.
 
-**Next session is auto-testing infrastructure** — per the operator's
-stated sequence (signing → auto-testing → white-paper alignment pass).
-Signing unblocks the AppleScript-driven smoke scripts that previously
-failed `-25211` against ad-hoc bundles. The auto-testing milestone is
-what makes the verification matrix below executable on every commit
-instead of only when the operator runs it by hand.
+**Phase B — `bash/autotest.sh` runs four phases locally** in ~25s
+total on an Apple Silicon dev machine: headless ctest → signed Xcode
+bundle build → codesign + spctl verification → GUI smoke. All four
+green on master.
 
-**Unverified claims from this session (operator said "do not test"):**
-`bash/smoke-persistence.sh` not run against the signed bundle; Load
-dialog `.sirius.json` greying not visually re-tested; `SiriusTests`
-not re-run against the regenerated build trees. None of these should
-have regressed — no code paths were touched, only build-system metadata
-— but the gate from §4's verification matrix has not been walked.
+**Phase C — `.github/workflows/ci-macos-signed.yml` added** as a
+separate workflow from `ci.yml`. Will fire on the next push to master
+(this commit). Operator one-time setup: six repo secrets must be
+added before the workflow can succeed — see §5.
 
-The shared-placement milestone from earlier today (Sessions A + B +
-C, ten tasks of `docs/superpowers/plans/2026-05-16-shared-placement.md`)
-remains shipped — this session's v2 work extended that milestone's
-in-memory invariant across the persistence boundary so it survives
-save and load.
+**Next session = white-paper alignment pass** per the standing
+operator sequencing (signing → auto-testing → white-paper alignment).
+Auto-testing landed; alignment is up. See §6 for the picked-up
+context for that work.
 
 ---
 
-## 1. Quick orientation
-
-**Sirius Looper** is a real-time looping / arrangement application
-for musicians, built in JUCE/C++20 with a strict separation between
-a JUCE-free conceptual-time core (`core/`) and the audio/UI layers
-(`engine/`, `ui/`, `app/`). Sister app to **OTTO**.
-
-Authoritative reading, in order:
-
-1. **`/Users/larryseyer/.claude/CLAUDE.md`** — global engineering
-   rules (auto-loaded).
-2. **`todo.md`** — deferred-work register. Several new entries from
-   this milestone's code reviews — see §3 below.
-3. **`docs/superpowers/plans/2026-05-16-shared-placement.md`** — the
-   plan that just shipped. All 10 tasks are now `[x]`. The plan's
-   Self-Review section is at the bottom.
-4. **`docs/superpowers/specs/2026-05-16-shared-placement-design.md`**
-   — the spec the plan implemented. §15 (musician-language QA
-   checklist) is the bar every UI string was reviewed against.
-5. **`docs/superpowers/plans/2026-05-15-capture-promotion.md`** — the
-   prior plan; structural template still useful for the next
-   milestone.
-6. **`docs/Sirius Looper Whitepaper V2.md`** — conceptual model.
-   Parts VII (Constituent abstraction) and IX (arrangement) are
-   load-bearing background.
-7. **`docs/Sirius Looper User Guide.md`** — operator-facing how-to.
-   Task 9 added a Roadmap line about "Repeating song sections"; the
-   full chapter is deferred until the gestures get long-form real-
-   use testing.
-
-**Project policies that override defaults** (full text in CLAUDE.md
-and auto-memory):
-
-- **Work directly on `master`.** No feature branches unless asked.
-- **Commits AND pushes are authorized.** Claude commits + pushes to
-  `origin/master` as deliverables land. No PRs, no `--force`, no
-  `--no-verify`. See memory `feedback-claude-commits-and-pushes-master`.
-  `bash/bu.sh` is the user's *local* backup tool — Claude doesn't run
-  it.
-- **Single-line commit messages**, format `<type>: <short title>`.
-  No Co-Authored-By trailer.
-- **Claude can build AND launch the `.app`.** Updated 2026-05-16:
-  `open .../Sirius\ Looper.app` is allowed as a smoke-test step
-  after a build, and as an automated verification path when the
-  headless test harness can't reach the behaviour. Interactive GUI
-  gestures (mouse, long-press, dialog navigation) still need a
-  human — Claude states the limit and hands back rather than
-  pretending the launch covered them. Quit cleanly with
-  `osascript -e 'tell application "Sirius Looper" to quit'`.
-  Memory: `feedback-can-launch-app`.
-- **Hide internals from the musician.** Every new UI string is
-  checked against spec §15.
-
----
-
-## 2. What just shipped — Session C, 2026-05-16
-
-Six commits on master, all pushed to `origin/master`:
-
-| SHA       | Subject                                                                                       |
-|-----------|-----------------------------------------------------------------------------------------------|
-| `dd1c28c` | feat: MainComponent — long-press Mark In requests Overlay; banner uses §11 musician copy      |
-| `38667d0` | feat: fork — 'Vary this one' context menu on placement Pills                                  |
-| `6429029` | docs: todo.md — log Task 7 value_or→jassert + Task 8 refreshAll() follow-ups                  |
-| `138b35b` | docs: user guide — Roadmap line for repeating song sections                                   |
-| `019b776` | docs: continue.md — shared-placement shipped end-to-end                                       |
-| `713bf16` | docs: todo.md — shared-placement implementation complete (SUPERSEDED → IMPLEMENTED)           |
-
-**Full milestone arc** (Sessions A + B + C, 8 feature commits + 3
-docs commits):
-
-| SHA       | Session | Subject                                                                                       |
-|-----------|---------|-----------------------------------------------------------------------------------------------|
-| `936582f` | A       | feat: arrangement — sequenceShared + isPlacementWrapper predicate                             |
-| `d8a2479` | A       | feat: promotion — AttachmentMode + pointer-aware guard + wrapper-aware host walk              |
-| `b59a76e` | A       | docs: promotion — justify promote() length per CLAUDE.md function-size rule                   |
-| `f309e2c` | B       | feat: TimelineViewState — wrapper-aware Pills with sharedSiblings/overlays/forked             |
-| `503bab0` | B       | feat: TimelineView — tie-bar across shared placements + overlay dot + fork prime              |
-| `74d0463` | B       | feat: DemoSession — verse plays three times via shared placement                              |
-| `dd1c28c` | C       | feat: MainComponent — long-press Mark In requests Overlay; banner uses §11 musician copy      |
-| `38667d0` | C       | feat: fork — 'Vary this one' context menu on placement Pills                                  |
-| `6429029` | C       | docs: todo.md — log Task 7 value_or→jassert + Task 8 refreshAll() follow-ups                  |
-| `138b35b` | C       | docs: user guide — Roadmap line for repeating song sections                                   |
-| `019b776` | C       | docs: continue.md — shared-placement shipped end-to-end                                       |
-| `713bf16` | C       | docs: todo.md — shared-placement implementation complete                                      |
-
-**Test suite:** 235 / 4145 → **250 / 4269** assertions, all green.
-
-**Operator gates passed:** Task 5 (tie-bar no-regression), Task 7
-(four §11 banner scenarios), Task 8 (five-step fork gesture script),
-Task 10 (end-to-end milestone walkthrough).
-
----
-
-## 3. Known follow-ups (from milestone code reviews — in `todo.md`)
-
-Three review-surfaced cleanups, none blocking, all individually small:
-
-1. **Hoist Shared-path splice out of `promote()`** (Session A
-   review). Extract the pointer-identity-preserving Shared splice
-   into a private anonymous-namespace helper; drops `promote()` from
-   ~226 to ~165 lines. Surfaced 2026-05-16, commit `b59a76e`-era.
-
-2. **`announceCapture` Overlay branch: `value_or` → `jassert`**
-   (Session C Task 7 review). Replace defensive `value_or`
-   fallbacks with `jassert` so debug builds catch contract
-   regressions loudly rather than rendering silently-wrong banner
-   copy. Surfaced 2026-05-16, commit `dd1c28c`.
-
-3. **Extract `MainComponent::refreshAll()`** (Session C Task 8
-   review). The four-call refresh sequence is duplicated at five
-   sites; collapse to one helper. Surfaced 2026-05-16, commit
-   `38667d0`.
-
-Plus the pre-existing items already in `todo.md`:
-
-- **2026-05-15 — DemoSession intro/outro Phrase-vs-Loop convention**
-  (intro/outro are hybrids; the milestone's verse uses the strict
-  Phrase-shell-with-Loop-child shape).
-- **2026-05-15 — Session directory format** (Whitepaper V2 §7.8).
-- **2026-05-15 — Load dialog macOS TCC issue.**
-- **2026-05-15 — OTTO Look-and-Feel integration**.
-- **2026-05-15 — Marketing site asset gaps.**
-- **2026-05-15 — M5 plugin scanner redesign.**
-- Various M2/M3/M5/M6/M7/M8 operator-verification deferrals.
-
----
-
-## 4. Next milestone — auto-testing infrastructure
-
-Per operator direction (recorded in the white-paper-drift audit at
-`~/.claude/plans/read-continue-md-and-after-generic-dove.md`):
-signing → auto-testing → white-paper alignment pass. Signing landed
-this session; auto-testing is next.
-
-**What "auto-testing" means in this context** is not yet specified —
-operator deferred the design discussion. Likely candidates:
-
-- Wire `bash/smoke-persistence.sh` (and any successor smoke scripts)
-  into CI so the AppleScript-driven GUI probes run on every push, not
-  just when the operator triggers them by hand. The script was
-  previously blocked by ad-hoc-signing; the signing milestone clears
-  that gate.
-- A nightly / per-commit signed-build path that runs
-  `cmake -B build-xcode -G Xcode` + builds the SiriusLooper scheme +
-  runs `codesign`/`spctl` verification automatically. This is what
-  catches signing-config drift before a release build needs it.
-- Possibly: `SiriusTests` already runs in CI under the Makefiles
-  build (256 / 4283 assertions) — the new question is whether to add
-  the signed Xcode-gen path to CI matrix too. Cost is the ~30s
-  configure + ~minutes build per CI run.
-
-**What this section does NOT prescribe.** The operator stated
-explicitly that the white-paper alignment pass (the milestone *after*
-auto-testing) will reshape design choices around UI complexity vs.
-under-the-hood concepts. Don't pre-commit to auto-testing decisions
-that lock in a UI surface the alignment pass might move under the
-hood.
-
-**Reference for the just-completed signing milestone:**
-- `todo.md` top entry — `SUPERSEDED-AND-IMPLEMENTED 2026-05-16`
-- Memory file `reference-apple-id` — Apple ID + notarytool profile
-- Commit `128913a` on master
-
----
-
-## 4b. Original signing-milestone orientation (historical, post-implementation)
-
-Preserved for reference — the planning notes that drove this session:
-
-**Why it's first.** Two existing deferrals reduce to one root cause —
-the bundle is ad-hoc-signed (`codesign -dv` reports
-`flags=0x20002(adhoc,linker-signed)`), below macOS's TCC trust
-threshold for both protected-folder access and being a System Events
-automation target:
-
-- **2026-05-15** — Load dialog greys `*.sirius.json` files in
-  `~/Downloads`. Original symptom; six failed workarounds logged.
-- **2026-05-16** — `bash/smoke-persistence.sh` returns AppleScript
-  error `-25211` (process-targeted denial). Script is committed,
-  inert, ready to run once signing lands.
-
-One signing arc clears both. Sister-app policy says the macOS
-pattern Sirius proves should backport to OTTO in the same session.
-
-**What's already prepped (port-ready):**
-
-- **Team ID `RR5DY39W4Q`**, sourced from OTTO and saved to memory as
-  `project-apple-developer-team-id`. Same identity across all sister
-  apps.
-- **CMake snippet** modelled on
-  `/Users/larryseyer/AudioDevelopment/OTTO/src/otto-ios/CMakeLists.txt`
-  lines 258-272, adapted for macOS distribution: swap
-  `"Apple Development"` → `"Developer ID Application"`, add
-  `ENABLE_HARDENED_RUNTIME "YES"`, point at a macOS entitlements
-  file. Verbatim block in the `todo.md` entry.
-- **Minimum macOS entitlements keys** identified:
-  `com.apple.security.files.user-selected.read-write` (fixes the
-  Load-dialog symptom) and `com.apple.security.device.audio-input`
-  (live capture). Add `cs.allow-jit` only if a plugin scan needs it.
-- **Verification matrix** with concrete pass criteria: `codesign`
-  authority line, `spctl` `Notarized Developer ID`, smoke script
-  exits 0, Load dialog selects `.sirius.json` in `~/Downloads`,
-  `SiriusTests` still green.
-
-**What's NOT yet known (next session resolves):**
-
-- Whether the `Developer ID Application` certificate is already in
-  the keychain (`security find-identity -p codesigning -v` will
-  show). OTTO uses `Apple Development` — a separate cert from
-  `Developer ID Application`. May need a fresh download from the
-  Apple Developer portal.
-- Whether the existing CMake gates (`-DSIRIUS_SIGN=ON` opt-in vs.
-  always-on) suit the workflow. Notarization is network-bound —
-  baking it into every iteration would hurt; gating it behind
-  operator-verification builds keeps dev cheap.
-- `notarytool` keychain-credential profile setup (one-time, but
-  needs to land in the session's deliverable so future builds
-  don't re-pay the setup cost).
-
-**Other big-topic candidates** (after signing, in rough priority):
-
-- **Session directory format** (`todo.md` 2026-05-15) — bundling
-  LMC discipline / per-device calibration / TapeStore audio into
-  the `.sirius/` archival unit per Whitepaper V2 §7.8. The
-  shared-encoding concern that previously blocked this is resolved;
-  the directory wrapper is the remaining work.
-- **OTTO L&F integration.** Sister-app visual alignment. Has a
-  four-option design choice already enumerated in `todo.md`
-  (shared-submodule decided; module location still TBD).
-- **The three code-quality follow-ups in §3.** Bundleable as one
-  focused refactor commit; favour the `refreshAll()` extraction —
-  the next UI milestone will almost certainly add a sixth
-  refresh-quartet site.
-- **Spec §16 open items** — Option-click overlay accelerator,
-  per-instance metadata beyond overlay Loops, Phrase-shaped
-  overlays.
-- **Full "Repeating song sections" user-guide chapter.** Needs
-  operator time-on-instrument before the language stabilises.
-- **M5 plugin scanner crash + redesign.** Lower priority unless the
-  plugin folder grows again.
-
----
-
-## 5. Architectural ground truth (now enforced end-to-end)
-
-| Invariant | Source | Status |
-|---|---|---|
-| Loops are leaves with `TapeReference`; Phrases are containers with `PhraseMetadata`. No hybrid Constituents (except intro/outro, tracked). | `[demoSession][shape]` test + `findHostRecursive`. | Enforced for verse/wrappers; intro/outro still hybrid (tracked). |
-| Wrappers are Phrases (role `"placement"`). Forked wrappers are Phrases (role `"forked-placement"`). Overlay Loops are leaves. | Spec §1, Task 1 predicate. | Enforced — `isPlacementWrapper`, `sequenceShared`, deep-copy with fresh ids. |
-| Constituents are immutable; every edit is copy-on-write with shared subtrees. | `Constituent.h` docstring. | Preserved through promote() (pointer-identity-preserving splice) and fork (deep-copy of shared subtree). |
-| `ConstituentId` duplicates are legal iff via the same `shared_ptr`, illegal otherwise. | Spec §3, Task 2 guard. | Enforced at runtime — `enforceSharedInstancesAreShared`. |
-| M3 simplification (1:1 conceptual ↔ LMC, no tempo map inverse yet). | Carry-over. | Preserved through every Session A/B/C splice. |
-| Promotion result carries `hostPhraseName`, `resolvedMode`, `overlayPlacementIndex`, `mintedPhraseId`. | Task 3. | Live — banner reads all four via §11 templates (Task 7). |
-| iOS is a first-class target. | Project memory. | Long-press gesture (touch-friendly) chosen over desktop-modifier-click. |
-| Operator vocabulary rule §15. | Spec §15. | Enforced via greps + line-by-line review at every UI-touching task (4-9); end-to-end verified at Task 10. |
-| TimelineView Pills emit one-per-wrapper for placement and forked wrappers. | Task 4. | Live, with pointer-identity grouping for sharedSiblings. |
-| Tie-bar grouping stable across paint frames via min-id key. | Task 5. | Explicit comment at the key-derivation site. |
-| Demo: 24 whole notes, verse × 3 via shared Phrase id 20. | Task 6. | Pinned by `[demoSession][shape]` and `[demoSession][shared]`. |
-| Long-press Mark In ≥ 500 ms = Overlay request; release resets. | Task 7. | `kOverlayLongPressMs = 500`; lambda timer; orange tint confirms upgrade. |
-| Fork gesture: right-click / Ctrl-click / touch-long-press a Pill → `"Vary this one"` menu → deep-copy with fresh ids + role flip. | Task 8. | Wired through `TimelineView::onPillContextMenuRequested`. |
-
----
-
-## 6. Build + test state
+## 1. Build + test state
 
 ```bash
 cd "/Users/larryseyer/Sirius Looper"
-cmake --build build --target SiriusTests        # incremental
-./build/tests/SiriusTests                       # expect 250 / 4269
+bash bash/autotest.sh        # full 4-phase verification, ~25s
 ```
 
-The `.app` is fresh from Task 10's clean Release rebuild at
-`build/app/SiriusLooper_artefacts/Release/Sirius\ Looper.app`. No
-warnings from any Sirius source (only the usual JUCE/Catch2
-upstream noise).
+Or individual gates:
+
+```bash
+# Headless only
+cmake --build build --target SiriusTests
+ctest --test-dir build --output-on-failure        # 256 / 4283 expected
+
+# Signed bundle only
+cmake --build build-xcode --config Release --target SiriusLooper
+
+# GUI smoke against the signed bundle
+APP_BUNDLE="build-xcode/app/SiriusLooper_artefacts/Release/Sirius Looper.app" \
+  bash bash/smoke-persistence.sh
+```
+
+The signed `.app` lives at `build-xcode/app/SiriusLooper_artefacts/Release/Sirius Looper.app`.
+Developer ID Application: Larry Seyer (RR5DY39W4Q), hardened runtime,
+audio-input entitlement, spctl-accepted.
+
+The dev-loop `build/.app` is unchanged — ad-hoc-signed, fast iteration.
+
+---
+
+## 2. AppleScript / macOS landmines documented this session (for future GUI smoke work)
+
+Each of these bit hard during Phase A. Recorded here so the next time
+someone touches `bash/smoke-persistence.sh` or writes a new
+osascript-based GUI driver, they don't have to rediscover them.
+
+1. **`open ...app` returns -10825 on dev-tree paths.** Launch Services
+   refuses to launch the Developer-ID-signed bundle from
+   `build-xcode/...` even though `spctl` accepts it. The ad-hoc
+   sibling at `build/...` opens fine. Suspected cause: the ad-hoc
+   bundle's invalid `Identifier=Sirius Looper` (string with space)
+   collides in LS with the signed bundle's valid
+   `com.larryseyer.siriuslooper`. Workaround: launch the binary
+   directly via `${APP_BUNDLE}/Contents/MacOS/${APP_NAME}` —
+   bypasses LS entirely, more reliable for automation anyway.
+   Root cause filed as its own todo entry.
+
+2. **`entire contents of window 1` strips role info.** Iterating
+   returns elements where `role of elt` doesn't resolve cleanly; the
+   `AXButton` role check matched zero elements even when buttons were
+   present. Workaround: explicit two-level recursion using
+   `every UI element of window 1` then `every button of grp`.
+
+3. **Tab buttons are nested one AXGroup deep.** JUCE's
+   `TabbedComponent` exposes tab buttons as AXButton children of an
+   AXGroup, not at the window's top level. Save/Load on the
+   Preparation pane are similarly nested. Recursion in #2 catches
+   both.
+
+4. **`keystroke "g" using {command down, shift down}` silently no-ops
+   inside NSSavePanel/NSOpenPanel on Sequoia** when the filename field
+   has focus. The text field appears to eat the modified keystroke.
+   Workaround: `key code 5 using {command down, shift down}` (5 =
+   physical 'g' keycode) fires the system shortcut reliably.
+
+5. **NSSavePanel/NSOpenPanel open as separate top-level windows,
+   not sheets.** `sheets of window 1` returns 0 after clicking
+   Save/Load. The dialog is a sibling window whose name starts with
+   the title prefix ("Save Sirius session..." / "Load Sirius
+   session..."). Target it by `first window whose name starts with
+   "..."` and click the action button by name. Bonus: NSOpenPanel's
+   "Open" button stays *disabled* until a file is selected in the
+   listing — Cmd+Shift+G navigates to the directory but doesn't
+   select, so the smoke script falls back to Return when the action
+   button is disabled.
+
+6. **Activate-and-keystroke must be in the same osascript block.**
+   When `tell application "X" to activate` and `keystroke ...` are
+   issued from separate osascript invocations, focus can slip back
+   to the terminal between calls and the keystrokes land in the
+   wrong app. Solution: combine them in one heredoc.
+
+---
+
+## 3. The three small follow-ups surfaced this session
+
+All filed in `todo.md` near the top. None block anything; all are
+"while we're in this neighborhood" cleanups.
+
+1. **`com.apple.security.get-task-allow=true` in signed entitlements.**
+   Visible in `codesign -dv --entitlements -` output. Fine for non-
+   notarized dev builds; rejected by Apple's notarization service.
+   Must be `false` (or absent) before any notarized release. Likely a
+   Xcode default the CMake block needs to override.
+
+2. **`open` returns -10825 on the signed dev-tree bundle.** Root cause
+   of landmine #1 above. Workaround in place in the smoke script;
+   investigation deferred. End-user launches against a notarized
+   bundle in /Applications are not affected.
+
+3. **Ad-hoc `build/` bundle has invalid `Identifier=Sirius Looper`.**
+   Should be `com.larryseyer.siriuslooper` to match the Xcode-gen
+   build. The mismatch is the leading suspect for #2's LS confusion.
+   Fix the CMake config that sets the bundle ID on the Unix Makefiles
+   target.
+
+---
+
+## 4. CI status
+
+`ci.yml` (the original push/PR matrix):
+- macOS: green (headless tests).
+- Linux + Windows: red on a pre-existing int64→juce::var ambiguity in
+  `persistence/src/SessionFormat.cpp`. **Explicitly deferred** under
+  the `feedback-mac-first-linux-windows-last` rule — not a candidate
+  for "what's next."
+
+`ci-macos-signed.yml` (added this session):
+- Will fire on the next push to master. **First run will fail**
+  because the six required secrets are not yet in the repo. Operator
+  step: add them per §5, then push (or `workflow_dispatch`) to verify.
+- GUI smoke step is `continue-on-error: true` from day one — GitHub-
+  hosted macOS runners can't grant the runner user Accessibility
+  permission without SIP-disabling tricks that hosted runners don't
+  support. Build + sign + codesign-verify is the hard gate; smoke is
+  best-effort signal.
+
+---
+
+## 5. Operator one-time setup before CI signing works
+
+In GitHub repo Settings → Secrets and variables → Actions, add:
+
+| Secret name                    | Value source                                                                                                |
+|--------------------------------|-------------------------------------------------------------------------------------------------------------|
+| `DEVELOPER_ID_CERT_P12_BASE64` | Export `Developer ID Application: Larry Seyer (RR5DY39W4Q)` from Keychain Access as `.p12` with a password, then `base64 -i Developer-ID.p12 \| pbcopy` |
+| `DEVELOPER_ID_CERT_PASSWORD`   | The `.p12` export password just set                                                                         |
+| `APPLE_ID`                     | `itunes@larryseyer.com` (per `reference-apple-id` memory)                                                   |
+| `APPLE_APP_PASSWORD`           | App-specific password from appleid.apple.com (NOT the Apple ID password — generate one specifically for notarytool) |
+| `APPLE_TEAM_ID`                | `RR5DY39W4Q`                                                                                                |
+| `KEYCHAIN_PASSWORD`            | Any opaque string the operator picks — used as the throwaway CI keychain password                            |
+
+`APPLE_ID` / `APPLE_APP_PASSWORD` / `APPLE_TEAM_ID` aren't strictly
+needed for the current workflow (no notarization step yet), but
+they're listed here so they get added once and are ready when
+notarization moves into a release-tag workflow.
+
+After secrets land: trigger the workflow via `workflow_dispatch` in
+the Actions tab (or just push), and verify the run goes green
+("GUI smoke: PASS" or "GUI smoke: SKIPPED/FAILED on CI runner" —
+either is acceptable; build + sign + verify must pass).
+
+---
+
+## 6. Next milestone — white-paper alignment pass
+
+Per the operator's stated sequence (signing → auto-testing → white-
+paper alignment). Auto-testing is done; alignment is up.
+
+**What this means (from the prior session's notes in commit
+`6de2bed`):** the white-paper alignment pass will reshape design
+choices around UI complexity vs. under-the-hood concepts. The
+operator was explicit earlier that auto-testing decisions should NOT
+pre-commit to a UI surface the alignment pass might move under the
+hood. With auto-testing in place, that constraint lifts — the
+alignment pass can freely reshape UI without breaking the test
+harness, because the harness exercises code paths, not specific UI
+copy or layout.
+
+**Reading order before starting alignment work:**
+
+1. `docs/Sirius Looper Whitepaper V2.md` — the white paper.
+2. `docs/Sirius Looper User Guide.md` — the operator-facing how-to.
+3. `docs/superpowers/specs/2026-05-16-shared-placement-design.md` — the
+   most-recent shipped spec (a useful template for what
+   "design-spec-shaped" looks like in this project).
+4. `todo.md` — five 2026-05-15 entries are alignment-adjacent
+   (DemoSession intro/outro hybrids, Session directory format,
+   M5 plugin scanner redesign, marketing site asset gaps,
+   OTTO L&F integration). Worth scanning for which slot into the
+   alignment pass naturally.
+
+**What this session does NOT decide:** the scope, structure, or
+deliverables of the alignment pass. That's the next session's first-
+half work (brainstorm + spec) before any code lands.
 
 ---
 
@@ -340,39 +233,34 @@ upstream noise).
 
 - `~/.claude/CLAUDE.md` — global rules (auto-loaded).
 - `~/.claude/projects/-Users-larryseyer-Sirius-Looper/memory/MEMORY.md`
-  — auto-memory index (auto-loaded).
-- This file (`continue.md`) — session state.
-- `todo.md` — deferred items register. Shared-placement entry now
-  marked SUPERSEDED-AND-IMPLEMENTED 2026-05-16. Three new
-  code-review-surfaced entries from this milestone.
-- `docs/superpowers/plans/2026-05-16-shared-placement.md` — the
-  shipped plan. All 10 tasks done; Self-Review at the bottom.
-- `docs/superpowers/specs/2026-05-16-shared-placement-design.md` —
-  the spec, fully implemented.
-- `docs/superpowers/plans/2026-05-15-capture-promotion.md` — prior
-  plan; still the structural template for future plans.
-- `docs/Sirius Looper Whitepaper V2.md` — conceptual model.
-- `docs/Sirius Looper User Guide.md` — operator-facing how-to.
-  Roadmap bullet on "Repeating song sections" updated this session;
-  full chapter deferred.
+  — auto-memory index (auto-loaded). Two new entries this session:
+  - `feedback-mac-first-linux-windows-last` (Platform order:
+    **macOS → iOS → Windows → Linux**; iOS = AUv3 only)
+  - `feedback-esc-while-typing-is-not-abort` (silent tool rejections
+    usually mean the operator is mid-message)
+- `todo.md` — deferred items register. Auto-testing milestone marked
+  SUPERSEDED-AND-IMPLEMENTED at the top; three new follow-ups filed
+  beneath it; legacy GUI-smoke and Load-dialog entries updated to
+  reflect resolution.
+- `/Users/larryseyer/.claude/plans/read-continue-and-proceed-floating-pelican.md`
+  — the auto-testing plan that just shipped. Self-contained, can be
+  archived or kept as a structural template.
+- `bash/autotest.sh` — single command for full local verification.
+- `bash/smoke-persistence.sh` — GUI smoke driver (operator must have
+  Accessibility access granted to the shell that runs it).
+- `.github/workflows/ci-macos-signed.yml` — signed CI workflow (six
+  secrets required, see §5).
+- `docs/Sirius Looper Whitepaper V2.md` and
+  `docs/Sirius Looper User Guide.md` — next milestone's primary
+  source material.
 
-### Project memory files (auto-loaded)
+---
 
-- `feedback_clean_builds.md` — always `rm -rf build` before GUI
-  testing.
-- `feedback_arm_disarm_is_required.md` — performer-facing
-  arm/disarm gesture is mandatory.
-- `feedback_defer_big_design_to_own_session.md` — when a major new
-  design topic surfaces mid-session, write a comprehensive `todo.md`
-  entry and stay on the current path. Applied multiple times in
-  Sessions A–C.
-- `feedback_claude_commits_and_pushes_master.md` — Claude commits
-  and pushes to master. No PRs, no force-push.
-- `feedback_hide_internals_from_musician.md` — Spec §15 is the QA
-  checklist. Enforced end-to-end this milestone.
-- `project_sirius_branding_and_otto.md` — sister apps with shared
-  visual identity (deferred to its own session).
-- `project_user_guide_alongside_whitepaper.md` — user guide doc
-  lives in `docs/`, paired with the white paper. Roadmap updated;
-  full chapter deferred per the policy of "land the feature, write
-  the chapter once real use confirms the language."
+## 8. One-paragraph orientation if everything else has changed
+
+Auto-testing infrastructure is in place. `bash/autotest.sh` is the
+local one-shot gate; `ci-macos-signed.yml` is the per-push CI gate
+(needs operator-added secrets to actually run, see §5). Next
+milestone is the white-paper alignment pass — that's a design
+session, not a code session, so start with brainstorm + spec before
+touching `app/` or `ui/`. Linux/Windows remain explicitly deferred.

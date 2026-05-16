@@ -1,5 +1,155 @@
 # Sirius Looper — Deferred Items
 
+### 2026-05-16 — Auto-testing milestone — SUPERSEDED-AND-IMPLEMENTED 2026-05-16
+
+- **Status:** Shipped end-to-end this session. All three phases of the
+  approved plan landed on master.
+- **What landed:**
+  - **Phase A** — `bash/smoke-persistence.sh` patched and verified
+    against a freshly-built signed bundle. Round-trip exits 0 with
+    "refs in file: 2" (proves v2 shared-encoding ran). Commit `4e8a1df`.
+    Five fixes total: direct binary launch (works around Launch
+    Services -10825 on dev-tree paths), explicit two-level AX
+    recursion (works around `entire contents` stripping role info),
+    tab switch to Preparation before clicking Save, dialog-window-
+    targeted action-button clicks with Return fallback when Open is
+    disabled, and `key code 5` instead of `keystroke "g"` for
+    Cmd+Shift+G (the modified-keystroke form silently no-ops on
+    Sequoia inside NSSavePanel when the filename field has focus).
+  - **Phase B** — `bash/autotest.sh` 4-phase local driver:
+    headless ctest → signed Xcode build → codesign+spctl verify →
+    GUI smoke. Snapshots `codesign -dvv` output once and greps the
+    capture (repeated `codesign -dv` invocations were flaky in pipe
+    chains). Commit `f68aa3c`.
+  - **Phase C** — `.github/workflows/ci-macos-signed.yml` new
+    workflow. macos-latest only; imports Developer ID cert from
+    repo secrets into a temporary keychain, configures and builds
+    the signed Xcode bundle, runs `codesign --verify` + greps the
+    cert chain, runs `bash/smoke-persistence.sh` as a best-effort
+    step (`continue-on-error: true` — Accessibility/TCC on GitHub-
+    hosted runners is famously fragile). Triggered on push to master
+    and via workflow_dispatch.
+- **Operator one-time step before first CI run:** add six repo secrets
+  per the workflow file's header comment (DEVELOPER_ID_CERT_P12_BASE64,
+  DEVELOPER_ID_CERT_PASSWORD, APPLE_ID, APPLE_APP_PASSWORD,
+  APPLE_TEAM_ID, KEYCHAIN_PASSWORD).
+- **Followups filed during this milestone:** see the three new entries
+  immediately below (`get-task-allow=true`, `open` -10825 on dev tree,
+  `Sirius Looper` bundle-id collision). None are blocking; all surface
+  the same underlying surface the milestone touched.
+
+### 2026-05-16 — `com.apple.security.get-task-allow=true` in signed bundle (notarization blocker)
+
+- **Files:** `app/CMakeLists.txt` (the `set_target_properties` Xcode-
+  attribute block, lines ~66-104), possibly
+  `app/SiriusLooper.macos.entitlements`.
+- **What was deferred:** `codesign -dv --entitlements - "Sirius Looper.app"`
+  on the freshly-built signed bundle reports two entitlements:
+  ```
+  [Key] com.apple.security.device.audio-input
+  [Value] [Bool] true
+  [Key] com.apple.security.get-task-allow
+  [Value] [Bool] true
+  ```
+  `get-task-allow=true` is the debugger-can-attach flag — fine for
+  local dev iteration, **rejected by Apple's notarization service**.
+  Any release build that needs to be notarized must either set this
+  to `false` or omit the key entirely. Likely a Xcode default for
+  Release builds with `Automatic` signing style + non-App-Store
+  destination; the CMake `XCODE_ATTRIBUTE_*` block needs an override
+  (something like `XCODE_ATTRIBUTE_CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO`
+  plus an explicit entitlement saying `get-task-allow=false`, or a
+  `XCODE_ATTRIBUTE_OTHER_CODE_SIGN_FLAGS` adjustment).
+- **Why deferred:** the notarization-in-CI work was already deferred
+  in the approved auto-testing plan ("Notarization in CI — defer" —
+  it's network-bound and slow; meant for a future release-tag
+  workflow). This is the same scope: handle once notarization actually
+  happens. Local dev signing is unaffected.
+- **What's needed to finish:**
+  1. Either bake `get-task-allow=false` into
+     `app/SiriusLooper.macos.entitlements` and verify Xcode doesn't
+     re-inject the `true` version, OR add a `codesign --entitlements`
+     post-build step that strips/replaces it, OR adjust the CMake
+     XCODE_ATTRIBUTE flags.
+  2. Verify with `codesign -dv --entitlements -` after a clean rebuild.
+  3. Then a notarytool submit should succeed without the
+     "get-task-allow is set" stapler error.
+- **Surfaced by:** auto-testing Phase A inspection of the
+  freshly-built signed bundle (2026-05-16).
+
+### 2026-05-16 — `open ...app` returns -10825 on signed dev-tree bundle (Launch Services confusion)
+
+- **Files:** none directly — this is a macOS Launch Services state
+  issue, not a project code issue. Workaround already in place in
+  `bash/smoke-persistence.sh` (direct binary launch instead of `open`).
+- **What was deferred:** root-cause investigation. Symptoms:
+  - `open "build-xcode/app/SiriusLooper_artefacts/Release/Sirius Looper.app"`
+    → `_LSOpenURLsWithCompletionHandler() failed with error -10825`,
+    no process launches. Every variant tried (`-n`, `-a`, `-F`,
+    `lsregister -f` first) fails the same way.
+  - `open "build/app/.../Sirius Looper.app"` (the ad-hoc-signed
+    sibling) works fine.
+  - `"build-xcode/.../Contents/MacOS/Sirius Looper"` launches fine
+    directly (used by the smoke script now).
+  - No quarantine xattrs on either bundle. `spctl -a -t exec -vv`
+    accepts the signed bundle as `Developer ID`.
+- **Working hypothesis:** Launch Services has cached the ad-hoc
+  bundle's invalid `Identifier=Sirius Looper` (a string with a space,
+  which is not a legal bundle identifier) and is rejecting the
+  signed bundle which has the correct `com.larryseyer.siriuslooper`
+  identifier with the same display name. The two same-named bundles
+  in sibling dev-tree paths confuse LS in a way `lsregister -u/-f`
+  doesn't fully clear.
+- **What this means for operators:** end-user launches through
+  Finder/Dock against a notarized bundle in /Applications are not
+  affected — that's a fresh path with a fresh LS entry. But if an
+  operator wants to double-click `Sirius Looper.app` from a dev tree
+  in Finder, they may hit this -10825. Workaround: launch via
+  Terminal directly with `"path/Contents/MacOS/Sirius Looper"`.
+- **What's needed to finish:**
+  1. Confirm hypothesis by `lsregister -dump | grep -i sirius` and
+     looking for duplicate entries with different identifiers.
+  2. If confirmed: either fix the `build/` ad-hoc bundle's identifier
+     (see next entry), or add a CMake post-build step that resets
+     LS for the bundle path.
+  3. Optional: a `bash/launch-app.sh` helper that picks the right
+     bundle and launches via the right mechanism, hiding the LS
+     wart from operators.
+- **Surfaced by:** auto-testing Phase A `open` failure during smoke
+  script setup (2026-05-16).
+
+### 2026-05-16 — `build/` ad-hoc bundle has invalid `Identifier=Sirius Looper` (should be reverse-DNS)
+
+- **Files:** the Unix-Makefiles half of `app/CMakeLists.txt` — the
+  `juce_add_gui_app` invocation or the JUCE_* CMake properties that
+  set `CFBundleIdentifier`.
+- **What was deferred:** `codesign -dv "build/app/.../Sirius Looper.app"`
+  reports `Identifier=Sirius Looper` (literal string with a space).
+  The Xcode-gen build correctly produces `Identifier=com.larryseyer.siriuslooper`.
+  Both targets are the same `SiriusLooper` JUCE app target; the
+  difference comes from CMake generator-specific defaults.
+- **Why this matters:** invalid bundle identifiers (containing
+  whitespace, lacking reverse-DNS structure) confuse Launch Services
+  registration, file-type associations, and notarization. The
+  previous entry's `open` -10825 issue is almost certainly downstream
+  of this.
+- **What's needed to finish:**
+  1. Locate where the bundle identifier is set in `app/CMakeLists.txt`
+     and either:
+     - Set an explicit `BUNDLE_ID "com.larryseyer.siriuslooper"` in the
+      `juce_add_gui_app` call (JUCE's documented mechanism), OR
+     - Set `XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER` AND the
+       equivalent Makefile-path property (CMake's
+       `MACOSX_BUNDLE_GUI_IDENTIFIER` target property).
+  2. Verify both `build/` and `build-xcode/` bundles report the same
+     identifier after a clean rebuild.
+- **Operational consequence today:** the ad-hoc dev bundle is the
+  one operators iterate on. Its broken identifier was previously
+  harmless (no signing, no LS-level integration). Now that the
+  signed sibling exists, the collision is biting (see -10825 entry).
+- **Surfaced by:** comparing `codesign -dv` output between the two
+  build trees during auto-testing Phase A (2026-05-16).
+
 ### 2026-05-16 — CI green on Linux + Windows (clean up latent strictness errors)
 
 - **Files:** `persistence/src/SessionFormat.cpp` (lines 248, 279, 305,
@@ -950,40 +1100,26 @@ already held (same licensing model as the sister app OTTO; see
   serving the same need as a history list. No further action on this
   entry; it is preserved for context only.
 
-### 2026-05-16 — GUI smoke-test script blocked by the same signing issue
+### 2026-05-16 — GUI smoke-test script — SUPERSEDED-AND-IMPLEMENTED 2026-05-16
 
-- **Files:** `bash/smoke-persistence.sh` (committed but inert today).
-- **What was deferred:** end-to-end GUI verification of the Save / Load
-  buttons via `osascript` + System Events. The script clicks Save,
-  navigates `NSSavePanel`, clicks Load, navigates `NSOpenPanel`, then
-  reads the status banner from the accessibility tree to confirm
-  `Saved` / `Loaded`. It would close the last gap the headless
-  `SiriusTests "[sessionformat]"` cases cannot reach.
-- **Why deferred:** macOS denies `tell process "Sirius Looper"` with
-  AppleScript error `-25211` because the bundle is ad-hoc-signed
-  (`codesign -dv` reports `flags=0x20002(adhoc,linker-signed)`).
-  `tell process "Finder"` works from the same shell; this is
-  process-specific, not a TCC scope issue. Same root cause as the
-  Load dialog file-greying (next entry below).
-- **What's needed to finish:** the Developer ID signing milestone at
-  the top of this file resolves both this entry and the Load dialog
-  one. No work on this entry directly — it lights up automatically
-  when signing lands.
-- **State left in tree:** `bash/smoke-persistence.sh` is committed and
-  executable, with a header documenting the precondition. It exits
-  `2` ("window-1 never appeared") on an ad-hoc bundle because the
-  window-count poll times out before System Events ever talks to the
-  process. After signing, the loop should succeed and the script
-  drives the full round-trip.
+- **Status:** Verified end-to-end this session. `bash/smoke-persistence.sh`
+  round-trips Save / Load against a Developer-ID-signed bundle and
+  exits 0 with refs=2 confirming v2 shared-encoding. Five AppleScript /
+  Launch Services landmines worked around — see the Auto-testing
+  milestone entry above for the diff catalogue. Commit `4e8a1df`.
 
-### 2026-05-15 — Load dialog still cannot select `.sirius.json` on macOS
+### 2026-05-15 — Load dialog .sirius.json greying — RESOLVED-VIA-SIGNING 2026-05-16
 
-- **Resolution path:** the Developer ID signing milestone at the top
-  of this file (2026-05-16) is the agreed fix for this entry. The
-  working-hypothesis section below independently reached the same
-  conclusion (ad-hoc bundle below TCC trust threshold). No further
-  workaround attempts on this entry — they're all exhausted; sign the
-  bundle.
+- **Status:** the Load dialog now reliably accepts `.sirius.json` on
+  the Developer-ID-signed bundle. Verified by `bash/smoke-persistence.sh`
+  driving the actual NSOpenPanel and round-tripping a saved session.
+  The remaining sub-question (does Finder *double-click* on a
+  `.sirius.json` in `~/Downloads` open it in Sirius?) is unverified
+  this session — that's a Launch Services type-association question
+  separate from the dialog gating, and intersects with the open-app
+  -10825 follow-up below.
+
+- **Original entry (historical):**
 - **Files:** `app/MainComponent.cpp` (`chooseFileAndLoad`),
   `app/CMakeLists.txt` (the `PLIST_TO_MERGE` TCC keys).
 - **What was deferred:** the macOS NSOpenPanel greys out
