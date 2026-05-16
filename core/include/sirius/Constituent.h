@@ -120,4 +120,20 @@ private:
     std::vector<ChildPtr> children_;
 };
 
+/// Wrapper recognition predicate — the single source of truth for the
+/// "is this Constituent a shared-placement wrapper?" question. A wrapper is a
+/// Phrase whose role is "placement" and whose first child is itself a Phrase
+/// (the shared canonical Phrase the wrapper points at). Overlay Loops live
+/// at children[i>=1]; the wrapper itself is never a hybrid (no TapeReference).
+/// Convention, not a new type — every tree walker (selector, promotion,
+/// renderer) goes through this one function so a future migration to a
+/// dedicated `bool is_placement` field on Constituent is a one-file refactor.
+inline bool isPlacementWrapper (const Constituent& c) noexcept
+{
+    return c.isPhrase()
+        && c.phraseMetadata()->role == "placement"
+        && ! c.children().empty()
+        && c.children()[0]->isPhrase();
+}
+
 } // namespace sirius

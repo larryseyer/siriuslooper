@@ -5,6 +5,9 @@
 // children *shared*, not copied (Part 7.3).
 #include "sirius/Constituent.h"
 
+#include "sirius/Phrase.h"
+#include "sirius/TapeReference.h"
+
 #include <catch2/catch_test_macros.hpp>
 
 #include <memory>
@@ -186,4 +189,61 @@ TEST_CASE ("a Constituent becomes a phrase when it carries phrase metadata",
     const Constituent backToLoop = phrase.withoutPhraseMetadata();
     CHECK_FALSE (backToLoop.isPhrase());
     CHECK (phrase.isPhrase()); // and that edit did not touch `phrase`
+}
+
+TEST_CASE ("isPlacementWrapper recognises wrappers and rejects non-wrappers",
+           "[constituent][placementWrapper]")
+{
+    using sirius::Constituent;
+    using sirius::ConstituentId;
+    using sirius::PhraseMetadata;
+    using sirius::Position;
+    using sirius::Rational;
+    using sirius::TapeId;
+    using sirius::TapeReference;
+
+    const Constituent emptyShell (ConstituentId (1), Position(),
+                                  Position (Rational (4)));
+
+    SECTION ("bare Phrase is NOT a wrapper")
+    {
+        const auto bare = emptyShell.withPhraseMetadata (
+            PhraseMetadata { .role = "verse" });
+        CHECK_FALSE (sirius::isPlacementWrapper (bare));
+    }
+
+    SECTION ("Loop is NOT a wrapper")
+    {
+        const auto leaf = emptyShell.withTapeReference (
+            TapeReference (TapeId (1), Rational (0), Rational (4)));
+        CHECK_FALSE (sirius::isPlacementWrapper (leaf));
+    }
+
+    SECTION ("Phrase whose role is not 'placement' is NOT a wrapper, even with a Phrase child")
+    {
+        auto child = std::make_shared<const Constituent> (
+            emptyShell.withPhraseMetadata (PhraseMetadata { .role = "verse" }));
+        const auto outer = emptyShell.withPhraseMetadata (
+            PhraseMetadata { .role = "verse" }).withChildAdded (child);
+        CHECK_FALSE (sirius::isPlacementWrapper (outer));
+    }
+
+    SECTION ("role=='placement' Phrase whose first child is a Phrase IS a wrapper")
+    {
+        auto sharedPhrase = std::make_shared<const Constituent> (
+            emptyShell.withPhraseMetadata (PhraseMetadata { .role = "verse" }));
+        const auto wrapper = emptyShell.withPhraseMetadata (
+            PhraseMetadata { .role = "placement" }).withChildAdded (sharedPhrase);
+        CHECK (sirius::isPlacementWrapper (wrapper));
+    }
+
+    SECTION ("role=='placement' Phrase whose first child is a Loop is NOT a wrapper")
+    {
+        auto leaf = std::make_shared<const Constituent> (
+            emptyShell.withTapeReference (
+                TapeReference (TapeId (1), Rational (0), Rational (4))));
+        const auto bogus = emptyShell.withPhraseMetadata (
+            PhraseMetadata { .role = "placement" }).withChildAdded (leaf);
+        CHECK_FALSE (sirius::isPlacementWrapper (bogus));
+    }
 }

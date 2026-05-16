@@ -92,6 +92,43 @@ Constituent layer (const Constituent& parent,
     return result;
 }
 
+Constituent sequenceShared (const Constituent&             parent,
+                            const Constituent::ChildPtr&   phrase,
+                            const std::vector<Position>&   offsets,
+                            const IdAllocator&             allocateId)
+{
+    if (phrase == nullptr)
+        throw std::invalid_argument (
+            "sirius::arrangement::sequenceShared: phrase must not be null");
+    if (offsets.empty())
+        throw std::invalid_argument (
+            "sirius::arrangement::sequenceShared: offsets must not be empty");
+
+    const Rational phraseDuration = phrase->duration();
+
+    Constituent result (parent);
+    for (const auto& offset : offsets)
+    {
+        const Position wrapperIn  (offset);
+        const Position wrapperOut (offset.wholeNotes() + phraseDuration);
+
+        // The wrapper's id is freshly minted; its first (and at this stage
+        // only) child is the shared phrase ChildPtr — passed through, never
+        // copied, so pointer-identity equality across all wrappers holds.
+        PhraseMetadata wrapperMeta;
+        wrapperMeta.role = "placement";
+
+        Constituent wrapper (allocateId(), wrapperIn, wrapperOut);
+        wrapper = wrapper.withPhraseMetadata (std::move (wrapperMeta))
+                         .withChildAdded (phrase);
+
+        result = result.withChildAdded (
+            std::make_shared<const Constituent> (std::move (wrapper)));
+    }
+
+    return result;
+}
+
 } // namespace arrangement
 
 } // namespace sirius

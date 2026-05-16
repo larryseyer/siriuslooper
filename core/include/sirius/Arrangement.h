@@ -5,6 +5,7 @@
 #include "sirius/Position.h"
 #include "sirius/Rational.h"
 
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -76,6 +77,28 @@ Constituent sequence (const Constituent& parent,
 /// appended. Throws std::invalid_argument if any child is null.
 Constituent layer (const Constituent& parent,
                    const std::vector<Constituent::ChildPtr>& children);
+
+/// Callable that mints a fresh ConstituentId on each call. Same shape as
+/// `sirius::promotion::IdAllocator`; defined locally here so Arrangement.h
+/// does not depend on Promotion.h.
+using IdAllocator = std::function<ConstituentId()>;
+
+/// Places `phrase` at each offset in `offsets`, producing one wrapper
+/// Constituent per offset. All wrappers share `phrase` by reference (the
+/// same shared_ptr). Each wrapper's conceptualIn/Out spans
+/// [offset, offset + phrase->duration()) in `parent`'s local time, carries
+/// PhraseMetadata{ role = "placement" }, and holds the shared `phrase` as
+/// its only child. The wrappers are appended to `parent` in the supplied
+/// order.
+///
+/// `allocateId` is called once per offset to mint the wrapper id, in offset
+/// order, matching the IdAllocator pattern used by `promotion::promote`.
+///
+/// Throws std::invalid_argument if `phrase` is null or `offsets` is empty.
+Constituent sequenceShared (const Constituent&             parent,
+                            const Constituent::ChildPtr&   phrase,
+                            const std::vector<Position>&   offsets,
+                            const IdAllocator&             allocateId);
 
 } // namespace arrangement
 

@@ -8,6 +8,7 @@
 #include "sirius/Arrangement.h"
 
 #include "sirius/Constituent.h"
+#include "sirius/Phrase.h"
 #include "sirius/Position.h"
 #include "sirius/Rational.h"
 #include "sirius/RenderPipeline.h"
@@ -189,4 +190,120 @@ TEST_CASE ("a RoleSlot is filled and cleared copy-on-write", "[arrangement][role
     const RoleSlot cleared = filled.withoutFill();
     CHECK_FALSE (cleared.isFilled());
     CHECK (filled.isFilled());              // and that edit did not touch `filled`
+}
+
+TEST_CASE ("sequenceShared places one wrapper per offset, all sharing the same ChildPtr",
+           "[arrangement][sequenceShared]")
+{
+    using sirius::PhraseMetadata;
+
+    const Constituent parent (ConstituentId (1), Position(), Position (Rational (24)));
+    const auto verse = std::make_shared<const Constituent> (
+        Constituent (ConstituentId (20), Position(), Position (Rational (6)))
+            .withName ("verse")
+            .withPhraseMetadata (PhraseMetadata { .role = "verse" }));
+
+    std::int64_t nextId = 50;
+    auto allocate = [&nextId] { return ConstituentId (nextId++); };
+
+    const Constituent arranged = sirius::arrangement::sequenceShared (
+        parent, verse,
+        { Position (Rational (3)), Position (Rational (9)), Position (Rational (15)) },
+        allocate);
+
+    REQUIRE (arranged.children().size() == 3);
+
+    // Each wrapper has wrapper-shape: role="placement", first child is the
+    // shared verse, no TapeReference, conceptualIn/Out is [offset, offset+6).
+    for (std::size_t i = 0; i < arranged.children().size(); ++i)
+    {
+        const auto& wrapper = *arranged.children()[i];
+        REQUIRE (sirius::isPlacementWrapper (wrapper));
+        CHECK (wrapper.phraseMetadata()->role == "placement");
+        CHECK_FALSE (wrapper.tapeReference().has_value());
+        CHECK (wrapper.children().size() == 1);
+    }
+
+    // Pointer-identity equality — the canary that proves real sharing.
+    CHECK (arranged.children()[0]->children()[0].get()
+           == arranged.children()[1]->children()[0].get());
+    CHECK (arranged.children()[1]->children()[0].get()
+           == arranged.children()[2]->children()[0].get());
+
+    // Wrapper ids minted in offset order from the allocator.
+    CHECK (arranged.children()[0]->id().value() == 50);
+    CHECK (arranged.children()[1]->id().value() == 51);
+    CHECK (arranged.children()[2]->id().value() == 52);
+
+    // Wrapper spans cover [offset, offset + verse->duration()).
+    CHECK (arranged.children()[0]->conceptualIn()  == Position (Rational (3)));
+    CHECK (arranged.children()[0]->conceptualOut() == Position (Rational (9)));
+    CHECK (arranged.children()[1]->conceptualIn()  == Position (Rational (9)));
+    CHECK (arranged.children()[1]->conceptualOut() == Position (Rational (15)));
+    CHECK (arranged.children()[2]->conceptualIn()  == Position (Rational (15)));
+    CHECK (arranged.children()[2]->conceptualOut() == Position (Rational (21)));
+}
+
+TEST_CASE ("sequenceShared rejects a null phrase and an empty offset list",
+           "[arrangement][sequenceShared]")
+{
+    using sirius::PhraseMetadata;
+
+    const Constituent parent (ConstituentId (1), Position(), Position (Rational (12)));
+    const auto verse = std::make_shared<const Constituent> (
+        Constituent (ConstituentId (20), Position(), Position (Rational (4)))
+            .withPhraseMetadata (PhraseMetadata { .role = "verse" }));
+
+    auto allocate = [] { return ConstituentId (99); };
+
+    CHECK_THROWS_AS (
+        sirius::arrangement::sequenceShared (
+            parent, nullptr,
+            { Position (Rational (0)) }, allocate),
+        std::invalid_argument);
+
+    CHECK_THROWS_AS (
+        sirius::arrangement::sequenceShared (parent, verse, {}, allocate),
+        std::invalid_argument);
+}
+
+TEST_CASE ("sequenceShared composes with the existing bare sequence",
+           "[arrangement][sequenceShared]")
+{
+    using sirius::PhraseMetadata;
+
+    const Constituent parent (ConstituentId (1), Position(), Position (Rational (24)));
+
+    const auto intro = std::make_shared<const Constituent> (
+        Constituent (ConstituentId (10), Position(), Position (Rational (3)))
+            .withPhraseMetadata (PhraseMetadata { .role = "intro" }));
+    const auto verse = std::make_shared<const Constituent> (
+        Constituent (ConstituentId (20), Position(), Position (Rational (6)))
+            .withPhraseMetadata (PhraseMetadata { .role = "verse" }));
+    const auto outro = std::make_shared<const Constituent> (
+        Constituent (ConstituentId (30), Position(), Position (Rational (3)))
+            .withPhraseMetadata (PhraseMetadata { .role = "outro" }));
+
+    std::int64_t nextId = 50;
+    auto allocate = [&nextId] { return ConstituentId (nextId++); };
+
+    // intro (bare) + verse×3 (wrapped) + outro (bare).
+    const Constituent withIntro = sirius::arrangement::sequence (parent, { intro });
+    const Constituent withVerses = sirius::arrangement::sequenceShared (
+        withIntro, verse,
+        { Position (Rational (3)), Position (Rational (9)), Position (Rational (15)) },
+        allocate);
+    const Constituent full = sirius::arrangement::sequence (
+        withVerses, { outro });
+
+    REQUIRE (full.children().size() == 5);
+    CHECK (full.children()[0]->id().value() == 10);                       // intro
+    CHECK (sirius::isPlacementWrapper (*full.children()[1]));             // verse wrapper A
+    CHECK (sirius::isPlacementWrapper (*full.children()[2]));             // wrapper B
+    CHECK (sirius::isPlacementWrapper (*full.children()[3]));             // wrapper C
+    // arrangement::sequence places its `outro` argument at childrenEnd, which
+    // is the last wrapper's conceptualOut = Rational (21).
+    CHECK (full.children()[4]->id().value() == 30);
+    CHECK (full.children()[4]->conceptualIn()  == Position (Rational (21)));
+    CHECK (full.children()[4]->conceptualOut() == Position (Rational (24)));
 }
