@@ -374,6 +374,39 @@ void TimelineView::mouseDown (const juce::MouseEvent& e)
     if (p.getY() < rulerHeight)
         return;
 
+    // Context gesture (right-click / ctrl-click / touch long-press) on a Pill
+    // opens the per-Pill command popup. Tested before arm/focus so the
+    // gesture isn't eaten by the row-level handlers. The geometry mirrors the
+    // paint loop's per-pill rectangle exactly so what looks like a Pill is.
+    const bool isContextGesture = e.mods.isRightButtonDown()
+                                || e.mods.isCtrlDown()
+                                || e.source.isLongPressOrDrag();
+    if (isContextGesture)
+    {
+        for (const auto& pill : state_.pills)
+        {
+            const int primaryIdx = findRowIndexForTape (state_, pill.primaryTape);
+            if (primaryIdx < 0) continue;
+            const auto content = contentArea (primaryIdx);
+            const int x1 = timeToX (pill.startLmcSeconds);
+            const int x2 = timeToX (pill.endLmcSeconds);
+            const juce::Rectangle<int> pillRect { x1 + 1,
+                                                  content.getY() + 4,
+                                                  std::max (10, x2 - x1 - 2),
+                                                  content.getHeight() - 8 };
+            if (pillRect.contains (p))
+            {
+                if (onPillContextMenuRequested)
+                    onPillContextMenuRequested (pill.id);
+                return;
+            }
+        }
+        // Context gesture landed in empty space — fall through so a
+        // right-click on a strip's arm region still toggles arm (matches
+        // existing DAW convention; the row-level handlers are gesture-
+        // agnostic and don't care which mouse button fired).
+    }
+
     const int rowIndex = (p.getY() - rulerHeight) / rowHeight;
     if (rowIndex < 0 || rowIndex >= (int) state_.rows.size())
         return;

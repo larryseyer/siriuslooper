@@ -1,5 +1,6 @@
 #pragma once
 
+#include "sirius/ConstituentId.h"
 #include "sirius/TapeId.h"
 #include "sirius/TimelineViewState.h"
 
@@ -28,6 +29,12 @@ public:
     /// region. The host shifts focus to `tape` without changing its arm
     /// state — focus drives which TapeId the bottom bar's Mark In stamps.
     std::function<void (TapeId tape)> onFocusClicked;
+
+    /// Fired when the user right-clicks (or ctrl-clicks) a Pill — the
+    /// context-gesture entry point for per-Pill commands. The host shows
+    /// a popup menu keyed off the wrapper's ConstituentId. No menu is
+    /// shown when the gesture lands outside any Pill rectangle.
+    std::function<void (ConstituentId wrapperId)> onPillContextMenuRequested;
 
     TimelineView() = default;
 

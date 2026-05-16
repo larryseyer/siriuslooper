@@ -66,6 +66,12 @@ private:
     void onUndo();
     void onRedo();
 
+    // --- shared-placement fork gesture (Task 8) ---
+    // Deep-copies the wrapper's shared subtree with fresh ConstituentIds and
+    // flips its role to "forked-placement". The selector then drops it from
+    // the tie-bar group and the renderer draws the prime mark above the Pill.
+    void forkPlacement (ConstituentId wrapperId);
+
     // --- arm / disarm gesture (white paper 14.6 — coarse, decisive) ---
     void onArmToggle();
     void onMarkIn();

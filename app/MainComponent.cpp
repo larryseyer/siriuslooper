@@ -10,7 +10,9 @@
 #include "sirius/VideoPreview.h"
 
 #include <functional>
+#include <optional>
 #include <stdexcept>
+#include <vector>
 
 namespace sirius
 {
@@ -77,6 +79,58 @@ namespace
             case EffectStrategy::AggressiveCaching: return "AggressiveCaching";
         }
         return "?";
+    }
+
+    /// Deep-copy a Constituent subtree, minting fresh ConstituentIds for
+    /// every node. The structure (boundaries, names, metadata, tape refs) is
+    /// preserved; only ids change. Used by the fork gesture to break sharing.
+    sirius::Constituent deepCopyWithFreshIds (
+        const sirius::Constituent& src,
+        const sirius::promotion::IdAllocator& allocate)
+    {
+        sirius::Constituent copy (allocate(), src.conceptualIn(), src.conceptualOut());
+        if (! src.name().empty())  copy = copy.withName (src.name());
+        if (src.phraseMetadata())  copy = copy.withPhraseMetadata (*src.phraseMetadata());
+        if (src.tapeReference())   copy = copy.withTapeReference  (*src.tapeReference());
+        if (src.localMeter())      copy = copy.withLocalMeter     (*src.localMeter());
+        if (src.localTempoMap())   copy = copy.withLocalTempoMap  (*src.localTempoMap());
+        if (src.hasEffectChain())  copy = copy.withEffectChain    (*src.effectChain());
+        copy = copy.withAnchor (src.anchor());
+        copy = copy.withRepetitionRules (src.repetitionRules());
+        for (const auto& child : src.children())
+            copy = copy.withChildAdded (
+                std::make_shared<const sirius::Constituent> (
+                    deepCopyWithFreshIds (*child, allocate)));
+        return copy;
+    }
+
+    /// Locate the wrapper by id in `root` and return its index path from the
+    /// root's children. Returns empty optional if not found (caller can no-op).
+    std::optional<std::vector<std::size_t>> findWrapperPath (
+        const sirius::Constituent& root, sirius::ConstituentId wrapperId)
+    {
+        std::optional<std::vector<std::size_t>> found;
+        std::vector<std::size_t> path;
+        std::function<void (const sirius::Constituent&)> walk;
+        walk = [&] (const sirius::Constituent& c)
+        {
+            if (c.id() == wrapperId) { found = path; return; }
+            for (std::size_t i = 0; i < c.children().size(); ++i)
+            {
+                path.push_back (i);
+                walk (*c.children()[i]);
+                path.pop_back();
+                if (found) return;
+            }
+        };
+        for (std::size_t i = 0; i < root.children().size(); ++i)
+        {
+            path.push_back (i);
+            walk (*root.children()[i]);
+            path.pop_back();
+            if (found) return found;
+        }
+        return found;
     }
 }
 
@@ -393,6 +447,22 @@ MainComponent::MainComponent()
     preparationPane_->reloadDemoButton().onClick = [this] { reloadDemo(); };
     preparationPane_->timelineView().onArmClicked   = [this] (TapeId t) { toggleArm  (t); };
     preparationPane_->timelineView().onFocusClicked = [this] (TapeId t) { setFocused (t); };
+    preparationPane_->timelineView().onPillContextMenuRequested =
+        [this] (ConstituentId wrapperId)
+    {
+        const auto& root = *undoStack_.current();
+        const auto path = findWrapperPath (root, wrapperId);
+        if (! path) return;
+        auto target = root.children()[(*path)[0]];
+        for (std::size_t depth = 1; depth < path->size(); ++depth)
+            target = target->children()[(*path)[depth]];
+
+        if (! sirius::isPlacementWrapper (*target)) return;
+
+        juce::PopupMenu menu;
+        menu.addItem ("Vary this one", [this, wrapperId] { forkPlacement (wrapperId); });
+        menu.showMenuAsync (juce::PopupMenu::Options{}.withMousePosition());
+    };
     preparationPane_->setStatus ("");
     tabs_.addTab ("Preparation", juce::Colours::black, preparationPane_.get(), false);
 
@@ -898,6 +968,52 @@ void MainComponent::onRedo()
         refreshCaptureControls();
         refreshDiagnostics();
     }
+}
+
+void MainComponent::forkPlacement (ConstituentId wrapperId)
+{
+    const auto& root = *undoStack_.current();
+    const auto wrapperPath = findWrapperPath (root, wrapperId);
+    if (! wrapperPath) return;
+
+    // Path-splice copy-on-write: only the spine from root down to the wrapper
+    // is rebuilt. At the wrapper we swap in a deep copy of its shared child
+    // (with fresh ids) and flip the role string. Mirrors the splice shape
+    // promote() uses on the capture path.
+    std::function<sirius::Constituent (const sirius::Constituent&, std::size_t)>
+        forkedSplice;
+    forkedSplice = [&] (const sirius::Constituent& c, std::size_t depth)
+                       -> sirius::Constituent
+    {
+        if (depth == wrapperPath->size())
+        {
+            if (! sirius::isPlacementWrapper (c)) return c;
+            const auto& sharedPhrase = *c.children()[0];
+            auto allocate = [this] { return ConstituentId (nextConstituentId_++); };
+            const auto deepCopy = std::make_shared<const sirius::Constituent> (
+                deepCopyWithFreshIds (sharedPhrase, allocate));
+
+            sirius::PhraseMetadata forkedMeta = *c.phraseMetadata();
+            forkedMeta.role = "forked-placement";
+            return c.withPhraseMetadata (std::move (forkedMeta))
+                    .withChildReplaced (0, deepCopy);
+        }
+        const std::size_t i = (*wrapperPath)[depth];
+        auto childCopy = std::make_shared<const sirius::Constituent> (
+            forkedSplice (*c.children()[i], depth + 1));
+        return c.withChildReplaced (i, childCopy);
+    };
+
+    sirius::Constituent newRoot = forkedSplice (root, 0);
+
+    undoStack_.push (
+        std::make_shared<const sirius::Constituent> (std::move (newRoot)),
+        "vary this placement");
+
+    refreshPerformance();
+    refreshPreparation();
+    refreshCaptureControls();
+    refreshDiagnostics();
 }
 
 void MainComponent::chooseFileAndSave()
