@@ -34,6 +34,18 @@ model now permits them. The simplest possible UX wins — if the
 operator can't form a mental model of what a gesture does in under a
 second, the gesture is wrong.
 
+**Hide the internals.** Tapes, the wrapper convention, placement
+indices, role strings, sibling sets, attachment modes — none of these
+appear in the default operator view. The musician sees **phrases and
+loops**: the verse, the chorus, the bass line, the vocal ad-lib. They
+do not see "tape #200" or "placement 2" or "shared host." Advanced
+inspection surfaces (the Preparation pane's diagnostics row, a future
+session-inspector) may expose internals for debugging, but they are
+opt-in and never appear in the primary capture/playback flow. Every
+UI string introduced by the implementation plan must pass this check:
+*would a musician understand it without learning Sirius's data
+model?* If not, the string is wrong.
+
 ## Established model (from brainstorm)
 
 The Constituent type system today is permissive — a `Constituent` can
@@ -334,11 +346,15 @@ or "re-share" command (decision #3) — once divergent edits accumulate,
 the only "back" is the regular undo chain.
 
 The **UI surface for the fork gesture** is deliberately left to the
-implementation plan, not pinned here. Candidates: right-click on a Pill
-in Preparation → "Fork this placement," long-press on a Pill on touch.
-Spec invariant: the gesture is reachable only from Preparation mode
-(not Performance) — divergence is a compositional act, not a
-performance act.
+implementation plan, not pinned here. The operator-facing label is
+**"Vary this one"** — never "fork" (engineering vocabulary), never
+"diverge" (jargon), never "unshare" (negative framing of a positive
+musical intent). The musician's frame is "I want this verse to be a
+little different" — the label matches that frame. Candidates for the
+gesture surface: right-click on a Pill in Preparation → "Vary this
+one," long-press on a Pill on touch. Spec invariant: the gesture is
+reachable only from Preparation mode (not Performance) — varying a
+section is a compositional act, not a performance act.
 
 ### 9. Undo semantics
 
@@ -385,14 +401,25 @@ Two additions:
   Mark Out fires. JUCE's `juce::Button::onClick` plus
   `MouseListener::mouseDown`/`mouseUp` with a timer covers this on
   every platform.
-- **Banner copy reflects `resolvedMode`.** Four message templates:
+- **Banner copy reflects `resolvedMode` — musician language only.** Four
+  message templates. Tape numbers, durations, attachment-mode names,
+  and placement indices are *plumbing* and do not appear in the banner;
+  they live in the Preparation pane's diagnostics row for the operator
+  who actually wants them.
 
-  | resolvedMode | mintedPhraseId | Message |
+  | resolvedMode | mintedPhraseId | Banner |
   |---|---|---|
-  | Shared | none | `"Loop added to <phrase> · X.XX s · tape #YYY"` |
-  | Shared | some | `"Phrase N captured · X.XX s · tape #YYY"` |
-  | Overlay | none | `"Overlay added to <phrase> · placement <i> · X.XX s · tape #YYY"` |
-  | Shared (downgraded from Overlay) | none | `"Captured as shared · no placement at Mark In · X.XX s · tape #YYY"` |
+  | Shared | none | `"Added to <phrase name>"` (e.g. `"Added to verse"`) |
+  | Shared | some | `"New phrase captured"` |
+  | Overlay | none | `"Added to <phrase name> <i> only"` (e.g. `"Added to verse 2 only"`) |
+  | Shared (downgraded from Overlay) | none | `"Added to <phrase name> — no section here yet"` or `"Added — no section here yet"` if no host |
+
+  The ordinal in the Overlay case ("verse 2") is the placement's
+  left-to-right position on the timeline (1-based), not its
+  `overlayPlacementIndex` data field — same number, different
+  vocabulary. If the shared phrase is unnamed, the banner falls back
+  to `"Added to the phrase here"` (and equivalents). No internal
+  identifiers ever surface.
 
 ### 12. Tests
 
@@ -443,22 +470,29 @@ change, not regression.
 ### 13. User guide — Roadmap update + future chapter
 
 `docs/Sirius Looper User Guide.md` Roadmap section gains a paragraph
-naming "repeating song sections" as the next operator-visible feature
-landing in this design. A dedicated chapter ("Repeating song sections —
-verses, choruses, and instance-specific touches") is **not** written
-yet; it lands once the implementation ships and operator verification
-confirms the gestures feel right. The chapter outline (for the
-implementation-plan phase to flesh out):
+naming "repeating song sections" as the next musician-visible feature
+landing in this design. A dedicated chapter is **not** written yet; it
+lands once the implementation ships and operator verification confirms
+the gestures feel right. Working chapter title: **"When a section
+plays more than once."** Outline, in musician framing — note that
+"shared," "wrapper," "placement," "overlay," and "fork" do not appear
+in the chapter at all:
 
-- What sharing means — the verse is one musical thought, played
-  multiple times
-- The default capture gesture is shared — your bass line lands in
-  every verse
-- The overlay gesture — long-press Mark In to capture instance-only
-  content (e.g. a vocal ad-lib in verse 2)
-- Forking a placement — when one verse needs to permanently diverge
-- The tie-bar, the overlay dot, and the prime mark — reading the
-  timeline
+- **The verse plays three times.** What it looks like on the timeline
+  (three verse pills with a tie above them — the tie means "these are
+  the same verse").
+- **Recording into a verse adds to every verse.** That's the default.
+  Lay down the bass once; it's there in all three.
+- **Recording something just for one verse.** Hold the Mark In button
+  for a beat (long-press). The capture lands only in that verse — the
+  tie tells you which one. The pill gets a little dot showing it has
+  something extra.
+- **Making one verse different on purpose.** "Vary this one" on the
+  pill — that verse stops being tied to the others. From then on you
+  edit it on its own. The pill loses its tie and gains a small mark
+  showing it's its own thing now.
+- **Reading the timeline at a glance.** The tie, the dot, the
+  variation mark — what each one means in one line each.
 
 ### 14. `todo.md` resolution
 
@@ -507,6 +541,41 @@ in `todo.md` (history) but no longer represents open work.
 - **M8 ensemble (multi-tape capture across networked nodes).** This
   design is the data-model prerequisite; the ensemble layer is a
   future spec.
+
+## 15. Operator vocabulary (QA checklist for UI strings)
+
+Every UI string introduced by the implementation plan is checked
+against this table. Internal terms on the left **must not appear** in
+banners, menus, tooltips, error toasts, or any other operator-facing
+surface in the default flow. Where an operator-facing equivalent
+exists, use it; where it doesn't, surface nothing.
+
+| Internal term (data model) | Operator-facing term (default UI) | Notes |
+|---|---|---|
+| Tape, TapeId, "tape #200" | *(not surfaced)* | Tapes are routing plumbing. The musician sees inputs by their name ("guitar," "vocals"), never tape numbers. Diagnostics row in Preparation may show tape ids for advanced inspection. |
+| Constituent | *(not surfaced)* | The musician sees phrases and loops, never the underlying abstraction. |
+| Wrapper, placement wrapper | *(not surfaced)* | The musician sees a phrase pill on the timeline. "Wrapper" is implementation. |
+| Placement, placement index | "verse 2" / "the second verse" | Ordinal counting that matches what the musician sees on the timeline (1-based, left-to-right). |
+| Shared sibling, sharedSiblings | The tie above the pills | The visual artifact is the only surfacing of sharing; no text. |
+| Overlay, overlay slot | "something just for this verse" / the dot on the pill | The dot is the visual; if text is needed, frame it as "for this one only." |
+| Fork, divergence | "Vary this one" / the small mark on the pill | The menu label is "Vary this one." The visual is a small mark distinguishing the variation from its siblings. |
+| AttachmentMode (Shared / Overlay) | *(not surfaced as a mode)* | The musician does not pick a mode; they make a gesture (tap or long-press) and the system responds. No mode indicator in the default UI. |
+| Role string ("placement", "forked-placement", "capture") | *(not surfaced)* | These are dispatch keys for the selector. They never appear in operator-visible text. |
+| ConstituentId, addedLoopId, mintedPhraseId | *(not surfaced)* | Numeric ids exist for the data model; the musician sees names. |
+| LMC seconds, conceptualIn/Out, whole notes | "seconds" / "bars" | Time in operator-facing copy uses the musician's units (seconds for raw time; bars when a meter is in play). LMC is the engine's internal coordinate. |
+| `resolvedMode`, `overlayPlacementIndex`, `hostPhraseName` | *(not surfaced)* | Result-struct fields drive banner *content*; their names never appear. |
+| Mark In, Mark Out, Arm | Mark In, Mark Out, Arm | These ARE operator vocabulary — established in the user guide chapter 1. Keep them as-is. |
+| Phrase, Loop, Section | Phrase, Loop, Section | These ARE operator vocabulary — established by the white paper and user guide. Keep them as-is. |
+
+**Advanced-surface exception:** the Preparation pane's diagnostics
+row, a future session-inspector window, and any debug/developer view
+may surface internal terms freely. These surfaces are opt-in (the
+musician must navigate to them deliberately) and never appear during
+capture, playback, or arrangement editing in the default flow.
+
+The implementation plan's review checklist for any new UI string is
+a single question: *if a musician who has never read the white paper
+sees this, do they understand it?* If no, the string fails review.
 
 ## Open items the implementation plan will revisit
 
