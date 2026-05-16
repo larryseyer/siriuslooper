@@ -55,7 +55,42 @@
   there may be successive layers, and interleaving with feature
   work makes the diffs hard to bisect later.
 
-### 2026-05-16 — Developer ID signing milestone (its own session)
+### 2026-05-16 — Developer ID signing milestone — SUPERSEDED-AND-IMPLEMENTED 2026-05-16
+
+- **Status:** Implemented end-to-end 2026-05-16 (commit `128913a`).
+- **What landed:**
+  - `app/SiriusLooper.macos.entitlements` (audio-input only — sandbox-only
+    keys like `files.user-selected.read-write` are unnecessary outside the
+    sandbox; Info.plist `NS*UsageDescription` keys handle Load-dialog TCC).
+  - `app/CMakeLists.txt` — `set_target_properties(SiriusLooper PROPERTIES
+    XCODE_ATTRIBUTE_*)` block, active only under `-G Xcode`. The default
+    `cmake -B build` (Unix Makefiles) stays ad-hoc-signed for fast dev
+    iteration; `cmake -B build-xcode -G Xcode` produces a Developer-ID-
+    signed bundle with hardened runtime.
+  - Notarization gated behind `-DSIRIUS_NOTARIZE=ON`. Runs
+    `xcrun notarytool submit --wait` → `xcrun stapler staple` → `spctl`
+    verify as a post-build custom command.
+  - One-time operator setup done: `xcrun notarytool store-credentials
+    sirius-notary --apple-id itunes@larryseyer.com --team-id RR5DY39W4Q`.
+    Profile validated against Apple's servers, stored in keychain.
+  - Manual Xcode-UI verification on `Sirius Looper.app` showed
+    `Authority=Developer ID Application: Larry Seyer (RR5DY39W4Q)`,
+    `flags=0x10000(runtime)`, audio-input entitlement, timestamp.
+- **OTTO backport — partial:** CMake block + entitlements file added to
+  `OTTO/src/otto-plugin/CMakeLists.txt` and
+  `OTTO/src/otto-plugin/OTTOPlugin.macos.entitlements` during this
+  session. Another Claude is working OTTO concurrently — the edits are
+  on disk but Sirius did not test the OTTO build end-to-end.
+- **Deferrals from this session (DO NOT test claims unverified):**
+  - `bash/smoke-persistence.sh` not run against the signed bundle
+    (operator said "do not test"). The AppleScript -25211 should be
+    cleared but is unverified.
+  - Load dialog `.sirius.json` greying in `~/Downloads` is similarly
+    unverified.
+  - `SiriusTests` not re-run against the regenerated build trees;
+    expected still 256 / 4283 (no code paths touched).
+
+### 2026-05-16 — Developer ID signing milestone (original entry, for history)
 
 - **Why this is its own session:** signing / notarization is a
   distinct skillset (Apple Developer account, keychain identity

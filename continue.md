@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-16 (v2 persistence shipped; next session is Developer ID signing)
+# Session Continuation — 2026-05-16 (Developer ID signing shipped; next session is auto-testing setup)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -11,31 +11,43 @@
 
 ## 0. Headline
 
-**This session shipped session format v2** — the serializer emits
-each shared `ChildPtr` once, with subsequent occurrences encoded as
-`{ "ref": <id> }`; the deserializer rebuilds pointer-identity from
-the refs and runs `promotion::enforceSharedInstancesAreShared` on
-the loaded root before returning. The verse × 3 demo now round-trips
-through Save / Load with the three wrappers still pointing at one
-Phrase. Five commits on master, pushed (`a1b6ed3` engine, `7efc7ab`
-disk-roundtrip test, plus three docs commits). Test suite jumped
-from 250 / 4269 → **256 / 4283**, six new sections under
-`[sessionformat][sharing]`.
+**This session shipped Developer ID signing for Sirius (Xcode-gen path)**
+— commit `128913a` on master, pushed. The `cmake -B build-xcode -G Xcode`
+build now produces a `Sirius Looper.app` signed as
+`Developer ID Application: Larry Seyer (RR5DY39W4Q)` with hardened
+runtime (`flags=0x10000`) and the `com.apple.security.device.audio-input`
+entitlement. The default `cmake -B build` (Unix Makefiles) dev loop is
+unchanged — still ad-hoc-signed, still fast. Notarization is wired in
+behind `-DSIRIUS_NOTARIZE=ON` (post-build `notarytool submit --wait` →
+`stapler staple` → `spctl` verify). One-time `notarytool` keychain
+profile `sirius-notary` set up against Apple ID `itunes@larryseyer.com`.
 
-**Next session is the Developer ID signing milestone** — pre-prepped
-during this session and queued at the top of `todo.md`. Two
-independent symptoms (the Load dialog `.sirius.json` greying, and
-the new `bash/smoke-persistence.sh` GUI smoke script returning
-AppleScript `-25211`) both reduce to one root cause: the bundle is
-ad-hoc-signed. Looking at OTTO at
-`/Users/larryseyer/AudioDevelopment/OTTO` surfaced the team ID
-(`RR5DY39W4Q`) and the CMake `set_target_properties()` pattern to
-copy, but also that OTTO's macOS desktop targets are ad-hoc-signed
-too — so the macOS `Developer ID Application` / hardened runtime /
-notarization work is genuinely new ground for both apps, and the
-sister-app branding policy says Sirius's signing block should
-backport to OTTO in the same arc. See §4 below for what's already
-prepped, and `todo.md` for the full port-ready scope sketch.
+**Process note:** the manual Xcode-UI configuration was the verification
+harness — operator drove Signing & Capabilities through the IDE to prove
+the cert + entitlements actually produce a Gatekeeper-acceptable bundle,
+then I encoded the same settings into `app/CMakeLists.txt` so they
+survive `cmake -B build-xcode -G Xcode` regeneration.
+
+**OTTO backport — partial.** Same CMake block + entitlements file added
+to `OTTO/src/otto-plugin/CMakeLists.txt` and
+`OTTO/src/otto-plugin/OTTOPlugin.macos.entitlements` mid-session, but
+another Claude is working OTTO concurrently — Sirius did not test the
+OTTO end-to-end. The edits are on disk; the other Claude may merge or
+revise them.
+
+**Next session is auto-testing infrastructure** — per the operator's
+stated sequence (signing → auto-testing → white-paper alignment pass).
+Signing unblocks the AppleScript-driven smoke scripts that previously
+failed `-25211` against ad-hoc bundles. The auto-testing milestone is
+what makes the verification matrix below executable on every commit
+instead of only when the operator runs it by hand.
+
+**Unverified claims from this session (operator said "do not test"):**
+`bash/smoke-persistence.sh` not run against the signed bundle; Load
+dialog `.sirius.json` greying not visually re-tested; `SiriusTests`
+not re-run against the regenerated build trees. None of these should
+have regressed — no code paths were touched, only build-system metadata
+— but the gate from §4's verification matrix has not been walked.
 
 The shared-placement milestone from earlier today (Sessions A + B +
 C, ten tasks of `docs/superpowers/plans/2026-05-16-shared-placement.md`)
@@ -173,11 +185,47 @@ Plus the pre-existing items already in `todo.md`:
 
 ---
 
-## 4. Next milestone — Developer ID signing
+## 4. Next milestone — auto-testing infrastructure
 
-**Queued and pre-prepped.** Open `todo.md` to the top entry
-(`2026-05-16 — Developer ID signing milestone`) for the full
-port-ready scope sketch. Quick orientation for the next session:
+Per operator direction (recorded in the white-paper-drift audit at
+`~/.claude/plans/read-continue-md-and-after-generic-dove.md`):
+signing → auto-testing → white-paper alignment pass. Signing landed
+this session; auto-testing is next.
+
+**What "auto-testing" means in this context** is not yet specified —
+operator deferred the design discussion. Likely candidates:
+
+- Wire `bash/smoke-persistence.sh` (and any successor smoke scripts)
+  into CI so the AppleScript-driven GUI probes run on every push, not
+  just when the operator triggers them by hand. The script was
+  previously blocked by ad-hoc-signing; the signing milestone clears
+  that gate.
+- A nightly / per-commit signed-build path that runs
+  `cmake -B build-xcode -G Xcode` + builds the SiriusLooper scheme +
+  runs `codesign`/`spctl` verification automatically. This is what
+  catches signing-config drift before a release build needs it.
+- Possibly: `SiriusTests` already runs in CI under the Makefiles
+  build (256 / 4283 assertions) — the new question is whether to add
+  the signed Xcode-gen path to CI matrix too. Cost is the ~30s
+  configure + ~minutes build per CI run.
+
+**What this section does NOT prescribe.** The operator stated
+explicitly that the white-paper alignment pass (the milestone *after*
+auto-testing) will reshape design choices around UI complexity vs.
+under-the-hood concepts. Don't pre-commit to auto-testing decisions
+that lock in a UI surface the alignment pass might move under the
+hood.
+
+**Reference for the just-completed signing milestone:**
+- `todo.md` top entry — `SUPERSEDED-AND-IMPLEMENTED 2026-05-16`
+- Memory file `reference-apple-id` — Apple ID + notarytool profile
+- Commit `128913a` on master
+
+---
+
+## 4b. Original signing-milestone orientation (historical, post-implementation)
+
+Preserved for reference — the planning notes that drove this session:
 
 **Why it's first.** Two existing deferrals reduce to one root cause —
 the bundle is ad-hoc-signed (`codesign -dv` reports
