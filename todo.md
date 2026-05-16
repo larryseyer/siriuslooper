@@ -1,5 +1,26 @@
 # Sirius Looper — Deferred Items
 
+### 2026-05-16 — CI signing secrets — three of six set, three pending operator hands
+
+- **Status:** half-done as of end of session 2026-05-16. Three repo
+  secrets (`APPLE_TEAM_ID`, `APPLE_ID`, `KEYCHAIN_PASSWORD`) are live
+  in the GitHub repo settings. Three remain (`DEVELOPER_ID_CERT_P12_BASE64`,
+  `DEVELOPER_ID_CERT_PASSWORD`, `APPLE_APP_PASSWORD`) — these require
+  the operator to drive Keychain Access (export .p12) and visit
+  appleid.apple.com (generate app-specific password), neither of which
+  Claude can automate.
+- **Why deferred:** operator stepped out for ~8 hours mid-handoff;
+  picks up when back. Full walkthrough in `continue.md` § "RESUME HERE".
+- **What's needed to finish:**
+  1. Export Developer ID Application cert as `~/Desktop/sirius-devid.p12`
+     from Keychain Access (full steps in continue.md).
+  2. Generate an app-specific password at appleid.apple.com.
+  3. Either hand the values to Claude (Path A) or run the three
+     `gh secret set` lines directly (Path B). Both spelled out in
+     continue.md.
+  4. `gh workflow run ci-macos-signed.yml` and watch it go green.
+  5. Delete the local `.p12` after CI is green.
+
 ### 2026-05-16 — Auto-testing milestone — SUPERSEDED-AND-IMPLEMENTED 2026-05-16
 
 - **Status:** Shipped end-to-end this session. All three phases of the

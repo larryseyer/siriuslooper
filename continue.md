@@ -8,6 +8,73 @@
 
 ---
 
+## RESUME HERE (2026-05-16 evening — operator stepped out mid-CI-secret-setup)
+
+Auto-testing milestone is shipped on master. CI workflow is in place
+but **first run will fail** until the remaining three repo secrets are
+added.
+
+**Already done this session (live in repo settings):**
+
+| Secret | Status | Value |
+|---|---|---|
+| `APPLE_TEAM_ID` | ✓ set | `RR5DY39W4Q` |
+| `APPLE_ID` | ✓ set | `itunes@larryseyer.com` |
+| `KEYCHAIN_PASSWORD` | ✓ set | random 32-char base64 (throwaway, never leaves CI) |
+
+**Still needed (require operator hands — Keychain GUI + appleid.apple.com):**
+
+1. **`DEVELOPER_ID_CERT_P12_BASE64`** + **`DEVELOPER_ID_CERT_PASSWORD`** —
+   export the Developer ID Application cert from Keychain Access:
+   - Keychain Access → "login" → My Certificates
+   - Find `Developer ID Application: Larry Seyer (RR5DY39W4Q)`. The
+     disclosure triangle MUST show a private key under it (else the
+     export is useless for signing)
+   - Right-click → Export → save as `~/Desktop/sirius-devid.p12`,
+     format: Personal Information Exchange (`.p12`)
+   - Keychain prompts for an export password — pick anything
+     memorable, this becomes `DEVELOPER_ID_CERT_PASSWORD`
+   - Keychain may also prompt for your login password to release the
+     private key (normal)
+
+2. **`APPLE_APP_PASSWORD`** — app-specific password for notarytool:
+   - https://appleid.apple.com → sign in as `itunes@larryseyer.com`
+   - Sign-In and Security → App-Specific Passwords → "+"
+   - Label `sirius-notarytool` and generate
+   - Copy the 19-char password (`xxxx-xxxx-xxxx-xxxx`)
+
+**Two paths to finish the handoff** (operator's choice on return):
+
+- **Path A (operator hands the values to Claude):** drop the .p12 at
+  `~/Desktop/sirius-devid.p12`, tell Claude the export password and the
+  app-specific password. Claude runs the three `gh secret set` lines.
+- **Path B (operator runs the gh commands):**
+  ```
+  gh secret set DEVELOPER_ID_CERT_P12_BASE64 < <(base64 -i ~/Desktop/sirius-devid.p12)
+  gh secret set DEVELOPER_ID_CERT_PASSWORD --body "<the .p12 password>"
+  gh secret set APPLE_APP_PASSWORD --body "xxxx-xxxx-xxxx-xxxx"
+  ```
+
+**After all six secrets are in place — verification:**
+
+```
+gh secret list                    # confirm 6 entries
+gh workflow run ci-macos-signed.yml
+gh run watch                      # follow the live run
+```
+
+Expected: build + sign + verify all green. The "GUI smoke (best-effort)"
+step may pass or skip on the GitHub-hosted runner — either is acceptable
+(see continue.md §4 for why).
+
+Once the workflow runs green: delete `~/Desktop/sirius-devid.p12`
+(security hygiene — the secret is now in GitHub; the local copy is
+no longer needed and exposes the private key if leaked). Then the
+auto-testing milestone is fully closed out and the next session can
+start on the white-paper alignment pass (§6).
+
+---
+
 ## 0. Headline
 
 **Auto-testing infrastructure milestone shipped end-to-end** on master
