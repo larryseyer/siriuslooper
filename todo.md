@@ -25,40 +25,74 @@
   entitlements. Below macOS's TCC trust threshold for both directions:
   the bundle cannot be granted protected-folder access, and other
   apps' System Events automation cannot target its processes.
+- **What OTTO already provides (port these as-is):**
+  Team ID `RR5DY39W4Q` (see memory
+  `project-apple-developer-team-id`). OTTO's iOS targets use the
+  CMake `set_target_properties()` pattern at
+  `/Users/larryseyer/AudioDevelopment/OTTO/src/otto-ios/CMakeLists.txt`
+  lines 258-272 — copy the structure, swap iOS specifics for macOS.
+  The minimal entitlements file at
+  `/Users/larryseyer/AudioDevelopment/OTTO/src/otto-ios/OTTO.entitlements`
+  shows the format (Sirius's macOS keys will differ).
+- **What OTTO does NOT have (genuinely new ground for both apps):**
+  OTTO's *macOS desktop* targets (Standalone, VST3, AU, CLAP) are
+  ad-hoc-signed exactly like Sirius today. No hardened runtime, no
+  notarization, no `Developer ID Application` identity, no macOS
+  entitlements file. Sirius's signing session is the first time
+  desktop signing lands in this codebase family — the work is
+  worth backporting to OTTO's macOS targets in the same arc.
 - **What's needed to finish (sketch — actual session will tighten this):**
-  1. **Apple Developer Program enrollment** if not already in place.
-     Developer ID Application certificate downloaded into the user
-     keychain.
-  2. **Entitlements file** (`app/SiriusLooper.entitlements` or similar)
+  1. **Verify Developer ID Application certificate is in the keychain.**
+     `security find-identity -p codesigning -v` should list a
+     `Developer ID Application: Larry Seyer (RR5DY39W4Q)` entry.
+     If not, fetch from Apple Developer portal (cert exists implicitly
+     since OTTO's iOS targets sign cleanly, but the macOS-specific
+     `Developer ID Application` cert may be separate).
+  2. **macOS entitlements file** at `app/SiriusLooper.macos.entitlements`
      containing at minimum:
-       * `com.apple.security.files.user-selected.read-write` (for
-         NSOpenPanel / NSSavePanel access — fixes the Load dialog
-         greying)
-       * Any audio-input entitlements the live capture path needs
-         (`com.apple.security.device.audio-input`).
-  3. **Hardened runtime** enabled via CMake / JUCE plist merge so the
-     resulting binary qualifies for notarization.
-  4. **CMake wiring**: extend the existing `PLIST_TO_MERGE` /
-     `XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY` configuration so
-     `cmake --build` produces a Developer-ID-signed bundle by default
-     (or via a `-DSIRIUS_SIGN=ON` opt-in to keep dev iteration cheap).
-  5. **Notarization** via `notarytool submit ... --wait` and `stapler
-     staple` on the resulting `.app`. Decide whether this runs every
-     build or only on operator-verification builds — notarization is
-     network-round-trip, slow to bake into every iteration.
-  6. **Verification matrix** post-signing:
-       * `bash/smoke-persistence.sh` exits 0 end-to-end.
-       * Load dialog allows selection of `*.sirius.json` in
-         `~/Downloads` (the original symptom).
+       * `com.apple.security.files.user-selected.read-write` (fixes
+         the Load dialog `.sirius.json` greying)
+       * `com.apple.security.device.audio-input` (live capture path)
+       * `com.apple.security.cs.allow-jit` only if a hosted plugin
+         needs it (test without first; add only if a plugin scan fails)
+  3. **CMake wiring in `app/CMakeLists.txt`** — extend the existing
+     `juce_add_gui_app` / `PLIST_TO_MERGE` block with a
+     `set_target_properties()` block modelled on OTTO's:
+     ```cmake
+     set_target_properties(SiriusLooper PROPERTIES
+         XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "RR5DY39W4Q"
+         XCODE_ATTRIBUTE_CODE_SIGN_STYLE "Automatic"
+         XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "Developer ID Application"
+         XCODE_ATTRIBUTE_ENABLE_HARDENED_RUNTIME "YES"
+         XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS
+             "${CMAKE_CURRENT_SOURCE_DIR}/SiriusLooper.macos.entitlements"
+         XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED "YES")
+     ```
+     Gate behind `-DSIRIUS_SIGN=ON` so dev iteration stays cheap
+     (ad-hoc default; signed on explicit opt-in and on the
+     operator-verification build).
+  4. **Notarization step** — post-build script that runs
+     `notarytool submit ... --wait` and `stapler staple` only when
+     `-DSIRIUS_SIGN=ON`. Needs an `xcrun notarytool store-credentials`
+     keychain profile set up once; document the one-time setup in the
+     session's deliverable.
+  5. **Verification matrix** post-signing:
+       * `codesign -dv "Sirius Looper.app"` reports
+         `Authority=Developer ID Application: Larry Seyer (RR5DY39W4Q)`
+         and the entitlements blob includes the keys above.
        * `spctl -a -t exec -vv "Sirius Looper.app"` reports
-         "source=Notarized Developer ID".
-       * No regression to existing `SiriusTests` (headless tests don't
-         exercise the bundle, but the build paths share CMake).
-- **OTTO coupling:** OTTO will need the same signing approach
-  (sister-app branding policy per `project-sirius-branding-and-otto`).
-  Worth handling both apps in the same session — one cert, one
-  entitlements pattern, one notarization workflow — rather than
-  duplicating the work later.
+         `source=Notarized Developer ID`.
+       * `bash/smoke-persistence.sh` exits 0 end-to-end (its TCC
+         probe already validates the same trust transition).
+       * Load dialog allows selection of `*.sirius.json` in
+         `~/Downloads` (the 2026-05-15 entry's original symptom).
+       * `SiriusTests` still green (headless tests don't touch the
+         bundle but the CMake paths share configure logic).
+  6. **Backport to OTTO** — once Sirius's macOS signing block is
+     proven, replicate it in OTTO's `src/otto-standalone/CMakeLists.txt`
+     so the sister apps stay in step. Reuse the same entitlements
+     file location pattern; team ID and identity string are
+     identical.
 - **What this session should NOT do:** rewrite the persistence layer
   to work around signing, ship the directory-format work (separate
   entry below), or change anything about the operator-facing GUI. Pure
