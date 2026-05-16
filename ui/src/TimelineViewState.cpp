@@ -85,15 +85,86 @@ namespace
         return "";
     }
 
+    /// Build the parent-to-LMC mapping for a Constituent's children. Hoisted
+    /// out of `walk` to file scope so both the wrapper-branch and bare-Phrase
+    /// branch can call it identically when descending into children.
+    ParentToLmc childMapping (const Constituent& parent, const ParentToLmc& parentToLmc)
+    {
+        const Rational childOffset = parent.conceptualIn().wholeNotes();
+        const auto     localMap    = parent.localTempoMap();
+        return [parentToLmc, childOffset, localMap] (Rational t)
+        {
+            const Rational inParent =
+                childOffset + (localMap ? localMap->apply (t) : t);
+            return parentToLmc (inParent);
+        };
+    }
+
     void walk (const Constituent& c,
                const ParentToLmc& parentToLmc,
-               TimelineViewState& out)
+               TimelineViewState& out,
+               std::unordered_map<std::int64_t, const Constituent*>& wrapperSharedKey)
     {
         const Rational spanStart = parentToLmc (c.conceptualIn().wholeNotes());
         const Rational spanEnd   = parentToLmc (c.conceptualOut().wholeNotes());
 
+        // Forked wrappers carry the same shape as placement wrappers — a
+        // role-tagged Phrase whose first child is the (now-private) shared
+        // Phrase — but with a different role. Handle both as "wrapper" for
+        // Pill-emission purposes.
+        const bool isPlacement     = isPlacementWrapper (c);
+        const bool isForkedWrapper = c.isPhrase()
+                                  && c.phraseMetadata()->role == "forked-placement"
+                                  && ! c.children().empty()
+                                  && c.children()[0]->isPhrase();
+        const bool isWrapperShape  = isPlacement || isForkedWrapper;
+
+        if (isWrapperShape)
+        {
+            const auto& sharedChild = *c.children()[0];
+
+            TapeAggregation agg;
+            aggregate (sharedChild, agg);
+
+            PillState pill;
+            pill.id              = c.id();                       // wrapper's id
+            pill.name            = sharedChild.name();           // from shared Phrase
+            pill.startLmcSeconds = spanStart;
+            pill.endLmcSeconds   = spanEnd;
+            pill.loopCount       = agg.loopCount;
+            pill.primaryTape     = pickPrimary (agg);
+            pill.memberTapes     = agg.tapeOrder;
+            const auto& card = sharedChild.repetitionRules().cardinality;
+            pill.phraseLoopActive = ! std::holds_alternative<cardinality::Once> (card);
+
+            const auto& meta = *sharedChild.phraseMetadata();
+            pill.entranceName = describeEntrance (meta.entrance);
+            pill.exitName     = describeExit     (meta.exit);
+
+            pill.hasOverlays = c.children().size() >= 2;
+            pill.isForked    = isForkedWrapper;
+
+            // Stash the shared-child pointer keyed by wrapper id. Used by the
+            // post-pass to group placement wrappers (NOT forked wrappers) by
+            // pointer-identity for tie-bar grouping.
+            if (isPlacement)
+                wrapperSharedKey.insert ({ c.id().value(), c.children()[0].get() });
+
+            out.pills.push_back (std::move (pill));
+
+            // Walk children: skip the shared Phrase (already represented by
+            // this Pill), but descend into overlay Loops. Overlay Loops are
+            // leaves so the descent is shallow, but doing it consistently
+            // keeps the recursion uniform.
+            const auto childMap = childMapping (c, parentToLmc);
+            for (std::size_t i = 1; i < c.children().size(); ++i)
+                walk (*c.children()[i], childMap, out, wrapperSharedKey);
+            return;
+        }
+
         if (c.isPhrase())
         {
+            // Bare Phrase (non-wrapper, non-forked) — existing behaviour.
             TapeAggregation agg;
             aggregate (c, agg);
 
@@ -119,17 +190,9 @@ namespace
 
         if (! c.children().empty())
         {
-            const Rational childOffset = c.conceptualIn().wholeNotes();
-            const auto     localMap    = c.localTempoMap();
-            const ParentToLmc childToLmc =
-                [parentToLmc, childOffset, localMap] (Rational t)
-                {
-                    const Rational inParent =
-                        childOffset + (localMap ? localMap->apply (t) : t);
-                    return parentToLmc (inParent);
-                };
+            const auto childMap = childMapping (c, parentToLmc);
             for (const auto& child : c.children())
-                walk (*child, childToLmc, out);
+                walk (*child, childMap, out, wrapperSharedKey);
         }
     }
 }
@@ -159,7 +222,29 @@ TimelineViewState selectTimelineView (const Constituent&                  root,
 
     const ParentToLmc rootToLmc =
         [&sessionToLmc] (Rational t) { return sessionToLmc.apply (t); };
-    walk (root, rootToLmc, state);
+
+    std::unordered_map<std::int64_t, const Constituent*> wrapperSharedKey;
+    walk (root, rootToLmc, state, wrapperSharedKey);
+
+    // Second pass: group placement wrappers by pointer-identity of their
+    // shared Phrase, then fill each Pill's sharedSiblings with the other
+    // members of its group. Forked wrappers do not participate (their
+    // wrapperSharedKey entry was never inserted, so they do not appear in
+    // any group).
+    std::unordered_map<const Constituent*, std::vector<ConstituentId>> groups;
+    for (const auto& [wrapperId, sharedPtr] : wrapperSharedKey)
+        groups[sharedPtr].push_back (ConstituentId (wrapperId));
+
+    for (auto& pill : state.pills)
+    {
+        const auto it = wrapperSharedKey.find (pill.id.value());
+        if (it == wrapperSharedKey.end()) continue;
+        const auto& group = groups[it->second];
+        if (group.size() < 2) continue;  // not actually shared
+        for (const auto& sibling : group)
+            if (sibling.value() != pill.id.value())
+                pill.sharedSiblings.push_back (sibling);
+    }
 
     return state;
 }

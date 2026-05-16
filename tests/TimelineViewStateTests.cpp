@@ -266,3 +266,164 @@ TEST_CASE ("a Phrase with cardinality::Once reports phraseLoopActive = false",
     REQUIRE (state.pills.size() == 1);
     CHECK_FALSE (state.pills[0].phraseLoopActive);
 }
+
+TEST_CASE ("selectTimelineView emits one Pill per wrapper, content delegated to shared Phrase",
+           "[timelineView][shared]")
+{
+    auto verse = std::make_shared<const Constituent> (
+        sirius::arrangement::layer (
+            Constituent (ConstituentId (20), Position(), Position (Rational (4)))
+                .withName ("verse")
+                .withPhraseMetadata (PhraseMetadata { .role = "verse",
+                                                       .entrance = EntranceCharacter::Downbeat,
+                                                       .exit     = ExitCharacter::HandOff }),
+            { makeLoop (21, "verse: rhythm", Rational (4), 200) }));
+
+    std::int64_t nextWrapperId = 50;
+    auto allocateWrapper = [&nextWrapperId] { return ConstituentId (nextWrapperId++); };
+
+    const Constituent shell (ConstituentId (1), Position(), Position (Rational (12)));
+    const Constituent root = sirius::arrangement::sequenceShared (
+        shell, verse,
+        { Position (Rational (0)), Position (Rational (4)), Position (Rational (8)) },
+        allocateWrapper);
+
+    const TempoMap identity = TempoMap::fromBpm (Rational (120));
+    const std::vector<InputDescriptor> inputs {
+        { TapeId (200), InputKind::Audio, "Rhythm", 0 } };
+
+    const auto state = sirius::selectTimelineView (
+        root, identity, inputs, /*armed*/ {}, /*focused*/ TapeId (200));
+
+    // Three Pills, one per wrapper. Shared verse itself is suppressed.
+    REQUIRE (state.pills.size() == 3);
+    for (std::size_t i = 0; i < state.pills.size(); ++i)
+    {
+        const auto& pill = state.pills[i];
+        // Pill id is the WRAPPER's id, not the shared Phrase's id.
+        CHECK (pill.id.value() == static_cast<std::int64_t> (50 + i));
+        // Pill content (loop count, primary tape, name, entrance/exit) comes
+        // from the shared verse, not from the wrapper itself.
+        CHECK (pill.name        == "verse");
+        CHECK (pill.loopCount   == 1);
+        CHECK (pill.primaryTape == TapeId (200));
+        CHECK (pill.entranceName == "downbeat");
+        CHECK (pill.exitName     == "hand-off");
+    }
+}
+
+TEST_CASE ("selectTimelineView populates sharedSiblings via pointer-identity grouping",
+           "[timelineView][shared]")
+{
+    auto verse = std::make_shared<const Constituent> (
+        Constituent (ConstituentId (20), Position(), Position (Rational (4)))
+            .withName ("verse")
+            .withPhraseMetadata (PhraseMetadata { .role = "verse" }));
+
+    std::int64_t nextWrapperId = 50;
+    auto allocateWrapper = [&nextWrapperId] { return ConstituentId (nextWrapperId++); };
+
+    const Constituent shell (ConstituentId (1), Position(), Position (Rational (12)));
+    const Constituent root = sirius::arrangement::sequenceShared (
+        shell, verse,
+        { Position (Rational (0)), Position (Rational (4)), Position (Rational (8)) },
+        allocateWrapper);
+
+    const TempoMap identity = TempoMap::fromBpm (Rational (120));
+    const auto state = sirius::selectTimelineView (
+        root, identity, /*inputs*/ {}, /*armed*/ {}, /*focused*/ TapeId (0));
+
+    REQUIRE (state.pills.size() == 3);
+
+    // Pill A (id 50) shares with B (51) and C (52).
+    CHECK (state.pills[0].sharedSiblings.size() == 2);
+    CHECK (state.pills[1].sharedSiblings.size() == 2);
+    CHECK (state.pills[2].sharedSiblings.size() == 2);
+
+    auto containsId = [] (const std::vector<ConstituentId>& v, std::int64_t want)
+    {
+        for (const auto& id : v) if (id.value() == want) return true;
+        return false;
+    };
+    CHECK (containsId (state.pills[0].sharedSiblings, 51));
+    CHECK (containsId (state.pills[0].sharedSiblings, 52));
+}
+
+TEST_CASE ("selectTimelineView leaves sharedSiblings empty for bare Phrases",
+           "[timelineView][bare]")
+{
+    const Constituent shell (ConstituentId (1), Position(), Position (Rational (6)));
+    auto intro = std::make_shared<const Constituent> (
+        Constituent (ConstituentId (10), Position(), Position (Rational (3)))
+            .withName ("intro")
+            .withPhraseMetadata (PhraseMetadata { .role = "intro" }));
+    const Constituent root = shell.withChildAdded (intro);
+
+    const TempoMap identity = TempoMap::fromBpm (Rational (120));
+    const auto state = sirius::selectTimelineView (
+        root, identity, /*inputs*/ {}, /*armed*/ {}, /*focused*/ TapeId (0));
+
+    REQUIRE (state.pills.size() == 1);
+    CHECK (state.pills[0].sharedSiblings.empty());
+    CHECK_FALSE (state.pills[0].hasOverlays);
+    CHECK_FALSE (state.pills[0].isForked);
+}
+
+TEST_CASE ("selectTimelineView sets hasOverlays when a wrapper has overlay Loops",
+           "[timelineView][overlay]")
+{
+    auto verse = std::make_shared<const Constituent> (
+        Constituent (ConstituentId (20), Position(), Position (Rational (4)))
+            .withName ("verse")
+            .withPhraseMetadata (PhraseMetadata { .role = "verse" }));
+    auto overlay = std::make_shared<const Constituent> (
+        Constituent (ConstituentId (60), Position(), Position (Rational (4)))
+            .withTapeReference (TapeReference (TapeId (200), Rational (0), Rational (4))));
+
+    // One wrapper, manually built so it has both the shared verse AND an overlay.
+    PhraseMetadata wrapperMeta;
+    wrapperMeta.role = "placement";
+    const auto wrapper = std::make_shared<const Constituent> (
+        Constituent (ConstituentId (50), Position(), Position (Rational (4)))
+            .withPhraseMetadata (wrapperMeta)
+            .withChildAdded (verse)
+            .withChildAdded (overlay));
+
+    const Constituent shell (ConstituentId (1), Position(), Position (Rational (4)));
+    const Constituent root = shell.withChildAdded (wrapper);
+
+    const TempoMap identity = TempoMap::fromBpm (Rational (120));
+    const auto state = sirius::selectTimelineView (
+        root, identity, /*inputs*/ {}, /*armed*/ {}, /*focused*/ TapeId (0));
+
+    REQUIRE (state.pills.size() == 1);
+    CHECK (state.pills[0].id.value() == 50);
+    CHECK (state.pills[0].hasOverlays);
+}
+
+TEST_CASE ("selectTimelineView sets isForked when wrapper role is 'forked-placement'",
+           "[timelineView][forked]")
+{
+    auto versePhrase = std::make_shared<const Constituent> (
+        Constituent (ConstituentId (200), Position(), Position (Rational (4)))
+            .withName ("verse")
+            .withPhraseMetadata (PhraseMetadata { .role = "verse" }));
+
+    PhraseMetadata forkedMeta;
+    forkedMeta.role = "forked-placement";
+    const auto forked = std::make_shared<const Constituent> (
+        Constituent (ConstituentId (50), Position(), Position (Rational (4)))
+            .withPhraseMetadata (forkedMeta)
+            .withChildAdded (versePhrase));
+
+    const Constituent shell (ConstituentId (1), Position(), Position (Rational (4)));
+    const Constituent root = shell.withChildAdded (forked);
+
+    const TempoMap identity = TempoMap::fromBpm (Rational (120));
+    const auto state = sirius::selectTimelineView (
+        root, identity, /*inputs*/ {}, /*armed*/ {}, /*focused*/ TapeId (0));
+
+    REQUIRE (state.pills.size() == 1);
+    CHECK (state.pills[0].isForked);
+    CHECK (state.pills[0].sharedSiblings.empty());
+}

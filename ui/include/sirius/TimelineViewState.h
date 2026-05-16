@@ -45,6 +45,21 @@ struct PillState
     bool phraseLoopActive { false };
     std::string entranceName;
     std::string exitName;
+
+    /// For shared placements: the ids of the other wrappers that share the
+    /// same underlying Phrase ChildPtr. The renderer draws a tie-bar across
+    /// the wrappers in this set ∪ {this Pill's id}. Empty for bare Phrases
+    /// and for forked placements.
+    std::vector<ConstituentId> sharedSiblings;
+
+    /// True iff this placement has instance-only overlay Loops (children at
+    /// index ≥ 1 on the wrapper). Renderer draws the overlay-dot marker.
+    bool hasOverlays { false };
+
+    /// True iff this Pill represents a placement that was forked from a
+    /// previously-shared one. Detected via PhraseMetadata::role ==
+    /// "forked-placement". Renderer draws the prime mark.
+    bool isForked { false };
 };
 
 /// One row on the timeline — one Tape + InputDescriptor + transient UI
