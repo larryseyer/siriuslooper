@@ -39,17 +39,6 @@ namespace
             enforceSharedInstancesAreShared (child, firstSeenPointer);
     }
 
-    /// Convenience overload: walks the root by reference. The root itself has
-    /// no enclosing shared_ptr so it cannot participate in aliasing; only its
-    /// descendants need the pointer-aware check.
-    void enforceSharedInstancesAreShared (const Constituent& root)
-    {
-        std::unordered_map<std::int64_t, const Constituent*> firstSeenPointer;
-        firstSeenPointer.insert ({ root.id().value(), &root });
-        for (const auto& child : root.children())
-            enforceSharedInstancesAreShared (child, firstSeenPointer);
-    }
-
     /// Compose a child's parent-to-LMC mapping from its placement and any
     /// optional local TempoMap. Same pattern as TimelineViewState::walk.
     using ParentToLmc = std::function<Rational (Rational)>;
@@ -106,6 +95,14 @@ namespace
             currentPath.pop_back();
         }
     }
+}
+
+void enforceSharedInstancesAreShared (const Constituent& root)
+{
+    std::unordered_map<std::int64_t, const Constituent*> firstSeenPointer;
+    firstSeenPointer.insert ({ root.id().value(), &root });
+    for (const auto& child : root.children())
+        enforceSharedInstancesAreShared (child, firstSeenPointer);
 }
 
 // Exceeds the 100-line default because Overlay / Shared / Mint are three

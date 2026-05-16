@@ -87,4 +87,13 @@ PromotionResult promote (const Constituent&   root,
                          AttachmentMode       requestedMode,
                          const IdAllocator&   allocateId);
 
+/// Walk `root` and throw std::logic_error on any ConstituentId reached via
+/// two distinct shared_ptr allocations. Genuine sharing (one ChildPtr held
+/// at multiple positions in the tree, the verse-×-3 shape) is permitted and
+/// each unique allocation is walked exactly once. This is the shared-placement
+/// invariant from the 2026-05-16 spec; `promote()` runs it before any edit,
+/// and `persistence::deserializeSession` runs it after rebuilding the graph
+/// from JSON so loads fail loud when the on-disk shape is inconsistent.
+void enforceSharedInstancesAreShared (const Constituent& root);
+
 } // namespace sirius::promotion

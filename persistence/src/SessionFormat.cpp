@@ -5,13 +5,16 @@
 #include "sirius/Phrase.h"
 #include "sirius/PluginDescriptor.h"
 #include "sirius/Position.h"
+#include "sirius/Promotion.h"
 #include "sirius/Rational.h"
 #include "sirius/RepetitionRules.h"
 #include "sirius/TapeReference.h"
 #include "sirius/TempoMap.h"
 
+#include <cstdint>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <variant>
 
 namespace sirius::persistence
@@ -19,7 +22,14 @@ namespace sirius::persistence
 
 namespace
 {
-    constexpr int currentVersion = 1;
+    // Version 2 (2026-05-16) introduces structural-sharing refs: a child entry
+    // in the "children" array is either a full constituent object or a
+    // `{ "ref": <id> }` object that aliases an earlier emission of the same
+    // ChildPtr. Version 1 sessions emitted each shared Phrase multiple times
+    // and lost pointer-identity on reload (verse × 3 became three distinct
+    // Phrases sharing one id, which the shared-instance invariant rejects on
+    // the next edit). v1 files are not migrated — re-save under v2.
+    constexpr int currentVersion = 2;
 
     // --- error reporting ------------------------------------------------------
 
@@ -532,7 +542,22 @@ namespace
 
     // --- Constituent ----------------------------------------------------------
 
-    juce::var constituentToVar (const Constituent& c)
+    // Maps the id of a Constituent already emitted in this serialize pass to
+    // the raw pointer at which it was first seen. The pointer is kept so the
+    // serializer can sanity-check, on every repeat encounter of an id, that
+    // it really is the same allocation — the shared-instance invariant from
+    // promotion::enforceSharedInstancesAreShared, mirrored here so a corrupt
+    // in-memory tree cannot produce a JSON that lies about its sharing.
+    using SerializeSeen = std::unordered_map<std::int64_t, const Constituent*>;
+
+    juce::var refVar (std::int64_t id)
+    {
+        auto obj = makeObject();
+        obj->setProperty ("ref", id);
+        return objectVar (obj);
+    }
+
+    juce::var constituentToVar (const Constituent& c, SerializeSeen& seen)
     {
         auto obj = makeObject();
         obj->setProperty ("id",     c.id().value());
@@ -550,13 +575,34 @@ namespace
 
         juce::Array<juce::var> kids;
         for (const auto& child : c.children())
-            kids.add (constituentToVar (*child));
+        {
+            const auto childId = child->id().value();
+            auto [it, inserted] = seen.insert ({ childId, child.get() });
+            if (! inserted)
+            {
+                if (it->second != child.get())
+                    fail ("shared-instance invariant: id "
+                          + std::to_string (childId)
+                          + " reached via two distinct allocations during serialization");
+                kids.add (refVar (childId));
+                continue;
+            }
+            kids.add (constituentToVar (*child, seen));
+        }
         obj->setProperty ("children", kids);
 
         return objectVar (obj);
     }
 
-    Constituent constituentFromVar (const juce::var& v)
+    // Mirror of SerializeSeen on the load side: id → the ChildPtr that
+    // already materialized for that id, so a `{ "ref": id }` entry can share
+    // the exact same allocation rather than minting a new one. This is what
+    // restores pointer-identity for verse × 3 after a save / load round-trip.
+    using DeserializeSeen = std::unordered_map<std::int64_t, Constituent::ChildPtr>;
+
+    Constituent::ChildPtr childPtrFromVar (const juce::var& v, DeserializeSeen& seen);
+
+    Constituent constituentFromVar (const juce::var& v, DeserializeSeen& seen)
     {
         Constituent c (
             ConstituentId (requireInt64 (requireProperty (v, "id"), "constituent.id")),
@@ -581,9 +627,25 @@ namespace
         const auto& kids = requireProperty (v, "children");
         if (! kids.isArray()) fail ("constituent.children must be an array");
         for (int i = 0; i < kids.size(); ++i)
-            c = c.withChildAdded (std::make_shared<const Constituent> (constituentFromVar (kids[i])));
+            c = c.withChildAdded (childPtrFromVar (kids[i], seen));
 
         return c;
+    }
+
+    Constituent::ChildPtr childPtrFromVar (const juce::var& v, DeserializeSeen& seen)
+    {
+        if (auto ref = optionalProperty (v, "ref"); ! ref.isVoid())
+        {
+            const auto refId = requireInt64 (ref, "child.ref");
+            auto it = seen.find (refId);
+            if (it == seen.end())
+                fail ("child ref to unknown id " + std::to_string (refId)
+                      + " — refs must follow the first emission of that id");
+            return it->second;
+        }
+        auto child = std::make_shared<const Constituent> (constituentFromVar (v, seen));
+        seen.insert ({ child->id().value(), child });
+        return child;
     }
 }
 
@@ -591,7 +653,9 @@ juce::String serializeSession (const Constituent& root)
 {
     auto top = makeObject();
     top->setProperty ("version", currentVersion);
-    top->setProperty ("root", constituentToVar (root));
+    SerializeSeen seen;
+    seen.insert ({ root.id().value(), &root });
+    top->setProperty ("root", constituentToVar (root, seen));
     return juce::JSON::toString (objectVar (top), /*allOnOneLine*/ false);
 }
 
@@ -606,10 +670,19 @@ std::shared_ptr<const Constituent> deserializeSession (const juce::String& json)
 
     const auto version = requireInt (requireProperty (document, "version"), "version");
     if (version != currentVersion)
-        fail ("unsupported session version: " + std::to_string (version));
+        fail ("unsupported session version: " + std::to_string (version)
+              + " (this build reads version " + std::to_string (currentVersion) + ")");
 
-    return std::make_shared<const Constituent> (
-        constituentFromVar (requireProperty (document, "root")));
+    DeserializeSeen seen;
+    auto root = std::make_shared<const Constituent> (
+        constituentFromVar (requireProperty (document, "root"), seen));
+
+    // Loud post-load check: any inconsistency in how the document encoded
+    // sharing (e.g. two full constituent objects with the same id instead of a
+    // def + ref pair) surfaces here rather than at the next edit.
+    promotion::enforceSharedInstancesAreShared (*root);
+
+    return root;
 }
 
 } // namespace sirius::persistence

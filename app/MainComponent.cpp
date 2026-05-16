@@ -9,9 +9,9 @@
 #include "sirius/TimelineViewState.h"
 #include "sirius/VideoPreview.h"
 
+#include <exception>
 #include <functional>
 #include <optional>
-#include <stdexcept>
 #include <vector>
 
 namespace sirius
@@ -1066,8 +1066,10 @@ void MainComponent::chooseFileAndLoad()
                 refreshPreparation();
                 preparationPane_->setStatus ("Loaded " + source.getFileName());
             }
-            catch (const std::runtime_error& e)
+            catch (const std::exception& e)
             {
+                // runtime_error covers JSON / format errors; logic_error covers
+                // the shared-instance invariant raised by deserializeSession.
                 preparationPane_->setStatus (
                     juce::String ("Load failed: ") + e.what());
             }

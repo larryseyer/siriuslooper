@@ -8,8 +8,11 @@
 // silent).
 #include "sirius/Arrangement.h"
 #include "sirius/Constituent.h"
+#include "sirius/ConstituentId.h"
 #include "sirius/Meter.h"
+#include "sirius/Phrase.h"
 #include "sirius/Position.h"
+#include "sirius/Promotion.h"
 #include "sirius/Rational.h"
 #include "sirius/RepetitionRules.h"
 #include "sirius/SessionFormat.h"
@@ -185,4 +188,150 @@ TEST_CASE ("an unknown variant tag is rejected", "[sessionformat]")
     json = json.replace ("FreeRunning", "SomethingWeird");
     CHECK_THROWS_AS (sirius::persistence::deserializeSession (json),
                      std::runtime_error);
+}
+
+namespace
+{
+    /// Mirrors the demo session's verse × N shape (DemoSession.cpp): a song
+    /// shell holding `placements` wrapper Phrases that all point at one
+    /// shared verse ChildPtr. The test uses this to assert that round-trip
+    /// preserves the wrapper-children-are-pointer-equal invariant that the
+    /// in-memory model relies on.
+    std::shared_ptr<const Constituent> sharedVerseTree (int placements)
+    {
+        sirius::PhraseMetadata verseMeta;
+        verseMeta.role = "verse";
+        const Constituent verseShell =
+            Constituent (ConstituentId (20), Position(), Position (Rational (6)))
+                .withName ("verse")
+                .withPhraseMetadata (verseMeta);
+        const auto verse = std::make_shared<const Constituent> (
+            sirius::arrangement::layer (verseShell,
+                { std::make_shared<const Constituent> (
+                    Constituent (ConstituentId (21), Position(), Position (Rational (6)))
+                        .withName ("verse: rhythm")
+                        .withTapeReference (
+                            TapeReference (TapeId (200), Rational (0), Rational (12)))) }));
+
+        std::vector<Position> offsets;
+        for (int i = 0; i < placements; ++i)
+            offsets.push_back (Position (Rational (i * 6)));
+
+        std::int64_t nextId = 51;
+        auto allocate = [&nextId] { return ConstituentId (nextId++); };
+
+        const Constituent songShell =
+            Constituent (ConstituentId (1), Position(), Position (Rational (6 * placements)))
+                .withName ("test song");
+        return std::make_shared<const Constituent> (
+            sirius::arrangement::sequenceShared (songShell, verse, offsets, allocate));
+    }
+}
+
+TEST_CASE ("a shared placement round-trips with pointer-identity preserved",
+           "[sessionformat][sharing]")
+{
+    // The load-bearing property of v2: serialize the verse × 3 shape, parse
+    // it back, and the three wrappers must still hold the SAME ChildPtr to
+    // the verse Phrase. This is what an edit to one verse continues to
+    // propagate to its siblings across a save / load round-trip.
+    const auto original = sharedVerseTree (3);
+    const auto json = sirius::persistence::serializeSession (*original);
+    const auto round = sirius::persistence::deserializeSession (json);
+
+    REQUIRE (round->children().size() == 3);
+    const auto wrapperZeroChild = round->children()[0]->children()[0].get();
+    const auto wrapperOneChild  = round->children()[1]->children()[0].get();
+    const auto wrapperTwoChild  = round->children()[2]->children()[0].get();
+    CHECK (wrapperZeroChild == wrapperOneChild);
+    CHECK (wrapperZeroChild == wrapperTwoChild);
+    CHECK (wrapperZeroChild->id() == ConstituentId (20));
+}
+
+TEST_CASE ("the loaded shared tree passes the shared-instance guard",
+           "[sessionformat][sharing]")
+{
+    // deserializeSession runs the guard internally; this test pins that
+    // contract: a freshly-loaded tree is immediately legal as the argument
+    // to promotion::promote (which calls the same guard first thing).
+    const auto original = sharedVerseTree (3);
+    const auto json = sirius::persistence::serializeSession (*original);
+    const auto round = sirius::persistence::deserializeSession (json);
+    CHECK_NOTHROW (sirius::promotion::enforceSharedInstancesAreShared (*round));
+}
+
+TEST_CASE ("a v2 document is rejected if a ref precedes the def",
+           "[sessionformat][sharing]")
+{
+    // Hand-crafted: the children array references id 20 before any constituent
+    // with that id has been emitted. Forward refs are not supported (the
+    // serializer always emits the def first in document order), and a corrupt
+    // document that swaps the order must fail loud rather than load a
+    // dangling pointer.
+    const auto json = juce::String (R"({
+        "version": 2,
+        "root": {
+            "id": 1, "in": "0/1", "out": "12/1", "anchor": "Free", "name": "song",
+            "rules": { "trigger": { "kind": "FreeRunning" },
+                       "cardinality": { "kind": "Forever" },
+                       "phase": { "kind": "Free" },
+                       "mutation": "Identical",
+                       "termination": { "kind": "CompleteCurrentCycle" } },
+            "children": [
+                { "ref": 20 }
+            ]
+        }
+    })");
+    CHECK_THROWS_AS (sirius::persistence::deserializeSession (json),
+                     std::runtime_error);
+}
+
+TEST_CASE ("a v1 document is rejected by the v2 loader",
+           "[sessionformat][sharing]")
+{
+    // v1 sessions emitted each shared Phrase multiple times (no refs) and
+    // would deserialize into duplicate-id distinct allocations. The v2 loader
+    // refuses them outright rather than try to migrate; the user re-saves.
+    CHECK_THROWS_AS (
+        sirius::persistence::deserializeSession (R"({ "version": 1, "root": {} })"),
+        std::runtime_error);
+}
+
+TEST_CASE ("a v2 document with two full objects sharing an id fails loud",
+           "[sessionformat][sharing]")
+{
+    // Constructed-by-hand corrupt v2: the children array contains two full
+    // constituent objects, both with id 20. A correct v2 emitter would have
+    // used a ref for the second occurrence. The post-load shared-instance
+    // guard catches this — two distinct allocations carry the same id, which
+    // violates the pointer-identity contract promote() relies on.
+    const auto json = juce::String (R"({
+        "version": 2,
+        "root": {
+            "id": 1, "in": "0/1", "out": "12/1", "anchor": "Free", "name": "song",
+            "rules": { "trigger": { "kind": "FreeRunning" },
+                       "cardinality": { "kind": "Forever" },
+                       "phase": { "kind": "Free" },
+                       "mutation": "Identical",
+                       "termination": { "kind": "CompleteCurrentCycle" } },
+            "children": [
+                { "id": 20, "in": "0/1", "out": "6/1", "anchor": "Free", "name": "verse",
+                  "rules": { "trigger": { "kind": "FreeRunning" },
+                             "cardinality": { "kind": "Forever" },
+                             "phase": { "kind": "Free" },
+                             "mutation": "Identical",
+                             "termination": { "kind": "CompleteCurrentCycle" } },
+                  "children": [] },
+                { "id": 20, "in": "0/1", "out": "6/1", "anchor": "Free", "name": "verse",
+                  "rules": { "trigger": { "kind": "FreeRunning" },
+                             "cardinality": { "kind": "Forever" },
+                             "phase": { "kind": "Free" },
+                             "mutation": "Identical",
+                             "termination": { "kind": "CompleteCurrentCycle" } },
+                  "children": [] }
+            ]
+        }
+    })");
+    CHECK_THROWS_AS (sirius::persistence::deserializeSession (json),
+                     std::logic_error);
 }
