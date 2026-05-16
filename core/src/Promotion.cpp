@@ -201,9 +201,9 @@ PromotionResult promote (const Constituent&   root,
                 .addedLoopId          = loopId,
                 .mintedPhraseId       = std::nullopt,
                 .hostPhraseName       = std::nullopt,  // shared Phrase exists but is not the host
-                .undoLabel            = "capture overlay",
                 .resolvedMode         = AttachmentMode::Overlay,
                 .overlayPlacementIndex = hit->placementIndex,
+                .undoLabel            = "capture overlay",
             };
         }
         // Fall through: no wrapper covers Mark In → silent downgrade to Shared.
@@ -297,9 +297,9 @@ PromotionResult promote (const Constituent&   root,
             .addedLoopId          = loopId,
             .mintedPhraseId       = std::nullopt,
             .hostPhraseName       = hit->hostName,
-            .undoLabel            = std::move (label),
             .resolvedMode         = AttachmentMode::Shared,
             .overlayPlacementIndex = std::nullopt,
+            .undoLabel            = std::move (label),
         };
     }
 
@@ -329,9 +329,9 @@ PromotionResult promote (const Constituent&   root,
         .addedLoopId          = loopId,
         .mintedPhraseId       = phraseId,
         .hostPhraseName       = std::nullopt,
-        .undoLabel            = "capture phrase",
         .resolvedMode         = AttachmentMode::Shared,
         .overlayPlacementIndex = std::nullopt,
+        .undoLabel            = "capture phrase",
     };
 }
 
