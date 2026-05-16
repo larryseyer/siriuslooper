@@ -181,10 +181,15 @@ to the existing Phrases.
 
 ### What's deferred (Roadmap)
 
-- **Repeating song sections** (verse × 3 sharing common layers, with
-  per-instance vocal differences). The data and architecture for this
-  is being designed in a separate spec; until then, each Phrase appears
-  in the song exactly once.
+- **Repeating song sections.** The verse plays three times. Recording
+  into a verse adds to every verse — that's the default. Hold the Mark
+  In button for a moment to record into just one. If a verse needs to
+  drift on its own ("Vary this one" from its menu), it stops being tied
+  to the others from that point on. The timeline shows you which is
+  which: a tie above the pills means "the same verse," a dot means
+  "something just for this one," a small mark means "this one is its
+  own thing now." A full chapter on this lands once the gesture feels
+  right in real use.
 - **A normally-hidden tapes view** with an explicit "show tapes"
   affordance. Today the Preparation tab still surfaces tape rows by
   default. Future versions move tapes underneath a phrase-centric
