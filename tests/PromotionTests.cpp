@@ -31,6 +31,7 @@ using sirius::Rational;
 using sirius::TapeId;
 using sirius::TapeReference;
 using sirius::TempoMap;
+using sirius::promotion::AttachmentMode;
 using sirius::promotion::IdAllocator;
 using sirius::promotion::promote;
 
@@ -55,25 +56,60 @@ namespace
     }
 }
 
-TEST_CASE ("promote throws when any Constituent id appears more than once",
+TEST_CASE ("promote accepts a tree containing shared placements (pointer-aware guard)",
            "[promotion][guard]")
 {
-    // Build a root that contains two distinct Constituents sharing id 42.
-    // arrangement::sequence does this naturally when the same Phrase is placed
-    // multiple times — each placement is a new Constituent object that copies
-    // the shared id. The guard must catch this.
-    auto sharedPhrase = std::make_shared<const Constituent> (
-        Constituent (ConstituentId (42), Position(), Position (Rational (4)))
+    // Build a root whose verse is shared into three wrappers via sequenceShared.
+    // Each wrapper has a distinct id; the inner verse Phrase is one shared
+    // ChildPtr referenced three times. The pointer-aware guard must allow this.
+    auto verse = std::make_shared<const Constituent> (
+        Constituent (ConstituentId (20), Position(), Position (Rational (4)))
+            .withName ("verse")
             .withPhraseMetadata (PhraseMetadata { .role = "verse" }));
 
-    Constituent root = sirius::arrangement::sequence (emptyRoot(),
-                                                      { sharedPhrase, sharedPhrase });
+    std::int64_t nextWrapperId = 50;
+    auto allocateWrapper = [&nextWrapperId] { return ConstituentId (nextWrapperId++); };
+
+    Constituent root = sirius::arrangement::sequenceShared (
+        emptyRoot(), verse,
+        { Position (Rational (0)), Position (Rational (4)), Position (Rational (8)) },
+        allocateWrapper);
+
+    // A capture into one of the wrappers: Mark In = 1 (inside wrapper A's
+    // shared verse). promote() must not throw; the host walk lands in the
+    // shared verse and adds the Loop there. Tested fully in Task 3 — here we
+    // only assert the guard does not reject the shape.
+    const CaptureRegion region { TapeId (200), Rational (1), Rational (3) };
+    Counter counter;
+
+    CHECK_NOTHROW (
+        promote (root, identityMap(), region, /*lmcAtMarkIn*/ Rational (1),
+                 sirius::promotion::AttachmentMode::Shared,
+                 IdAllocator (std::ref (counter))));
+}
+
+TEST_CASE ("promote rejects aliased-id-by-mistake (pointer-distinct, same id)",
+           "[promotion][guard]")
+{
+    // Build a root whose two top-level Phrases happen to share id 42 but are
+    // distinct `Constituent` allocations — exactly the bug shape the old guard
+    // caught. The pointer-aware guard must still throw on this.
+    auto phraseA = std::make_shared<const Constituent> (
+        Constituent (ConstituentId (42), Position(), Position (Rational (4)))
+            .withPhraseMetadata (PhraseMetadata { .role = "verse" }));
+    auto phraseB = std::make_shared<const Constituent> (
+        Constituent (ConstituentId (42), Position (Rational (4)), Position (Rational (8)))
+            .withPhraseMetadata (PhraseMetadata { .role = "verse" }));
+
+    Constituent root = emptyRoot().withChildAdded (phraseA)
+                                  .withChildAdded (phraseB);
 
     const CaptureRegion region { TapeId (200), Rational (1), Rational (3) };
     Counter counter;
 
     CHECK_THROWS_AS (
-        promote (root, identityMap(), region, /*lmcAtMarkIn*/ Rational (5),
+        promote (root, identityMap(), region, /*lmcAtMarkIn*/ Rational (1),
+                 sirius::promotion::AttachmentMode::Shared,
                  IdAllocator (std::ref (counter))),
         std::logic_error);
 }
@@ -94,6 +130,7 @@ TEST_CASE ("promote into an existing Phrase adds a Loop child, no Phrase mint",
     Counter counter;
 
     auto result = promote (root, identityMap(), region, /*lmcAtMarkIn*/ Rational (3),
+                           AttachmentMode::Shared,
                            IdAllocator (std::ref (counter)));
 
     CHECK_FALSE (result.mintedPhraseId.has_value());
@@ -124,6 +161,7 @@ TEST_CASE ("promote on an empty root mints a Phrase containing one Loop",
     Counter counter;
 
     auto result = promote (root, identityMap(), region, /*lmcAtMarkIn*/ Rational (4),
+                           AttachmentMode::Shared,
                            IdAllocator (std::ref (counter)));
 
     REQUIRE (result.mintedPhraseId.has_value());
@@ -166,6 +204,7 @@ TEST_CASE ("promote with playhead in a gap between Phrases mints a fresh Phrase"
     Counter counter;
 
     auto result = promote (root, identityMap(), region, /*lmcAtMarkIn*/ Rational (10),
+                           AttachmentMode::Shared,
                            IdAllocator (std::ref (counter)));
 
     REQUIRE (result.mintedPhraseId.has_value());
@@ -194,6 +233,7 @@ TEST_CASE ("promote clamps Loop bounds to the host Phrase when region extends pa
     Counter counter;
 
     auto result = promote (root, identityMap(), region, /*lmcAtMarkIn*/ Rational (4),
+                           AttachmentMode::Shared,
                            IdAllocator (std::ref (counter)));
 
     REQUIRE_FALSE (result.mintedPhraseId.has_value());
@@ -238,6 +278,7 @@ TEST_CASE ("promote refuses a hybrid Phrase+Loop Constituent as host and mints i
     Counter counter;
 
     auto result = promote (root, identityMap(), region, /*lmcAtMarkIn*/ Rational (3),
+                           AttachmentMode::Shared,
                            IdAllocator (std::ref (counter)));
 
     REQUIRE (result.mintedPhraseId.has_value());
@@ -263,6 +304,7 @@ TEST_CASE ("promote throws on a zero-duration or reversed region",
         const CaptureRegion bad { TapeId (200), Rational (3), Rational (3) };
         CHECK_THROWS_AS (
             promote (root, identityMap(), bad, Rational (3),
+                     AttachmentMode::Shared,
                      IdAllocator (std::ref (counter))),
             std::invalid_argument);
     }
@@ -272,7 +314,135 @@ TEST_CASE ("promote throws on a zero-duration or reversed region",
         const CaptureRegion bad { TapeId (200), Rational (5), Rational (3) };
         CHECK_THROWS_AS (
             promote (root, identityMap(), bad, Rational (5),
+                     AttachmentMode::Shared,
                      IdAllocator (std::ref (counter))),
             std::invalid_argument);
     }
+}
+
+TEST_CASE ("promote with Shared and a wrapper covering Mark In adds the Loop to the shared Phrase",
+           "[promotion][shared][wrapper]")
+{
+    auto verse = std::make_shared<const Constituent> (
+        Constituent (ConstituentId (20), Position(), Position (Rational (4)))
+            .withName ("verse")
+            .withPhraseMetadata (PhraseMetadata { .role = "verse" }));
+
+    std::int64_t nextWrapperId = 50;
+    auto allocateWrapper = [&nextWrapperId] { return ConstituentId (nextWrapperId++); };
+
+    Constituent root = sirius::arrangement::sequenceShared (
+        emptyRoot(), verse,
+        { Position (Rational (0)), Position (Rational (4)), Position (Rational (8)) },
+        allocateWrapper);
+
+    // Mark In = 5 → wrapper B [4,8). Shared mode → host walk descends through
+    // wrapper, lands in the shared verse Phrase. The Loop is added to the
+    // shared verse, so it appears under all three wrappers.
+    const CaptureRegion region { TapeId (200), Rational (5), Rational (7) };
+    Counter counter;
+    auto result = promote (root, identityMap(), region, Rational (5),
+                           AttachmentMode::Shared,
+                           IdAllocator (std::ref (counter)));
+
+    CHECK (result.resolvedMode == AttachmentMode::Shared);
+    CHECK_FALSE (result.overlayPlacementIndex.has_value());
+    REQUIRE (result.hostPhraseName.has_value());
+    CHECK (*result.hostPhraseName == "verse");
+
+    // All three wrappers' shared verse now contains the new Loop. Pointer
+    // identity across the three first-children persists post-edit, because
+    // copy-on-write replaced exactly one path (the path to the verse) and
+    // every wrapper that referenced it now references the replaced version.
+    REQUIRE (result.newRoot.children().size() == 3);
+    const auto* sharedAfter = result.newRoot.children()[0]->children()[0].get();
+    CHECK (sharedAfter == result.newRoot.children()[1]->children()[0].get());
+    CHECK (sharedAfter == result.newRoot.children()[2]->children()[0].get());
+    REQUIRE (sharedAfter->children().size() == 1);
+    CHECK (sharedAfter->children()[0]->id() == result.addedLoopId);
+}
+
+TEST_CASE ("promote with Overlay attaches the Loop to the specific wrapper, others unchanged",
+           "[promotion][overlay]")
+{
+    auto verse = std::make_shared<const Constituent> (
+        Constituent (ConstituentId (20), Position(), Position (Rational (4)))
+            .withName ("verse")
+            .withPhraseMetadata (PhraseMetadata { .role = "verse" }));
+
+    std::int64_t nextWrapperId = 50;
+    auto allocateWrapper = [&nextWrapperId] { return ConstituentId (nextWrapperId++); };
+
+    Constituent root = sirius::arrangement::sequenceShared (
+        emptyRoot(), verse,
+        { Position (Rational (0)), Position (Rational (4)), Position (Rational (8)) },
+        allocateWrapper);
+
+    // Mark In = 5 → wrapper B [4,8). Overlay mode → Loop is a child of
+    // wrapper B at index ≥ 1 (peer of the shared verse), not a child of the
+    // shared verse. Wrappers A and C are unchanged.
+    const CaptureRegion region { TapeId (300), Rational (5), Rational (7) };
+    Counter counter;
+    auto result = promote (root, identityMap(), region, Rational (5),
+                           AttachmentMode::Overlay,
+                           IdAllocator (std::ref (counter)));
+
+    CHECK (result.resolvedMode == AttachmentMode::Overlay);
+    REQUIRE (result.overlayPlacementIndex.has_value());
+    CHECK (*result.overlayPlacementIndex == 2u);  // 1-based, wrapper B is #2
+
+    REQUIRE (result.newRoot.children().size() == 3);
+    // Wrapper B now has two children: the shared verse + the overlay Loop.
+    const auto& wrapperB = *result.newRoot.children()[1];
+    REQUIRE (wrapperB.children().size() == 2);
+    CHECK (wrapperB.children()[0]->isPhrase());
+    CHECK (wrapperB.children()[1]->isLoop());
+    CHECK (wrapperB.children()[1]->id() == result.addedLoopId);
+
+    // Wrappers A and C still have only the shared verse.
+    CHECK (result.newRoot.children()[0]->children().size() == 1u);
+    CHECK (result.newRoot.children()[2]->children().size() == 1u);
+
+    // The Loop in B's overlay slot has wrapper-local conceptual bounds
+    // (Mark In − wrapperStart = 5 − 4 = 1; Mark Out − wrapperStart = 3).
+    CHECK (wrapperB.children()[1]->conceptualIn()  == Position (Rational (1)));
+    CHECK (wrapperB.children()[1]->conceptualOut() == Position (Rational (3)));
+}
+
+TEST_CASE ("promote with Overlay outside any wrapper silently downgrades to Shared",
+           "[promotion][overlay][downgrade]")
+{
+    // Root contains a bare verse [0,4) with no wrapper.
+    auto verse = std::make_shared<const Constituent> (
+        Constituent (ConstituentId (10), Position(), Position (Rational (4)))
+            .withName ("verse")
+            .withPhraseMetadata (PhraseMetadata { .role = "verse" }));
+    Constituent root = emptyRoot().withChildAdded (verse);
+
+    const CaptureRegion region { TapeId (200), Rational (1), Rational (3) };
+    Counter counter;
+    auto result = promote (root, identityMap(), region, Rational (1),
+                           AttachmentMode::Overlay,
+                           IdAllocator (std::ref (counter)));
+
+    CHECK (result.resolvedMode == AttachmentMode::Shared);  // downgraded
+    CHECK_FALSE (result.overlayPlacementIndex.has_value());
+    REQUIRE (result.hostPhraseName.has_value());
+    CHECK (*result.hostPhraseName == "verse");
+}
+
+TEST_CASE ("promote with Overlay outside any wrapper AND no host mints a Phrase (downgrade then mint)",
+           "[promotion][overlay][downgrade][mint]")
+{
+    Constituent root = emptyRoot();  // no children at all
+    const CaptureRegion region { TapeId (200), Rational (10), Rational (12) };
+    Counter counter;
+    auto result = promote (root, identityMap(), region, Rational (10),
+                           AttachmentMode::Overlay,
+                           IdAllocator (std::ref (counter)));
+
+    CHECK (result.resolvedMode == AttachmentMode::Shared);  // downgraded
+    REQUIRE (result.mintedPhraseId.has_value());
+    CHECK_FALSE (result.hostPhraseName.has_value());
+    CHECK (result.undoLabel == "capture phrase");
 }

@@ -129,6 +129,7 @@ private:
     // Message-thread only — promotion's allocateId callback is called from
     // onMarkOut on the JUCE message thread, never from the audio thread.
     std::int64_t   nextConstituentId_ { 0 };
+    bool           pendingOverlay_ { false };
 
     // --- input topology + per-tape arm/focus (this session) ---
     std::vector<InputDescriptor>     inputs_;

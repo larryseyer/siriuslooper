@@ -13,6 +13,19 @@
 namespace sirius::promotion
 {
 
+/// What the operator's gesture asked for. The default capture (a tap on Mark
+/// In) is `Shared`: the captured Loop joins the shared Phrase so all
+/// placements gain it. A long-press on Mark In requests `Overlay`: the
+/// captured Loop attaches to the specific wrapper instance under the
+/// playhead, peer to (not child of) the shared Phrase. `Overlay` with no
+/// wrapper covering Mark In silently downgrades to `Shared` — see
+/// `PromotionResult::resolvedMode`.
+enum class AttachmentMode
+{
+    Shared,
+    Overlay
+};
+
 /// The result of a successful promotion: the new session root, identity of
 /// the added Loop, identity of any minted Phrase wrapper, and the undo label
 /// the caller should attach to the UndoStack entry.
@@ -27,6 +40,15 @@ struct PromotionResult
     ConstituentId addedLoopId { 0 };
     std::optional<ConstituentId> mintedPhraseId;
     std::optional<std::string>   hostPhraseName;  // present iff a host Phrase was found
+
+    /// What promote() actually did. Equal to the requested mode except in the
+    /// Overlay-outside-any-wrapper case, where it downgrades to Shared.
+    AttachmentMode resolvedMode { AttachmentMode::Shared };
+
+    /// 1-based left-to-right placement index of the wrapper the Overlay was
+    /// attached to. Present only when `resolvedMode == Overlay`.
+    std::optional<std::size_t> overlayPlacementIndex;
+
     std::string undoLabel;
 };
 
@@ -40,13 +62,19 @@ using IdAllocator = std::function<ConstituentId()>;
 /// `root` is untouched.
 ///
 /// Behaviour (see docs/superpowers/specs/2026-05-15-capture-promotion-design.md):
-///   * Throws std::logic_error if any ConstituentId appears more than once
-///     anywhere in `root` — shared-placement architecture is deferred work.
+///   * Throws std::logic_error if the pointer-aware guard catches aliased ids
+///     — distinct Constituents sharing one id but not one ChildPtr.
 ///   * Throws std::invalid_argument if the region's duration is non-positive.
-///   * Walks `root` to find the deepest Phrase whose LMC span contains
-///     `lmcAtMarkIn`. If found, adds a Loop as a child of that Phrase
-///     (clamped to the host's bounds in the straddle case). If not found,
-///     mints a new Phrase at the song root, containing the Loop.
+///   * `requestedMode == Shared` walks `root` to find the deepest Phrase
+///     whose LMC span contains `lmcAtMarkIn`. Wrappers are descended through
+///     but never themselves a host; the host is the shared Phrase beneath.
+///     If found, adds a Loop as a child of that Phrase (clamped to the
+///     host's bounds in the straddle case). If not found, mints a new Phrase
+///     at the song root, containing the Loop.
+///   * `requestedMode == Overlay` finds the deepest wrapper containing
+///     `lmcAtMarkIn` and attaches the Loop as a peer of the shared Phrase
+///     within that wrapper. If no wrapper covers Mark In, silently
+///     downgrades to Shared (see `PromotionResult::resolvedMode`).
 ///
 /// M3 simplification: conceptual time is treated as 1:1 with LMC seconds for
 /// the purposes of computing new Loop / Phrase boundaries. The demo session
@@ -56,6 +84,7 @@ PromotionResult promote (const Constituent&   root,
                          const TempoMap&      sessionToLmc,
                          const CaptureRegion& region,
                          Rational             lmcAtMarkIn,
+                         AttachmentMode       requestedMode,
                          const IdAllocator&   allocateId);
 
 } // namespace sirius::promotion

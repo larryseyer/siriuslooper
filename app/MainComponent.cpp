@@ -681,7 +681,12 @@ void MainComponent::onMarkOut()
             demo_.sessionToLmc,
             *region,
             region->inLmcSeconds,
+            pendingOverlay_ ? promotion::AttachmentMode::Overlay
+                            : promotion::AttachmentMode::Shared,
             [this] { return ConstituentId (nextConstituentId_++); });
+
+        // Consume the pending-overlay flag — the next capture starts fresh.
+        pendingOverlay_ = false;
 
         undoStack_.push (
             std::make_shared<const Constituent> (std::move (result.newRoot)),
