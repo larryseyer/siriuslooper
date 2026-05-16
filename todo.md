@@ -39,18 +39,21 @@
      code, not just the data.
 - **Surfaced by:** final code review of capture-promotion (Important #1).
 
-### 2026-05-15 — Shared-placement-with-per-instance-overlays architecture — SUPERSEDED
+### 2026-05-15 — Shared-placement-with-per-instance-overlays architecture — SUPERSEDED-AND-IMPLEMENTED 2026-05-16
 
-- **Status:** Superseded 2026-05-16 by the design spec at
-  `docs/superpowers/specs/2026-05-16-shared-placement-design.md`
-  (commit `81afadd`). The brainstorm produced in this session locked
-  the wrapper-Constituent shape, shared-by-default capture semantics,
-  long-press = overlay gesture (iOS-friendly), irreversible fork,
-  tie-bar timeline rendering, lazy wrapping, demo verse × 3, and the
-  pointer-aware runtime guard that replaces `enforceSingleInstance`.
-  The implementation plan is the next session's deliverable (target
-  path: `docs/superpowers/plans/2026-05-16-shared-placement.md`).
-  Original brief preserved below for context only.
+- **Status:** Implemented end-to-end 2026-05-16. The plan at
+  `docs/superpowers/plans/2026-05-16-shared-placement.md` shipped
+  across Sessions A + B + C (eight feature commits plus docs), all
+  ten tasks done, all four operator gates verified, full suite at
+  250 / 4269 assertions. Wrappers, shared-by-default capture,
+  long-press = Overlay, "Vary this one" fork gesture, tie-bar /
+  overlay-dot / prime-mark visuals, verse × 3 demo, pointer-aware
+  runtime guard, and §11 banner copy all live on master. See
+  `continue.md` for the full milestone arc and the three small
+  code-review follow-ups still open (Shared-splice hoist,
+  `value_or`→`jassert`, `refreshAll()` extraction).
+- **Original spec/brainstorm:** preserved below for historical
+  context; no longer actionable.
 
 - **Files:** `core/include/sirius/Arrangement.h`,
   `core/src/Arrangement.cpp`, `core/include/sirius/Constituent.h`
