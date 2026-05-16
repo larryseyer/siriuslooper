@@ -99,6 +99,54 @@
   Loop/Pill rendering for repeated phrases, the user-guide chapter on
   "Repeating song sections."
 
+### 2026-05-16 — Hoist Shared-path splice out of `promote()` (code-review follow-up)
+
+- **Files:** `core/src/Promotion.cpp` (the `promote()` body, currently
+  ~226 lines, with the Shared-path splice at lines ~230–289 living as
+  an inline `std::function` + recursive lambda).
+- **What was deferred:** extracting the pointer-identity-preserving
+  Shared splice into a private anonymous-namespace helper, e.g.
+  `Constituent spliceLoopIntoSharedHost (root, hostPath, loopPtr)`.
+  Also: add cross-reference comments between the Overlay path-based
+  splice (lines ~187–197) and the Shared pointer-identity splice
+  explaining why each shape was chosen (Overlay = one wrapper, path
+  is enough; Shared = N references to one ChildPtr, must rewrite all
+  occurrences).
+- **Why deferred:** the shared-placement plan inlined the function
+  verbatim; per the surgical-changes rule the implementation session
+  shipped the plan as written plus a CLAUDE.md function-size
+  justification comment (commit `b59a76e`). The hoist is a quality
+  cleanup raised at code review (Important #2 in the Tasks 2+3
+  review), not a correctness fix — it would drop `promote()` from
+  ~226 to ~165 lines and give the helper its own focused docstring
+  about the pointer-identity contract. Worth doing as a focused
+  refactor commit, not bundled into Session B's UI work.
+- **Operational consequence today:** none. Tests are green
+  (244 / 4214 assertions); the behaviour is correct; the only cost
+  is that a future maintainer reading the two splices side-by-side
+  has to reverse-engineer why they're shaped differently.
+- **What's needed to finish:**
+    1. Extract the lambda + driver into a free helper in the
+       `core/src/Promotion.cpp` anonymous namespace. Capture by
+       parameter rather than by-reference closure.
+    2. Add a one-line cross-reference comment at each splice site
+       (Overlay → "see spliceLoopIntoSharedHost for the Shared
+       analogue"; Shared → "see lines NNN for the Overlay analogue").
+    3. Rename the inline lambda's `replaceShared` to something more
+       descriptive (e.g., `rebuildSubtreeReplacingHost`) if the
+       extraction approach keeps it as a lambda.
+    4. Strengthen the existing pointer-equality comment to call out
+       that `.get()` is deliberate vs `==` on `shared_ptr` (same
+       semantics, but `.get()` reads as "raw pointer identity" which
+       matches the contract).
+    5. Verify full suite still green (244 cases) and the load-bearing
+       pointer-equality assertions in
+       `tests/PromotionTests.cpp::"promote with Shared and a wrapper
+       covering Mark In adds the Loop to the shared Phrase"` still
+       hold.
+- **Surfaced by:** code-quality review of commit `d8a2479` (Tasks 2+3
+  joint commit).
+
 ### 2026-05-15 — OTTO Look-and-Feel integration (cross-app)
 
 - **Files:** new top-level shared module (location TBD — see open
