@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-15 (capture-promotion shipped)
+# Session Continuation — 2026-05-16 (DemoSession reconciled; open Pick B brainstorm)
 
 > **For a fresh chat picking this up cold:** read this whole file before
 > doing anything. The user's `~/.claude/CLAUDE.md` and the project's
@@ -8,363 +8,303 @@
 
 ---
 
-## 0. Project orientation (skip if you've worked here before)
+## 0. Quick orientation
 
 **Sirius Looper** is a real-time looping / arrangement application for
 musicians, built in JUCE/C++20 with a strict separation between a
 JUCE-free conceptual-time core (`core/`) and the audio/UI layers
-(`engine/`, `ui/`, `app/`). It is the sister app to **OTTO** — they
-ship together but are sold individually (full OTTO standalone, limited
-OTTO bundled in Sirius). The architectural premise is the
-**always-running tape**: every input is continuously recorded, so
-*retroactive* capture (Mark In / Mark Out *after* the music played) is
-the natural gesture.
+(`engine/`, `ui/`, `app/`). Sister app to **OTTO**.
 
 Authoritative reading, in order if you need it:
 
 1. **`/Users/larryseyer/.claude/CLAUDE.md`** — global engineering
-   rules (philosophy, commit discipline, hard-stop conditions, code
-   standards). Already loaded.
-2. **`docs/Sirius Looper Whitepaper V2.md`** — conceptual model,
-   musical philosophy. Tells you *why* the architecture is this way.
-3. **`docs/Sirius Looper User Guide.md`** — operator-facing
-   *how-to*. New as of this session; has chapter 1 ("Capturing Phrases
-   and Loops") plus a glossary that pins down Tape / Phrase / Loop /
-   Pill / CaptureRegion / Mark In / Mark Out / Arm / Playhead / LMC.
+   rules. Already auto-loaded.
+2. **`docs/Sirius Looper Whitepaper V2.md`** — conceptual model. Part
+   VII (Constituent unifying abstraction) and Part IX (arrangement) are
+   the load-bearing background for this session's pick.
+3. **`docs/Sirius Looper User Guide.md`** — operator-facing how-to.
+   Chapter 1 ("Capturing Phrases and Loops") covers what the prior
+   session shipped.
 4. **`docs/superpowers/specs/2026-05-15-capture-promotion-design.md`**
-   — the design that this session shipped.
-5. **`docs/superpowers/plans/2026-05-15-capture-promotion.md`** —
-   the 10-task implementation plan (all tasks now complete).
-6. **`todo.md`** — deferred-work register. Top entries are the
-   strongest candidates for the next session.
+   — capture promotion design. **§3** documents the multi-instance
+   runtime guard that *this* session's pick will eventually remove.
+5. **`todo.md`** — deferred-work register. The shared-placement entry
+   at line 42 is the brief for the work this session opens.
 
-**Project policies that override defaults** (full text in CLAUDE.md):
+**Project policies that override defaults** (full text in CLAUDE.md
+and in the auto-memory):
 
-- **Work directly on `master`.** No feature branches unless explicitly
-  instructed.
-- **Commits are local.** GitHub remote operations (push, PR,
-  gh-anything) are handled by the user in a *separate terminal* — do
-  not push, do not create PRs. See memory
-  `feedback-github-handled-in-separate-terminal`.
+- **Work directly on `master`.** No feature branches unless asked.
+- **Commits AND pushes are authorized.** New as of 2026-05-16 —
+  Claude commits to master and pushes to `origin/master` as
+  deliverables land. No PRs (trunk push only). No `--force`. No
+  `--no-verify`. See memory `feedback-claude-commits-and-pushes-master`.
+  `bash/bu.sh` is the user's *local* backup tool (it derives a Dropbox
+  zip filename from the last commit message — that's why commits stay
+  single-line) — Claude does not run it.
 - **Single-line commit messages**, format `<type>: <short title>`. No
-  Co-Authored-By trailer. The user has a script that derives a
-  filename from the first line; multi-line breaks the path.
+  Co-Authored-By trailer.
 - **Never run `open ...` or any GUI-launching command.** Operator-side
-  .app verification is something the *user* runs at their own terminal.
-  Subagents and the controller do compile-only builds + headless unit
-  tests.
+  .app verification is something the *user* runs at their terminal.
 - **Defer big design topics to their own session** rather than letting
-  them bloat the current one. Capture in `todo.md` with full
-  Files/Why-Deferred/What's-Needed structure. See memory
-  `feedback-defer-big-design-to-own-session`.
+  them bloat the current one. See memory
+  `feedback-defer-big-design-to-own-session`. This session is
+  *itself* an instance of that policy — the prior session deferred
+  shared-placement architecture into a dedicated brainstorm, which is
+  what this session opens.
 
 ---
 
-## 1. Top-of-page summary — what just shipped
+## 1. What just shipped (last session, 2026-05-16)
 
-Capture promotion landed end-to-end across **17 commits** in a single
-subagent-driven session. Every Mark Out now auto-promotes the captured
-region into the session Constituent tree as a **Loop** (and a wrapper
-**Phrase** when the playhead at Mark In is outside any existing
-Phrase). The change pushes onto `UndoStack` with a
-`CaptureRestorePoint` so `onUndo` restores `CaptureSession` to
-`AwaitingOut` with the original in-point intact, and `onRedo`
-symmetrically clears that state to prevent a duplicate-Loop bug. The
-on-screen `CaptureBanner` is now tappable for one-tap recovery from a
-too-early Mark Out. The pure `core/sirius::promotion::promote`
-function ships **single-instance-only** behind a runtime guard that
-throws loudly if any `ConstituentId` appears more than once anywhere
-in the tree — the explicit "write protect" the operator asked for.
+**Pick A — DemoSession Phrase-vs-Loop reconciliation.** Single commit
+on master, pushed to `origin/master`:
 
-**Tests:** 233 pass / 4124 assertions (was 226 / 4071 last session).
-Clean rebuild verified.
+| SHA       | Subject                                                                                  |
+|-----------|------------------------------------------------------------------------------------------|
+| `001f314` | refactor: DemoSession + Promotion — eliminate Phrase+Loop hybrids; tighten host predicate |
 
-The **user guide** (`docs/Sirius Looper User Guide.md`) is new this
-session, with chapter 1 ("Capturing Phrases and Loops") covering
-glossary + the auto-promotion rule with two ASCII diagrams + the
-build-then-layer workflow + recovering from an early Mark Out.
+The intro (id 10) and outro (id 30) used to be **hybrid leaves**
+carrying both `PhraseMetadata` and `TapeReference` on a single
+Constituent. They now mirror the verse's shape: Phrase shell +
+single Loop child (ids 11, 31). `Promotion::findHostRecursive` is
+now `isPhrase() && !tapeReference().has_value()` so a hybrid is
+rejected as a host even if one is ever reintroduced — defense in
+depth.
 
----
+Test count: **235 / 235** pass, 4145 assertions (was 233 / 4124).
+New cases: `[demoSession][shape]` locks the demo's structural
+invariant; `[promotion][host][hybrid-rejection]` locks the tightened
+predicate.
 
-## 2. The 17 commits
+**Build-graph fix bundled in the same commit:** `app/DemoSession.cpp`
+moved from the `SiriusLooper` (JUCE app) target into `SiriusAppCore`
+(JUCE-free static lib) so unit tests can link it. DemoSession was
+already JUCE-free; only the target placement was wrong.
 
-| SHA       | Subject                                                                                                |
-|-----------|--------------------------------------------------------------------------------------------------------|
-| `e3bc84e` | feat: UndoStack — optional CaptureRestorePoint per entry for promotion undo                             |
-| `1c40632` | fix: UndoStack — return CaptureRestorePoint by value to dodge vector-invalidation footgun               |
-| `b994a37` | feat: promotion module skeleton + multi-instance write-protect                                          |
-| `864d27f` | fix: PromotionTests — designated init for PhraseMetadata                                                |
-| `fb776c2` | feat: promotion — add Loop child to host Phrase when Mark In lands inside one                           |
-| `aa3e647` | chore: Promotion — drop unused Phrase.h include (Task 4 reintroduces it)                                |
-| `bc2b4f3` | docs: Promotion — make post-clamp boundary invariant + loop-default-name choice visible                 |
-| `190e92e` | feat: promotion — mint Phrase wrapper when Mark In is outside any Phrase                                |
-| `49dc6ed` | refactor: Promotion — designated init returns + tighten mint test tape assertions                       |
-| `5417a0d` | test: promotion — lock down straddle clamping to host Phrase boundary                                   |
-| `d7f3cef` | test: promotion — defensive throw on degenerate captured region                                         |
-| `a81ad9f` | feat: MainComponent — onMarkOut auto-promotes captures into the session tree                            |
-| `aa96b1e` | refactor: PromotionResult — surface hostPhraseName to consumers; drop announceCapture re-walk           |
-| `3946ef7` | feat: MainComponent — undo of a promotion restores AwaitingOut + original in-point                      |
-| `5cafe4e` | feat: MainComponent — onRedo symmetrically clears AwaitingOut to prevent duplicate-Loop bug             |
-| `519de5d` | feat: CaptureBanner — tap to undo within the visible window                                             |
-| `1b1d14e` | docs: continue.md + todo.md DemoSession entry + onRedo edge-case comment + UG fix                       |
-
-The earlier `9a414fb` and `807f103` commits (this session's brainstorm
-+ plan output: design spec, user-guide chapter 1, todo deferral entry,
-implementation plan) are the documents that the 17 implementation
-commits realize.
+**Policy change bundled in the same session:** the
+"GitHub-handled-in-a-separate-terminal" memory was replaced with
+`feedback-claude-commits-and-pushes-master`. Claude now handles both
+sides of the local→remote flow on this repo.
 
 ---
 
-## 3. The shipped capture/promotion behavior
+## 2. This session's pick — Pick B: shared-placement architecture
 
-What the operator can do today:
+The brainstorm-deferred big topic. The brief lives in `todo.md:42`.
 
-1. **Arm** an input → **Mark In** at the start of a phrase → **Mark Out**
-   at the end. The system mints a fresh Phrase (PhraseMetadata
-   `role="capture"`, empty name) at the song root containing one Loop
-   child whose `TapeReference` carries the captured region's tape +
-   LMC times. A Pill appears on the timeline immediately. Banner shows
-   `Phrase captured · X.XX s · tape #YYY`.
+### The problem
 
-2. **Mark In with the playhead inside an existing Pill, then Mark Out**
-   → the system adds a new Loop child to that Phrase. No new Pill;
-   the existing Pill quietly gains another layer. Banner shows
-   `Loop added to <hostName> · X.XX s · tape #YYY`.
+Today, `arrangement::sequence` (`core/src/Arrangement.cpp:60`,
+`placedAt`) creates **per-placement Constituent copies**. When the
+operator says "verse plays 3 times," the data model holds 3 separate
+`Constituent` objects that happen to share the same `ConstituentId`.
+The capture-promotion runtime guard (`promotion::promote`, throws
+`std::logic_error` if a `ConstituentId` appears more than once) is the
+write-protect that catches this today — its existence is a *receipt*
+that the data model and the operator's mental model disagree.
 
-3. **Straddle** (Mark In inside a Phrase, Mark Out past the host's
-   end): **Mark In wins** — the Loop becomes a child of the host
-   Phrase whose span contains Mark In, with the Loop's *Constituent*
-   boundaries clamped to the host. The `TapeReference` keeps the
-   *unclamped* original LMC times so the audio beyond the host
-   boundary remains referenceable.
+The operator's musical model: **"the verse plays 3 times, sharing
+common layers (drums, bass, rhythm) but with per-instance vocal
+variations."** Repeated phrases should be **shared by reference** with
+**per-instance overlay buckets** for the differentiating layers.
 
-4. **Undo** (bottom-bar button or banner-tap within the 1.5 s fade
-   window) reverts the Constituent tree AND restores `CaptureSession`
-   to `AwaitingOut` with the original Mark In + tape intact. The
-   operator can immediately Mark Out at a different time, or Disarm
-   to abandon — no need to re-arm and re-Mark-In.
+### Why this is the right next pick
 
-5. **Redo** symmetrically clears AwaitingOut and replays the
-   Constituent edit, returning to the Armed-no-pending-In state the
-   original promotion produced.
+- It is the largest single unblocking for M8 (ensemble / multi-tape
+  capture) and the proper completion of M3's arrangement story.
+- The capture-promotion runtime guard is the *only* thing keeping
+  multi-instance correctness today. As soon as the operator wants
+  verse × 3 in the demo session, the guard fires. The guard is the
+  IOU; this work is paying it.
+- It is bounded enough to be a focused multi-session effort:
+  brainstorm → spec → plan → execute, the same loop that produced
+  capture-promotion.
 
-6. **Multi-instance guard:** `promote()` throws `std::logic_error` if
-   any `ConstituentId` appears more than once in the tree. Today the
-   demo session has unique ids so this never fires; it's the explicit
-   gate that catches the day shared-placement architecture lands and
-   `arrangement::sequence` starts producing repeated placements with
-   shared ids. Error message points the operator at `todo.md`.
+### The six steps (verbatim from `todo.md:68-86`)
 
-### Promotion semantics — one-paragraph summary
+1. **Settle Path B from the brainstorm:** the arrangement layer
+   becomes a sequence of `(Phrase ChildPtr, Position, optional
+   overlay-children)` tuples. The Phrase ChildPtr is shared across
+   placements.
+2. **Design the per-instance overlay UX** — where overlays attach in
+   the data model, how the timeline distinguishes shared vs overlay
+   rendering, whether overlays are themselves Phrase-shaped or a new
+   struct.
+3. **Design the "fork this placement into its own Phrase" gesture** —
+   the escape hatch for the rare "this verse is special" case (e.g.
+   the operator wants verse 3 to permanently diverge — drum fill,
+   re-harm, different feel).
+4. **Decide undo semantics across instances:** one undo entry =
+   all-instances revert, or per-instance? Both have arguments —
+   operator-visible decision.
+5. **Extend `promotion::promote` to handle the multi-instance case** —
+   remove the runtime guard at `core/src/Promotion.cpp` (the one that
+   throws on duplicate ids), propagate Loop adds across all
+   Constituents matching the host id, handle overlay vs shared
+   attachment based on operator gesture.
+6. **Update `selectTimelineView`** to render shared vs forked
+   placements distinguishably (visual cue — maybe a tie-bar across
+   shared instances, or a per-instance number badge).
 
-Mark Out = auto-promote. The playhead position **at Mark In** decides
-where the new Loop attaches: inside an existing Phrase span → Loop
-becomes a child of that Phrase; outside any Phrase → mint a new
-Phrase wrapper at the song root, containing the Loop. Loops are
-leaves with `TapeReference`; Phrases are containers with
-`PhraseMetadata`. A Loop is never standalone in the tree (the
-convention; enforced by the promotion code path, not by the
-permissive data model).
+### Suggested session shape
+
+Open with **brainstorming** (the
+`superpowers:brainstorming` skill — the same one that produced
+capture-promotion). The brainstorm output should be a design spec at
+`docs/superpowers/specs/2026-05-16-shared-placement-design.md`
+covering at minimum:
+
+- The new arrangement data shape (Path B from step 1 above; sketch
+  the C++ type signature).
+- Where overlays attach (step 2). Mock data shape for one verse
+  with one shared layer and one per-instance overlay.
+- The fork gesture (step 3). Where it lives in the UI; what it does
+  to the data; whether it's reversible (probably no — explicit
+  divergence intent).
+- The undo decision (step 4). Pick one with stated rationale —
+  later sessions can revisit if the operator dislikes it in
+  practice, but the spec needs a single answer to plan against.
+- A migration story for the demo session — verse currently plays
+  once; the demo can stay single-instance, or the spec can promote
+  it to verse × 3 as a built-in proof of the new shape.
+
+After the spec lands and the user approves, the next session writes
+an implementation plan at
+`docs/superpowers/plans/2026-05-16-shared-placement.md` (mirror the
+structure of `docs/superpowers/plans/2026-05-15-capture-promotion.md`
+which delivered the prior pick across 17 commits).
+
+### Likely scope of the *first* implementation commit
+
+The brainstorm shape determines this, but a reasonable wager is:
+
+- Extend `Arrangement.h` / `Arrangement.cpp` with the new shared-
+  placement layer struct (without yet touching call sites).
+- Add tests that lock the new struct's behavior under copy-on-write
+  and id-sharing.
+- *Do not* touch `Promotion.cpp`'s guard yet — it stays as the
+  load-bearing safety net until step 5.
+
+Then subsequent commits unwind the per-placement copies in
+`arrangement::sequence`, teach `TimelineViewState` the new shape,
+land the overlay UX, land the fork gesture, and finally tear out the
+promotion guard.
+
+### Files most likely to change (from `todo.md`)
+
+- `core/include/sirius/Arrangement.h`
+- `core/src/Arrangement.cpp`
+- `core/include/sirius/Constituent.h` (possibly — depends on whether
+  overlay buckets attach to Constituent or live on the layer struct)
+- `ui/src/TimelineViewState.cpp` (rendering distinction)
+- `ui/include/sirius/UndoStack.h` (if step-4 undo semantics need a
+  new entry type)
+- `core/src/Promotion.cpp` (the guard removal, step 5; far in the
+  future)
+- `docs/Sirius Looper User Guide.md` (Roadmap section now; new
+  chapter once the feature lands)
 
 ---
 
-## 4. Architecture decisions made or preserved this session
-
-| Decision | Rationale |
-|---|---|
-| `core/sirius::promotion` is a pure-function module mirroring `core/sirius::arrangement`. | Promotion is musical logic, not GUI. Lives in `core/`, JUCE-free, fully unit-testable. |
-| `promote()` takes `IdAllocator = std::function<ConstituentId()>` callback rather than two id parameters. | `ConstituentId` is project-wide (not per-type). Host-Phrase case allocates one id, mint case allocates two. Callback boundary lets the function call as needed without burning an id. |
-| Multi-instance write-protect is a runtime throw, not a compile-time constraint. | Data model is dynamically permissive (`Constituent` can carry any combination of metadata); the convention is enforced at the gateway. The throw points at the `todo.md` entry by name so the failure mode is recoverable through documented work. |
-| Undo restoration of capture state is achieved by extending `UndoStack::Entry` with an optional `CaptureRestorePoint`, not by tracking parallel state. | `UndoStack` already manages per-entry data; adding restore-point keeps capture-state lifetime co-located with the entry it belongs to (eviction at depth-cap is automatic). |
-| `MainComponent::onUndo` reads `currentEntryRestorePoint()` *before* `undo()`; `onRedo` reads it *after* `redo()`. | Undo wants to restore the state that existed *before* the entry being left. Redo wants to clear to the state that existed *after* the entry being landed on. Asymmetry is correct and documented in code comments. |
-| The `M3 simplification` (1:1 conceptual ↔ LMC) is documented in `Promotion.h` and `Promotion.cpp`. | When real tempo maps land later, the boundary computation in `promote()` will need a `TempoMap::applyInverse` — the comments make this an unmissable known limitation. |
-| The DemoSession intro/outro Phrase-AND-Loop hybrids are deferred, not retrofitted. | Restructuring would touch view-state snapshot tests; cleaner as a focused follow-up commit. Tracked in `todo.md`. |
-| Whitepapers + license docs moved to `docs/`. | The user explicitly asked. Operator + license files (`continue.md`, `todo.md`, `LICENSE`) stay at root. |
-| The user guide is its own document, separate from the white paper. | White paper = *why*; user guide = *how*. Separate audiences. New convention saved as memory. |
-
----
-
-## 5. Test + build state — restoration commands
+## 3. Build + test state (current head: `001f314`)
 
 ```bash
 cd "/Users/larryseyer/Sirius Looper"
 rm -rf build && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
-./build/tests/SiriusTests                            # expect: 233 / 233 pass, 4124 assertions
-./build/tests/SiriusTests "[promotion]"              # 7 / 7 promotion test cases
+./build/tests/SiriusTests            # expect: 235 / 235, 4145 assertions
+./build/tests/SiriusTests "[promotion]"     # 8 cases (was 7)
+./build/tests/SiriusTests "[demoSession]"   # 1 case (new)
 ```
 
-**Promotion test cases:**
-- `[promotion][guard]` — multi-instance write-protect throws.
-- `[promotion][host]` — Loop becomes child of host Phrase.
-- `[promotion][mint]` (×2) — empty root mints Phrase + Loop; gap between Phrases mints a fresh Phrase.
-- `[promotion][straddle]` — Loop bounds clamp to host; TapeReference times unclamped.
-- `[promotion][defensive]` — zero-duration / reversed-bounds throws.
-- `[undo][promotion]` — `UndoStack` round-trips `CaptureRestorePoint`.
+`.app` bundle is at `build/app/SiriusLooper_artefacts/Release/Sirius Looper.app`.
+Operator-side verification of the Pick A change was completed by the
+user this session — the intro/outro Pills render unchanged and the
+host-capture banner correctly names intro/outro as Phrase hosts.
 
-The `.app` bundle is at:
-```
-build/app/SiriusLooper_artefacts/Release/Sirius Looper.app
-```
-
-(Do **not** `open` it as the controller. Hand the path to the user
-for operator verification — see §6.)
+For Pick B specifically, expect *frequent* unit-test-only iterations
+during the brainstorm and the first implementation commits — there's
+no operator-visible UI change until step 6, and arrangement-layer
+changes are the kind of thing the headless test harness should catch
+fully before any .app exercise.
 
 ---
 
-## 6. Operator-side end-to-end verification (user runs in their terminal)
+## 4. Architectural ground truth carried into Pick B
 
-The next-session controller's *first* job is to ask the user to run
-this verification before picking new work, since the
-capture-promotion changes are not unit-test-reachable.
+These are invariants the prior sessions established. The Pick B
+design must respect or explicitly relax each one.
 
-```bash
-cd "/Users/larryseyer/Sirius Looper"
-rm -rf build && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build
-./build/tests/SiriusTests       # confirm 233 / 233
-open "build/app/SiriusLooper_artefacts/Release/Sirius Looper.app"
-```
-
-Then in the app:
-
-1. **Pass 1 (build sections):** Arm an input. Mark In, Mark Out at
-   different playhead positions to mint three fresh Phrases as the
-   playhead moves forward. Each Mark Out should produce a banner
-   reading `Phrase captured · X.XX s · tape #YYY` and a new Pill on
-   the timeline.
-2. **Pass 2 (overdub):** Scrub the playhead to inside an existing
-   Pill. Switch focus to a different input (per-row arm in the
-   Preparation tab). Mark In, Mark Out. Banner reads
-   `Loop added to <name> · X.XX s · tape #YYY`. No new Pill, but
-   the diagnostics line's `Regions: N` count goes up.
-3. **Recovery — banner tap:** Mark In + Mark Out. Within 1.5 s, tap
-   the banner. Pill disappears. Mark Out is *immediately* available
-   without re-arming (CaptureSession is back in AwaitingOut). Move
-   the playhead, hit Mark Out — a new Pill appears at the new span.
-4. **Recovery — bottom-bar Undo:** Same as #3 but with the bottom-bar
-   Undo button instead of the banner. Same outcome.
-5. **Redo after Undo:** After #3 or #4, hit Redo. The Pill returns.
-   Hit Mark Out — verify it does NOT mint a duplicate Loop (this is
-   the bug the `5cafe4e` symmetric `onRedo` fix prevents).
-6. **Crashes:** check `~/Library/Logs/DiagnosticReports/Sirius Looper-*.crash`
-   after the session. Should be empty.
-
-If anything fails, the issue is likely subtle (banner z-order, click
-intercepts, refresh-call ordering). None of these are in unit-test
-reach. Surface the failure mode + steps to reproduce; debug from there.
+| Invariant | Source | Notes for Pick B |
+|---|---|---|
+| Loops are leaves with `TapeReference`; Phrases are containers with `PhraseMetadata`. No hybrid Constituents. | This session's `[demoSession][shape]` test + tightened `findHostRecursive`. | Overlay buckets must not reintroduce hybrids. If overlays live on a Constituent, that Constituent must still be one or the other, not both. |
+| Constituents are immutable; every edit is copy-on-write with shared subtrees. | `Constituent.h` (lines 34-44 docstring). | Sharing a Phrase ChildPtr across placements *is* already idiomatic — the prior shape just didn't surface that as an explicit construct. Path B is "make it the primary construct," not "introduce sharing." |
+| `ConstituentId` is project-wide and currently expected to be unique within a tree (enforced today by `promotion::promote`). | `Promotion.cpp` guard. | Pick B explicitly **breaks** this. The new model is "shared-by-reference implies shared id across placements is *correct*, not an error." The guard goes away in step 5. |
+| The M3 simplification (1:1 conceptual ↔ LMC, no tempo map yet) is documented in `Promotion.h/.cpp`. | This session preserved it. | Pick B should not couple itself to this — when tempo maps land, the shared-placement design must still hold. |
+| The promotion result type carries `hostPhraseName` so the banner can show it. | This session preserved it. | Per-instance capture in Pick B may need a richer description ("instance 2 of verse"). Banner copy is an operator-visible API surface. |
 
 ---
 
-## 7. Suggested next work
+## 5. Open questions to surface in the brainstorm
 
-After the operator-side verification (§6), the highest-value picks
-in `todo.md` (in order of strength):
+These are the questions that the prior brainstorm punted on — the
+`todo.md` entry already named most. List them up front so the
+brainstorm doesn't redo the discovery.
 
-### Pick A — DemoSession Phrase-vs-Loop reconciliation (small, ~1 hour)
-
-Top entry in `todo.md`. The capture-promotion design teaches
-"Loops are leaves; Phrases are containers." The middle phrase in
-`DemoSession::buildDemoSession()` (the verse with two layered Loop
-children) honors this. **The intro and outro do not** — both attach
-`PhraseMetadata` *and* `TapeReference` to the same Constituent,
-making them Phrase-AND-Loop hybrids that fit neither category cleanly.
-
-Operationally `promote()` still works — capturing into intro/outro
-adds a Loop child to a Constituent that already has its own
-`TapeReference`. The banner reads correctly. But the data shape
-contradicts the doc.
-
-**To finish:** rewrite intro and outro to be Phrase-only shells, each
-containing one `TapeReference`-bearing Loop child (mirror the verse's
-structure). Update view-state test expectations that depend on the
-prior shape (likely `PerformanceViewStateTests`,
-`TimelineViewStateTests`, `PreparationViewStateTests`). Once green,
-optionally tighten `findHostRecursive` in `core/src/Promotion.cpp` to
-`isPhrase() && !tapeReference()` so the convention is guarded by both
-data and code.
-
-### Pick B — Shared-placement-with-per-instance-overlays architecture (large, multi-session)
-
-Second entry in `todo.md`. The brainstorm-deferred big topic. The
-operator's musical model is "the verse plays 3 times, sharing common
-layers (drums, bass, rhythm) but with per-instance vocal variations."
-Today `arrangement::sequence` creates per-placement Constituent
-copies — each placement is a distinct Constituent object that happens
-to share the same id. The convention requires shared-by-reference
-with per-instance overlay buckets.
-
-Six steps in the `todo.md` entry. Probably wants its own brainstorm →
-spec → plan → execute cycle (the same flow that produced
-capture-promotion this session).
-
-### Pick C — Operator's choice from `todo.md`
-
-Other deferrals in `todo.md`:
-- Plugin scanner crash + redesign (waits on a crash report from
-  `~/Library/Logs/DiagnosticReports/`).
-- OTTO L&F integration (its own dedicated session; first question is
-  module-home — 4 options ready in the entry).
-- macOS Load-dialog TCC bug (Drag-and-drop is the workaround;
-  Developer-ID signing is the proper fix).
-- Session-as-directory format (V2 §7.8) — gated on the Load-dialog bug.
-- Transient capture announcement / capture-history widget — partially
-  superseded by auto-promotion this session, but the `todo.md` entry
-  is still preserved for context.
-- Various M2 audio-device wiring and M0 CI items the operator owes.
+1. **Overlay attachment point.** Do overlays attach to (a) the
+   shared Phrase ChildPtr (impossible — it's shared, mutating it
+   would affect all instances), (b) the layer-struct tuple (per
+   placement), or (c) a new per-instance Constituent that wraps the
+   shared Phrase? Each has different undo and rendering implications.
+2. **Fork irreversibility.** "Fork this placement into its own
+   Phrase" — is it reversible? Probably no (explicit divergence
+   intent), but the spec must say.
+3. **Undo grain.** Per-instance vs all-instances. Currently undo is
+   per-edit (`UndoStack::Entry`), and a multi-instance edit produces
+   one entry. The natural semantics are "all-instances revert" but
+   the operator may want per-instance for surgical undo of an
+   overlay add.
+4. **Timeline rendering.** Should three shared placements of a verse
+   render as one tied-together visual group with a "× 3" badge, or
+   three side-by-side Pills with a subtle connecting line? The
+   brainstorm should produce a sketch.
+5. **Capture into a shared placement.** When the operator captures
+   into instance 2 of a shared verse: does the new Loop become
+   (a) a shared layer added to the underlying Phrase (visible in all
+   three instances), or (b) an overlay attached to instance 2 only?
+   Operator gesture must distinguish these. Probably the default
+   should be "shared" (the common case) with a modifier-held gesture
+   for "this instance only."
+6. **Demo session migration.** Does the spec promote the demo verse
+   to verse × 3 to exercise the new shape natively, or stay
+   single-instance with new tests covering the shared case
+   synthetically? Recommend promoting it — the demo is the canonical
+   reference operators look at first.
 
 ---
 
-## 8. Milestone status snapshot
-
-| Milestone | Status |
-|---|---|
-| M0 — skeleton + CI | unchanged: operator owes FFmpeg spike + window-launch + remote-push CI |
-| M1 — conceptual-time core | done |
-| M2 — real-time foundation, membrane, ASRC | headless half done; operator owes device wiring + loopback calibration + in→tape→loop test |
-| M3 — Constituent hierarchy + arrangement + render pipeline + minimal UI | **substantially advanced this session**: capture promotion is the M3 capture flow's actual completion. Captures are now persistent in the Constituent tree, not ephemeral RAM. Undo is non-destructive of capture state. CaptureBanner is glanceable + tappable. |
-| M4 — persistence + capability tiers + overload protection | done within current single-file scope; §7.8 directory format still deferred |
-| M5 — plugin hosting + parameter view | unchanged: operator-reported scanner crash + scan-strategy redesign deferred |
-| M6 — video | unchanged |
-| M7 — full UI | **advanced**: CaptureBanner is now interactive (tap-to-undo); promotion makes captures Pills on the timeline immediately |
-| M8 — ensemble (incl. multi-tape capture) | unchanged: gated on the shared-placement architecture |
-
----
-
-## 9. Open questions (carry-forward)
-
-- **Where promoted Loop Constituents attach** — *closed* this session
-  (playhead-at-Mark-In rules; host wins, mint at root if no host).
-- **Standalone Loops on the timeline** — *closed* this session (the
-  convention forbids them; every Loop has a Phrase parent).
-- **Performer-side role-fillable phrase UX** — engine ships; runtime
-  UX still on the suggested-features list.
-- **Multiple grammatical links per Pill** — open.
-- **M6 video format strategy** — unchanged.
-- **M8 transport choice** — unchanged.
-
----
-
-## 10. Authoritative references
+## 6. Authoritative references
 
 - `~/.claude/CLAUDE.md` — global rules (auto-loaded).
 - `~/.claude/projects/-Users-larryseyer-Sirius-Looper/memory/MEMORY.md`
-  — auto-memory index (auto-loaded).
+  — auto-memory index (auto-loaded). New entry this session:
+  `feedback-claude-commits-and-pushes-master`.
 - This file (`continue.md`) — session state.
-- `todo.md` — deferred items register.
-- `docs/Sirius Looper Whitepaper V2.md` — conceptual model.
-- `docs/Sirius Looper User Guide.md` — operator-facing how-to (new
-  this session).
+- `todo.md` — deferred items register. The shared-placement entry at
+  line 42 is this session's primary brief.
+- `docs/Sirius Looper Whitepaper V2.md` — conceptual model. Parts
+  VII–IX are most relevant.
+- `docs/Sirius Looper User Guide.md` — operator-facing how-to.
 - `docs/superpowers/specs/2026-05-15-capture-promotion-design.md` —
-  the design that this session realized.
-- `docs/superpowers/plans/2026-05-15-capture-promotion.md` — the
-  10-task implementation plan (all complete).
-- OTTO source at `/Users/larryseyer/AudioDevelopment/OTTO` —
-  particularly `src/otto-plugin/ui/OTTOColours.h` and
-  `OTTOLookAndFeel.h/cpp` plus `assets/Fonts/`. Relevant when L&F
-  integration becomes the active topic.
+  prior session's spec. §3 documents the runtime guard that this
+  session's pick will eventually remove. Mirror the structure when
+  writing the new spec.
+- `docs/superpowers/plans/2026-05-15-capture-promotion.md` — prior
+  session's plan (10 tasks, all complete). Mirror the structure
+  when writing the new plan.
 
-### Project memory files
+### Project memory files (auto-loaded)
 
 - `feedback_clean_builds.md` — always `rm -rf build` before GUI
   testing.
@@ -372,11 +312,13 @@ Other deferrals in `todo.md`:
   gesture is mandatory.
 - `feedback_defer_big_design_to_own_session.md` — when a major new
   design topic surfaces mid-session, write a comprehensive `todo.md`
-  entry and stay on the current path.
-- `feedback_github_handled_in_separate_terminal.md` — Claude
-  commits locally on master only; user handles push/PR in a parallel
-  terminal. **Do not push or open PRs.**
+  entry and stay on the current path. **The reason this session
+  exists.**
+- `feedback_claude_commits_and_pushes_master.md` — Claude commits
+  to master and pushes to `origin/master`. No PRs, no force-push.
+  `bu.sh` is local-backup only and Claude doesn't run it. **New
+  this session.**
 - `project_sirius_branding_and_otto.md` — sister apps with shared
-  visual identity (deferred).
-- `project_user_guide_alongside_whitepaper.md` — user guide doc lives
-  in `docs/`, paired with the white paper; new this session.
+  visual identity (deferred to its own session).
+- `project_user_guide_alongside_whitepaper.md` — user guide doc
+  lives in `docs/`, paired with the white paper.
