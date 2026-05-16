@@ -163,8 +163,21 @@ Plus the pre-existing items already in `todo.md`:
 
 ## 4. Next milestone — candidates
 
-The shared-placement milestone closes a major architectural arc.
-The next big-topic candidates, in roughly priority order:
+The shared-placement milestone closes a major architectural arc, and
+session format v2 closes its persistence boundary. The next big-topic
+candidates, in roughly priority order:
+
+0. **Developer ID signing milestone (its own session).** Two
+   independent blockers — the Load dialog `.sirius.json` greying and
+   the new `bash/smoke-persistence.sh` GUI smoke script — both reduce
+   to the same root cause: the bundle is ad-hoc-signed and below
+   macOS's TCC trust threshold for protected-folder access AND for
+   being a System Events target. One signing arc resolves both, and
+   OTTO will need the same approach (sister-app branding). See the
+   top entry in `todo.md` for the full scope sketch: Developer ID
+   cert, entitlements file, hardened runtime, CMake wiring,
+   notarization. Distinct skillset from engine work — deserves a
+   focused session, not a side errand.
 
 1. **Persistence: session-format encoding of sharing — DONE
    2026-05-16, commit `a1b6ed3`.** Each shared Phrase is now emitted

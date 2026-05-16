@@ -1,5 +1,69 @@
 # Sirius Looper — Deferred Items
 
+### 2026-05-16 — Developer ID signing milestone (its own session)
+
+- **Why this is its own session:** signing / notarization is a
+  distinct skillset (Apple Developer account, keychain identity
+  management, entitlements, hardened runtime, `codesign`, `notarytool`,
+  stapling) — not a Sirius-engine task. It deserves a focused arc, not
+  a side errand inside a feature session. Per the
+  `feedback-defer-big-design-to-own-session` memory pattern.
+- **What it unblocks (two symptoms, one root cause):**
+  1. `bash/smoke-persistence.sh` — `tell process "Sirius Looper" to ...`
+     fails with AppleScript error `-25211` because the bundle is
+     ad-hoc-signed. The same call against `Finder` works from the same
+     shell, so this is process-targeted denial, not a TCC scope issue.
+     See the 2026-05-16 entry below.
+  2. The Load dialog greys `*.sirius.json` files in `~/Downloads` — the
+     four protected-folder TCC keys we added to `Info.plist` are inert
+     against an ad-hoc bundle. See the 2026-05-15 entry below for the
+     full failed-attempt log; the working hypothesis there reaches the
+     same conclusion.
+- **Current bundle signing state:**
+  `codesign -dv "Sirius Looper.app"` reports
+  `flags=0x20002(adhoc,linker-signed)`, `Signature=adhoc`, no
+  entitlements. Below macOS's TCC trust threshold for both directions:
+  the bundle cannot be granted protected-folder access, and other
+  apps' System Events automation cannot target its processes.
+- **What's needed to finish (sketch — actual session will tighten this):**
+  1. **Apple Developer Program enrollment** if not already in place.
+     Developer ID Application certificate downloaded into the user
+     keychain.
+  2. **Entitlements file** (`app/SiriusLooper.entitlements` or similar)
+     containing at minimum:
+       * `com.apple.security.files.user-selected.read-write` (for
+         NSOpenPanel / NSSavePanel access — fixes the Load dialog
+         greying)
+       * Any audio-input entitlements the live capture path needs
+         (`com.apple.security.device.audio-input`).
+  3. **Hardened runtime** enabled via CMake / JUCE plist merge so the
+     resulting binary qualifies for notarization.
+  4. **CMake wiring**: extend the existing `PLIST_TO_MERGE` /
+     `XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY` configuration so
+     `cmake --build` produces a Developer-ID-signed bundle by default
+     (or via a `-DSIRIUS_SIGN=ON` opt-in to keep dev iteration cheap).
+  5. **Notarization** via `notarytool submit ... --wait` and `stapler
+     staple` on the resulting `.app`. Decide whether this runs every
+     build or only on operator-verification builds — notarization is
+     network-round-trip, slow to bake into every iteration.
+  6. **Verification matrix** post-signing:
+       * `bash/smoke-persistence.sh` exits 0 end-to-end.
+       * Load dialog allows selection of `*.sirius.json` in
+         `~/Downloads` (the original symptom).
+       * `spctl -a -t exec -vv "Sirius Looper.app"` reports
+         "source=Notarized Developer ID".
+       * No regression to existing `SiriusTests` (headless tests don't
+         exercise the bundle, but the build paths share CMake).
+- **OTTO coupling:** OTTO will need the same signing approach
+  (sister-app branding policy per `project-sirius-branding-and-otto`).
+  Worth handling both apps in the same session — one cert, one
+  entitlements pattern, one notarization workflow — rather than
+  duplicating the work later.
+- **What this session should NOT do:** rewrite the persistence layer
+  to work around signing, ship the directory-format work (separate
+  entry below), or change anything about the operator-facing GUI. Pure
+  bundle/distribution work.
+
 ### 2026-05-15 — DemoSession intro/outro violate Phrase-vs-Loop convention
 
 - **Files:** `app/DemoSession.cpp` (lines ~46-80), possibly
