@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-16 (session format v2 — shared-placement now round-trips through save/load)
+# Session Continuation — 2026-05-16 (v2 persistence shipped; next session is Developer ID signing)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -11,23 +11,35 @@
 
 ## 0. Headline
 
-**Session format v2 shipped.** The serializer now emits each shared
-ChildPtr once, with subsequent occurrences encoded as
-`{ "ref": <id> }`. The deserializer rebuilds pointer-identity from
+**This session shipped session format v2** — the serializer emits
+each shared `ChildPtr` once, with subsequent occurrences encoded as
+`{ "ref": <id> }`; the deserializer rebuilds pointer-identity from
 the refs and runs `promotion::enforceSharedInstancesAreShared` on
-the loaded root before returning, so any document that lies about
-its sharing fails loud at load time rather than at the next edit.
-The verse × 3 demo now round-trips through Save / Load with the
-three wrappers still pointing at one Phrase.
+the loaded root before returning. The verse × 3 demo now round-trips
+through Save / Load with the three wrappers still pointing at one
+Phrase. Five commits on master, pushed (`a1b6ed3` engine, `7efc7ab`
+disk-roundtrip test, plus three docs commits). Test suite jumped
+from 250 / 4269 → **256 / 4283**, six new sections under
+`[sessionformat][sharing]`.
 
-Single commit on master, pushed: `a1b6ed3` —
-`feat: session format v2 — preserve shared-placement
-pointer-identity on load`. Test suite 255 / 4277 (was 250 / 4269);
-five new sections under `[sessionformat][sharing]`.
+**Next session is the Developer ID signing milestone** — pre-prepped
+during this session and queued at the top of `todo.md`. Two
+independent symptoms (the Load dialog `.sirius.json` greying, and
+the new `bash/smoke-persistence.sh` GUI smoke script returning
+AppleScript `-25211`) both reduce to one root cause: the bundle is
+ad-hoc-signed. Looking at OTTO at
+`/Users/larryseyer/AudioDevelopment/OTTO` surfaced the team ID
+(`RR5DY39W4Q`) and the CMake `set_target_properties()` pattern to
+copy, but also that OTTO's macOS desktop targets are ad-hoc-signed
+too — so the macOS `Developer ID Application` / hardened runtime /
+notarization work is genuinely new ground for both apps, and the
+sister-app branding policy says Sirius's signing block should
+backport to OTTO in the same arc. See §4 below for what's already
+prepped, and `todo.md` for the full port-ready scope sketch.
 
 The shared-placement milestone from earlier today (Sessions A + B +
 C, ten tasks of `docs/superpowers/plans/2026-05-16-shared-placement.md`)
-remains shipped — this session's work extended that milestone's
+remains shipped — this session's v2 work extended that milestone's
 in-memory invariant across the persistence boundary so it survives
 save and load.
 
@@ -161,60 +173,83 @@ Plus the pre-existing items already in `todo.md`:
 
 ---
 
-## 4. Next milestone — candidates
+## 4. Next milestone — Developer ID signing
 
-The shared-placement milestone closes a major architectural arc, and
-session format v2 closes its persistence boundary. The next big-topic
-candidates, in roughly priority order:
+**Queued and pre-prepped.** Open `todo.md` to the top entry
+(`2026-05-16 — Developer ID signing milestone`) for the full
+port-ready scope sketch. Quick orientation for the next session:
 
-0. **Developer ID signing milestone (its own session).** Two
-   independent blockers — the Load dialog `.sirius.json` greying and
-   the new `bash/smoke-persistence.sh` GUI smoke script — both reduce
-   to the same root cause: the bundle is ad-hoc-signed and below
-   macOS's TCC trust threshold for protected-folder access AND for
-   being a System Events target. One signing arc resolves both, and
-   OTTO will need the same approach (sister-app branding). See the
-   top entry in `todo.md` for the full scope sketch: Developer ID
-   cert, entitlements file, hardened runtime, CMake wiring,
-   notarization. Distinct skillset from engine work — deserves a
-   focused session, not a side errand.
+**Why it's first.** Two existing deferrals reduce to one root cause —
+the bundle is ad-hoc-signed (`codesign -dv` reports
+`flags=0x20002(adhoc,linker-signed)`), below macOS's TCC trust
+threshold for both protected-folder access and being a System Events
+automation target:
 
-1. **Persistence: session-format encoding of sharing — DONE
-   2026-05-16, commit `a1b6ed3`.** Each shared Phrase is now emitted
-   once with `{ "ref": <id> }` for repeat occurrences; the loader
-   rebuilds pointer-identity and runs the shared-instance guard
-   before returning. The directory-format work remains deferred in
-   `todo.md` (calibration / LMC discipline / tape bundling / TCC
-   bug); the shared-encoding concern is no longer one of its
-   blockers.
+- **2026-05-15** — Load dialog greys `*.sirius.json` files in
+  `~/Downloads`. Original symptom; six failed workarounds logged.
+- **2026-05-16** — `bash/smoke-persistence.sh` returns AppleScript
+  error `-25211` (process-targeted denial). Script is committed,
+  inert, ready to run once signing lands.
 
-2. **OTTO L&F integration.** Big, well-scoped, sister-app-aligned.
-   Has a four-option design choice already enumerated in `todo.md`
-   (shared-submodule decided; module location TBD between
-   new-top-level-repo / OTTO-canonical / Sirius-canonical / vendor-
-   first).
+One signing arc clears both. Sister-app policy says the macOS
+pattern Sirius proves should backport to OTTO in the same session.
 
-3. **The full "Repeating song sections" user-guide chapter.** Task 9
-   added a Roadmap bullet; the full chapter lands once the gestures
-   have been used in real performance and the language stabilises.
-   Needs operator time-on-instrument, not implementation time.
+**What's already prepped (port-ready):**
 
-4. **Spec §16 open items** (frozen during this milestone but worth
-   revisiting):
-   - Desktop accelerator: Option-click on Mark In for overlay,
-     parallel to the long-press touch gesture.
-   - Per-instance metadata beyond overlay Loops (per-placement
-     entrance/exit characters? Per-placement automation?).
-   - Phrase-shaped overlays (today overlays are Loops only).
+- **Team ID `RR5DY39W4Q`**, sourced from OTTO and saved to memory as
+  `project-apple-developer-team-id`. Same identity across all sister
+  apps.
+- **CMake snippet** modelled on
+  `/Users/larryseyer/AudioDevelopment/OTTO/src/otto-ios/CMakeLists.txt`
+  lines 258-272, adapted for macOS distribution: swap
+  `"Apple Development"` → `"Developer ID Application"`, add
+  `ENABLE_HARDENED_RUNTIME "YES"`, point at a macOS entitlements
+  file. Verbatim block in the `todo.md` entry.
+- **Minimum macOS entitlements keys** identified:
+  `com.apple.security.files.user-selected.read-write` (fixes the
+  Load-dialog symptom) and `com.apple.security.device.audio-input`
+  (live capture). Add `cs.allow-jit` only if a plugin scan needs it.
+- **Verification matrix** with concrete pass criteria: `codesign`
+  authority line, `spctl` `Notarized Developer ID`, smoke script
+  exits 0, Load dialog selects `.sirius.json` in `~/Downloads`,
+  `SiriusTests` still green.
 
-5. **M5 plugin scanner crash + redesign.** Lower priority unless
-   the user's plugin folder grows again.
+**What's NOT yet known (next session resolves):**
 
-6. **The three code-quality follow-ups in §3.** Bundleable as one
-   focused refactor commit; or distribute across the next milestone
-   as touched-while-passing-by opportunities (favouring the
-   `refreshAll()` extraction, since the next milestone will almost
-   certainly add a sixth refresh-quartet site).
+- Whether the `Developer ID Application` certificate is already in
+  the keychain (`security find-identity -p codesigning -v` will
+  show). OTTO uses `Apple Development` — a separate cert from
+  `Developer ID Application`. May need a fresh download from the
+  Apple Developer portal.
+- Whether the existing CMake gates (`-DSIRIUS_SIGN=ON` opt-in vs.
+  always-on) suit the workflow. Notarization is network-bound —
+  baking it into every iteration would hurt; gating it behind
+  operator-verification builds keeps dev cheap.
+- `notarytool` keychain-credential profile setup (one-time, but
+  needs to land in the session's deliverable so future builds
+  don't re-pay the setup cost).
+
+**Other big-topic candidates** (after signing, in rough priority):
+
+- **Session directory format** (`todo.md` 2026-05-15) — bundling
+  LMC discipline / per-device calibration / TapeStore audio into
+  the `.sirius/` archival unit per Whitepaper V2 §7.8. The
+  shared-encoding concern that previously blocked this is resolved;
+  the directory wrapper is the remaining work.
+- **OTTO L&F integration.** Sister-app visual alignment. Has a
+  four-option design choice already enumerated in `todo.md`
+  (shared-submodule decided; module location still TBD).
+- **The three code-quality follow-ups in §3.** Bundleable as one
+  focused refactor commit; favour the `refreshAll()` extraction —
+  the next UI milestone will almost certainly add a sixth
+  refresh-quartet site.
+- **Spec §16 open items** — Option-click overlay accelerator,
+  per-instance metadata beyond overlay Loops, Phrase-shaped
+  overlays.
+- **Full "Repeating song sections" user-guide chapter.** Needs
+  operator time-on-instrument before the language stabilises.
+- **M5 plugin scanner crash + redesign.** Lower priority unless the
+  plugin folder grows again.
 
 ---
 

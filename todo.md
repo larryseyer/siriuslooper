@@ -873,12 +873,12 @@ already held (same licensing model as the sister app OTTO; see
   AppleScript error `-25211` because the bundle is ad-hoc-signed
   (`codesign -dv` reports `flags=0x20002(adhoc,linker-signed)`).
   `tell process "Finder"` works from the same shell; this is
-  process-specific, not a TCC scope issue. Same root cause as the next
-  entry (Load dialog file-greying).
-- **What's needed to finish:** Developer ID Application signing on the
-  `.app`, OR an entitlement / hardened-runtime configuration that
-  brings the bundle above the trust threshold. Resolving the next
-  entry's signing problem unblocks this entry automatically.
+  process-specific, not a TCC scope issue. Same root cause as the
+  Load dialog file-greying (next entry below).
+- **What's needed to finish:** the Developer ID signing milestone at
+  the top of this file resolves both this entry and the Load dialog
+  one. No work on this entry directly — it lights up automatically
+  when signing lands.
 - **State left in tree:** `bash/smoke-persistence.sh` is committed and
   executable, with a header documenting the precondition. It exits
   `2` ("window-1 never appeared") on an ad-hoc bundle because the
@@ -888,6 +888,12 @@ already held (same licensing model as the sister app OTTO; see
 
 ### 2026-05-15 — Load dialog still cannot select `.sirius.json` on macOS
 
+- **Resolution path:** the Developer ID signing milestone at the top
+  of this file (2026-05-16) is the agreed fix for this entry. The
+  working-hypothesis section below independently reached the same
+  conclusion (ad-hoc bundle below TCC trust threshold). No further
+  workaround attempts on this entry — they're all exhausted; sign the
+  bundle.
 - **Files:** `app/MainComponent.cpp` (`chooseFileAndLoad`),
   `app/CMakeLists.txt` (the `PLIST_TO_MERGE` TCC keys).
 - **What was deferred:** the macOS NSOpenPanel greys out
