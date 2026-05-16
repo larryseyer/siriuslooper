@@ -1,0 +1,983 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>White Paper V1 · Sirius Looper</title>
+  <meta name="description" content="The historical predecessor to White Paper V2. Establishes the conceptual foundation — phrases, loops, retroactive capture, and the first articulation of looping as the capture and repetition of musical ideas.">
+
+  <link rel="canonical" href="https://siriuslooper.com/docs/whitepaper-v1/">
+  <link rel="icon" type="image/svg+xml" href="/assets/img/favicon.svg">
+  <link rel="alternate icon" href="/assets/img/favicon.svg">
+
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Sirius Looper">
+  <meta property="og:title" content="White Paper V1 · Sirius Looper">
+  <meta property="og:description" content="The historical predecessor to White Paper V2. Establishes the conceptual foundation — phrases, loops, retroactive capture, and the first articulation of looping as the capture and repetition of musical ideas.">
+  <meta property="og:url" content="https://siriuslooper.com/docs/whitepaper-v1/">
+  <meta property="og:image" content="https://siriuslooper.com/assets/img/og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="White Paper V1 · Sirius Looper">
+  <meta name="twitter:description" content="The historical predecessor to White Paper V2. Establishes the conceptual foundation — phrases, loops, retroactive capture, and the first articulation of looping as the capture and repetition of musical ideas.">
+  <meta name="twitter:image" content="https://siriuslooper.com/assets/img/og.png">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="/assets/css/site.css">
+
+  
+</head>
+<body class="page-doc">
+  <a href="#main" class="skip-link">Skip to main content</a>
+
+  <header class="site-header" role="banner">
+    <div class="container header-row">
+      <a href="/" class="brand" aria-label="Sirius Looper home">
+        <span class="brand-mark"><span class="brand-mark-accent">S</span>IRIUS</span>
+        <span class="brand-suffix">LOOPER</span>
+      </a>
+      <nav class="site-nav" aria-label="Primary">
+        <a href="/features/">Features</a>
+        <a href="/architecture/">Architecture</a>
+        <a href="/docs/user-guide/" aria-current="page">Docs</a>
+        <a href="/about/">About</a>
+        <a href="https://github.com/larryseyer/siriuslooper" class="nav-external" rel="noopener">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" role="main">
+    <article class="doc">
+  <div class="container doc-grid">
+    <aside class="doc-aside" aria-label="Document navigation">
+      <div class="doc-aside-inner">
+        <p class="doc-kicker">Sirius Looper · Documentation</p>
+        <h2 class="doc-title-aside">White Paper V1</h2>
+        <nav class="doc-toc" aria-label="On this page">
+          <p class="doc-toc-label">On this page</p>
+          <ol id="doc-toc-list"><!-- populated by signup.js companion --></ol>
+        </nav>
+        <p class="doc-aside-meta">
+          <a href="https://github.com/larryseyer/siriuslooper/blob/master/docs/Sirius%20Looper%20Whitepaper%20V1.md" rel="noopener">View source on GitHub →</a>
+        </p>
+      </div>
+    </aside>
+    <div class="doc-body prose">
+      <h1>White Paper V1</h1>
+      <p class="doc-subtitle">A Reference Architecture for Time-Domain Audio/Video Looping (Version 1.0)</p>
+      <p><strong>Status:</strong> Draft for review
+<strong>Version:</strong> 1.0
+<strong>License:</strong> TBD (intended for permissive public release)</p>
+<hr>
+<h2>Abstract</h2>
+<p>This paper proposes a reference architecture for audio/video loopers that rejects assumptions built into nearly every existing looper, and proposes a foundational reframe that follows from rejecting them.</p>
+<p>The rejected assumptions are: that audio sample clocks are a valid timing reference; that audio and video clocks can be synchronized to each other; that &quot;record&quot; is a fundamental operation; that the looper must protect the user from operating it; that time is a number; and that a loop is the unit of musical thought.</p>
+<p>The reframe is built on three principles that hold together:</p>
+<ol>
+<li>
+<p><strong>A phrase is a musical utterance.</strong> Phrases — not loops — are the unit of musical thought. A loop is a <em>mechanism</em> that a phrase may employ. A phrase may contain multiple loops, in multiple time domains, alongside non-looped material. Phrases have roles, intent, grammar, and internal time that may differ from the music surrounding them.</p>
+</li>
+<li>
+<p><strong>Time is a concept, not a number.</strong> The engine manipulates time symbolically — positions, structures, relationships — and renders to numerical time only at the membrane between digital and physical reality. This makes polymetric and polytemporal coexistence trivial, eliminates accumulated rounding error, and makes the system exact by construction rather than by representation precision.</p>
+</li>
+<li>
+<p><strong>A loop is an idea, and ideas are worth repeating.</strong> Every architectural decision exists to serve the capture, repetition, and arrangement of musical ideas without the friction that has always come with that capture.</p>
+</li>
+</ol>
+<p>What follows is built around a <strong>Logical Master Clock (LMC)</strong> treated as the only honest external timebase at the membrane, an <strong>always-running tape per input</strong> treated as the source of truth, a unified <strong>Constituent hierarchy</strong> (tape → loop → phrase → section → song → set) in which each level operates in its own conceptual time domain, and a user interface that trusts the musician absolutely.</p>
+<p>The result is a looper that can do things existing loopers cannot — including capturing polymetric phrases, supporting structural improvisation through role-fillable phrases, and reproducing micro-timing and feel exactly — while also doing the things existing loopers already do, without the friction that has always come with them.</p>
+<hr>
+<h2>Table of Contents</h2>
+<ul>
+<li><strong>Part I:</strong> First Principles</li>
+<li><strong>Part II:</strong> The Lies of Digital Time</li>
+<li><strong>Part III:</strong> Time as Concept</li>
+<li><strong>Part IV:</strong> The Logical Master Clock</li>
+<li><strong>Part V:</strong> The Engine</li>
+<li><strong>Part VI:</strong> The Tape</li>
+<li><strong>Part VII:</strong> The Constituent Hierarchy</li>
+<li><strong>Part VIII:</strong> Phrases</li>
+<li><strong>Part IX:</strong> Polymetric and Polytemporal Coexistence</li>
+<li><strong>Part X:</strong> Repetition</li>
+<li><strong>Part XI:</strong> Arrangement and Narrative</li>
+<li><strong>Part XII:</strong> The Ensemble</li>
+<li><strong>Part XIII:</strong> Fidelity and Resources</li>
+<li><strong>Part XIV:</strong> The Performer's Instrument</li>
+<li><strong>Part XV:</strong> What This Architecture Enables</li>
+<li><strong>Appendix A:</strong> Glossary</li>
+<li><strong>Appendix B:</strong> Decision Log</li>
+</ul>
+<hr>
+<h2>Part I — First Principles</h2>
+<p>Before any architecture, six principles. Everything that follows is a consequence of these.</p>
+<h3>1.1 A loop is an idea.</h3>
+<p>The loop is not a recording. It is not a buffer. It is not a time interval. Those are implementation details of the thing the loop <em>is</em>: <strong>a musical idea, captured in a form that allows it to be heard again.</strong></p>
+<p>This framing is not poetic indulgence. It is the only framing that produces a looper that serves musicians rather than confounds them. When the loop is treated as an idea, every design question becomes tractable: how do we capture ideas without losing them? How do we let ideas repeat in ways that feel musically alive? How do we let ideas combine into larger ideas? How do we let ideas develop? These are the questions a looper answers.</p>
+<h3>1.2 Ideas are worth repeating.</h3>
+<p>Repetition is not a feature of the looper. Repetition is the <em>point</em> of the looper. The performer captures an idea precisely because they want to hear it again. The architecture must therefore make repetition <em>musical</em> — alive, variable, responsive — rather than merely mechanical. The instant repetition becomes mechanical is the instant the idea dies.</p>
+<h3>1.3 A phrase is a musical utterance; a loop is one mechanism it may use.</h3>
+<p>A loop and a phrase are not the same thing. <strong>A phrase is a complete musical utterance</strong> — with its own internal shape, entrance, body, and resolution — containing whatever combination of looped and non-looped material the music demands. A loop is a <em>mechanism</em> by which content within a phrase may repeat. Phrases have grammar, roles, and intent that loops do not. A phrase may contain several loops which may or may not be related, alongside one-time content, alongside silence as content.</p>
+<p>This distinction reorganizes the entire architecture: the loop drops back to being a tool, and <strong>the phrase becomes the unit of musical thought.</strong> Arrangement happens at the phrase level and above; mechanism happens at the loop level and below.</p>
+<h3>1.4 Time is a concept, not a number.</h3>
+<p>The engine does not measure time. It manipulates time symbolically — positions, structures, relationships, hierarchies of nested time domains. Numerical time exists only at the membrane between digital and physical reality, where sound must actually emerge from a speaker. <strong>Inside the engine, everything is symbolic; only at the membrane does the symbolic become numerical.</strong></p>
+<p>This principle dissolves problems that have plagued digital audio for decades: accumulated rounding error, the impossibility of reconciling audio and video clocks, the difficulty of representing polymetric music, the loss of micro-timing under quantization. None of these are problems in conceptual time. They are problems that arise <em>only</em> when conceptual time is forced into a single numerical grid.</p>
+<h3>1.5 The looper trusts the user.</h3>
+<p>The user is a musician. They know what they want, when they want it, and how they want it. The looper's job is not to constrain, not to guide, not to second-guess, not to protect them from their own choices. <strong>The looper's job is to anticipate what the user is likely to want at any given moment, present that affordance, and then disappear.</strong></p>
+<p>Many design decisions in existing loopers can be traced to a quiet assumption that the user might make a mistake. That assumption is itself the failure. A looper built on trust will be vastly more powerful and vastly more transparent than one built on caution.</p>
+<h3>1.6 The looper's responsibility ends at the membrane.</h3>
+<p>The looper captures, repeats, arranges. It does <em>not</em> mix, route, EQ, dynamically process, or master. Those are downstream concerns with mature dedicated tools. A looper that respects its scope becomes the best possible front end to whatever downstream tools the user prefers.</p>
+<p>The single exception: <strong>arrangement is creation, not processing.</strong> The order in which phrases play, the sections they form, the songs they compose into, the transitions between them — these are part of the musical idea, not separate from it. The looper is responsible for arrangement at every level of the Constituent hierarchy.</p>
+<hr>
+<h2>Part II — The Lies of Digital Time</h2>
+<p>The most important sentence in this paper is one most audio engineers have never said out loud: <em><strong>there is no true time on any computer, only the best disciplined approximation.</strong></em> Every other architectural decision in this document depends on internalizing that statement.</p>
+<h3>2.1 The first lie: sample clocks</h3>
+<p>When an audio interface reports that it is sampling at 48 kHz, what it actually means is that an onboard crystal oscillator, divided down by a clock chip, is producing strobes that <em>approximately</em> arrive at 48,000 per second. The actual rate is determined by the crystal's manufacturing tolerance (typically ±10 to ±50 parts per million), its temperature, its age, the voltage on its supply rail, and acoustic shock to the housing. A &quot;48 kHz&quot; interface in a cold studio at the start of a session and the same interface in a warm room two hours later are running at different rates.</p>
+<p>Two audio interfaces nominally clocked at 48 kHz, recording the same source, will produce recordings whose lengths differ by milliseconds over a single song and seconds over a single set. There is no engineering trick that eliminates this. It is the nature of the substrate.</p>
+<h3>2.2 The second lie: frame clocks</h3>
+<p>Video clocks are worse. The nominal frame rates of professional video — 23.976, 24, 25, 29.97, 30, 50, 59.94, 60 — exist for reasons of broadcast compatibility, not for reasons of mathematical alignment with anything else. The 0.1% pulldown that produces 29.97 from 30 was a compromise for color NTSC's subcarrier spacing in 1953, and we are still living with it.</p>
+<p>Worse still: video frame timing is constrained by display vertical sync, which is itself determined by the panel's onboard clock, which is itself a crystal with all the imprecision of any other crystal. Frames are not delivered to the display &quot;at 60 Hz&quot; — they are delivered approximately every 16.67 milliseconds, with jitter that varies by GPU driver, OS scheduler, and load. Even &quot;frame-accurate&quot; video is, at the substrate level, approximately accurate.</p>
+<h3>2.3 The third lie: standards cannot be synchronized</h3>
+<p>It is mathematically impossible for 48,000 samples per second to be exactly synchronized to 29.97 frames per second. The numbers do not share a useful common divisor. Whatever apparent synchronization you observe is the product of one or both of those clocks being silently warped to make them appear to agree.</p>
+<p>The industry has built a vast technical infrastructure on the premise that these standards are real. They are not. They are conventions, and the conventions do not mathematically close.</p>
+<h3>2.4 The only honest answer</h3>
+<p>If sample clocks lie and frame clocks lie and the standards cannot be reconciled, then the only honest architectural response is to refuse to use any of them as a master timing reference. <strong>The master must be something else — something that does not pretend to know anything about audio samples or video frames, and against which both can be measured and corrected.</strong></p>
+<p>That something — at the <em>membrane</em>, where physical reality begins — is <strong>absolute time</strong>: a monotonic, high-resolution time reference that exists <em>above</em> the audio and video clocks and treats both as merely the imperfect substrates they actually are. Inside the engine, however, the answer is deeper still, and is the subject of the next part.</p>
+<hr>
+<h2>Part III — Time as Concept</h2>
+<p>The earlier draft of this paper treated absolute time as the master timebase throughout. That treatment was incomplete. <strong>Absolute time is the master at the membrane. Inside the engine, time is a concept — symbolic, hierarchical, exact by construction.</strong></p>
+<p>This part establishes the principle, its consequences, and the architectural pattern that follows from it.</p>
+<h3>3.1 The principle</h3>
+<blockquote>
+<p><strong>Time is a concept the system manipulates symbolically. Numerical time is a rendering, not a representation. The engine thinks in musical and structural relationships; the membrane renders those relationships against absolute time at the moment of audible production.</strong></p>
+</blockquote>
+<p>This is the same architectural pattern as <em>time-domain at the core, sample-domain at the membrane</em> — restated one level higher. Just as the engine renders symbolic time intervals to samples at the membrane, the engine now renders <strong>conceptual positions</strong> to <strong>numerical times</strong> at the membrane. The numerical world only exists where physics demands it.</p>
+<h3>3.2 What conceptual time means in practice</h3>
+<p>A loop's boundary is not &quot;47 milliseconds and 832 microseconds.&quot; It is a <em>position</em> — described in whatever conceptual terms the loop's context calls for:</p>
+<ul>
+<li>&quot;The downbeat of bar 1 of phrase A, in phrase A's local meter and tempo&quot;</li>
+<li>&quot;The third quintuplet of beat 4 of loop X&quot;</li>
+<li>&quot;The anchor where phrase B aligns to section C's boundary&quot;</li>
+</ul>
+<p>These are <strong>symbolic positions in conceptual time</strong>. They are exact because they are <em>defined</em> exactly, not because they are measured exactly. The exactness comes from the symbolic structure, not from precision of representation.</p>
+<h3>3.3 What this dissolves</h3>
+<p>Three categories of problem dissolve once conceptual time is accepted as the engine's substrate.</p>
+<p><strong>The PPQ problem.</strong> Existing systems must choose a tick resolution that accommodates every musical subdivision they want to support. 480 PPQ disallows septuplets. 3840 PPQ does too. To support 11-tuplets cleanly, the LCM gets very large. <em>In conceptual time, this problem does not exist.</em> A 7-tuplet is &quot;7 in the space of 4&quot; — a structural relationship, not a number on a grid. There is no shared grid that must accommodate every subdivision simultaneously.</p>
+<p><strong>The polymetric reconciliation problem.</strong> A 4/4 loop and a 7/8 loop in the same phrase cannot share a sample-level grid without one of them being approximated. <em>In conceptual time, they don't need to.</em> Each lives in its own conceptual time domain. They meet only at phrase boundaries, conceptually, and the rendering at the membrane resolves both to absolute time independently.</p>
+<p><strong>The accumulated-rounding problem.</strong> Any system that stores time as floating-point or fixed-grid integers accumulates error over thousands of operations. A loop in its hundredth cycle drifts from a loop in its first cycle. <em>In conceptual time, there is nothing to round.</em> The conceptual position of &quot;beat 3 of loop X, cycle 100&quot; is identical to &quot;beat 3 of loop X, cycle 1&quot; — same position, same definition, different rendering moment.</p>
+<h3>3.4 The hierarchy of time domains</h3>
+<p>Conceptual time is not flat. It is a <em>tree</em>, with each level potentially having its own structure:</p>
+<ul>
+<li><strong>Session time</strong> — the outermost domain, anchored to LMC absolute time</li>
+<li><strong>Song time</strong> — may have its own tempo map, independent of session</li>
+<li><strong>Section time</strong> — may have its own structure within the song</li>
+<li><strong>Phrase time</strong> — may have its own meter and tempo within the section</li>
+<li><strong>Loop time</strong> — may have its own meter within the phrase</li>
+<li><strong>Cycle time</strong> — the position within a single playback of a loop</li>
+</ul>
+<p>Each level inherits its parent's time domain by default but may declare its own. The conceptual position of any event is its position within its immediate parent, <em>recursively unrolled</em> up the tree at rendering time to produce the absolute time at the membrane.</p>
+<h3>3.5 Conceptual time is more exact than numerical time</h3>
+<p>There is one thing worth saying explicitly because it could be misunderstood: <strong>conceptual time is not vague time.</strong> It is <em>more</em> exact than numerical time, not less. A musical position described as &quot;the third sixteenth of bar 4 of phrase A in its local 7/8 meter&quot; is <em>unambiguous</em> — there is exactly one moment it refers to, given the surrounding context. There is no rounding, no drift, no accumulated error.</p>
+<p>This is the same kind of move that mathematics makes when it deals with irrational numbers symbolically (π, e, √2) rather than approximating them. Numerical representation introduces error; symbolic representation is exact. The engine works in the symbolic domain. The membrane renders to the numerical domain at the latest possible moment.</p>
+<h3>3.6 The rendering pipeline</h3>
+<p>When a sample must be produced for the audio interface at the next callback, the engine performs the following at the membrane:</p>
+<ol>
+<li>Identify which conceptual positions are active at the upcoming render window</li>
+<li>Unroll each position's hierarchical context (session → song → section → phrase → loop)</li>
+<li>Apply the relevant tempo maps at each level to convert conceptual position to absolute LMC time</li>
+<li>Apply device calibration to convert LMC time to device sample index</li>
+<li>Render the sample</li>
+</ol>
+<p>This pipeline is executed only at the membrane, only when needed, and only with the precision the membrane requires. Above this layer, the engine knows nothing of samples, frames, or absolute time.</p>
+<h3>3.7 Editing is symbolic</h3>
+<p>A consequence worth noting: <strong>editing a loop boundary does not change a number from 47.832 to 47.913. It changes a <em>reference</em> from &quot;the downbeat of bar 3&quot; to &quot;the second eighth of bar 3.&quot;</strong> Edits are operations on conceptual structures, not on numbers. This makes editing exact, deterministic, and free of representation artifacts.</p>
+<h3>3.8 Axiom for the paper</h3>
+<blockquote>
+<p><strong>Conceptual at the core, numerical at the membrane. The engine manipulates time symbolically; numerical precision is a property of the membrane, not the engine. Nothing observable depends on greater precision than the membrane offers.</strong></p>
+</blockquote>
+<hr>
+<h2>Part IV — The Logical Master Clock</h2>
+<p>With conceptual time as the engine's internal substrate, the LMC's role is now precisely defined: <strong>the LMC is the discipline mechanism for the membrane.</strong> It is not the engine's internal time. It is the absolute-time reference against which numerical time is rendered at the moment a sample or frame must physically exist.</p>
+<h3>4.1 Definition</h3>
+<p>The LMC is a software construct above all hardware clocks. It is exposed to the rendering layer (and only the rendering layer) as a continuously-advancing absolute-time reference. Every hardware clock — audio device clocks, video device clocks, the host CPU clock itself — is treated as a <em>source</em> against which the LMC is disciplined, never as the LMC's master.</p>
+<h3>4.2 The discipline hierarchy</h3>
+<p>At session start, the LMC selects its discipline source from the best available option in a strict hierarchy:</p>
+<table>
+<thead>
+<tr>
+<th>Tier</th>
+<th>Source</th>
+<th>Typical precision</th>
+<th>Use case</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>GPS-disciplined / atomic</td>
+<td>sub-microsecond</td>
+<td>Broadcast, scientific rigs</td>
+</tr>
+<tr>
+<td>2</td>
+<td>PTP / IEEE 1588 grandmaster</td>
+<td>microseconds</td>
+<td>Pro studios with Dante/AES67</td>
+</tr>
+<tr>
+<td>3</td>
+<td>NTP stratum 1–2</td>
+<td>milliseconds</td>
+<td>Networked workstations</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Ableton Link peers</td>
+<td>peer-consensus</td>
+<td>Live ensembles</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Local CPU monotonic</td>
+<td>drift-bounded against itself</td>
+<td>Solo, offline</td>
+</tr>
+</tbody>
+</table>
+<p>When nothing external is reachable, local CPU monotonic <em>is</em> the LMC — self-consistent within a session, which is sufficient for solo work.</p>
+<h3>4.3 Calibration tables</h3>
+<p>Every hardware clock at the membrane carries a calibration record against the LMC:</p>
+<pre><code>ClockCalibration {
+    source_id           // which hardware clock
+    rate_factor         // measured rate ratio (e.g., 0.999987)
+    offset              // measured constant offset (in LMC time units)
+    last_updated        // when this calibration was measured
+    confidence_interval // statistical uncertainty
+}
+</code></pre>
+<p>These tables are refreshed continuously by background measurement. The rendering layer reads them to convert from LMC time to device-native time. They are the only place in the system where audio sample indices and video frame indices live.</p>
+<h3>4.4 Behavior under reference loss</h3>
+<p>When the LMC's discipline source becomes unavailable mid-session, the LMC continues smoothly using local CPU monotonic at the last known disciplined rate. There is no step, no glitch, no audible discontinuity. When the reference returns, the LMC re-engages via <em>gradual rate slewing</em> over seconds or minutes — never an instantaneous re-lock.</p>
+<h3>4.5 Archival fidelity</h3>
+<p>The LMC's discipline history is recorded as session metadata. Years later, the LMC's relationship to UTC at the moment of any recorded event is reconstructable to the precision the discipline source allowed. This makes recordings made under this architecture <strong>archivally valid</strong> at a level most current systems cannot match.</p>
+<h3>4.6 The LMC's relationship to conceptual time</h3>
+<p>The LMC and conceptual time meet at exactly one place: <strong>the rendering pipeline at the membrane.</strong> The conceptual position of a musical event is unrolled through its hierarchical context, the result is mapped to LMC absolute time via the session's outermost tempo map, and the LMC time is then mapped to device-native time via the calibration tables. Three transformations, applied in order, at the latest possible moment.</p>
+<h3>4.7 Axiom for the paper</h3>
+<blockquote>
+<p><strong>There is no true time on any computer — only the best disciplined approximation. The LMC is that approximation, lives at the membrane, and is the only thing in the system that ever produces a number representing absolute time.</strong></p>
+</blockquote>
+<hr>
+<h2>Part V — The Engine</h2>
+<p>With conceptual time and the LMC established, the engine architecture follows.</p>
+<h3>5.1 Conceptual at the core, numerical at the membrane</h3>
+<p>The looper engine does not deal in samples, frames, or absolute time. It deals in <strong>conceptual positions</strong> within nested time domains. Samples and frames exist exactly twice in the engine's signal path: at the input membrane (capture, timestamping) and at the output membrane (presentation, rendering). Between those two points, the engine knows only concept.</p>
+<p>This is the fundamental architectural inversion of this looper. Most loopers count samples and bolt time-correction layers on top. This one <em>thinks in music</em> and emits samples at the edges.</p>
+<h3>5.2 The two membranes</h3>
+<p>The engine has exactly two membrane layers — one inbound, one outbound.</p>
+<p><strong>The inbound membrane</strong> receives sample buffers from audio devices and frame buffers from video devices. For each sample or frame, it:</p>
+<ol>
+<li>Reads the device's reported capture timestamp and applies the device calibration to convert to LMC time</li>
+<li>Records the data on its source tape (Part VI) with its LMC timestamp</li>
+<li>The tape entry is now in the engine's hands, addressable conceptually</li>
+</ol>
+<p><strong>The outbound membrane</strong> receives a request to produce a sample buffer for an audio device or frame buffer for a video device. For each output, it:</p>
+<ol>
+<li>Determines the LMC time window the buffer corresponds to</li>
+<li>Queries the active Constituent hierarchy for what should sound during that window</li>
+<li>Unrolls each active constituent's conceptual position through its hierarchical context to produce LMC times</li>
+<li>Reads the appropriate tape data via the conceptual-to-LMC mapping</li>
+<li>Mixes, applies effects, and produces the output buffer</li>
+</ol>
+<p>In between, the engine operates entirely in conceptual time.</p>
+<h3>5.3 Continuous async sample-rate conversion at the membranes</h3>
+<p>The membranes are where conceptual time meets the physical reality of an audio interface running at &quot;48 kHz&quot; that is actually running at some slightly different rate. Bridging this is the job of <strong>continuous async sample-rate conversion (ASRC)</strong> at each membrane.</p>
+<p>The ASRC's quality determines the looper's audible fidelity. Cheap ASRC produces audible chirping artifacts on sustained content; transparent ASRC (libsoxr's VHQ preset is the industry reference) is computationally expensive but inaudible. Budget approximately 3–5% of one CPU core per channel for VHQ-quality continuous resampling.</p>
+<p>Video has an equivalent membrane: frame-rate conversion between the camera's actual capture rate and whatever rate is needed for storage, processing, or display. The simplest approach is nearest-frame selection; more ambitious implementations use motion-compensated frame interpolation. Implementation choice; the engine architecture above the membrane is identical regardless.</p>
+<h3>5.4 Tempo maps as conceptual transformations</h3>
+<p>A tempo map is no longer &quot;a function from absolute time to musical position.&quot; It is <strong>a transformation between two conceptual time domains</strong> — typically between a parent's time and a child's time. Each level of the hierarchy may have its own tempo map relating its time to its parent's.</p>
+<p>Tempo maps are stored as sequences of breakpoints expressed in their own conceptual terms (&quot;at this position in the parent, this position in the child&quot;). They become numerical only when the rendering pipeline unrolls a position through them.</p>
+<p>For piecewise-constant tempo, the transformation is linear in each segment. For tempo ramps, it is piecewise quadratic. The implementation is straightforward; what matters architecturally is that <strong>the tempo map is conceptual, not numerical</strong>, and is only numerically evaluated at the membrane.</p>
+<h3>5.5 Latency compensation as architectural</h3>
+<p>When the inbound membrane receives a sample buffer, the samples were not captured <em>now</em>. The sample at index N in a buffer of size B was captured at:</p>
+<pre><code>LMC_capture_time = LMC_callback_time − latency_input − (B − N − 1) / device_rate
+</code></pre>
+<p>The membrane applies this transformation before the sample becomes a tape entry. From the engine's perspective, <strong>every tape entry carries its true conceptual time of capture</strong>, not its arrival time.</p>
+<p>Outbound, the mirror transformation tells the membrane when each sample in an output buffer will actually be heard:</p>
+<pre><code>LMC_present_time = LMC_callback_time + latency_output + N / device_rate
+</code></pre>
+<p>The rendering pipeline aims at this future time, not the present.</p>
+<p>Device latencies are typically reliable on CoreAudio and ASIO, less reliable on WASAPI, and effectively absent on USB Class-Compliant on some platforms. To handle this generally, the system performs a <strong>one-time loopback calibration per device</strong>: output a known click, capture it back, measure the round-trip in samples, store the result. Subsequent sessions on the same device read the stored calibration.</p>
+<hr>
+<h2>Part VI — The Tape</h2>
+<p>This is the architectural inversion at the heart of the system's storage model.</p>
+<h3>6.1 Everything is always recorded</h3>
+<p>The looper is not &quot;armed&quot; or &quot;recording&quot; or &quot;in standby.&quot; From the moment the user opens a session, <strong>every input is being captured to a tape, continuously, until the session ends.</strong> The tapes run whether the user has any plans to use them or not. They run during silence. They run during conversation. They run during the act of thinking.</p>
+<p>This is not an exotic recording mode. It is the default — the only — mode. Storage is cheap; ideas are precious. The architecture refuses to lose ideas.</p>
+<h3>6.2 All inputs are tapes</h3>
+<p>The tape abstraction is not specific to audio. <strong>Every signal in the system is a tape</strong>, sharing one uniform event format:</p>
+<pre><code>TapeEvent {
+    conceptual_timestamp    // when, in the source's conceptual time
+    lmc_timestamp           // when, in LMC absolute time (the membrane's record)
+    tape_id                 // which input
+    payload                 // the data itself
+}
+</code></pre>
+<p>Each tape event carries <em>both</em> a conceptual timestamp and an LMC timestamp. The LMC timestamp is the truth about when the event arrived at the membrane; the conceptual timestamp is the truth about what musical moment that arrival represents. They are equivalent for inbound capture (the capture moment defines both) but diverge for synthesized tape data (parameter automation, control events generated within the engine), which has only conceptual timestamps until rendered.</p>
+<p>Tape sources include:</p>
+<ul>
+<li>Audio inputs (one tape per channel; dense PCM payload)</li>
+<li>Video inputs (one tape per camera or capture device; frame payloads)</li>
+<li>MIDI inputs (one tape per port; event payloads)</li>
+<li>Control surface events (footswitches, knobs, pads, faders)</li>
+<li>Parameter automation (one tape per automatable parameter)</li>
+<li>Transport events (session start, tempo changes, section markers)</li>
+<li>System events (clock discipline changes, device hot-plugs)</li>
+</ul>
+<p>All of these are <em>the same kind of thing</em>. They all live on tapes. They are all queryable by conceptual or LMC time. They are all the source of truth for &quot;what happened.&quot;</p>
+<h3>6.3 Tapes are append-only and immutable</h3>
+<p>Tapes are never modified. They are written once, at the moment of capture, and never edited. <strong>Every edit in the system happens elsewhere</strong> — in Constituents (Part VII), in overlay layers, in effect chains — never on the tape itself.</p>
+<p>This is the architectural foundation that makes the entire system tractable. It enables trivial undo, trivial multi-take, trivial collaboration, trivial archival, and trivial reproducibility.</p>
+<h3>6.4 The retroactive ring</h3>
+<p>Because tapes are always running, the user never has to &quot;start recording before the moment they want to capture.&quot; The moment is already on the tape. The user marks a boundary on a tape that has been running for some time, and pulls the in-point backward to grab the pickup note that preceded the mark.</p>
+<p>The <strong>retroactive ring</strong> is the in-memory portion of recent tape data, held against the possibility that the user will reach backward in time to capture something. Its depth depends on the capability tier (Part XIII): seconds for tight resource budgets, minutes for comfortable ones, hours for lavish.</p>
+<blockquote>
+<p><strong>The looper records the past. Because every event has been timestamped on the way in, the &quot;record button&quot; is a time bookmark, not a capture trigger.</strong></p>
+</blockquote>
+<h3>6.5 Tape format strategy</h3>
+<p>Three reasonable strategies for tape storage:</p>
+<ul>
+<li><strong>Uncompressed PCM</strong> (CAF/WAV per channel, ProRes/DNxHR per video stream): instant random access, maximum quality, highest storage cost</li>
+<li><strong>Lossless compressed</strong> (FLAC for audio, intra-frame codec for video): roughly half the storage cost, with decompression overhead at read time</li>
+<li><strong>Tiered</strong>: uncompressed in the retroactive ring (RAM), lossless on disk during the live session, optional offline archival compression on session close</li>
+</ul>
+<p>The tier system (Part XIII) chooses among these at startup based on measured hardware capability.</p>
+<h3>6.6 Tapes are local</h3>
+<p>Tape data lives on the machine that captured it, always. The network carries only coordination metadata. This is non-negotiable and is justified fully in Part XII.</p>
+<hr>
+<h2>Part VII — The Constituent Hierarchy</h2>
+<p>If the tape is the source of truth, the Constituent is the thing the system actually plays.</p>
+<h3>7.1 The unifying abstraction</h3>
+<p>Every musical object in the system is a <strong>Constituent</strong>. A loop is a Constituent. A phrase is a Constituent. A section is a Constituent. A song is a Constituent. A set is a Constituent. They share a common structure:</p>
+<pre><code>Constituent {
+    id                          // identity, persistent across edits
+    conceptual_in               // start position in parent's time
+    conceptual_out              // end position in parent's time
+    local_tempo_map             // optional; inherits from parent if absent
+    local_meter                 // optional; inherits if absent
+    anchor_to_parent            // how this aligns to its parent (see below)
+    effect_chain                // signal processing (loops and below)
+    repetition_rules            // how this plays back (loops and phrases)
+    metadata                    // role, intent, name, etc.
+    children                    // for containers: nested Constituents
+}
+</code></pre>
+<p>The Constituent does not store audio data. It contains <em>references</em> — either to tape slices (at the loop level) or to other Constituents (at higher levels). All data is on tapes; everything else is structure.</p>
+<h3>7.2 The hierarchy</h3>
+<p>The conventional musical hierarchy maps onto the Constituent system as:</p>
+<pre><code>Tape (immutable source of truth)
+   ↓
+Loop or non-looped tape slice (mechanism layer)
+   ↓
+Phrase (musical utterance; the unit of musical thought)
+   ↓
+Section (structural grouping of phrases)
+   ↓
+Song (narrative composed of sections)
+   ↓
+Set (sequence of songs)
+   ↓
+Performance arrangement (the outermost Constituent)
+</code></pre>
+<p>This is the <em>typical</em> organization. The data model does not enforce it strictly: any Constituent may contain any other Constituent as long as the time-domain relationships are coherent. A bed that persists through several phrases may live directly at the section level, alongside its phrases, not inside any of them.</p>
+<h3>7.3 Constituents are immutable; edits are copy-on-write</h3>
+<p>Editing a Constituent — trimming its boundaries, changing its effects, modifying its repetition rules, replacing its children — does not modify it. It produces a <strong>new Constituent</strong> with the modifications, sharing the same source references where applicable. The old version is preserved in the edit history.</p>
+<p>This makes undo trivial. It makes branching alternatives trivial. It makes &quot;show me what this would sound like with these changes&quot; trivial. The cost is minimal: each Constituent is metadata only.</p>
+<h3>7.4 Loops within the hierarchy</h3>
+<p>A loop is the Constituent type that directly references tape data. Its specifics:</p>
+<ul>
+<li><code>children</code> is empty (or contains overlays; see effects below)</li>
+<li><code>conceptual_in</code> and <code>conceptual_out</code> reference positions on its source tape(s)</li>
+<li><code>repetition_rules</code> describe how it plays back (the five dimensions of Part X)</li>
+<li><code>effect_chain</code> describes processing applied to its output</li>
+</ul>
+<p>A loop is the <em>mechanism</em> — the thing that actually causes tape data to become sound. Everything above it in the hierarchy is structure that organizes when and how loops are heard.</p>
+<h3>7.5 Non-looped tape slices are first-class</h3>
+<p>Inside a phrase, content may be looped or not looped. A non-looped tape slice is structurally similar to a loop with <code>repetition_rules.cardinality = Once</code>, but is named differently because the intent is different. A loop is &quot;this is meant to repeat.&quot; A non-looped slice is &quot;this is meant to be heard once, in this moment.&quot;</p>
+<p>The distinction matters for the user interface (Part XIV) — a performer should be able to capture content with an inferred intent (loop vs. one-shot) without having to declare it explicitly. The data model accommodates both as first-class.</p>
+<h3>7.6 Identity persists across content revision</h3>
+<p>Every Constituent has an identity that persists even as its content changes. A phrase named &quot;the verse&quot; remains &quot;the verse&quot; through fifteen revisions of its content. <strong>Identity is what makes the phrase the same phrase across edits.</strong> Versioning happens at the content level; identity persists at the structural level.</p>
+<p>This is closer to how a screenwriter thinks about a scene than how a sound engineer thinks about a recording — and it is the right model for music-making.</p>
+<h3>7.7 What this enables</h3>
+<ul>
+<li><strong>Save and load are trivial.</strong> The Constituent graph serializes to kilobytes of INI or JSON. Tapes are heavy files addressed by ID.</li>
+<li><strong>Effects are applied per-Constituent and are replaceable.</strong> Changing the reverb on phrase 7 changes only phrase 7.</li>
+<li><strong>Effect parameters are themselves automatable.</strong> Parameter automation is data on a tape. Automation curves are Constituents over parameter tapes. The recursion holds at every level.</li>
+<li><strong>Render is deterministic.</strong> The same Constituent tree applied to the same tapes produces the same output, forever.</li>
+</ul>
+<hr>
+<h2>Part VIII — Phrases</h2>
+<p>The phrase is the unit of musical thought. It deserves its own treatment.</p>
+<h3>8.1 What a phrase is</h3>
+<p>A phrase is a <strong>complete musical utterance with its own identity, internal arc, and relationship to surrounding utterances.</strong> It is the unit at which a musician <em>thinks</em> about music. When a performer says &quot;let me try that part again,&quot; the part is a phrase. When they say &quot;I want a fill here,&quot; the fill is a phrase. When they say &quot;the verse is too long,&quot; the verse is a phrase.</p>
+<p>Phrases are not defined by their content alone. They are defined by their <em>role</em> in a larger musical structure. Two completely different sets of notes can both be &quot;the chorus&quot; — they share a role and a structural position, while differing in content.</p>
+<h3>8.2 What a phrase contains</h3>
+<p>A phrase contains zero or more child Constituents — typically loops and non-looped tape slices, but possibly other phrases (a phrase may contain sub-phrases). The children may be in any time relationship to the phrase: simultaneous, sequential, overlapping. They may be in the phrase's local time domain, or in their own local time domains nested inside it.</p>
+<p>Critically, a phrase may contain:</p>
+<ul>
+<li><strong>Multiple loops in different time domains.</strong> A 4/4 drum loop and a 7/8 ostinato in the same phrase (Part IX).</li>
+<li><strong>Non-looped one-shot material.</strong> A spoken line, a sampled hit, a vocal phrase delivered once.</li>
+<li><strong>Silence as content.</strong> A rest, a held breath, a deliberate absence. The phrase's interior may contain regions where nothing sounds; the silence is part of the phrase's structure.</li>
+<li><strong>Rubato or unmetered passages.</strong> Content not aligned to any metric grid (Part IX).</li>
+</ul>
+<h3>8.3 Phrase metadata</h3>
+<p>A phrase carries metadata beyond what loops carry:</p>
+<pre><code>PhraseMetadata {
+    role                   // verse, chorus, response, fill, statement, etc.
+    intent                 // free-text description of the phrase's musical purpose
+    entrance_character     // how the phrase begins (pickup, downbeat, etc.)
+    exit_character         // how the phrase ends (resolution, hand-off, etc.)
+    grammatical_links      // relationships to other phrases (Part 8.5)
+    is_role_fillable       // whether this phrase can substitute for others of the same role
+}
+</code></pre>
+<p>This metadata is not exotic. It is what musicians already think about when they think about phrases. The architecture exposes it as first-class data.</p>
+<h3>8.4 Roles make phrases interchangeable</h3>
+<p>When a phrase carries a role (e.g., &quot;verse,&quot; &quot;response,&quot; &quot;fill&quot;), it becomes potentially interchangeable with other phrases carrying the same role. The arrangement layer above the phrase can specify:</p>
+<ul>
+<li>A specific phrase to play here</li>
+<li>A <em>role</em> to fill here, leaving the specific phrase to be chosen at performance time</li>
+</ul>
+<p>This is what enables <strong>structured improvisation</strong>. The song's structure is fixed (verse, chorus, verse, chorus, bridge, chorus); the specific phrases that fill each role can be selected by the performer in the moment. Two performances of the same song share their structure but diverge in their content.</p>
+<h3>8.5 Grammatical relationships between phrases</h3>
+<p>Phrases relate to each other in ways that sequence-and-overlap cannot capture. The architecture supports these relationships as first-class metadata:</p>
+<ul>
+<li><strong>Call and response</strong>: phrase A poses a question that phrase B answers. The pair is linked.</li>
+<li><strong>Statement and variation</strong>: phrase B is a variation of phrase A. The relationship is functional.</li>
+<li><strong>Theme and development</strong>: phrase A is a theme; later phrases develop it.</li>
+<li><strong>Tension and release</strong>: phrase A builds; phrase B resolves.</li>
+<li><strong>Punctuation</strong>: phrase A closes a section; phrase B opens one.</li>
+</ul>
+<p>These relationships are stored as <code>grammatical_links</code> in the phrase metadata. They do not directly affect playback (playback is governed by repetition rules and arrangement); they affect <em>display, analysis, and composition</em>. A performer looking at a phrase can see what it answers, what answers it, what it varies, what varies it. This is information the musician's mind is already carrying; the architecture surfaces it.</p>
+<h3>8.6 The phrase's internal time</h3>
+<p>A phrase has its own conceptual time, which may have its own meter and tempo independent of its parent. This is detailed in Part IX. The crucial point: <strong>a phrase's interior is a complete time domain.</strong> It is not just a slice of the song's time.</p>
+<h3>8.7 Entrance and exit are part of the phrase</h3>
+<p>A phrase has a specific entrance character (how it begins) and exit character (how it ends). These are part of the phrase's identity, not separate concerns:</p>
+<ul>
+<li>A phrase that begins with a pickup carries its pickup as part of the phrase</li>
+<li>A phrase that resolves with a tail carries its tail as part of the phrase</li>
+<li>A phrase that hands off to the next phrase encodes the handoff in its exit</li>
+</ul>
+<p>The entrance and exit characters interact with arrangement: a phrase that ends with a hand-off implies the existence of a next phrase to receive the hand-off. The arrangement layer respects these characters when sequencing phrases.</p>
+<hr>
+<h2>Part IX — Polymetric and Polytemporal Coexistence</h2>
+<p>The Constituent hierarchy admits something almost no music software has ever admitted: <strong>multiple time domains coexisting within a single phrase.</strong></p>
+<h3>9.1 The commitment</h3>
+<p>A 4/4 drum loop and a 7/8 ostinato and a free-rubato vocal line may live inside one phrase, in three different time domains, sharing only the phrase's outer boundaries. This is not an edge case. It is real music — Steve Reich, Frank Zappa, Meshuggah, African and Indian classical traditions, contemporary jazz, electronic music.</p>
+<p>Most music software pretends this music does not exist or treats it as a workaround. This architecture puts it at the foundation.</p>
+<h3>9.2 Time domains as a tree</h3>
+<p>The conceptual time tree (Part III) makes polymetric coexistence trivial. Each level — and each Constituent within a level — may declare its own meter and its own tempo relationship to its parent:</p>
+<ul>
+<li><strong>The session's tempo map</strong> governs the outermost time domain</li>
+<li><strong>A song's tempo map</strong> may differ from the session's</li>
+<li><strong>A phrase's tempo map</strong> may differ from the song's</li>
+<li><strong>A loop's tempo map</strong> may differ from the phrase's</li>
+</ul>
+<p>Each level inherits its parent's time domain by default but may override. The override is local to the Constituent and does not affect its siblings.</p>
+<h3>9.3 The polyrhythmic case</h3>
+<p>When a 4/4 drum loop and a 7/8 ostinato play simultaneously inside the same phrase, they share absolute time (via the LMC at the membrane) but do not share musical time. Each has its own tempo map. The musical relationship between them is <em>expressible</em> as a ratio:</p>
+<pre><code>drum_loop:    4/4 at 120 BPM  →  one bar at the phrase's tempo
+ostinato:     7/8 at 120 BPM  →  shorter bars, same beat
+              or 7/8 at 105 BPM →  matched bar length, slower beat
+</code></pre>
+<p>The performer chooses the relationship. Either way, the engine renders both correctly because the conceptual descriptions are exact and the rendering reconciles them at the membrane.</p>
+<p>The mathematical consequence: in conceptual time, the relationship is exact by definition. A 4-against-7 polyrhythm holds across thousands of cycles because <strong>the math is in symbolic structure, not in numerical approximation.</strong> The phrase that began in alignment ends in alignment.</p>
+<h3>9.4 The polytemporal case</h3>
+<p>When a vocal phrase floats freely over a metric backdrop, the vocal is in <em>unmetered local time</em> — it has timing but no grid. Its tempo map is flat (no beats, no bars); its content is anchored directly in absolute time at the phrase level. The vocal still lives inside the phrase, but its conceptual time domain is &quot;raw absolute time&quot; rather than a metric structure.</p>
+<p>This handles rubato passages, ad-libs, expressive timing, and drone-like material as natural cases — not exceptions. The architecture supports them by default.</p>
+<h3>9.5 Meeting at boundaries</h3>
+<p>Constituents in different time domains inside the same parent must <em>meet</em> somewhere. The natural meeting place is the parent's boundaries: a phrase begins and ends at song-time positions, regardless of what its interior does.</p>
+<p>Whatever the constituents are doing inside, they must be at musically sensible positions at the phrase's start and end. A polyrhythmic phrase that ends mid-cycle for one of its constituents is usually a mistake or a deliberate effect; it is not the default. The default behavior is <strong>align at boundaries; do whatever you want internally.</strong></p>
+<p>For constituents that don't naturally complete by the phrase's boundary, the system applies termination rules (Part X): hard cut, complete current cycle, fade, hand off. The phrase boundary is itself a termination trigger for its interior.</p>
+<h3>9.6 Meter is a property, not a constraint</h3>
+<p>In existing DAWs, the session has a time signature, and everything in the session is in that time signature unless you go to elaborate lengths to declare otherwise. In this architecture, <strong>meter is a property of each Constituent, declared locally, inherited from parent only by default.</strong> The session has no global meter. The song has no required meter. The phrase has no required meter. Each loop carries its own.</p>
+<p>This matches how music actually works. A jazz tune in 3/4 may have a bridge in 4/4. A prog metal song may shift meters every bar. A drone piece has no meter. A classical sonata may have a metric movement followed by a free cadenza. The architecture accommodates all of these without effort.</p>
+<h3>9.7 Micro-timing is preserved exactly</h3>
+<p>Because conceptual time is exact and only renders to numerical time at the membrane, <strong>micro-timing — swing, drummer feel, deliberate behind-the-beat or ahead-of-the-beat playing — is preserved exactly.</strong> It is not quantized away. It is not smoothed. The &quot;feel&quot; that makes a recording feel human is preserved at the substrate, because the substrate is the performer's actual timing, captured at the membrane and stored conceptually as captured.</p>
+<p>The architecture does not need a special &quot;micro-timing mode&quot; or a &quot;groove template.&quot; Micro-timing is just <em>what was actually played</em>, conceptually preserved, numerically rendered when needed. This was free all along; it just took the conceptual-time framing to see it.</p>
+<hr>
+<h2>Part X — Repetition</h2>
+<p>A phrase contains loops; a loop is an idea; ideas are worth repeating. Repetition is what makes a loop music rather than mere capture.</p>
+<h3>10.1 The five dimensions of repetition</h3>
+<p>Every loop's playback behavior is described by five orthogonal axes. Defaults handle the common cases; combinations of non-default values produce the interesting music.</p>
+<h4>Trigger — what causes the idea to play?</h4>
+<ul>
+<li><strong>Free-running</strong>: starts at capture, plays continuously</li>
+<li><strong>On-demand</strong>: dormant until triggered (footswitch, pad, MIDI note, another loop event)</li>
+<li><strong>Conditional</strong>: triggered by another event (every N bars, after loop X ends, on a specific musical position)</li>
+<li><strong>Probabilistic</strong>: chance-based per cycle, or selection from a set of alternates</li>
+<li><strong>Sequenced</strong>: position in an explicit timeline</li>
+</ul>
+<h4>Cardinality — how many times does it repeat?</h4>
+<ul>
+<li><strong>Once</strong> (one-shot — a hit, a fill, a moment)</li>
+<li><strong>N times</strong> (fixed count)</li>
+<li><strong>Until-condition</strong> (until another loop starts, until silenced, until next downbeat)</li>
+<li><strong>Forever</strong></li>
+</ul>
+<h4>Phase relationship — when does each repetition start?</h4>
+<ul>
+<li><strong>Free</strong>: at trigger time, no quantization</li>
+<li><strong>Quantized to grid</strong>: snaps to the next bar/beat/division per the local tempo map</li>
+<li><strong>Synchronized to another Constituent</strong>: starts at X's <code>conceptual_in</code>, or X's midpoint, or N bars after X</li>
+<li><strong>Phase-locked</strong>: maintains a fixed musical offset from a reference</li>
+</ul>
+<h4>Mutation — does the idea change as it repeats?</h4>
+<ul>
+<li><strong>Identical</strong>: the same data, every time</li>
+<li><strong>Varied automatically</strong>: pitch, time, filter, reverse, randomized parameter ranges per cycle</li>
+<li><strong>Layered</strong>: each repetition adds another overdub (the &quot;build a drone&quot; pattern)</li>
+<li><strong>Decaying</strong>: each repetition softer/darker/shorter than the last</li>
+<li><strong>Evolving by rule</strong>: granular position drift, rhythmic permutation, Markov choice</li>
+</ul>
+<h4>Termination — how does the repetition end?</h4>
+<ul>
+<li><strong>Hard cut</strong>: instantly silent on stop</li>
+<li><strong>Complete current cycle</strong>: finish what's playing, then stop</li>
+<li><strong>Fade over N bars</strong></li>
+<li><strong>Continue until natural end</strong> (the content's own arc resolves)</li>
+<li><strong>Hand off</strong>: ending triggers another Constituent's beginning</li>
+</ul>
+<h3>10.2 Repetition is regenerator feedback</h3>
+<p>The architectural significance of repetition rules is not that they let the system play things back. It is that they let the system <em>participate in a cybernetic feedback loop with the performer.</em> The performer captures an idea; the system offers to repeat it; the performer's continued engagement signals &quot;yes, again&quot;; the system continues. The instant the performer's engagement withdraws, the system gracefully retires the idea.</p>
+<p><strong>Repetition rules are therefore not commands but hypotheses about what the performer wants next.</strong> Default rules embody the system's best guess for the most common case. Performer action — adjusting, accepting, ignoring, overriding — is the feedback signal. The system honors that signal instantly, without resistance, without confirmation dialogs.</p>
+<h3>10.3 Mutation as preservation of engagement</h3>
+<p>Mutation deserves explicit treatment because it is the dimension most commonly misunderstood. The purpose of mutation is <em>not</em> to make playback more interesting algorithmically. It is to <strong>sustain the engagement the performer already has</strong>.</p>
+<p>Pure repetition is psychologically satisfying for some number of cycles, then becomes monotonous. The system's job — when mutation is enabled — is to introduce variation <em>just before</em> the engagement would have begun to wane. Done well, the performer does not notice the variation; they only notice that they still love the loop after the twentieth cycle.</p>
+<p><strong>The art of mutation is in its invisibility.</strong> Variation that draws attention to itself has failed. Variation that keeps the music alive without ever announcing itself has succeeded.</p>
+<h3>10.4 Termination matches attention decay</h3>
+<p>Hard-cut termination is <em>command-mode termination</em>: &quot;stop now.&quot; It is appropriate for specific musical contexts but is the wrong default for most music. The default termination behaviors should match how listener attention actually decays:</p>
+<ul>
+<li>For background beds: fade</li>
+<li>For musical sections: complete the bar</li>
+<li>For phrases with natural arcs: continue until natural end</li>
+<li>For arrangements: hand off to the next section</li>
+</ul>
+<p>The performer can override at any time, by any of the five axes. But the defaults serve the music, not the engineer's instinct for precision control.</p>
+<hr>
+<h2>Part XI — Arrangement and Narrative</h2>
+<p>Arrangement is composition in real time. The looper is responsible for arrangement at every level.</p>
+<h3>11.1 Arrangement happens at the phrase level and above</h3>
+<p>The phrase is the unit of arrangement. A song is not &quot;an arrangement of loops&quot; — it is <strong>an arrangement of phrases</strong>, each of which may internally contain loops. This corrects a confusion present in many existing loopers, which treat loops as the arrangement unit and have no concept of phrase.</p>
+<p>This means arrangement gestures operate on phrases:</p>
+<ul>
+<li>&quot;Play this phrase here&quot; — placing a phrase at a song-time position</li>
+<li>&quot;Repeat this phrase&quot; — replaying the phrase with its own repetition rules</li>
+<li>&quot;Hand off from this phrase to that phrase&quot; — chaining via exit/entrance characters</li>
+<li>&quot;Fill this role with whichever phrase the performer chooses&quot; — role-based slots</li>
+</ul>
+<p>Loops still have repetition rules at the mechanism level, but those govern <em>how the loop plays within its phrase</em>. Arrangement is a phrase-level concern.</p>
+<h3>11.2 The recursive structure</h3>
+<p>The same arrangement principles apply at every level above the phrase:</p>
+<ul>
+<li>A <strong>section</strong> is an arrangement of phrases</li>
+<li>A <strong>song</strong> is an arrangement of sections (or directly of phrases, for short forms)</li>
+<li>A <strong>set</strong> is an arrangement of songs</li>
+<li>A <strong>performance</strong> is an arrangement of sets</li>
+</ul>
+<p>Each level uses the same Constituent data model. The same gestures that arrange phrases within a section arrange sections within a song. <strong>The performer who learns one level has learned all of them.</strong></p>
+<h3>11.3 Arrangement primitives</h3>
+<p>The following arrangement operations are not new features — they are Constituent operations applied at the phrase level and above:</p>
+<ul>
+<li><strong>Sequencing</strong>: explicit order with handoff between exits and entrances</li>
+<li><strong>Layering</strong>: simultaneous Constituents with overlapping <code>conceptual_in</code>/<code>conceptual_out</code></li>
+<li><strong>Sections and scenes</strong>: named groupings with their own repetition rules</li>
+<li><strong>Transitions</strong>: governed by termination rules of outgoing + trigger rules of incoming</li>
+<li><strong>Conditional branches</strong>: alternate continuations via conditional triggers</li>
+<li><strong>Role-based slots</strong>: positions that select a Constituent by role at play time</li>
+<li><strong>Returns and recapitulations</strong>: re-invoking earlier material, optionally with variation</li>
+<li><strong>Set lists</strong>: the outermost arrangement</li>
+</ul>
+<h3>11.4 The song as narrative</h3>
+<p>A song is not a sequence. It is a <em>narrative built out of phrases</em>, with dramatic structure, intentional shape, rising and falling action. The song layer represents:</p>
+<ul>
+<li><strong>The arc</strong>: how energy/intensity/density rises and falls</li>
+<li><strong>The structure</strong>: verse/chorus/bridge/etc.</li>
+<li><strong>The trajectory</strong>: where the song is going and how it gets there</li>
+<li><strong>The variability</strong>: which phrases are fixed, which are improvised, which are role-filled at performance time</li>
+</ul>
+<p>A song is a kind of <strong>musical script</strong>: structurally complete but performatively variable. Two performances of the same song share its narrative shape and role structure while diverging in the specific phrases that fill the roles.</p>
+<h3>11.5 The set list is the outermost Constituent</h3>
+<p>A live performance — an entire concert — is, in this architecture, just a Constituent. Its children are songs. Its <code>conceptual_in</code> is the moment the performer steps onstage; its <code>conceptual_out</code> is the moment they step off. The same engine that plays back a four-bar drum groove plays back the entire evening.</p>
+<p>This has practical consequences:</p>
+<ul>
+<li>Save and load of an entire concert is a single Constituent graph file</li>
+<li>Restarting the same set on a different night loads the same outer Constituent</li>
+<li>Cross-concert continuity (motifs returning, arrangements evolving across performances) is achievable because all data lives in the same model</li>
+<li>Archive of a complete career of performances is a tractable storage problem</li>
+</ul>
+<hr>
+<h2>Part XII — The Ensemble</h2>
+<p>The single-machine architecture extends gracefully to ensembles under one strict commitment.</p>
+<h3>12.1 The commitment: recording and playback are always local</h3>
+<p><strong>Tape data never traverses the network as primary signal.</strong> Audio captured on Node A lives on Node A. Audio played back on Node B is sourced from Node B's local tapes only. The network carries no live audio between nodes; it carries only coordination.</p>
+<p>The reason is physical: every transit between digital and physical reality (the membrane) must occur exactly once per node, and it must occur on the machine that the audio interface is plugged into. Audio that has traversed a network as a live stream is no longer disciplinable by the receiving node's LMC — its timing has already been perturbed by network jitter, packet loss recovery, and buffer scheduling, none of which the receiving node can correct after the fact.</p>
+<p><strong>Network-streamed audio is, from the receiver's perspective, exactly as flawed as a poorly-clocked audio interface, with the additional disadvantage that the flaws are non-stationary and unpredictable.</strong></p>
+<h3>12.2 What does cross the network</h3>
+<p>The network footprint of a distributed ensemble is small:</p>
+<ul>
+<li><strong>LMC discipline messages</strong> — clock comparison and slewing data</li>
+<li><strong>Constituent graph updates</strong> — phrases/loops/sections created, edited, deleted</li>
+<li><strong>Control events</strong> — transport, footswitch, parameter changes</li>
+<li><strong>Optional low-bitrate monitoring previews</strong> — for cross-node awareness, explicitly separate from the recording signal path</li>
+</ul>
+<p>That is the entire network surface.</p>
+<h3>12.3 Distributed LMC election</h3>
+<p>When an ensemble forms, the participating nodes elect an LMC master via a quality-weighted protocol. Naive median voting is insufficient because nodes have asymmetric error profiles. The correct algorithm is <strong>Marzullo interval intersection</strong>:</p>
+<ol>
+<li>Each node advertises its LMC time as a <em>confidence interval</em> <code>[t_min, t_max]</code></li>
+<li>The algorithm finds the largest set of mutually-intersecting intervals</li>
+<li>Nodes outside this consensus set (&quot;falsetickers&quot;) are discarded</li>
+<li>The LMC is computed from the consensus, weighted by interval width</li>
+</ol>
+<p>Within the consensus, <strong>tier dominance</strong> governs: one GPS-disciplined node beats any number of NTP-disciplined nodes. Within a tier, the narrowest-interval source wins.</p>
+<h3>12.4 Master/slave model with overrides</h3>
+<p>The highest-tier node becomes <strong>LMC Master</strong>; others become <strong>LMC Slaves</strong> and discipline against it. Two explicit overrides:</p>
+<ul>
+<li><strong>Anchor node</strong>: the user designates one machine as authoritative regardless of tier. Musical authority outranks technical authority.</li>
+<li><strong>Manual master selection</strong>: the user picks the master explicitly.</li>
+</ul>
+<p>Election occurs at session start and on topology changes. It does not run continuously. <strong>Stability beats optimality.</strong></p>
+<h3>12.5 Local LMC and ensemble LMC</h3>
+<p>Each node maintains <em>two</em> LMC views:</p>
+<ul>
+<li><strong>Local LMC</strong>: drift-free against itself, used for stamping local tape events</li>
+<li><strong>Ensemble LMC</strong>: calibrated against the master, used for coordinating with other nodes</li>
+</ul>
+<p>The two are related by a continuously-updated calibration record. A node that disconnects from the ensemble continues recording with fully valid local timestamps. When it reconnects, no data is rewritten — the calibration record is updated.</p>
+<h3>12.6 CRDT-compatible session state</h3>
+<p>Tapes are append-only. Constituents are immutable, copy-on-write. <strong>These properties make the entire session state a natural Conflict-Free Replicated Data Type (CRDT).</strong> Two nodes that edit the session concurrently during a network partition will merge cleanly on rejoin:</p>
+<ul>
+<li>Tapes: union of all tape events (no conflicts possible)</li>
+<li>Constituents: union of all versions (immutability eliminates conflict)</li>
+<li>Active selection: last-writer-wins with timestamps</li>
+</ul>
+<p>Reconciliation requires no human conflict resolution. <strong>The data model makes conflicts structurally impossible.</strong></p>
+<h3>12.7 Graceful degradation</h3>
+<p>Worst-case ensemble failure — a node loses network entirely, mid-performance — degrades gracefully to <strong>a high-quality solo recording</strong>, not a session loss. The disconnected node continues recording locally with valid timestamps and valid playback of its own Constituents.</p>
+<blockquote>
+<p><strong>Every musician's machine holds a complete, full-fidelity record of their contribution to the session, regardless of network behavior.</strong></p>
+</blockquote>
+<h3>12.8 The category distinction</h3>
+<blockquote>
+<p><strong>The network is not a substrate for audio. It is a substrate for coordination. Audio is local. Time is shared. Mixing the two — sending live audio over the network and treating it as part of the production signal path — is a category error that this architecture refuses to make.</strong></p>
+</blockquote>
+<hr>
+<h2>Part XIII — Fidelity and Resources</h2>
+<p>The system runs on hardware of widely varying capability. It must size itself to that hardware honestly.</p>
+<h3>13.1 Startup-time tier selection</h3>
+<p>At session launch, the system performs a one-time capability assessment and selects a <strong>fidelity tier</strong> for the session. The tier is locked for the duration of the session.</p>
+<p>The assessment measures CPU (core count, vector capability, DSP throughput benchmark), RAM (total and available), storage (write-speed test), audio device (buffer size, latency, channels), power source (battery vs. mains), and thermal posture.</p>
+<h3>13.2 The four tiers</h3>
+<table>
+<thead>
+<tr>
+<th>Tier</th>
+<th>Description</th>
+<th>Tape format</th>
+<th>ASRC quality</th>
+<th>Effect strategy</th>
+<th>Ring depth</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Lavish</strong></td>
+<td>High-end workstation</td>
+<td>Uncompressed PCM</td>
+<td>VHQ</td>
+<td>All live</td>
+<td>Minutes</td>
+</tr>
+<tr>
+<td><strong>Comfortable</strong></td>
+<td>Modern laptop on AC</td>
+<td>FLAC</td>
+<td>VHQ</td>
+<td>All live</td>
+<td>Tens of seconds</td>
+</tr>
+<tr>
+<td><strong>Tight</strong></td>
+<td>Older or battery</td>
+<td>FLAC</td>
+<td>HQ</td>
+<td>Mixed live + cached</td>
+<td>Seconds</td>
+</tr>
+<tr>
+<td><strong>Survival</strong></td>
+<td>Marginal hardware</td>
+<td>FLAC</td>
+<td>MQ</td>
+<td>Aggressive caching</td>
+<td>Minimal</td>
+</tr>
+</tbody>
+</table>
+<p>The user is informed of the selected tier and may override (with a warning if they request more than the hardware will reliably deliver).</p>
+<h3>13.3 The unbreakable rules</h3>
+<p>Regardless of tier:</p>
+<ol>
+<li><strong>Audio output never glitches.</strong> All other concerns subordinate to it.</li>
+<li><strong>Tape data integrity is never compromised.</strong> Data already captured is never lost or corrupted.</li>
+<li><strong>Degradation is announced, not silent.</strong></li>
+<li><strong>Runtime overload protection drops video frames, UI updates, and analyzer work — never audio.</strong></li>
+</ol>
+<h3>13.4 The division of concerns</h3>
+<p>The performer authors musical intent. The system chooses fidelity. <strong>The performer never thinks about render quality, storage format, or processing strategy</strong> — those are the system's problems, solved at startup against the hardware it actually finds itself running on.</p>
+<hr>
+<h2>Part XIV — The Performer's Instrument</h2>
+<p>Everything above this point has been architecture. What follows is what the performer actually touches.</p>
+<h3>14.1 The trust principle</h3>
+<p>The user is a competent musician operating a trusted instrument. The looper's job is to anticipate well, present the right affordance at the right moment, honor the user's gesture instantly, and otherwise disappear.</p>
+<p>Many design decisions in existing loopers can be traced to a quiet assumption that the user might make a mistake. <strong>That assumption is itself the design failure.</strong> A looper built on trust is more powerful and more transparent than one built on caution.</p>
+<h3>14.2 Inspiration is fragile</h3>
+<p>The single most precious resource in music-making is the moment of inspiration. It is also the most easily destroyed. <strong>Every UI decision in the looper answers to one question: does this preserve or destroy inspiration?</strong></p>
+<p>The inspiration-killers in existing loopers, named explicitly:</p>
+<ul>
+<li><strong>Mode confusion</strong> (&quot;Am I in record mode or play mode?&quot;)</li>
+<li><strong>Pre-declaration</strong> (choose length, quantization, routing before capture)</li>
+<li><strong>Punishment for imprecise timing</strong> (&quot;You started too early; retake.&quot;)</li>
+<li><strong>Visual noise demanding attention</strong> (animations, meters, pulses pulling the eye to the screen)</li>
+<li><strong>High-precision targeting requirements</strong> (tiny buttons, fine menus)</li>
+<li><strong>Reversibility that costs more than the original action</strong></li>
+</ul>
+<p>The architecture refuses all six. The tape-as-always-recording model eliminates pre-declaration. The Constituent model eliminates mode confusion in the creative state. The retroactive ring eliminates timing punishment. Glanceable visualization eliminates demanding visual noise. Coarse controls eliminate precision targeting. Undo is the most accessible operation.</p>
+<h3>14.3 The system anticipates; the user decides</h3>
+<p>The system's intelligence lives in <em>anticipation</em>, not in <em>interpretation</em>. Anticipation means:</p>
+<ul>
+<li>The most likely next action is the most prominent affordance</li>
+<li>Default values are musically excellent for the common case</li>
+<li>Context shapes the affordances offered</li>
+<li>The system's guesses are <em>offers</em>, not <em>commitments</em></li>
+</ul>
+<p>The user is the final authority. The system's role is to make the right thing trivially available, then yield.</p>
+<h3>14.4 Two cognitive states, one continuous instrument</h3>
+<p>The performer operates in two cognitive states at different times:</p>
+<ul>
+<li><strong>Performance state</strong>: creative, reflexive, fast. Eyes on the music, not on the screen. Calculation impossible.</li>
+<li><strong>Preparation state</strong>: deliberative, analytical, fine-grained. Eyes on the screen. Time available for thought.</li>
+</ul>
+<p>A trusted instrument serves both states without making the user choose a &quot;mode.&quot; The transition between states is fluid; the system reads context (the user is touching detailed controls? They're in preparation. They just hit a footswitch? They're performing). <strong>The instrument is one. The presentation adapts.</strong></p>
+<h3>14.5 Glanceable, not readable</h3>
+<p>Loop state in performance is communicated by <em>shape, color, position, and motion</em> — not by text. The performer registers state in peripheral vision while their primary attention is on the music.</p>
+<p>Glanceable: which loops are playing, where in their cycle, how many repetitions remain, which loop has focus, whether the system is currently capturing.</p>
+<p>Not glanceable (and should not demand attention): loop names, parameter values, storage usage, network status (visible only if degraded), tier information.</p>
+<p>The performer reads in preparation, glances in performance.</p>
+<h3>14.6 Coarse and decisive</h3>
+<p>Performance controls are large, unambiguous, reflexive. <strong>Same gesture, same outcome, always.</strong> Preparation controls are fine, precise, detailed — available when the user wants them, invisible when they don't.</p>
+<h3>14.7 Undo is sacred</h3>
+<p>Undo is the permission slip for experimentation. A performer who knows they can undo will take more creative risks. Undo must therefore be:</p>
+<ul>
+<li>At least as accessible as any creative action</li>
+<li>Instantaneous in effect</li>
+<li>Multi-level, with depth limited only by storage</li>
+<li>Visible (the user knows what will be undone)</li>
+<li>Reversible (redo is equally accessible)</li>
+</ul>
+<p>The Constituent-as-immutable architecture makes deep undo trivial.</p>
+<h3>14.8 Latency budget for trust</h3>
+<ul>
+<li><strong>&lt; 10ms</strong>: action feels like one's own (proprioceptive integration)</li>
+<li><strong>10–30ms</strong>: action feels like consequence (causal coupling)</li>
+<li><strong>30–100ms</strong>: action feels like response</li>
+<li><strong>&gt; 100ms</strong>: action feels like waiting</li>
+</ul>
+<p>Performance gestures must respond in the &lt; 30ms range. The LMC and conceptual-time architecture give us this for audio. Visual and tactile responses must honor the same budget.</p>
+<h3>14.9 Eyes-free is the goal</h3>
+<p>The highest UI achievement for a performance looper is <strong>eyes-free operation</strong>: the performer never needs to look at the screen during a performance. Every gesture they need is reachable by trained reflex; every confirmation they need arrives through hearing. <strong>A looper that requires the performer to look at it has failed at its highest job.</strong> The screen is for preparation. The performance is for the music.</p>
+<hr>
+<h2>Part XV — What This Architecture Enables</h2>
+<h3>15.1 Capabilities unique to this architecture</h3>
+<p>The following follow directly from the architectural commitments above. None is available in any commercial looper as of this writing.</p>
+<ul>
+<li><strong>Retroactive capture.</strong> The tape was running; in-points move backward.</li>
+<li><strong>Lossless multi-take.</strong> Every attempt at every idea is preserved.</li>
+<li><strong>Imprecise capture without penalty.</strong> Boundaries are refined in preparation.</li>
+<li><strong>Bit-exact archival reproducibility.</strong> Same Constituent graph + same tapes = same output, forever.</li>
+<li><strong>Graceful ensemble degradation to solo recording.</strong></li>
+<li><strong>Cross-session continuity</strong> of motifs and arrangements.</li>
+<li><strong>Effect parameter automation as native Constituent content.</strong></li>
+<li><strong>Recursive arrangement.</strong> Sets, songs, sections, phrases, loops — same data model.</li>
+<li><strong>Polymetric coexistence.</strong> Multiple meters in one phrase, no compromise.</li>
+<li><strong>Polytemporal coexistence.</strong> Metric and unmetered material side by side.</li>
+<li><strong>Micro-timing preserved exactly.</strong> Swing, feel, pocket — all captured at substrate precision.</li>
+<li><strong>Role-based phrase substitution.</strong> Structured improvisation as a first-class capability.</li>
+<li><strong>Grammatical phrase relationships.</strong> Call/response, theme/variation as data, not interpretation.</li>
+<li><strong>Drift-free synchronization at any timescale.</strong> Hundredth cycle is as tight as the first.</li>
+</ul>
+<h3>15.2 What this architecture gives up</h3>
+<p>Honesty about trade-offs:</p>
+<ul>
+<li><strong>Initial complexity.</strong> The conceptual model is more sophisticated than &quot;press record, press play.&quot; First-time users need an onramp.</li>
+<li><strong>Storage footprint.</strong> Continuous capture is more storage-intensive than capture-on-demand. Modern storage makes this affordable, but it is real.</li>
+<li><strong>Implementation effort.</strong> Building the conceptual time engine, the Constituent hierarchy, the LMC discipline, the continuous ASRC, and the phrase-level UX is significantly more work than building a traditional looper. The payoff is in capability and longevity.</li>
+<li><strong>No real-time AI assistance</strong> (today). Inference latencies do not support sub-30ms creative response. The architecture is AI-compatible, but the creative authority is the performer.</li>
+</ul>
+<h3>15.3 Open questions</h3>
+<p>The architecture as specified is internally consistent and complete enough to implement. The following questions remain genuinely open:</p>
+<ul>
+<li><strong>Optimal hardware control surface.</strong> Footswitches, pads, knobs, touch — the right combination is likely use-case-specific.</li>
+<li><strong>Cross-platform consistency of the membrane.</strong> CoreAudio, ASIO, WASAPI, JACK, Android, browser, embedded — implementations vary.</li>
+<li><strong>Video implementation maturity.</strong> Audio looping in this architecture is well-understood. Video looping at performance latencies is less explored.</li>
+<li><strong>Phrase-relationship UX.</strong> How grammatical relationships between phrases are surfaced for editing and visualization is an open UX problem.</li>
+<li><strong>Structured improvisation interfaces.</strong> Role-fillable phrase slots are a powerful capability, but the UX for them at performance time is novel and untested.</li>
+</ul>
+<h3>15.4 Closing</h3>
+<p>This paper does not prescribe an implementation. It prescribes a way of thinking about loopers, grounded in respect for the performer, honesty about digital time, and trust in the user.</p>
+<p>The hope is that other developers — those building loopers as commercial products, as open-source tools, as research prototypes — find in this paper a coherent reference point. Adopt the architecture, dispute it, refine it, replace it. The goal is not orthodoxy. The goal is better loopers.</p>
+<p><strong>A phrase is a musical utterance. A loop is an idea. Ideas are worth repeating. Time is a concept, not a number. Trust the user. Build accordingly.</strong></p>
+<hr>
+<h2>Appendix A — Glossary</h2>
+<p><strong>Absolute time</strong> — A monotonic, high-resolution time reference at the membrane, against which numerical time is rendered from conceptual time.</p>
+<p><strong>Anchor domain</strong> — Whether a Constituent's boundaries are stored in absolute time or in some level of musical (conceptual) time.</p>
+<p><strong>Anchor to parent</strong> — How a Constituent aligns to its parent: at start, at end, at both, locked throughout, or free.</p>
+<p><strong>ASRC (Async Sample Rate Conversion)</strong> — Continuous resampling between the engine's canonical internal rate and the device's actual measured rate. Lives at the membrane.</p>
+<p><strong>Capability tier</strong> — One of four operating profiles selected at session startup based on hardware capability. Governs format, effect strategy, and resource budgets.</p>
+<p><strong>Cardinality</strong> — One of the five repetition dimensions. How many times a loop plays before stopping.</p>
+<p><strong>Conceptual time</strong> — The engine's internal time domain. Symbolic, hierarchical, exact by construction. Becomes numerical only at the membrane.</p>
+<p><strong>Constituent</strong> — The unifying abstraction for all musical objects: tape slices, loops, phrases, sections, songs, sets. All share a common structure (id, conceptual boundaries, local tempo map, anchor, repetition rules, metadata, children).</p>
+<p><strong>CRDT (Conflict-Free Replicated Data Type)</strong> — A data structure that replicates across nodes and merges without manual conflict resolution. The append-only-tape + immutable-Constituent architecture is naturally CRDT-compatible.</p>
+<p><strong>Ensemble LMC</strong> — The shared logical master clock across a distributed ensemble. Calibrated against the elected master node.</p>
+<p><strong>Grammatical relationship</strong> — A linked relationship between phrases (call/response, statement/variation, theme/development, tension/release, punctuation) stored as phrase metadata.</p>
+<p><strong>Hierarchy of time domains</strong> — The tree of nested conceptual time domains: session → song → section → phrase → loop → cycle. Each level may have its own tempo map and meter.</p>
+<p><strong>Identity</strong> — The persistent ID of a Constituent, surviving all content revisions. &quot;The verse&quot; remains the verse across edits.</p>
+<p><strong>Inspiration</strong> — The fragile creative state during which the performer captures musical ideas. Designed for above all other considerations.</p>
+<p><strong>Intent</strong> — A phrase's musical purpose, captured as metadata. Survives content revisions because identity is separate from content.</p>
+<p><strong>LMC (Logical Master Clock)</strong> — The software construct above all hardware clocks. The membrane's absolute-time reference. Disciplined by the best available source.</p>
+<p><strong>Local LMC</strong> — A node's own monotonic time reference, used for stamping local tape events.</p>
+<p><strong>Loop</strong> — A Constituent that directly references tape data. The mechanism by which content within a phrase may repeat. <em>Not</em> the unit of musical thought.</p>
+<p><strong>Marzullo's algorithm</strong> — The interval-intersection algorithm used to elect the LMC master across a distributed ensemble.</p>
+<p><strong>Membrane</strong> — The boundary between digital time and physical reality. The only place in the system where conceptual time becomes numerical time. Exists exactly once per node per direction (inbound and outbound).</p>
+<p><strong>Mutation</strong> — One of the five repetition dimensions. How a loop's content varies as it repeats. The art is in its invisibility.</p>
+<p><strong>Phrase</strong> — A complete musical utterance with its own identity, internal time domain, role, intent, entrance/exit characters, and relationship to other phrases. The unit of musical thought. May contain loops, non-looped tape slices, sub-phrases, silence.</p>
+<p><strong>Polymetric</strong> — Multiple meters coexisting in the same parent Constituent (e.g., 4/4 and 7/8 in the same phrase).</p>
+<p><strong>Polytemporal</strong> — Multiple time domains (metric and unmetered) coexisting in the same parent.</p>
+<p><strong>Repetition rules</strong> — The five-axis description of how a Constituent plays back: trigger, cardinality, phase, mutation, termination.</p>
+<p><strong>Retroactive ring</strong> — The in-memory portion of recent tape data, available for retroactive capture.</p>
+<p><strong>Role</strong> — A phrase's structural function (verse, chorus, response, fill, etc.). Makes phrases interchangeable by role for structured improvisation.</p>
+<p><strong>Tape</strong> — An append-only, immutable stream of timestamped events from a single input source. The source of truth.</p>
+<p><strong>Tempo map</strong> — A transformation between two conceptual time domains, parameterized by tempo and time signature events at boundaries.</p>
+<p><strong>Tier dominance</strong> — In distributed LMC election, a higher-quality discipline source beats any number of lower-quality sources.</p>
+<p><strong>Trigger</strong> — One of the five repetition dimensions. What event causes a Constituent to begin playing.</p>
+<hr>
+<h2>Appendix B — Decision Log</h2>
+<p>The following decisions were made during the design process. They appear in roughly the order made, with brief justification. This log is offered for readers who want to understand <em>why</em> the architecture is what it is.</p>
+<ol>
+<li><strong>Absolute time is the master timebase at the membrane</strong>; audio and video are both flawed substrates rendered against it.</li>
+<li><strong>A loop conceptually is a position interval over tape data</strong>, not a sample count or frame count.</li>
+<li><strong>Time-domain at the core, sample-domain at the membrane.</strong> Continuous ASRC bridges the two.</li>
+<li><strong>Latency compensation is architectural.</strong> Every tape event carries its true capture time; one-time loopback calibration per device.</li>
+<li><strong>Everything is always recorded.</strong> The tape, not the loop, is the source of truth.</li>
+<li><strong>All inputs are tapes</strong> — audio, video, MIDI, control, parameter automation, system events — sharing one uniform event format.</li>
+<li><strong>Tapes are append-only and immutable.</strong> All editing happens elsewhere.</li>
+<li><strong>Tapes are local; they never traverse the network</strong> as primary data.</li>
+<li><strong>System sizes itself once at startup</strong>, locks a capability tier for the session.</li>
+<li><strong>Capability tiers</strong> (Lavish → Comfortable → Tight → Survival) govern format, effect strategy, ring depth, ASRC quality.</li>
+<li><strong>Unbreakable rules</strong>: audio never glitches; tape integrity is sacred; degradation is announced.</li>
+<li><strong>The Logical Master Clock (LMC)</strong> is a software construct above all hardware clocks.</li>
+<li><strong>Discipline hierarchy</strong>: GPS → PTP → NTP → Link → local CPU monotonic.</li>
+<li><strong>Distributed LMC election</strong> uses Marzullo interval-intersection, not median voting.</li>
+<li><strong>Anchor node override</strong>: musical authority outranks technical tier.</li>
+<li><strong>Local LMC and ensemble LMC are distinct domains.</strong></li>
+<li><strong>Mixing and monitoring are always local.</strong> Audio that has crossed the network is no longer disciplinable.</li>
+<li><strong>CRDT-compatible session state.</strong></li>
+<li><strong>Graceful ensemble degradation to solo recording.</strong></li>
+<li><strong>A loop is an idea; ideas are worth repeating.</strong></li>
+<li><strong>Repetition is regenerator feedback</strong> between performer and system.</li>
+<li><strong>Five repetition dimensions</strong>: trigger, cardinality, phase, mutation, termination.</li>
+<li><strong>Mutation exists to sustain engagement, not to add complexity.</strong> Its art is invisibility.</li>
+<li><strong>Termination matches attention decay.</strong></li>
+<li><strong>The looper trusts the user.</strong></li>
+<li><strong>The looper's scope ends at the membrane.</strong> Mixing, routing, effects topology are downstream.</li>
+<li><strong>Arrangement is creation, not processing.</strong> The looper handles arrangement natively.</li>
+<li><strong>Inspiration is fragile</strong> and is the design target.</li>
+<li><strong>Defaults are sacred.</strong></li>
+<li><strong>Reversibility replaces precision.</strong></li>
+<li><strong>Latency budget for trust</strong>: &lt;30ms for consequence; &lt;10ms for one's own.</li>
+<li><strong>Two cognitive states, one continuous instrument.</strong></li>
+<li><strong>Glanceable, not readable</strong> during performance.</li>
+<li><strong>Coarse decisive controls</strong> for performance; <strong>fine precise controls</strong> for preparation.</li>
+<li><strong>Undo is the most accessible operation.</strong></li>
+<li><strong>Eyes-free operation is the highest live-performance UI goal.</strong></li>
+</ol>
+<p>— <em>Subsequent decisions adding the phrase, conceptual-time, and polymetric layers:</em></p>
+<ol start="37">
+<li><strong>A phrase is a musical utterance; a loop is a mechanism it may use.</strong> Phrase is the unit of musical thought.</li>
+<li><strong>A phrase may contain multiple loops, non-looped tape slices, and silence as content.</strong></li>
+<li><strong>Loops within a phrase may live in different time domains</strong> (polymetric and polytemporal coexistence).</li>
+<li><strong>The Constituent is the unifying abstraction.</strong> Tape slices, loops, phrases, sections, songs, sets all share one structure.</li>
+<li><strong>The Constituent hierarchy</strong> is recommended (loop → phrase → section → song → set) but not strictly enforced.</li>
+<li><strong>Identity persists across content revision.</strong> A phrase remains &quot;the verse&quot; through edits.</li>
+<li><strong>Time is a concept, not a number.</strong> The engine manipulates time symbolically; numerical time exists only at the membrane.</li>
+<li><strong>The PPQ problem dissolves under conceptual time.</strong> No shared grid is needed for tuplets, polyrhythm, or micro-timing.</li>
+<li><strong>The hierarchy of time domains</strong> — session, song, section, phrase, loop, cycle — each may have its own meter and tempo.</li>
+<li><strong>Constituents in different time domains meet at parent boundaries</strong>, not internally.</li>
+<li><strong>Meter is a property of each Constituent</strong>, not a global session constraint.</li>
+<li><strong>Micro-timing is preserved exactly</strong> because conceptual time has no quantization grid.</li>
+<li><strong>The LMC's role is precisely defined</strong>: it disciplines the membrane, not the engine's internal time.</li>
+<li><strong>Editing is symbolic.</strong> Operations on time are operations on conceptual structures, not on numbers.</li>
+<li><strong>Phrases carry role and intent metadata</strong> that persists across content edits.</li>
+<li><strong>Phrases are interchangeable by role</strong>, enabling structured improvisation.</li>
+<li><strong>Grammatical relationships between phrases</strong> (call/response, theme/variation, etc.) are first-class metadata.</li>
+<li><strong>A song is a narrative, not a sequence.</strong> Structurally complete, performatively variable.</li>
+<li><strong>Arrangement happens at the phrase level and above</strong>, not at the loop level.</li>
+<li><strong>The set list is the outermost Constituent.</strong> An entire concert is a single Constituent graph.</li>
+</ol>
+<hr>
+<p><em>End of Sirius Looper Whitepaper. Comments, criticism, and contributions welcome.</em></p>
+
+    </div>
+  </div>
+</article>
+
+  </main>
+
+  <footer class="site-footer" role="contentinfo">
+    <div class="container footer-grid">
+      <div class="footer-block">
+        <div class="footer-brand"><span class="brand-mark-accent">S</span>IRIUS LOOPER</div>
+        <p class="footer-tag">Capture continuously. Compose retroactively. Never miss a take.</p>
+      </div>
+      <div class="footer-block">
+        <h4>Product</h4>
+        <ul>
+          <li><a href="/features/">Features</a></li>
+          <li><a href="/architecture/">Architecture</a></li>
+          <li><a href="/docs/user-guide/">User Guide</a></li>
+        </ul>
+      </div>
+      <div class="footer-block">
+        <h4>Reference</h4>
+        <ul>
+          <li><a href="/docs/whitepaper-v2/">White Paper V2</a></li>
+          <li><a href="/docs/whitepaper-v1/">White Paper V1</a></li>
+          <li><a href="https://github.com/larryseyer/siriuslooper" rel="noopener">Source (GitHub)</a></li>
+        </ul>
+      </div>
+      <div class="footer-block">
+        <h4>Sister project</h4>
+        <ul>
+          <li><a href="https://github.com/larryseyer/OTTO" rel="noopener">OTTO</a></li>
+          <li><a href="/about/">About</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="container footer-meta">
+      <small>© 2026 Larry Seyer. Source released under AGPLv3 with App Store and sample-library exceptions.</small>
+    </div>
+  </footer>
+
+  <script src="/assets/js/signup.js" defer></script>
+</body>
+</html>

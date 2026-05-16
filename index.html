@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Sirius Looper — Capture continuously. Compose retroactively. Never miss a take.</title>
+  <meta name="description" content="A reference architecture for time-domain audio/video looping. Retroactive capture, polymetric phrases, micro-timing preserved exactly.">
+
+  <link rel="canonical" href="https://siriuslooper.com/">
+  <link rel="icon" type="image/svg+xml" href="/assets/img/favicon.svg">
+  <link rel="alternate icon" href="/assets/img/favicon.svg">
+
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Sirius Looper">
+  <meta property="og:title" content="Sirius Looper">
+  <meta property="og:description" content="A reference architecture for time-domain audio/video looping. Retroactive capture, polymetric phrases, micro-timing preserved exactly.">
+  <meta property="og:url" content="https://siriuslooper.com/">
+  <meta property="og:image" content="https://siriuslooper.com/assets/img/og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Sirius Looper">
+  <meta name="twitter:description" content="A reference architecture for time-domain audio/video looping. Retroactive capture, polymetric phrases, micro-timing preserved exactly.">
+  <meta name="twitter:image" content="https://siriuslooper.com/assets/img/og.png">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="/assets/css/site.css">
+
+  
+</head>
+<body class="page-home">
+  <a href="#main" class="skip-link">Skip to main content</a>
+
+  <header class="site-header" role="banner">
+    <div class="container header-row">
+      <a href="/" class="brand" aria-label="Sirius Looper home">
+        <span class="brand-mark"><span class="brand-mark-accent">S</span>IRIUS</span>
+        <span class="brand-suffix">LOOPER</span>
+      </a>
+      <nav class="site-nav" aria-label="Primary">
+        <a href="/features/">Features</a>
+        <a href="/architecture/">Architecture</a>
+        <a href="/docs/user-guide/">Docs</a>
+        <a href="/about/">About</a>
+        <a href="https://github.com/larryseyer/siriuslooper" class="nav-external" rel="noopener">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" role="main">
+    
+<section class="hero">
+  <div class="container">
+    <p class="hero-kicker">Reference architecture · macOS · v0.1.0 · in development</p>
+    <h1>Capture continuously. Compose retroactively.</h1>
+    <p class="hero-lede">
+      Sirius Looper is a performance looper for serious musicians.
+      Every input is captured to an always-running tape, so the moment is
+      already recorded by the time the gesture to keep it arrives.
+      Mark in. Mark out. Move the in-point backward to catch the pickup
+      note you didn't mark. Compose phrases from material that has
+      already happened, instead of fighting to start a take on the
+      downbeat.
+    </p>
+
+    <form class="signup-form" method="post" novalidate>
+      <input type="email" name="email" required placeholder="your@email.com" aria-label="Email address">
+      <input type="text" class="honeypot" name="company" tabindex="-1" autocomplete="off" aria-hidden="true">
+      <button type="submit" class="btn btn-primary">Notify me</button>
+    </form>
+    <p class="signup-status" role="status" aria-live="polite"></p>
+
+    <div class="hero-cta" style="margin-top:1.25rem;">
+      <a href="/docs/whitepaper-v2/" class="btn btn-ghost">Read the white paper →</a>
+      <a href="/features/" class="btn btn-ghost">See the features →</a>
+    </div>
+
+    <div class="tape-illo" aria-hidden="true">
+      <svg viewBox="0 0 880 120" role="img" aria-label="Animated illustration of a tape with a moving capture region">
+        <rect class="tape-base" x="0" y="40" width="880" height="40" rx="6"/>
+        
+          <line class="tape-tick" x1="0" y1="40" x2="0" y2="48"/>
+          <line class="tape-tick" x1="0" y1="72" x2="0" y2="80"/>
+        
+          <line class="tape-tick" x1="40" y1="40" x2="40" y2="48"/>
+          <line class="tape-tick" x1="40" y1="72" x2="40" y2="80"/>
+        
+          <line class="tape-tick" x1="80" y1="40" x2="80" y2="48"/>
+          <line class="tape-tick" x1="80" y1="72" x2="80" y2="80"/>
+        
+          <line class="tape-tick" x1="120" y1="40" x2="120" y2="48"/>
+          <line class="tape-tick" x1="120" y1="72" x2="120" y2="80"/>
+        
+          <line class="tape-tick" x1="160" y1="40" x2="160" y2="48"/>
+          <line class="tape-tick" x1="160" y1="72" x2="160" y2="80"/>
+        
+          <line class="tape-tick" x1="200" y1="40" x2="200" y2="48"/>
+          <line class="tape-tick" x1="200" y1="72" x2="200" y2="80"/>
+        
+          <line class="tape-tick" x1="240" y1="40" x2="240" y2="48"/>
+          <line class="tape-tick" x1="240" y1="72" x2="240" y2="80"/>
+        
+          <line class="tape-tick" x1="280" y1="40" x2="280" y2="48"/>
+          <line class="tape-tick" x1="280" y1="72" x2="280" y2="80"/>
+        
+          <line class="tape-tick" x1="320" y1="40" x2="320" y2="48"/>
+          <line class="tape-tick" x1="320" y1="72" x2="320" y2="80"/>
+        
+          <line class="tape-tick" x1="360" y1="40" x2="360" y2="48"/>
+          <line class="tape-tick" x1="360" y1="72" x2="360" y2="80"/>
+        
+          <line class="tape-tick" x1="400" y1="40" x2="400" y2="48"/>
+          <line class="tape-tick" x1="400" y1="72" x2="400" y2="80"/>
+        
+          <line class="tape-tick" x1="440" y1="40" x2="440" y2="48"/>
+          <line class="tape-tick" x1="440" y1="72" x2="440" y2="80"/>
+        
+          <line class="tape-tick" x1="480" y1="40" x2="480" y2="48"/>
+          <line class="tape-tick" x1="480" y1="72" x2="480" y2="80"/>
+        
+          <line class="tape-tick" x1="520" y1="40" x2="520" y2="48"/>
+          <line class="tape-tick" x1="520" y1="72" x2="520" y2="80"/>
+        
+          <line class="tape-tick" x1="560" y1="40" x2="560" y2="48"/>
+          <line class="tape-tick" x1="560" y1="72" x2="560" y2="80"/>
+        
+          <line class="tape-tick" x1="600" y1="40" x2="600" y2="48"/>
+          <line class="tape-tick" x1="600" y1="72" x2="600" y2="80"/>
+        
+          <line class="tape-tick" x1="640" y1="40" x2="640" y2="48"/>
+          <line class="tape-tick" x1="640" y1="72" x2="640" y2="80"/>
+        
+          <line class="tape-tick" x1="680" y1="40" x2="680" y2="48"/>
+          <line class="tape-tick" x1="680" y1="72" x2="680" y2="80"/>
+        
+          <line class="tape-tick" x1="720" y1="40" x2="720" y2="48"/>
+          <line class="tape-tick" x1="720" y1="72" x2="720" y2="80"/>
+        
+          <line class="tape-tick" x1="760" y1="40" x2="760" y2="48"/>
+          <line class="tape-tick" x1="760" y1="72" x2="760" y2="80"/>
+        
+          <line class="tape-tick" x1="800" y1="40" x2="800" y2="48"/>
+          <line class="tape-tick" x1="800" y1="72" x2="800" y2="80"/>
+        
+          <line class="tape-tick" x1="840" y1="40" x2="840" y2="48"/>
+          <line class="tape-tick" x1="840" y1="72" x2="840" y2="80"/>
+        
+          <line class="tape-tick" x1="880" y1="40" x2="880" y2="48"/>
+          <line class="tape-tick" x1="880" y1="72" x2="880" y2="80"/>
+        
+        <g class="tape-marker">
+          <rect class="tape-region" x="220" y="40" width="180" height="40" rx="4"/>
+          <line class="tape-playhead" x1="400" y1="32" x2="400" y2="88"/>
+          <polygon class="tape-playhead" points="394,28 406,28 400,38" fill="currentColor"/>
+        </g>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container">
+    <h2>Three things existing loopers can't do.</h2>
+    <p class="section-lede">
+      Every existing looper quantizes time to a single grid, locks you
+      into one meter per loop, and demands you hit Record at the exact
+      moment a phrase begins. Sirius does none of that.
+    </p>
+
+    <div class="pillars">
+      <div class="pillar">
+        <div class="pillar-icon" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h14m0 0l-4-4m4 4l-4 4"/><path d="M21 6v12" stroke-linecap="round"/></svg>
+        </div>
+        <h3>Retroactive capture</h3>
+        <p>The tape was always running. Mark Out closes a region — and you can move the in-point backward to grab the pickup note you didn't mark.</p>
+      </div>
+      <div class="pillar">
+        <div class="pillar-icon" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="7" cy="12" r="3"/><circle cx="17" cy="12" r="3"/><path d="M10 12h4"/></svg>
+        </div>
+        <h3>Polymetric phrases</h3>
+        <p>A 4/4 drum loop and a 7/8 ostinato live in one phrase without approximation. Each in its own meter; they meet at phrase boundaries.</p>
+      </div>
+      <div class="pillar">
+        <div class="pillar-icon" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 18c3-6 6-12 9-12s6 6 9 12"/></svg>
+        </div>
+        <h3>Micro-timing preserved</h3>
+        <p>Swing, pocket, the deliberate behind-the-beat feel — captured at substrate precision. Nothing is quantized away. Nothing is smoothed.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="band">
+  <div class="container">
+    <h2>Built on first principles.</h2>
+    <p>
+      Time, inside the engine, is concept — not number. The system reasons
+      about positions and relationships symbolically and renders to
+      numerical samples only at the membrane where audio meets the
+      interface. Everything else follows from that decision.
+    </p>
+    <a href="/architecture/" class="btn btn-ghost">Read the architecture →</a>
+  </div>
+</section>
+
+  </main>
+
+  <footer class="site-footer" role="contentinfo">
+    <div class="container footer-grid">
+      <div class="footer-block">
+        <div class="footer-brand"><span class="brand-mark-accent">S</span>IRIUS LOOPER</div>
+        <p class="footer-tag">Capture continuously. Compose retroactively. Never miss a take.</p>
+      </div>
+      <div class="footer-block">
+        <h4>Product</h4>
+        <ul>
+          <li><a href="/features/">Features</a></li>
+          <li><a href="/architecture/">Architecture</a></li>
+          <li><a href="/docs/user-guide/">User Guide</a></li>
+        </ul>
+      </div>
+      <div class="footer-block">
+        <h4>Reference</h4>
+        <ul>
+          <li><a href="/docs/whitepaper-v2/">White Paper V2</a></li>
+          <li><a href="/docs/whitepaper-v1/">White Paper V1</a></li>
+          <li><a href="https://github.com/larryseyer/siriuslooper" rel="noopener">Source (GitHub)</a></li>
+        </ul>
+      </div>
+      <div class="footer-block">
+        <h4>Sister project</h4>
+        <ul>
+          <li><a href="https://github.com/larryseyer/OTTO" rel="noopener">OTTO</a></li>
+          <li><a href="/about/">About</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="container footer-meta">
+      <small>© 2026 Larry Seyer. Source released under AGPLv3 with App Store and sample-library exceptions.</small>
+    </div>
+  </footer>
+
+  <script src="/assets/js/signup.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>User Guide · Sirius Looper</title>
+  <meta name="description" content="Step-by-step workflows, gestures, and glossary for Sirius Looper. Read in order if you&#39;re new; jump to the chapter you need otherwise.">
+
+  <link rel="canonical" href="https://siriuslooper.com/docs/user-guide/">
+  <link rel="icon" type="image/svg+xml" href="/assets/img/favicon.svg">
+  <link rel="alternate icon" href="/assets/img/favicon.svg">
+
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Sirius Looper">
+  <meta property="og:title" content="User Guide · Sirius Looper">
+  <meta property="og:description" content="Step-by-step workflows, gestures, and glossary for Sirius Looper. Read in order if you&#39;re new; jump to the chapter you need otherwise.">
+  <meta property="og:url" content="https://siriuslooper.com/docs/user-guide/">
+  <meta property="og:image" content="https://siriuslooper.com/assets/img/og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="User Guide · Sirius Looper">
+  <meta name="twitter:description" content="Step-by-step workflows, gestures, and glossary for Sirius Looper. Read in order if you&#39;re new; jump to the chapter you need otherwise.">
+  <meta name="twitter:image" content="https://siriuslooper.com/assets/img/og.png">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="/assets/css/site.css">
+
+  
+</head>
+<body class="page-doc">
+  <a href="#main" class="skip-link">Skip to main content</a>
+
+  <header class="site-header" role="banner">
+    <div class="container header-row">
+      <a href="/" class="brand" aria-label="Sirius Looper home">
+        <span class="brand-mark"><span class="brand-mark-accent">S</span>IRIUS</span>
+        <span class="brand-suffix">LOOPER</span>
+      </a>
+      <nav class="site-nav" aria-label="Primary">
+        <a href="/features/">Features</a>
+        <a href="/architecture/">Architecture</a>
+        <a href="/docs/user-guide/" aria-current="page">Docs</a>
+        <a href="/about/">About</a>
+        <a href="https://github.com/larryseyer/siriuslooper" class="nav-external" rel="noopener">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" role="main">
+    <article class="doc">
+  <div class="container doc-grid">
+    <aside class="doc-aside" aria-label="Document navigation">
+      <div class="doc-aside-inner">
+        <p class="doc-kicker">Sirius Looper · Documentation</p>
+        <h2 class="doc-title-aside">User Guide</h2>
+        <nav class="doc-toc" aria-label="On this page">
+          <p class="doc-toc-label">On this page</p>
+          <ol id="doc-toc-list"><!-- populated by signup.js companion --></ol>
+        </nav>
+        <p class="doc-aside-meta">
+          <a href="https://github.com/larryseyer/siriuslooper/blob/master/docs/Sirius%20Looper%20User%20Guide.md" rel="noopener">View source on GitHub →</a>
+        </p>
+      </div>
+    </aside>
+    <div class="doc-body prose">
+      <h1>User Guide</h1>
+      <p class="doc-subtitle">The operator&#39;s manual — workflow-first.</p>
+      <p>The operator's manual. Workflow-first: each chapter walks through
+something you can actually do with Sirius. Read in order if you're new;
+jump to the chapter you need otherwise.</p>
+<p>For the conceptual model, design philosophy, and architectural rationale,
+see the white paper at <code>Sirius Looper Whitepaper V2.md</code> (same folder).
+The white paper says <em>why</em> the system works the way it does. This guide
+says <em>how</em> to make music with it.</p>
+<hr>
+<h2>Glossary</h2>
+<p>These terms appear throughout the guide. Pin them down once here.</p>
+<table>
+<thead>
+<tr>
+<th>Term</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Tape</strong></td>
+<td>The always-running recording of one input. Every audio input has a tape that is continuously capturing while Sirius is open. Tapes are infrastructure — you usually don't see them in the normal view. They make retroactive capture possible.</td>
+</tr>
+<tr>
+<td><strong>Input</strong></td>
+<td>One audio source. A guitar plugged into channel 1, a microphone, a synthesizer plugged into channel 2 — each is an input, and each input has its own tape.</td>
+</tr>
+<tr>
+<td><strong>Phrase</strong></td>
+<td>A musical thought you've captured. A verse, a chorus, an intro, a fill. A Phrase is a container; it holds Loops (and can hold sub-Phrases). Phrases carry musical meaning — role, intent, how they begin and end.</td>
+</tr>
+<tr>
+<td><strong>Loop</strong></td>
+<td>A specific slice of a tape that's part of a Phrase. The actual audio. Loops are leaves — they don't contain anything else; they point at a slice of audio on a specific tape. Every Loop lives inside a Phrase.</td>
+</tr>
+<tr>
+<td><strong>Pill</strong></td>
+<td>The colored rounded shape on the timeline. Each Pill is the visual rendering of one Phrase.</td>
+</tr>
+<tr>
+<td><strong>CaptureRegion</strong></td>
+<td>The temporary bookmark made by a Mark In / Mark Out gesture. Internal — you don't normally see it. The system immediately turns it into a Loop (and a Phrase, if needed).</td>
+</tr>
+<tr>
+<td><strong>Mark In</strong></td>
+<td>The gesture that marks the <em>start</em> of a captured region.</td>
+</tr>
+<tr>
+<td><strong>Mark Out</strong></td>
+<td>The gesture that marks the <em>end</em> of a captured region. Auto-promotes the captured region into the song.</td>
+</tr>
+<tr>
+<td><strong>Arm</strong></td>
+<td>Standing the system up so capture gestures take effect. Disarmed = nothing captures, no surprises. Armed = the next Mark In / Mark Out will land.</td>
+</tr>
+<tr>
+<td><strong>Playhead</strong></td>
+<td>The current time position. Where you are in the song.</td>
+</tr>
+<tr>
+<td><strong>LMC</strong></td>
+<td>&quot;Local Machine Clock&quot; — the system's continuous time reference. The unit on the Tape rulers. You don't usually need to think about LMC; the playhead and the song timeline handle this for you.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2>Chapter 1 — Capturing Phrases and Loops</h2>
+<h3>The capture gesture</h3>
+<p>Every capture is the same three-step sequence:</p>
+<ol>
+<li>
+<p><strong>Arm</strong> — tap the Arm button (or the per-input Arm in the Preparation
+tab). The button turns red. The system is now listening for capture
+gestures. Until you arm, nothing captures — Sirius starts disarmed
+on purpose, so you never capture by surprise.</p>
+</li>
+<li>
+<p><strong>Mark In</strong> — at the moment you want the captured region to start,
+tap Mark In. The system records the playhead position as the
+in-point. Visually, you'll see Mark Out become available.</p>
+</li>
+<li>
+<p><strong>Mark Out</strong> — at the moment you want the captured region to end,
+tap Mark Out. The system closes the region, <strong>and immediately
+promotes it</strong> into the song.</p>
+</li>
+</ol>
+<p>You can re-tap Mark In before Mark Out — that <em>replaces</em> the in-point
+without losing the armed state. You can also switch which input you're
+capturing onto in between Mark In and Mark Out, by tapping a different
+input's row.</p>
+<h3>What Mark Out does — the auto-promotion rule</h3>
+<p>When Mark Out fires, Sirius decides what to do with the captured region
+based on the playhead position at the moment of <strong>Mark In</strong>:</p>
+<ul>
+<li>
+<p><strong>Mark In was outside any existing Phrase</strong> → Sirius mints a <em>new
+Phrase</em> containing the captured Loop, and adds it to the song. A
+new Pill appears on the timeline.</p>
+</li>
+<li>
+<p><strong>Mark In was inside an existing Phrase's span</strong> → Sirius adds the
+captured Loop <em>as a child of that Phrase</em>. No new Pill — the existing
+Pill quietly gains another layer.</p>
+</li>
+</ul>
+<p>This is the rule for <strong>everything</strong>. There's no &quot;create phrase&quot; button
+versus &quot;create loop&quot; button. The same physical gesture (Mark In → Mark
+Out) means different things based on whether you're inside an existing
+Phrase or not.</p>
+<h4>Diagram — outside any Phrase</h4>
+<pre><code>Timeline (empty so far):
+   0s    4s    8s   12s   16s   20s
+   ┃     │     │     │     │     │
+         Mark In here       Mark Out here
+         (no Phrase exists)
+
+Result:
+   0s    4s    8s   12s   16s   20s
+   ┃     ╭─────new Phrase─────╮
+         │  (with one Loop)   │
+         ╰────────────────────╯
+</code></pre>
+<h4>Diagram — inside an existing Phrase</h4>
+<pre><code>Timeline (a Verse Phrase already exists):
+   0s    4s    8s   12s   16s   20s
+   ┃     ╭─────────Verse──────────╮
+         │                         │
+         Mark In here  Mark Out here
+         (inside Verse)
+
+Result:
+   0s    4s    8s   12s   16s   20s
+   ┃     ╭─────────Verse──────────╮
+         │       (now with        │
+         │        one more Loop)  │
+         ╰─────────────────────────╯
+</code></pre>
+<h3>When the captured region straddles a Phrase boundary</h3>
+<p>If your Mark In was inside a Phrase but your Mark Out lands past the
+Phrase's end (or vice versa), <strong>Mark In wins</strong> — the captured region is
+treated as belonging to the Phrase that contained Mark In. The Loop's
+boundaries are clamped to fit within the host Phrase.</p>
+<p>The reasoning: Mark In is the moment you committed to the capture; Mark
+Out is just where you stopped. If you intended a different Phrase as the
+host, hit Undo and try again with the playhead in the right place.</p>
+<h3>Recovering from an early Mark Out</h3>
+<p>If you hit Mark Out by accident, too soon, or you don't like what just
+landed, <strong>Undo is non-destructive of your capture state</strong>. Two ways to
+undo:</p>
+<ul>
+<li>
+<p><strong>Tap the CaptureBanner</strong> that just appeared. The banner shows what
+was captured (<code>Loop added to Verse · 3.6 s · tape #200</code> or
+<code>Phrase 3 captured · 3.6 s · tape #200</code>) and includes a small <code>↶ Undo</code>
+affordance on the right. Tap it within the 1.5-second window the
+banner is visible.</p>
+</li>
+<li>
+<p><strong>Tap the bottom-bar Undo button</strong>. Always works.</p>
+</li>
+</ul>
+<p>After undoing a promotion, Sirius restores the capture session to its
+state <em>before</em> Mark Out: your Mark In is intact, the system is armed and
+awaiting an out-point. The tape never stopped recording — it has all the
+samples between Mark In and where you (mistakenly) marked out, and
+beyond. So you can immediately tap Mark Out again at the right moment,
+or tap Disarm to abandon the capture entirely.</p>
+<p>In short: hitting Mark Out early costs you a single tap to recover. It
+does not cost you the capture itself.</p>
+<h3>Building a song from one instrument, then layering instruments on top</h3>
+<p>A natural workflow that uses the auto-promotion rule end-to-end.</p>
+<h4>Pass 1 — lay down the song structure on one instrument</h4>
+<p>Plug a guitar into input 1. Arm input 1.</p>
+<p>Play through the song's sections, one at a time, with Mark Out at the
+end of each:</p>
+<pre><code>0s ──── play intro ──── Mark Out  (Phrase 1: Intro)
+       ──── play verse ──── Mark Out  (Phrase 2: Verse)
+       ──── play chorus ──── Mark Out  (Phrase 3: Chorus)
+       ──── play bridge ──── Mark Out  (Phrase 4: Bridge)
+                                        ...
+</code></pre>
+<p>Each Mark Out is outside any existing Phrase (you're building forward
+in time on a fresh timeline), so each mints a fresh Phrase. By the end
+of Pass 1 you have a row of Phrases on the timeline, each with one
+Loop child pointing at the guitar tape.</p>
+<h4>Pass 2 — overdub layers</h4>
+<p>Plug a bass into input 2. Arm input 2. Scrub the playhead back to
+song-time zero. Play along through the song.</p>
+<p>As the playhead crosses each Phrase's span, hit Mark In (start of bass
+part) and Mark Out (end of bass part). Because Mark In is now <em>inside</em>
+an existing Phrase, each capture lands as a Loop child of that Phrase
+— no new Pills appear, but each Phrase quietly gains a bass layer.</p>
+<p>Repeat for piano, drums, vocals, or anything else. Each pass adds Loops
+to the existing Phrases.</p>
+<h3>What's deferred (Roadmap)</h3>
+<ul>
+<li><strong>Repeating song sections</strong> (verse × 3 sharing common layers, with
+per-instance vocal differences). The data and architecture for this
+is being designed in a separate spec; until then, each Phrase appears
+in the song exactly once.</li>
+<li><strong>A normally-hidden tapes view</strong> with an explicit &quot;show tapes&quot;
+affordance. Today the Preparation tab still surfaces tape rows by
+default. Future versions move tapes underneath a phrase-centric
+primary view.</li>
+<li><strong>Naming and editing Phrases.</strong> Today minted Phrases get a default
+<em>role</em> of <code>capture</code> and an empty name; editing the name / role / intent /
+grammar is a future Preparation-pane feature.</li>
+<li><strong>Capture-history widget.</strong> Superseded by auto-promotion — captures
+are now Pills on the timeline, which serve the same need as a
+history list.</li>
+</ul>
+
+    </div>
+  </div>
+</article>
+
+  </main>
+
+  <footer class="site-footer" role="contentinfo">
+    <div class="container footer-grid">
+      <div class="footer-block">
+        <div class="footer-brand"><span class="brand-mark-accent">S</span>IRIUS LOOPER</div>
+        <p class="footer-tag">Capture continuously. Compose retroactively. Never miss a take.</p>
+      </div>
+      <div class="footer-block">
+        <h4>Product</h4>
+        <ul>
+          <li><a href="/features/">Features</a></li>
+          <li><a href="/architecture/">Architecture</a></li>
+          <li><a href="/docs/user-guide/">User Guide</a></li>
+        </ul>
+      </div>
+      <div class="footer-block">
+        <h4>Reference</h4>
+        <ul>
+          <li><a href="/docs/whitepaper-v2/">White Paper V2</a></li>
+          <li><a href="/docs/whitepaper-v1/">White Paper V1</a></li>
+          <li><a href="https://github.com/larryseyer/siriuslooper" rel="noopener">Source (GitHub)</a></li>
+        </ul>
+      </div>
+      <div class="footer-block">
+        <h4>Sister project</h4>
+        <ul>
+          <li><a href="https://github.com/larryseyer/OTTO" rel="noopener">OTTO</a></li>
+          <li><a href="/about/">About</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="container footer-meta">
+      <small>© 2026 Larry Seyer. Source released under AGPLv3 with App Store and sample-library exceptions.</small>
+    </div>
+  </footer>
+
+  <script src="/assets/js/signup.js" defer></script>
+</body>
+</html>

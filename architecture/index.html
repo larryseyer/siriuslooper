@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Architecture · Sirius Looper</title>
+  <meta name="description" content="Time as concept, not number. The Logical Master Clock, the Membrane, and the Constituent tree — the first-principles design that makes Sirius Looper possible.">
+
+  <link rel="canonical" href="https://siriuslooper.com/architecture/">
+  <link rel="icon" type="image/svg+xml" href="/assets/img/favicon.svg">
+  <link rel="alternate icon" href="/assets/img/favicon.svg">
+
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Sirius Looper">
+  <meta property="og:title" content="Architecture · Sirius Looper">
+  <meta property="og:description" content="Time as concept, not number. The Logical Master Clock, the Membrane, and the Constituent tree — the first-principles design that makes Sirius Looper possible.">
+  <meta property="og:url" content="https://siriuslooper.com/architecture/">
+  <meta property="og:image" content="https://siriuslooper.com/assets/img/og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Architecture · Sirius Looper">
+  <meta name="twitter:description" content="Time as concept, not number. The Logical Master Clock, the Membrane, and the Constituent tree — the first-principles design that makes Sirius Looper possible.">
+  <meta name="twitter:image" content="https://siriuslooper.com/assets/img/og.png">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="/assets/css/site.css">
+
+  
+</head>
+<body class="page-architecture">
+  <a href="#main" class="skip-link">Skip to main content</a>
+
+  <header class="site-header" role="banner">
+    <div class="container header-row">
+      <a href="/" class="brand" aria-label="Sirius Looper home">
+        <span class="brand-mark"><span class="brand-mark-accent">S</span>IRIUS</span>
+        <span class="brand-suffix">LOOPER</span>
+      </a>
+      <nav class="site-nav" aria-label="Primary">
+        <a href="/features/">Features</a>
+        <a href="/architecture/" aria-current="page">Architecture</a>
+        <a href="/docs/user-guide/">Docs</a>
+        <a href="/about/">About</a>
+        <a href="https://github.com/larryseyer/siriuslooper" class="nav-external" rel="noopener">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" role="main">
+    
+<section class="hero">
+  <div class="container">
+    <p class="hero-kicker">Architecture</p>
+    <h1>Time as concept, not number.</h1>
+    <p class="hero-lede">
+      Every other architectural decision in Sirius Looper depends on
+      internalizing one fact: there is no true time on any computer,
+      only the best disciplined approximation. The system reasons about
+      time symbolically — and renders to numerical samples only at the
+      boundary where audio meets the interface.
+    </p>
+    <div class="hero-cta">
+      <a href="/docs/whitepaper-v2/" class="btn btn-primary">Read White Paper V2 →</a>
+      <a href="/docs/whitepaper-v1/" class="btn btn-ghost">Read White Paper V1 →</a>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container" style="max-width: 920px;">
+
+    <div class="arch-block">
+      <h3>The Logical Master Clock</h3>
+      <blockquote>
+        Inside the engine, time is a concept — a structure of positions
+        and relationships, nested hierarchies, intentional offsets. It
+        only becomes a number at the membrane where the system meets
+        the audio interface.
+        <cite>Whitepaper V2 · Part II</cite>
+      </blockquote>
+      <p class="arch-prose">
+        The Logical Master Clock is the single, continuous reference for
+        the system — but it is not a sample counter and it is not an
+        audio clock. Audio clocks drift, round, and accumulate error;
+        the LMC does not, because it does not commit to a number until
+        it has to.
+      </p>
+    </div>
+
+    <div class="arch-block">
+      <h3>The Membrane</h3>
+      <blockquote>
+        The membrane is the boundary between conceptual time inside the
+        engine and numerical time at the audio interface. Inside, time
+        is exact symbolic structure. Outside, it is sample frames. The
+        membrane is where one becomes the other.
+        <cite>Whitepaper V2 · Part III</cite>
+      </blockquote>
+      <p class="arch-prose">
+        Hosting third-party plugins downstream of the membrane is a
+        deliberate trade: plugins are numerical, so their timing
+        guarantees evaporate. But they see audio that has already been
+        disciplined, so they cannot reach back and corrupt the
+        upstream model.
+      </p>
+    </div>
+
+    <div class="arch-block">
+      <h3>Constituents — one tree, every level</h3>
+      <blockquote>
+        Tape, Loop, Phrase, Section, Song, Set. Every node in the
+        arrangement is a Constituent. Same operations apply at every
+        level; arrangement is recursive because the data model is.
+        <cite>Whitepaper V2 · Part IV</cite>
+      </blockquote>
+      <p class="arch-prose">
+        The Constituent tree is what makes phrases composable. A
+        Section is a sequence of Phrases. A Song is a sequence of
+        Sections. A Set is a sequence of Songs. The same edit, the
+        same transform, the same undo — at any depth.
+      </p>
+    </div>
+
+    <div class="arch-block">
+      <h3>Trust the performer absolutely</h3>
+      <blockquote>
+        The looper's job is not to constrain, not to guide, not to
+        second-guess, not to protect them from their own choices. The
+        user is a musician. They know what they want, when they want
+        it, and how they want it.
+        <cite>Whitepaper V2 · §1.5</cite>
+      </blockquote>
+      <p class="arch-prose">
+        That trust is enforced architecturally. Mark Out always
+        succeeds. The tape was always running. The undo stack is
+        lossless. There is no "you can't do that" — only "here is
+        what you just did."
+      </p>
+    </div>
+
+  </div>
+</section>
+
+<section class="band">
+  <div class="container">
+    <h2>The short version isn't the whole story.</h2>
+    <p>The white paper goes deep on conceptual time, drift, ensemble synchronization, and the trade-offs that don't appear above. It's a design thesis, not a sales pitch.</p>
+    <a href="/docs/whitepaper-v2/" class="btn btn-primary">Read White Paper V2 →</a>
+  </div>
+</section>
+
+  </main>
+
+  <footer class="site-footer" role="contentinfo">
+    <div class="container footer-grid">
+      <div class="footer-block">
+        <div class="footer-brand"><span class="brand-mark-accent">S</span>IRIUS LOOPER</div>
+        <p class="footer-tag">Capture continuously. Compose retroactively. Never miss a take.</p>
+      </div>
+      <div class="footer-block">
+        <h4>Product</h4>
+        <ul>
+          <li><a href="/features/">Features</a></li>
+          <li><a href="/architecture/">Architecture</a></li>
+          <li><a href="/docs/user-guide/">User Guide</a></li>
+        </ul>
+      </div>
+      <div class="footer-block">
+        <h4>Reference</h4>
+        <ul>
+          <li><a href="/docs/whitepaper-v2/">White Paper V2</a></li>
+          <li><a href="/docs/whitepaper-v1/">White Paper V1</a></li>
+          <li><a href="https://github.com/larryseyer/siriuslooper" rel="noopener">Source (GitHub)</a></li>
+        </ul>
+      </div>
+      <div class="footer-block">
+        <h4>Sister project</h4>
+        <ul>
+          <li><a href="https://github.com/larryseyer/OTTO" rel="noopener">OTTO</a></li>
+          <li><a href="/about/">About</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="container footer-meta">
+      <small>© 2026 Larry Seyer. Source released under AGPLv3 with App Store and sample-library exceptions.</small>
+    </div>
+  </footer>
+
+  <script src="/assets/js/signup.js" defer></script>
+</body>
+</html>
