@@ -239,7 +239,7 @@ Or roll Sessions B + C together if context budget allows.
 
 ---
 
-## 3. Build + test state (current head: `b59a76e`)
+## 3. Build + test state (current head: `08da5b3`; last code commit: `b59a76e`)
 
 ```bash
 cd "/Users/larryseyer/Sirius Looper"
