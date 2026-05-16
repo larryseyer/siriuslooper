@@ -7,6 +7,8 @@
 #include "DemoSession.h"
 
 #include "sirius/Constituent.h"
+#include "sirius/Position.h"
+#include "sirius/Rational.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -35,16 +37,65 @@ TEST_CASE ("DemoSession top-level children are all Phrase shells, never hybrids"
     REQUIRE (demo.root != nullptr);
     REQUIRE_FALSE (demo.root->children().empty());
 
-    for (const auto& topLevel : demo.root->children())
+    // Five top-level children: intro, three verse wrappers, outro.
+    REQUIRE (demo.root->children().size() == 5);
+
+    // Intro [0,3) — bare Phrase, has a Loop descendant.
     {
-        REQUIRE (topLevel != nullptr);
-        // Every top-level child is a role-bearing Phrase: intro, verse, outro.
-        REQUIRE (topLevel->isPhrase());
-        // No top-level child is a hybrid Phrase+Loop Constituent. Loops are
-        // leaves; Phrases are containers. Hybrids belong to neither category.
-        REQUIRE_FALSE (isHybrid (*topLevel));
-        // Each top-level Phrase has at least one Loop descendant so the Pills
-        // aggregator can show it on the timeline.
-        REQUIRE (hasLoopChild (*topLevel));
+        const auto& intro = *demo.root->children()[0];
+        REQUIRE (intro.isPhrase());
+        REQUIRE_FALSE (isHybrid (intro));
+        REQUIRE (hasLoopChild (intro));
+        CHECK (intro.conceptualIn()  == sirius::Position (sirius::Rational (0)));
+        CHECK (intro.conceptualOut() == sirius::Position (sirius::Rational (3)));
     }
+
+    // Three verse wrappers at [3,9), [9,15), [15,21).
+    for (std::size_t i = 1; i <= 3; ++i)
+    {
+        const auto& wrapper = *demo.root->children()[i];
+        REQUIRE (sirius::isPlacementWrapper (wrapper));
+        REQUIRE_FALSE (isHybrid (wrapper));
+        // Wrapper itself has no direct Loop child (the shared verse does).
+        CHECK (wrapper.conceptualIn()  ==
+               sirius::Position (sirius::Rational (3 + static_cast<int> (i - 1) * 6)));
+        CHECK (wrapper.conceptualOut() ==
+               sirius::Position (sirius::Rational (3 + static_cast<int> (i) * 6)));
+    }
+
+    // Outro [21,24) — bare Phrase, has a Loop descendant.
+    {
+        const auto& outro = *demo.root->children()[4];
+        REQUIRE (outro.isPhrase());
+        REQUIRE_FALSE (isHybrid (outro));
+        REQUIRE (hasLoopChild (outro));
+        CHECK (outro.conceptualIn()  == sirius::Position (sirius::Rational (21)));
+        CHECK (outro.conceptualOut() == sirius::Position (sirius::Rational (24)));
+    }
+
+    // Total span: 24 whole notes.
+    CHECK (demo.root->conceptualOut() == sirius::Position (sirius::Rational (24)));
+}
+
+TEST_CASE ("DemoSession's three verse wrappers share one Phrase ChildPtr",
+           "[demoSession][shared]")
+{
+    const auto demo = buildDemoSession();
+    REQUIRE (demo.root->children().size() == 5);
+
+    const auto& wrapperA = *demo.root->children()[1];
+    const auto& wrapperB = *demo.root->children()[2];
+    const auto& wrapperC = *demo.root->children()[3];
+    REQUIRE (wrapperA.children().size() >= 1);
+    REQUIRE (wrapperB.children().size() >= 1);
+    REQUIRE (wrapperC.children().size() >= 1);
+
+    // The canary: real sharing, not duplicate-id-by-mistake.
+    const auto* a = wrapperA.children()[0].get();
+    const auto* b = wrapperB.children()[0].get();
+    const auto* c = wrapperC.children()[0].get();
+    CHECK (a == b);
+    CHECK (b == c);
+    CHECK (a->id().value() == 20);  // canonical shared verse id
+    CHECK (a->name() == "verse");
 }

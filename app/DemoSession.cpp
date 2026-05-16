@@ -43,10 +43,8 @@ namespace
 
 DemoSession buildDemoSession()
 {
-    // Every top-level child of the session is a Phrase *container* — never a
-    // Phrase-and-Loop hybrid. Even single-tape sections (intro, outro) wrap
-    // their tape in a child Loop so the rule "Loops are leaves; Phrases are
-    // containers" holds uniformly across the tree.
+    // Intro [0,3) — bare Phrase containing one Loop. Convention unchanged:
+    // every top-level child is a Phrase container, never a hybrid.
     const Constituent introPhraseShell =
         Constituent (ConstituentId (10), Position(), Position (Rational (3)))
             .withName ("intro")
@@ -57,9 +55,10 @@ DemoSession buildDemoSession()
         arrangement::layer (introPhraseShell,
             { makeLoop (11, "intro", Rational (3), 100) }));
 
-    // The middle phrase is a layer of two simultaneous loops — a rhythm bed and
-    // a lead line — so the demo exercises both arrangement primitives and the
-    // multi-tape Pill case (primary tape = rhythm; member = {rhythm, lead}).
+    // Verse — ONE shared Phrase that the song places three times. The shared
+    // Phrase is a layer of two simultaneous loops (rhythm + lead) and lives
+    // at id 20. sequenceShared then mints three wrapper Constituents (ids
+    // 51, 52, 53) at offsets 3, 9, 15, all pointing at this same ChildPtr.
     const Constituent versePhraseShell =
         Constituent (ConstituentId (20), Position(), Position (Rational (6)))
             .withName ("verse")
@@ -71,6 +70,7 @@ DemoSession buildDemoSession()
             { makeLoop (21, "verse: rhythm", Rational (6), 200),
               makeLoop (22, "verse: lead",   Rational (3), 300) }));
 
+    // Outro [21,24).
     const Constituent outroPhraseShell =
         Constituent (ConstituentId (30), Position(), Position (Rational (3)))
             .withName ("outro")
@@ -81,21 +81,29 @@ DemoSession buildDemoSession()
         arrangement::layer (outroPhraseShell,
             { makeLoop (31, "outro", Rational (3), 400) }));
 
-    // The three phrases run end-to-end under the session: intro [0,3),
-    // verse [3,9), outro [9,12) — twelve whole notes total.
+    // Build the song: intro at [0,3), three verse wrappers at [3,9), [9,15),
+    // [15,21), outro at [21,24). Twenty-four whole notes total.
+    std::int64_t nextWrapperId = 51;
+    auto allocateWrapper = [&nextWrapperId] { return ConstituentId (nextWrapperId++); };
+
     const Constituent sessionShell =
-        Constituent (ConstituentId (1), Position(), Position (Rational (12)))
+        Constituent (ConstituentId (1), Position(), Position (Rational (24)))
             .withName ("demo session");
+
+    const Constituent withIntro =
+        arrangement::sequence (sessionShell, { intro });
+    const Constituent withVerses =
+        arrangement::sequenceShared (withIntro, verse,
+            { Position (Rational (3)), Position (Rational (9)), Position (Rational (15)) },
+            allocateWrapper);
     const auto session = std::make_shared<const Constituent> (
-        arrangement::sequence (sessionShell, { intro, verse, outro }));
+        arrangement::sequence (withVerses, { outro }));
 
     // 120 quarter-note BPM => one whole note is 2 LMC seconds, so the
-    // twelve-whole-note session spans 24 LMC seconds.
+    // twenty-four-whole-note session spans 48 LMC seconds.
     TempoMap sessionToLmc = TempoMap::fromBpm (Rational (120));
-    const Rational lengthSeconds = sessionToLmc.apply (Rational (12));
+    const Rational lengthSeconds = sessionToLmc.apply (Rational (24));
 
-    // Input descriptors for the demo's four tapes. These map TapeId → kind +
-    // user-visible name and drive the TimelineView's strip rows.
     std::vector<InputDescriptor> inputs;
     inputs.push_back ({ TapeId (100), InputKind::Audio, "Intro pad",   0 });
     inputs.push_back ({ TapeId (200), InputKind::Audio, "Verse rhythm",1 });
