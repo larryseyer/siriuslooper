@@ -81,9 +81,17 @@ EOF
 fi
 
 # --- Quit any prior instance, then relaunch ------------------------------
+# Launch the binary directly rather than via `open`. On dev-tree paths
+# outside /Applications, `open` against a Developer-ID-signed bundle
+# can fail with -10825 (Launch Services rejecting a freshly-built
+# bundle whose identifier clashes with an older ad-hoc-signed copy in
+# a sibling build/ tree). Direct binary launch sidesteps Launch
+# Services entirely and is more robust for both local automation and
+# CI. End-user launches go through Finder/Dock against a notarized
+# bundle in /Applications, which is not affected.
 osascript -e "tell application \"${APP_NAME}\" to quit" >/dev/null 2>&1 || true
 sleep 1
-open "${APP_BUNDLE}"
+"${APP_BUNDLE}/Contents/MacOS/${APP_NAME}" >/dev/null 2>&1 &
 
 # --- Wait for the main window to appear (poll up to ~10 s) ---------------
 ready=0
@@ -100,19 +108,57 @@ if [[ "${ready}" -ne 1 ]]; then
   exit 2
 fi
 
-# Click a button whose accessible name matches the given regex. JUCE
-# TextButtons expose their button text as the AX name. Returns 0 if a button
-# was clicked, non-zero otherwise.
+# Click a button whose accessible name contains the given substring. Walks
+# the AX tree of window 1 explicitly (top-level + one level into each
+# AXGroup) — System Events' `entire contents` strips role information in
+# some Sequoia builds, so we recurse by hand. Tab buttons in JUCE
+# TabbedComponent are nested one AXGroup deep; Save/Load on the Preparation
+# pane are similarly nested. JUCE TextButtons expose their button text as
+# the AX name. Returns 0 if a button was clicked, non-zero otherwise.
 click_button_named() {
   local pattern="$1"
   osascript <<APPLESCRIPT >/dev/null
     tell application "System Events"
       tell process "${APP_NAME}"
+        -- Top-level buttons first.
         repeat with btn in (every button of window 1)
-          if (name of btn as string) contains "${pattern}" then
-            click btn
-            return
-          end if
+          try
+            if (name of btn as string) contains "${pattern}" then
+              click btn
+              return
+            end if
+          end try
+        end repeat
+        -- Then one level into each top-level UI element (groups, etc.).
+        repeat with grp in (every UI element of window 1)
+          try
+            repeat with btn in (every button of grp)
+              try
+                if (name of btn as string) contains "${pattern}" then
+                  click btn
+                  return
+                end if
+              end try
+            end repeat
+          end try
+        end repeat
+        -- And two levels deep — the Preparation pane wraps Save/Load in
+        -- another container.
+        repeat with grp in (every UI element of window 1)
+          try
+            repeat with sub in (every UI element of grp)
+              try
+                repeat with btn in (every button of sub)
+                  try
+                    if (name of btn as string) contains "${pattern}" then
+                      click btn
+                      return
+                    end if
+                  end try
+                end repeat
+              end try
+            end repeat
+          end try
         end repeat
         error "no button matching ${pattern}"
       end tell
@@ -130,9 +176,34 @@ read_window_texts() {
     tell application "System Events"
       tell process "${APP_NAME}"
         set out to ""
+        -- Top-level static texts.
         repeat with t in (every static text of window 1)
           try
             set out to out & (value of t as string) & linefeed
+          end try
+        end repeat
+        -- One level deep.
+        repeat with grp in (every UI element of window 1)
+          try
+            repeat with t in (every static text of grp)
+              try
+                set out to out & (value of t as string) & linefeed
+              end try
+            end repeat
+          end try
+        end repeat
+        -- Two levels deep (Preparation pane wraps the status label).
+        repeat with grp in (every UI element of window 1)
+          try
+            repeat with sub in (every UI element of grp)
+              try
+                repeat with t in (every static text of sub)
+                  try
+                    set out to out & (value of t as string) & linefeed
+                  end try
+                end repeat
+              end try
+            end repeat
           end try
         end repeat
         return out
@@ -141,31 +212,121 @@ read_window_texts() {
 APPLESCRIPT
 }
 
-# Type a full path into the focused NSSavePanel / NSOpenPanel using
-# Cmd+Shift+G ("Go to Folder"), then commit with Return. This is the most
-# stable cross-locale navigation — the dialog's own text field defaults to
-# the chosen filename and varies by locale.
-type_path_into_dialog() {
+# Drive an NSSavePanel / NSOpenPanel to a known path and commit. The dialog
+# opens as a separate top-level window (not a sheet) on macOS Sequoia+; we
+# target it by title prefix and click its primary action button explicitly
+# rather than relying on Return keystrokes. Returns 0 on success.
+#
+# Path strategy:
+#   1. Cmd+Shift+G opens "Go to Folder" sub-dialog
+#   2. Type the full path (including basename)
+#   3. Return commits the Go-to-Folder — NSSavePanel navigates to the
+#      directory and prefills the basename in its filename field
+#   4. Find the dialog window by title prefix and click its action button
+#      by name ("Save" / "Open"); avoids the Return-keystroke landmines
+#      (overwrite confirms, focus shifts, locale variance)
+drive_dialog_to_path() {
   local path="$1"
-  # Wait briefly for the sheet to attach.
-  sleep 1
+  local action_name="$2"   # "Save" or "Open"
+  local dialog_title_prefix="$3"  # e.g. "Save Sirius session" / "Load Sirius session"
+
+  # Wait for dialog window to appear (poll up to ~5 s).
+  local dialog_present=0
+  for _ in $(seq 1 10); do
+    local n
+    n=$(osascript -e "tell application \"System Events\" to tell process \"${APP_NAME}\" to count (windows whose name starts with \"${dialog_title_prefix}\")" 2>/dev/null || echo 0)
+    if [[ "${n}" -ge 1 ]]; then
+      dialog_present=1
+      break
+    fi
+    sleep 0.5
+  done
+  if [[ "${dialog_present}" -ne 1 ]]; then
+    echo "ERROR: dialog window '${dialog_title_prefix}...' never appeared" >&2
+    return 1
+  fi
+
+  # Activate Sirius Looper AND send keystrokes in the same osascript block
+  # so focus can't slip back to the terminal between the activate and
+  # the typing. (When activate and keystroke are in separate osascript
+  # invocations, the shell that launched osascript steals focus back
+  # before the keystrokes fire, and the typed path lands in the terminal
+  # instead of the dialog — verified live by the operator.)
+  #
+  # Use key code 5 (= 'g') for Cmd+Shift+G instead of `keystroke "g"
+  # using {modifiers}` — the latter silently no-ops on Sequoia inside
+  # NSSavePanel/NSOpenPanel when the filename field has focus (the field
+  # eats the modified keystroke), while the raw key code reliably
+  # triggers the system shortcut.
+  osascript <<APPLESCRIPT >/dev/null
+    tell application "${APP_NAME}" to activate
+    delay 0.4
+    tell application "System Events"
+      tell process "${APP_NAME}"
+        set frontmost to true
+        try
+          perform action "AXRaise" of (first window whose name starts with "${dialog_title_prefix}")
+        end try
+      end tell
+      delay 0.3
+      key code 5 using {command down, shift down}
+      delay 0.8
+      keystroke "${path}"
+      delay 0.4
+      key code 36
+    end tell
+APPLESCRIPT
+  sleep 1.2
+
+  # Click the action button in the dialog window by name, or fall back to
+  # Return if the button is disabled. NSOpenPanel's "Open" stays disabled
+  # until a file is selected in the listing — Cmd+Shift+G navigates to
+  # the directory but doesn't select; the trailing Return both selects
+  # and opens. For NSSavePanel, "Save" is enabled once the filename field
+  # is filled (which Cmd+Shift+G does), so the direct click works and
+  # sidesteps the overwrite-confirm Return-keystroke trap.
   osascript <<APPLESCRIPT >/dev/null
     tell application "System Events"
-      keystroke "g" using {command down, shift down}
-      delay 0.5
-      keystroke "${path}"
-      delay 0.2
-      key code 36
-      delay 0.5
-      key code 36
+      tell process "${APP_NAME}"
+        set dlg to first window whose name starts with "${dialog_title_prefix}"
+        try
+          set actBtn to first button of dlg whose name is "${action_name}"
+          if enabled of actBtn then
+            click actBtn
+          else
+            key code 36
+          end if
+        on error
+          key code 36
+        end try
+      end tell
+    end tell
+APPLESCRIPT
+  sleep 1
+
+  # If an overwrite-confirm sheet appears, dismiss it by clicking Replace.
+  osascript <<APPLESCRIPT >/dev/null 2>&1 || true
+    tell application "System Events"
+      tell process "${APP_NAME}"
+        try
+          tell sheet 1 of (first window whose name starts with "${dialog_title_prefix}")
+            click (first button whose name is "Replace")
+          end tell
+        end try
+      end tell
     end tell
 APPLESCRIPT
 }
 
+# --- Switch to Preparation tab (Save / Load live there) ------------------
+echo "[smoke] switching to Preparation tab..."
+click_button_named "Preparation"
+sleep 1
+
 # --- Save flow -----------------------------------------------------------
 echo "[smoke] clicking Save..."
 click_button_named "Save"
-type_path_into_dialog "${TMP_FILE}"
+drive_dialog_to_path "${TMP_FILE}" "Save" "Save Sirius session"
 sleep 1
 
 # Confirm the file appeared on disk.
@@ -186,7 +347,7 @@ fi
 # --- Load flow -----------------------------------------------------------
 echo "[smoke] clicking Load..."
 click_button_named "Load"
-type_path_into_dialog "${TMP_FILE}"
+drive_dialog_to_path "${TMP_FILE}" "Open" "Load Sirius session"
 sleep 1
 
 texts="$(read_window_texts)"
