@@ -66,16 +66,19 @@ and in the auto-memory):
 
 ## 1. What just shipped (last session, 2026-05-16, Pick B brainstorm)
 
-**Pick B brainstorm — shared-placement spec.** Single commit on master,
-pushed to `origin/master`:
+**Pick B brainstorm — shared-placement spec.** Three commits on
+master, pushed to `origin/master`:
 
-| SHA       | Subject                                             |
-|-----------|-----------------------------------------------------|
-| `81afadd` | docs: spec — shared-placement architecture (Pick B) |
+| SHA       | Subject                                                                          |
+|-----------|----------------------------------------------------------------------------------|
+| `81afadd` | docs: spec — shared-placement architecture (Pick B)                              |
+| `390e46e` | docs: handoff — spec landed, next session writes the implementation plan         |
+| `31b112d` | docs: spec — operator vocabulary + musician-language banners (hide internals)    |
 
 The spec is at
-`docs/superpowers/specs/2026-05-16-shared-placement-design.md` (525
-lines). Decisions locked during the brainstorm:
+`docs/superpowers/specs/2026-05-16-shared-placement-design.md` (now
+~594 lines after the vocabulary revision). Decisions locked during
+the brainstorm:
 
 1. **Wrapper Constituent** as the placement carrier (rather than a
    tuple layer or a `Constituent` rewrite). Each placement is a thin
@@ -102,9 +105,23 @@ lines). Decisions locked during the brainstorm:
 9. **`arrangement::sequenceShared(parent, phrase, offsets, IdAllocator)`**
    — new primitive, uses the same allocator pattern as
    `promotion::promote`.
+10. **Hide internals from the musician.** Operator-facing UI shows
+    phrases and loops only; never tapes, never data-model vocabulary,
+    never internal terms like "wrapper" / "placement" / "fork." The
+    operator-facing menu label for the fork gesture is **"Vary this
+    one."** Banner copy is plain musician language with no tape
+    numbers, no durations, no mode indicators. Spec §15 ("Operator
+    vocabulary") is the QA checklist — every new UI string in the
+    implementation plan is reviewed against it. Saved as
+    auto-memory `feedback-hide-internals-from-musician` so future
+    sessions apply the rule automatically.
 
-**Also done this session:** `todo.md:42` (the original shared-
-placement brief) is marked **SUPERSEDED** with a pointer to the spec.
+**Also done this session:**
+- `todo.md:42` (the original shared-placement brief) is marked
+  **SUPERSEDED** with a pointer to the spec.
+- New auto-memory entry: `feedback-hide-internals-from-musician.md`.
+- Spec §15 added: operator vocabulary glossary mapping every internal
+  term to its musician-facing equivalent (or to "not surfaced").
 
 ---
 
@@ -130,6 +147,17 @@ mirroring the structure of
    tasks; each task should be 2–5 minutes of work for a competent
    engineer with zero project context. Every task must have exact
    file paths, complete code, exact commands, expected output.
+
+   **Every task that introduces a UI string (banner copy, menu label,
+   tooltip, error toast) must check the string against spec §15
+   "Operator vocabulary."** No tape numbers, no data-model terms, no
+   internal vocabulary in the default flow. The fork-gesture label
+   is `"Vary this one"` (not "Fork"). Banner copy is
+   `"Added to verse"` / `"Added to verse 2 only"` / `"New phrase
+   captured"` / `"Added to verse — no section here yet"` (see §11).
+   The plan's review checklist for any new string: *would a musician
+   understand it without learning Sirius's data model?* If no, the
+   string fails.
 4. The plan's natural task sequence follows the spec's dependency
    block:
 
@@ -240,6 +268,10 @@ re-derive them from the spec.
 - `feedback_claude_commits_and_pushes_master.md` — Claude commits and
   pushes to master. No PRs, no force-push. `bu.sh` is local-backup
   only and Claude doesn't run it.
+- `feedback_hide_internals_from_musician.md` — **new this session.**
+  Operator UI shows phrases and loops only; no tapes, no data-model
+  vocabulary in default flow; advanced surfaces are opt-in. Spec §15
+  is the QA checklist for every new UI string.
 - `project_sirius_branding_and_otto.md` — sister apps with shared
   visual identity (deferred to its own session).
 - `project_user_guide_alongside_whitepaper.md` — user guide doc lives
