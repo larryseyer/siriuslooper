@@ -62,3 +62,43 @@ target_link_libraries(SiriusLooper PRIVATE
     juce::juce_recommended_config_flags
     juce::juce_recommended_lto_flags
     juce::juce_recommended_warning_flags)
+
+# Developer ID signing for macOS Xcode-generator builds. Xcode attributes are
+# silently ignored under Unix Makefiles (the default dev loop), so the
+# `cmake -B build` build remains ad-hoc-signed and fast; `cmake -B build-xcode
+# -G Xcode` produces a Developer-ID-signed bundle with hardened runtime.
+# Team RR5DY39W4Q + audio-input entitlement match the white-paper Part VI
+# always-running-tape requirement.
+if(APPLE AND CMAKE_GENERATOR STREQUAL "Xcode")
+    set_target_properties(SiriusLooper PROPERTIES
+        XCODE_ATTRIBUTE_CODE_SIGN_STYLE "Manual"
+        XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "RR5DY39W4Q"
+        XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "Developer ID Application"
+        XCODE_ATTRIBUTE_ENABLE_HARDENED_RUNTIME "YES"
+        XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS
+            "${CMAKE_CURRENT_SOURCE_DIR}/SiriusLooper.macos.entitlements")
+endif()
+
+# Notarization (opt-in, slow). Requires a Developer-ID-signed bundle, so it
+# only makes sense alongside the Xcode-generator signing block above. The
+# `notarytool submit --wait` step blocks for the full Apple round-trip (often
+# minutes), then `stapler staple` writes the ticket into the bundle so
+# Gatekeeper accepts offline. `spctl` verifies the final result.
+# One-time setup: `xcrun notarytool store-credentials sirius-notary
+# --apple-id itunes@larryseyer.com --team-id RR5DY39W4Q`.
+option(SIRIUS_NOTARIZE "Notarize and staple the Developer ID bundle (slow)" OFF)
+if(SIRIUS_NOTARIZE AND APPLE AND CMAKE_GENERATOR STREQUAL "Xcode")
+    set(SIRIUS_NOTARY_PROFILE "sirius-notary"
+        CACHE STRING "notarytool keychain profile name")
+    add_custom_command(TARGET SiriusLooper POST_BUILD
+        COMMAND xcrun notarytool submit
+                "$<TARGET_BUNDLE_DIR:SiriusLooper>"
+                --keychain-profile "${SIRIUS_NOTARY_PROFILE}"
+                --wait
+        COMMAND xcrun stapler staple
+                "$<TARGET_BUNDLE_DIR:SiriusLooper>"
+        COMMAND spctl -a -t exec -vv
+                "$<TARGET_BUNDLE_DIR:SiriusLooper>"
+        VERBATIM
+        COMMENT "Sirius: notarize + staple + verify")
+endif()
