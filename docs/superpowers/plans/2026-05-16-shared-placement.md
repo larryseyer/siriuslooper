@@ -119,7 +119,7 @@ If `tests/ConstituentTests.cpp` does not already `#include <memory>` and the rel
 - [ ] **Step 2: Run tests to verify the build fails (predicate not declared)**
 
 ```bash
-cd "/Users/larryseyer/Sirius Looper"
+cd /Users/larryseyer/SiriusLooper
 cmake --build build --target SiriusTests 2>&1 | tail -20
 ```
 
@@ -983,7 +983,7 @@ TEST_CASE ("promote with Overlay outside any wrapper AND no host mints a Phrase 
 - [ ] **Step 5: Clean build (CMake source list unchanged but enum + signature changes ripple through Promotion.h consumers)**
 
 ```bash
-cd "/Users/larryseyer/Sirius Looper"
+cd /Users/larryseyer/SiriusLooper
 rm -rf build && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build 2>&1 | tail -5
 ```
 
@@ -1522,7 +1522,7 @@ Inside the per-pill loop, after the dot draw, add:
 - [ ] **Step 5: Clean build and operator-side verification**
 
 ```bash
-cd "/Users/larryseyer/Sirius Looper"
+cd /Users/larryseyer/SiriusLooper
 rm -rf build && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build 2>&1 | tail -5
 ./build/tests/SiriusTests 2>&1 | tail -3
 ```
@@ -1915,7 +1915,7 @@ Expected: zero hits. (The old `Phrase captured  ·  ... s  ·  tape #...` string
 - [ ] **Step 5: Clean build + full test suite**
 
 ```bash
-cd "/Users/larryseyer/Sirius Looper"
+cd /Users/larryseyer/SiriusLooper
 rm -rf build && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build 2>&1 | tail -5
 ./build/tests/SiriusTests 2>&1 | tail -3
 ```
@@ -2153,7 +2153,7 @@ Inspect each hit. The only acceptable musician-facing strings are `"Vary this on
 - [ ] **Step 5: Clean build + run full suite**
 
 ```bash
-cd "/Users/larryseyer/Sirius Looper"
+cd /Users/larryseyer/SiriusLooper
 rm -rf build && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build 2>&1 | tail -5
 ./build/tests/SiriusTests 2>&1 | tail -3
 ```
@@ -2235,7 +2235,7 @@ git push origin master
 - [ ] **Step 1: Clean build from scratch**
 
 ```bash
-cd "/Users/larryseyer/Sirius Looper"
+cd /Users/larryseyer/SiriusLooper
 rm -rf build
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build 2>&1 | tail -5

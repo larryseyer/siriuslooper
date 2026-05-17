@@ -56,7 +56,7 @@ For the full glossary and step-by-step workflows, read the
 ## Build (macOS)
 
 ```bash
-cd "/Users/larryseyer/Sirius Looper"
+cd /Users/larryseyer/SiriusLooper
 rm -rf build && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ./build/tests/SiriusTests

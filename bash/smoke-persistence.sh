@@ -39,7 +39,7 @@
 
 set -euo pipefail
 
-APP_BUNDLE="${APP_BUNDLE:-/Users/larryseyer/Sirius Looper/build/app/SiriusLooper_artefacts/Release/Sirius Looper.app}"
+APP_BUNDLE="${APP_BUNDLE:-/Users/larryseyer/SiriusLooper/build/app/SiriusLooper_artefacts/Release/Sirius Looper.app}"
 APP_NAME="Sirius Looper"
 TMP_DIR="$(mktemp -d -t sirius-smoke)"
 TMP_FILE="${TMP_DIR}/smoke-session.sirius.json"

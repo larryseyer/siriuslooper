@@ -111,7 +111,7 @@ context for that work.
 ## 1. Build + test state
 
 ```bash
-cd "/Users/larryseyer/Sirius Looper"
+cd /Users/larryseyer/SiriusLooper
 bash bash/autotest.sh        # full 4-phase verification, ~25s
 ```
 

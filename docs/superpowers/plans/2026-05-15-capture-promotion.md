@@ -83,7 +83,7 @@ Add the include at the top of the file with the other includes:
 - [ ] **Step 2: Run tests to verify the build fails (CaptureRestorePoint not defined)**
 
 ```bash
-cd "/Users/larryseyer/Sirius Looper"
+cd /Users/larryseyer/SiriusLooper
 cmake --build build --target SiriusTests 2>&1 | tail -20
 ```
 
@@ -168,7 +168,7 @@ If the existing two-arg `push` constructs an `Entry` literal, that line will nee
 - [ ] **Step 5: Build and run only the new tests**
 
 ```bash
-cd "/Users/larryseyer/Sirius Looper"
+cd /Users/larryseyer/SiriusLooper
 cmake --build build --target SiriusTests 2>&1 | tail -5
 ./build/tests/SiriusTests "[undo][promotion]"
 ```
@@ -423,7 +423,7 @@ In `tests/CMakeLists.txt`, locate the `add_executable(SiriusTests ...)` block an
 - [ ] **Step 5: Build (clean rebuild — CMake source-list change requires reconfigure)**
 
 ```bash
-cd "/Users/larryseyer/Sirius Looper"
+cd /Users/larryseyer/SiriusLooper
 rm -rf build && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build 2>&1 | tail -5
 ```
 
@@ -506,7 +506,7 @@ TEST_CASE ("promote into an existing Phrase adds a Loop child, no Phrase mint",
 - [ ] **Step 2: Run the test, verify it fails (still throws "not yet implemented")**
 
 ```bash
-cd "/Users/larryseyer/Sirius Looper"
+cd /Users/larryseyer/SiriusLooper
 cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[promotion][host]"
 ```
 
@@ -670,7 +670,7 @@ PromotionResult promote (const Constituent&   root,
 - [ ] **Step 4: Run the test, verify it passes**
 
 ```bash
-cd "/Users/larryseyer/Sirius Looper"
+cd /Users/larryseyer/SiriusLooper
 cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[promotion][host]"
 ```
 
@@ -1161,7 +1161,7 @@ Locate the block around app/MainComponent.cpp:565 that builds the `Regions: ...`
 - [ ] **Step 7: Build and run the full test suite**
 
 ```bash
-cd "/Users/larryseyer/Sirius Looper"
+cd /Users/larryseyer/SiriusLooper
 rm -rf build && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build 2>&1 | tail -5
 ./build/tests/SiriusTests 2>&1 | tail -3
 ```
@@ -1340,7 +1340,7 @@ git commit -m "feat: CaptureBanner — tap to undo within the visible window"
 - [ ] **Step 1: Clean build from scratch**
 
 ```bash
-cd "/Users/larryseyer/Sirius Looper"
+cd /Users/larryseyer/SiriusLooper
 rm -rf build
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build 2>&1 | tail -5

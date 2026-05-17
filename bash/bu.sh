@@ -12,7 +12,7 @@ BRANCH=$(git rev-parse --abbrev-ref HEAD)
 git push origin "$BRANCH"
 
 # Backup
-SOURCE="/Users/larryseyer/Sirius Looper"
+SOURCE="/Users/larryseyer/SiriusLooper"
 DEST_DIR="/Users/larryseyer/Dropbox/Automagic Art/Source Backup/Sirius Looper Backup"
 TIMESTAMP=$(date +"%Y_%m_%d")
 MESSAGE=$(echo "$1" | sed 's/ /_/g')
