@@ -1,7 +1,7 @@
 ---
 layout: base.njk
 title: Architecture
-description: Time as concept, not number. The Logical Master Clock, the Membrane, and the Constituent tree — the first-principles design that makes Sirius Looper possible.
+description: Time as concept, not number. The Logical Master Clock, the Membrane, the Input Mixer → Tape → Output Mixer signal path, the Direct Layer, and the Constituent tree — the first-principles design that makes Sirius Looper possible.
 bodyClass: architecture
 permalink: /architecture/
 ---
@@ -33,7 +33,7 @@ permalink: /architecture/
         and relationships, nested hierarchies, intentional offsets. It
         only becomes a number at the membrane where the system meets
         the audio interface.
-        <cite>White Paper · Part II</cite>
+        <cite>White Paper · Part IV</cite>
       </blockquote>
       <p class="arch-prose">
         The Logical Master Clock is the single, continuous reference for
@@ -51,7 +51,7 @@ permalink: /architecture/
         engine and numerical time at the audio interface. Inside, time
         is exact symbolic structure. Outside, it is sample frames. The
         membrane is where one becomes the other.
-        <cite>White Paper · Part III</cite>
+        <cite>White Paper · §4.3</cite>
       </blockquote>
       <p class="arch-prose">
         Hosting third-party plugins downstream of the membrane is a
@@ -63,12 +63,49 @@ permalink: /architecture/
     </div>
 
     <div class="arch-block">
+      <h3>Signal path: Input Mixer → Tape → Output Mixer</h3>
+      <blockquote>
+        The looper is not a "recorder with playback." It is a
+        production environment in which capture and playback are
+        equally first-class operations, each with its own complete
+        mixer, with the always-running tape as the pivot between them.
+        <cite>White Paper · §6.1</cite>
+      </blockquote>
+      <p class="arch-prose">
+        Both mixers are modality-agnostic: audio, MIDI, video, and
+        file I/O are first-class signal types in the same channel
+        architecture. Per channel, you choose whether processing is
+        committed to tape or recorded as recoverable metadata — the
+        choice is part of the artistic act, not a setup step.
+      </p>
+    </div>
+
+    <div class="arch-block">
+      <h3>The Direct Layer</h3>
+      <blockquote>
+        A parallel signal path that runs from the input mixer to the
+        output mixer without touching the tape. Used for
+        sub-millisecond live monitoring and reinforcement. Carries
+        signal, not time-anchored data.
+        <cite>White Paper · §7.1</cite>
+      </blockquote>
+      <p class="arch-prose">
+        The direct layer is how the architecture answers vocal
+        reinforcement, guitar-amp monitoring, and any source where
+        even a few buffers of latency are unacceptable — without
+        compromising tape-as-truth. Time-anchored work still flows
+        through the tape; only the live monitor signal takes the
+        bypass.
+      </p>
+    </div>
+
+    <div class="arch-block">
       <h3>Constituents — one tree, every level</h3>
       <blockquote>
         Tape, Loop, Phrase, Section, Song, Set. Every node in the
         arrangement is a Constituent. Same operations apply at every
         level; arrangement is recursive because the data model is.
-        <cite>White Paper · Part IV</cite>
+        <cite>White Paper · Part IX</cite>
       </blockquote>
       <p class="arch-prose">
         The Constituent tree is what makes phrases composable. A

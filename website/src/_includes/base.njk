@@ -86,5 +86,18 @@
   </footer>
 
   <script src="/assets/js/signup.js" defer></script>
+  {% if bodyClass == 'doc' %}
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('pre > code.language-mermaid').forEach(function (code) {
+      var div = document.createElement('div');
+      div.className = 'mermaid';
+      div.textContent = code.textContent;
+      code.parentNode.replaceWith(div);
+    });
+    mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'strict' });
+    mermaid.run();
+  </script>
+  {% endif %}
 </body>
 </html>

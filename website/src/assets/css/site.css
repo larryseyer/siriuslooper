@@ -453,6 +453,13 @@ img, svg { max-width: 100%; height: auto; display: block; }
   overflow-x: auto;
 }
 .prose pre code { background: none; border: 0; padding: 0; }
+.prose .mermaid {
+  background: transparent;
+  margin: 1.5rem 0;
+  text-align: center;
+  overflow-x: auto;
+}
+.prose .mermaid svg { max-width: 100%; height: auto; }
 .prose table {
   border-collapse: collapse;
   width: 100%;
