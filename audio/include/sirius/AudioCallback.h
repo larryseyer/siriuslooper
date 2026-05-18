@@ -41,6 +41,20 @@ class OutputMixer;
 ///    default-acquire/release.
 ///  * Channel count is read once per buffer from the JUCE arguments; the
 ///    class never assumes a fixed layout.
+///
+/// Threading contract — configure-before-audio-starts:
+///  * All collaborator setters (`setInputMixer`, `setOutputMixer`,
+///    `setDirectLayer`, `setLmc`, `setAsrcInputs`, `setAsrcOutputs`,
+///    `setCalibration`) are SET-ONCE on the message thread BEFORE
+///    `audioDeviceAboutToStart` is called. The audio thread reads the
+///    collaborator pointers without synchronization — mutation during a
+///    live callback is undefined behavior. Stop the device before
+///    reconfiguring.
+///  * Inherited from `DirectLayer.h`'s contract (continue.md M4
+///    constraint #6); M5 OutputMixer extends it. Operator-facing
+///    mutation-during-audio surfaces are a post-M5 concern and will
+///    require either a stop-callback-mutate-restart guard or a real
+///    lock-free publish.
 class AudioCallback final : public juce::AudioIODeviceCallback
 {
 public:
@@ -91,12 +105,16 @@ public:
     /// this callback (MainComponent guarantees this by declaring the
     /// AudioCallback after the mixers, so destruction unwinds in reverse).
     ///
-    /// `directLayer_` is `const` because Session 2's `routeBuffers` is const
-    /// and the audio thread never registers routes. `inputMixer_` and
-    /// `outputMixer_` are non-const because `InputMixer::processBuffer`
-    /// mutates internal state (TapeWriter queue push, overload reporting).
+    /// `directLayer_` is `const` because M4 Session 2's `routeBuffers` is
+    /// const and the audio thread never registers routes. `outputMixer_`
+    /// is `const` for the same reason — M5 Session 3's `renderBuffer` is
+    /// `const noexcept` (V7 plan line 386: "render is a function of state,
+    /// not a state mutator"; all state mutation lives in the message-
+    /// thread setters). `inputMixer_` stays non-const because
+    /// `InputMixer::processBuffer` mutates internal state (TapeWriter
+    /// queue push, overload reporting).
     void setInputMixer  (InputMixer*  mixer) noexcept   { inputMixer_  = mixer;  }
-    void setOutputMixer (OutputMixer* mixer) noexcept   { outputMixer_ = mixer;  }
+    void setOutputMixer (const OutputMixer* mixer) noexcept { outputMixer_ = mixer; }
     void setDirectLayer (const DirectLayer* layer) noexcept { directLayer_ = layer; }
 
     // -- juce::AudioIODeviceCallback ------------------------------------------------
@@ -174,7 +192,7 @@ private:
     // intentionally absent — M4 wires only the RawRoute path; see the comment
     // next to the empty processedChannels span in AudioCallback.cpp.
     InputMixer*        inputMixer_  { nullptr };
-    OutputMixer*       outputMixer_ { nullptr };
+    const OutputMixer* outputMixer_ { nullptr };
     const DirectLayer* directLayer_ { nullptr };
     std::vector<RawInputBufferView> rawInputScratch_;
     std::vector<OutputBufferView>   outputScratch_;

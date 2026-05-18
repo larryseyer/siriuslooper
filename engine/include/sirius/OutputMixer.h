@@ -21,9 +21,27 @@ namespace sirius
 /// per-channel strips, send/return architecture, and session-level
 /// effect buses including the master bus.
 ///
-/// Session 2 (this file) establishes the configuration surfaces and the
-/// data structures so Session 3 can plug them in. The audio-thread entry
-/// point `renderBuffer` remains stubbed in S2; S3 fills the body.
+/// Session 3 (this file) fills the audio-thread render body. The four-step
+/// traversal: (1) scratch-mix each registered output channel from its
+/// input source through its `ChannelStrip<Audio>`; (2) for each
+/// (channel, bus) send level > 0, accumulate the scaled scratch into the
+/// target bus's mixBuffer; (3) for each non-master bus in registration
+/// order, invoke `Bus::process` which (M5) accumulates the bus mixBuffer
+/// into the master bus's mixBuffer at unity; (4) the master bus writes
+/// its mixBuffer additively into the physical output channels.
+///
+/// M5 auto-registration policy: OutputMixer comes up EMPTY. MainComponent
+/// does not auto-register channels — operator UX for mixer config is
+/// M22+. Result: in M5, the OutputMixer path is a true no-op until tests
+/// or future code calls `addChannel`. This is intentional. DirectLayer's
+/// bypass path provides the default monitoring; OutputMixer is the
+/// produced-mix path that becomes meaningful once Constituents render
+/// into channels (M6+).
+///
+/// M5 channel audio source: per channel, the OutputMixer's audio source
+/// is the corresponding input device channel (one-to-one, same index as
+/// DirectLayer's raw routes). This is a pre-Constituent-rendering proxy
+/// — M6+ replaces it with real Constituent renders.
 ///
 /// Threading contract (inherited from M4, see continue.md constraint #6):
 /// every configuration mutator (`addChannel`, `setChannelStrip`, `addBus`,
@@ -91,23 +109,38 @@ public:
     /// traversal that reads send levels into the mix.
     float sendLevelFor (OutputChannelId channel, BusId bus) const noexcept;
 
-    // Output routing ----------------------------------------------------------
-    // M5+: physical-output routing — kept as a stub for compatibility with
-    // the M2 skeleton. Session 3 may delete or repurpose this when the
-    // OutputDestination type lands.
-    void routeChannelToOutput (OutputChannelId channel);
-
     // Mix snapshots (Constituent subtype — lands with the MixSnapshot work)
     // M6+: SnapshotId captureSnapshot (string name);
     // M6+: void recallSnapshot (SnapshotId, TransitionType, Duration);
 
     // Audio-thread interface (real-time safe in M5 Session 3+) ---------------
 
-    /// Audio-thread render entry. M5 Session 2 leaves the body stubbed;
-    /// Session 3 fills it with the channel-strip → send-matrix → bus-process
-    /// → master-bus traversal. The signature stays JUCE-free for the same
-    /// reason `ChannelStrip::process` does.
-    void renderBuffer (float* const* output, int numChannels, int numSamples) noexcept;
+    /// Audio-thread render entry. M5 Session 3 body: channel-strip →
+    /// send-matrix → bus-process → master-bus → output traversal.
+    ///
+    /// Per-channel audio source (M5): `inputChannelData[channelIndex]`
+    /// where `channelIndex = OutputChannelId.value() - 1`. Channels
+    /// without a matching input device channel are silent. M6+ replaces
+    /// this with Constituent renders.
+    ///
+    /// `const noexcept` per V7 plan line 386 + continue.md constraint #4:
+    /// `renderBuffer` is a function of state, not a state mutator. All
+    /// state mutation lives in message-thread setters; the audio thread
+    /// only reads.
+    ///
+    /// Output write semantics: ADDITIVE into the physical `output[c]`
+    /// buffers. DirectLayer (bypass path) and OutputMixer (produced-mix
+    /// path) both write additively into the same output buffers; the
+    /// caller (AudioCallback) zeroes the outputs once at the start of
+    /// the buffer.
+    ///
+    /// The signature stays JUCE-free for the same reason `ChannelStrip::
+    /// process` does.
+    void renderBuffer (const float* const* inputChannelData,
+                       int                 numInputChannels,
+                       float* const*       outputChannelData,
+                       int                 numOutputChannels,
+                       int                 numSamples) const noexcept;
 
 private:
     struct ChannelEntry
@@ -133,6 +166,16 @@ private:
     /// the constructor. 32 × 64 = 2048 floats = 8 KB total — small enough
     /// to fit comfortably in L1 for the S3 audio-thread traversal.
     std::vector<float>        sendMatrix_;
+
+    /// Per-channel post-strip scratch — sized
+    /// `kMaxOutputChannels * kMaxBlockSamples` in the constructor. The
+    /// audio-thread `renderBuffer` writes the post-`ChannelStrip` signal
+    /// for each registered output channel here, then reads back from it
+    /// during the send-matrix accumulation step. `mutable` because
+    /// `renderBuffer` is `const` (per V7 plan line 386) but the scratch
+    /// is implementation detail the audio thread owns end-to-end. Matches
+    /// the `InputMixer::processingScratch_` pattern.
+    mutable std::vector<float> channelScratch_;
 
     std::int64_t nextOutputChannelId_ { 1 };
     std::int64_t nextBusId_ { 1 }; // BusId{0} is the master, auto-created.

@@ -68,22 +68,35 @@ TEST_CASE ("Bus::setEffectChain copies the chain in", "[bus][effect-chain]")
     CHECK (chain.size() == 1);
 }
 
-TEST_CASE ("Bus::process is noexcept and identity-zeros the output (S2 stub)",
+TEST_CASE ("Bus::process is noexcept and additively writes mixBuffer into output (M5 S3 body)",
            "[bus][rt-safety]")
 {
     Bus bus (BusId { 0 }, BusConfig { 2, "Master" });
 
-    std::array<float, 8> left  { 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
-    std::array<float, 8> right { 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
+    // Populate the bus's mixBuffer via the audio-thread write accessor.
+    // Left channel = 0.25, right channel = 0.75 across 8 samples.
+    float* const busLeft  = bus.mixBufferChannel (0);
+    float* const busRight = bus.mixBufferChannel (1);
+    REQUIRE (busLeft  != nullptr);
+    REQUIRE (busRight != nullptr);
+    for (int s = 0; s < 8; ++s) { busLeft[s] = 0.25f; busRight[s] = 0.75f; }
+
+    // Output pre-loaded to 0.1 so we can prove the write is ADDITIVE.
+    std::array<float, 8> left;  left.fill (0.1f);
+    std::array<float, 8> right; right.fill (0.1f);
     std::array<float*, 2> output { left.data(), right.data() };
 
     bus.process (output.data(), 2, static_cast<int> (left.size()));
 
-    // M5 S2 stub semantics — Session 3 replaces the body with the real
-    // sum-sends-into-mixBuffer pipeline. Until then, the stub guarantees
-    // a well-defined output (zeros).
-    for (float v : left)  CHECK (v == Catch::Approx (0.0f));
-    for (float v : right) CHECK (v == Catch::Approx (0.0f));
+    for (float v : left)  CHECK (v == Catch::Approx (0.35f));
+    for (float v : right) CHECK (v == Catch::Approx (0.85f));
+
+    // After process, mixBuffer is zeroed so the next buffer starts fresh.
+    for (int s = 0; s < 8; ++s)
+    {
+        CHECK (busLeft[s]  == Catch::Approx (0.0f));
+        CHECK (busRight[s] == Catch::Approx (0.0f));
+    }
 }
 
 TEST_CASE ("Bus::process handles defensive guards without crashing",

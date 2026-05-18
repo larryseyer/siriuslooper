@@ -86,7 +86,12 @@ public:
     /// Stereo buffers (`numChannels >= 2`) apply equal-power pan to the
     /// first two channels; any further channels are left untouched (M5 does
     /// not specify surround panning).
-    void process (float* const* channelData, int numChannels, int numSamples) noexcept
+    ///
+    /// `const` because `process` only mutates the caller's `channelData`
+    /// buffer (and reads its own atomics); `*this` is logically const. Lets
+    /// `OutputMixer::renderBuffer` (also `const`) invoke through a
+    /// `const ChannelStrip*` without a deep-const escape hatch.
+    void process (float* const* channelData, int numChannels, int numSamples) const noexcept
     {
         if (channelData == nullptr || numChannels <= 0 || numSamples <= 0) return;
 

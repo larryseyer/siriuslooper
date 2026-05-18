@@ -2,6 +2,7 @@
 
 #include "sirius/InputMixer.h"
 #include "sirius/Lmc.h"
+#include "sirius/OutputMixer.h"
 
 #include <algorithm>
 #include <cstring>
@@ -62,13 +63,15 @@ void dispatchInputMixer (InputMixer*         mixer,
 /// never resizes. If the device reports more channels than the scratch
 /// holds (shouldn't happen if start was called), the excess is clamped.
 ///
-/// **ProcessedRoute is intentionally deferred** — M3's `InputMixer::processBuffer`
-/// writes byte-serialized output to a TapeWriter queue; it does NOT expose
-/// a post-processing float buffer that DirectLayer can consume. Exposing
-/// one would require either (a) new InputMixer surface (out of M4 scope)
-/// or (b) re-running ProcessingChain in AudioCallback (bypasses M3 design).
-/// Since M3's ProcessingChain is no-op anyway, ProcessedRoute integration
-/// is moot — defer until ProcessingChain is real (M5+).
+/// **ProcessedRoute is still passed an empty span post-M5.** `ChannelStrip<Audio>`
+/// is real now (M5 S1 ships gain/pan on the input side), but `InputMixer`
+/// applies the strip into a private scratch buffer and immediately memcpys
+/// the result into the TapeWriter queue — it does NOT expose the post-strip
+/// float buffer as a public surface. Wiring ProcessedRoute would require
+/// adding either an audio-thread getter to InputMixer (post-strip float
+/// view) or a parallel output pointer for the audio callback to capture.
+/// Deferred from M5 to M6; OutputMixer's own processed path (Step 4) covers
+/// the produced-mix surface in the meantime.
 void dispatchDirectLayer (const DirectLayer*               layer,
                           std::vector<RawInputBufferView>& rawInputScratch,
                           std::vector<OutputBufferView>&   outputScratch,
@@ -103,6 +106,31 @@ void dispatchDirectLayer (const DirectLayer*               layer,
         std::span<const ProcessedChannelBufferView> {},
         std::span<const OutputBufferView> (outputScratch.data(),
                                            static_cast<std::size_t> (outCount)));
+}
+
+/// Step 4 — OutputMixer render. Writes additively into the same physical
+/// output buffers as DirectLayer; the AudioCallback zero-fills outputs at
+/// Step 1 so both paths can safely accumulate. Distinct from DirectLayer:
+/// DirectLayer is the monitoring-gated BYPASS path (raw input → output);
+/// OutputMixer is the PRODUCED-MIX path (channel → strip → sends → bus →
+/// master → output). M5 default: OutputMixer is empty (no registered
+/// channels), so this call is a hot-path no-op via the early-return inside
+/// `renderBuffer`. Tests + M6+ Constituent rendering register channels to
+/// activate the path.
+void dispatchOutputMixer (const OutputMixer*  mixer,
+                          const float* const* inputChannelData,
+                          int                 numInputChannels,
+                          float* const*       outputChannelData,
+                          int                 numOutputChannels,
+                          int                 numSamples) noexcept
+{
+    if (mixer == nullptr) return;
+
+    mixer->renderBuffer (inputChannelData,
+                         numInputChannels,
+                         outputChannelData,
+                         numOutputChannels,
+                         numSamples);
 }
 
 } // namespace
@@ -153,20 +181,28 @@ void AudioCallback::audioDeviceIOCallbackWithContext (
                              numOutputChannels,
                              numSamples);
 
-    // OutputMixer is held but not invoked from the audio thread in M4 —
-    // its render surface (`renderBuffer()`) has an empty body in
-    // OutputMixer.cpp pending M5 work. Wired through MainComponent so
-    // future sessions have a stable attachment point.
-    (void) outputMixer_;
+    // Step 4: OutputMixer render. Writes additively into the same output
+    // buffers as DirectLayer (Step 3) — DirectLayer is the bypass path,
+    // OutputMixer is the produced-mix path. Runs unconditionally (no
+    // monitoring gate) — the gate's feedback-risk concern applies only to
+    // raw-input bypass; the OutputMixer's signal is post-strip /
+    // post-Constituent and not a direct mic-to-speaker loop. M5 default
+    // (no registered channels) makes this a fast no-op.
+    dispatchOutputMixer (outputMixer_,
+                         inputChannelData,
+                         numInputChannels,
+                         outputChannelData,
+                         numOutputChannels,
+                         numSamples);
 
-    // Step 4: sample-clock to LMC (white paper §4.4). A single fetch_add +
+    // Step 5: sample-clock to LMC (white paper §4.4). A single fetch_add +
     // store on the LMC's atomic pair. Re-loading the rate per buffer rather
     // than capturing it at start handles devices that change rate mid-session.
     if (lmc_ != nullptr)
         lmc_->advanceBySamples (numSamples,
                                 currentSampleRate_.load (std::memory_order_acquire));
 
-    // Step 5: publish the elapsed wall-clock for the buffer. The message
+    // Step 6: publish the elapsed wall-clock for the buffer. The message
     // thread divides by `currentBufferSize() / currentSampleRate()` to get a
     // load fraction it then feeds into `OverloadProtection::reportLoad`. Done
     // last so the measurement covers all of the audio-thread work above.
