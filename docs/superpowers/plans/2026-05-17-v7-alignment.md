@@ -385,6 +385,7 @@ bash bash/autotest.sh
 - `OutputMixer::render_buffer` runs on the audio thread, traverses channels → buses → master, applies strip+bus+master processing, writes to physical-output buffers. Allocation-free, lock-free.
 - Existing `EffectChain` (`core/include/sirius/EffectChain.h`) is reused as the bus-level effect chain type; Constituent-local effects continue to use the same type.
 - Tests assert: channel gain attenuates output; pan distributes correctly; send-to-bus + bus-effect produces wet signal; master bus is the last stage; RT-budget for a 32-channel / 8-bus configuration on the dev machine.
+- **Input-side AudioChain bodies become real here too.** M3 ships `ProcessingChain` as the abstract base on `Channel` with no-op `AudioChain` / `MidiChain` / `VideoChain` / `FileChain` subclasses. M5 introduces `ChannelStrip<SignalType::Audio>` with real gain/pan DSP; the same class is wired in as the concrete implementation behind `Channel::processing` so InputMixer channels apply real input-side gain/pan before tape writes (not just OutputMixer channels). Mechanically: either `ChannelStrip<SignalType::Audio>` inherits `ProcessingChain` and supersedes `AudioChain` (rename — preferred), or `AudioChain` is rewritten to delegate to a held `ChannelStrip<SignalType::Audio>` (composition — fallback if inheritance forces an unwanted vtable layout on OutputMixer paths). Test addition to M5 Session 1: assert InputMixer channels apply gain/pan on the input side before enqueueing to TapeWriter. Added by `docs/superpowers/specs/2026-05-18-m3-design.md` Plan Amendment §3.
 
 **Dependencies.** M4.
 
@@ -815,6 +816,7 @@ grep -r "SessionFormat\|sessionformat" .         # expect zero hits after milest
 - ProRes encoder for video: macOS has `VideoToolbox`-based encoder; cross-platform alternative is `ffmpeg` libs. Decision: `VideoToolbox` on macOS (matches platform-first order), `ffmpeg` libs added as a cross-platform option when M23 / Windows / Linux work begins.
 - HEVC-I encoder: also `VideoToolbox` on macOS.
 - Container library choice (`juce::ZipFile` vs `miniz` vs `libzip`): pick `juce::ZipFile` for the first implementation (zero new dep); if performance issues surface, swap to `miniz`.
+- **M3-era partial-tape forward compatibility.** M3 Session 3 ships a placeholder JSONL parameter-delta format (`{"t": <lmcRational>, "param": "<name>", "value": <number>}` per line) for NonDestructive tapes. M11's canonical format must either read M3-era `.tape.partial` files losslessly or ship a one-time migration shim. Verified by adding an M3-era partial as a fixture to `SafRoundTripTests`. Added by `docs/superpowers/specs/2026-05-18-m3-design.md` Plan Amendment §2.
 
 **Execution mode.** `orchestrator+subagents` (Database Optimizer for the constituents.json flat-array schema design; Compliance Auditor for the SemVer policy enforcement audit).
 
@@ -1342,6 +1344,7 @@ bash bash/autotest.sh
 - Capture banner copy reviewed for vocabulary compliance.
 - `Arm` button copy preserved per `feedback-arm-disarm-is-required`.
 - New `tests/UiVocabularyAuditTests.cpp` audits every operator-facing string against a "no internal vocabulary" allow-list.
+- Operator-facing arm/disarm gesture wired to `InputMixer::finalizeChannel(ChannelId)` so committed tapes transition from `.tape.partial` → `<sha256>.tape` automatically at the natural end of a take. Until M22 lands, finalization is test-driven only (via direct calls from the M3 test suite). Added by `docs/superpowers/specs/2026-05-18-m3-design.md` Plan Amendment §1.
 
 **Dependencies.** All previous milestones (engine model must be settled).
 
