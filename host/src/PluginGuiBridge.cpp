@@ -72,8 +72,19 @@ namespace
             if (conn_ != nullptr)
             {
                 xpc_connection_cancel (conn_);
+                // Drain any in-flight reply / event handlers before
+                // releasing — blocks capture `this`, so a handler that
+                // runs after destruction would dereference a freed object.
+                if (queue_ != nullptr)
+                    dispatch_sync (queue_, ^{});
                 xpc_release (conn_);
                 conn_ = nullptr;
+            }
+            if (queue_ != nullptr)
+            {
+                // .cpp TU has no ARC; release the queue explicitly.
+                dispatch_release (queue_);
+                queue_ = nullptr;
             }
         }
 
@@ -119,6 +130,8 @@ namespace
     {
         std::call_once (g_realInitFlag, []() {
            #ifdef __APPLE__
+            // Mutex pairs with teardownRealBridgeForTesting(); call_once
+            // alone doesn't serialize against the test-only teardown path.
             std::lock_guard<std::mutex> lock (g_realLifecycleMutex);
             g_realBridge = new XpcGuiBridge();
            #endif
