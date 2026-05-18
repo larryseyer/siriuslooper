@@ -74,6 +74,19 @@ plug-in's execution time per buffer. **No plug-in failure mode can
 produce an audio-thread glitch in the engine, because the engine and
 the plug-in never share a process boundary that a crash could cross.**
 
+**Measured IPC latency (M7 S2c, 2026-05-18, Apple Silicon dev machine):**
+identity-mode round-trip over the shared-memory SPSC rings — median
+68 µs, p99 134 µs across 1000 samples. The hidden Catch2 case
+`[plugin-ipc][.rt-smoke]` asserts p99 < 300 µs (≈2× headroom over
+the observed baseline). The V7 plan's <10 µs aspiration assumes a
+spin-wait transport; the S2c baseline uses a 50 µs poll backoff to
+keep idle CPU usage low. The S4+ watchdog work will revisit the
+trade-off when sub-buffer-deadline behaviour becomes load-bearing.
+This row is **not** on the audio-thread call chain in M7 — the
+engine-side `OutOfProcessPluginInstance::sendBytes`/`readBytes` are
+message-thread only. S3+ moves the producer side onto the audio
+thread; that promotion lands its own audit row.
+
 ### 6. The direct layer is audio-thread-exclusive and stateless
 
 Direct routing is a pure function of input buffers. No allocation, no

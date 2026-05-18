@@ -53,6 +53,7 @@ add_executable(SiriusTests
     NotificationBusTests.cpp
     NotificationBusIntegrationTests.cpp
     OutOfProcessPluginTests.cpp
+    OutOfProcessPluginIpcLatencyTests.cpp
     SharedMemorySpscQueueTests.cpp
     SharedMemoryRegionTests.cpp)
 

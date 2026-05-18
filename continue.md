@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-18 (M7 S1 SHIPPED on origin; M7 S2 next — shared-mem IPC + CLAP SDK)
+# Session Continuation — 2026-05-18 (M7 S2 SHIPPED on origin; M7 S3 next — wire OutOfProcessPluginInstance through OutputMixer)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,124 +8,177 @@
 
 ---
 
-## RESUME HERE (2026-05-18 — M7 S1 fully shipped on origin; M7 S2 next)
+## RESUME HERE (2026-05-18 — M7 S2 fully shipped on origin; M7 S3 next)
 
-**M7 Session 1 is on `origin/master`.** HEAD is `0574d51`. The
-foundational layer of out-of-process plug-in hosting now exists:
-standalone `sirius_plugin_host` executable, engine-side
-`OutOfProcessPluginInstance` spawner (POSIX fork/pipe/execvp), 5
-stdin/stdout identity-passthrough smoke tests, real
-`kill(pid, 0)→ESRCH` zombie verification. Test count: **354/354**
-green (was 349 at M6 close; +5 for S1).
+**M7 Sessions 1 + 2 are on `origin/master`.** S2 head is `<latest>` (filled
+in after push). Four sub-session commits landed for S2:
 
-**Scope deviations locked in S1** (carry forward):
-1. **CLAP SDK deferred to S2.** S1's "synthetic plug-in" is the host
-   binary itself in identity-passthrough mode. S2 introduces CLAP as
-   a real external dependency.
-2. **`juce::ChildProcess` swapped for raw POSIX** because
-   `juce::ChildProcess` has no write-to-stdin API. POSIX-only
-   (macOS + Linux); Windows defers to the platform-completion
-   roadmap (macOS → iOS → Windows → Linux per platform-order memory).
-3. **`OutOfProcessPluginInstance::isRunning()` is non-const** and
-   silently reaps the zombie + clears `childPid_` when it does. This
-   prevents `shutdown()` from later signalling a recycled PID. The
-   const-correctness violation is documented in the header.
+| SHA | Subject |
+|---|---|
+| `de3179b` | M7 S2a — CLAP via setup-deps + SyntheticTestPlugin + host `--mode clap` |
+| `c0cf0d6` | M7 S2b — SharedMemoryRegion (shm_open/mmap RAII) + SharedMemorySpscQueue<T> |
+| `6e1df55` | M7 S2c — swap stdin/stdout for shared-mem SPSC rings + PluginIpcMessage |
+| `<S2d>`   | M7 S2d — round-trip latency [.rt-smoke] + RT_SAFETY_CONTRACT §5 row |
 
-### First moves for the M7 S2 chat
+Test count: **364/364** green (was 354 at S1; +1 CLAP smoke in S2a, +9 in
+S2b for 6 SPSC tests + 3 region tests, hidden latency smoke in S2d).
+The IPC transport is now POSIX shared-memory SPSC rings — `stdin`/`stdout`
+piping is gone from both engine and host sides. The host child binary
+**stays JUCE-free** (CLAP is header-only; shm primitives moved to JUCE-
+free `Sirius::Core`).
 
-M7 S2 is the **largest single design pass in M7** — two new
-mechanisms at once: CLAP SDK introduction + shared-memory SPSC IPC.
-Recommend a brainstorm before code touches anything.
+**Measured round-trip latency (Apple Silicon dev machine, 2026-05-18):**
+median 68 µs, p99 134-135 µs across 1000 samples. Hidden `[plugin-ipc]
+[.rt-smoke]` asserts p99 < 300 µs (≈2× headroom). The V7 plan's < 10 µs
+target is aspirational — it requires the lock-free spin transport the S4+
+watchdog work will introduce; the S2c `kRingPollMicroseconds = 50` poll
+backoff dominates the current baseline.
+
+**Scope deviations locked in S2** (carry forward):
+
+1. **CLAP arrives via `bash/setup-deps.sh`, NOT git submodule.** continue.md
+   pre-S2 recommended submodule; that contradicted the actual project
+   pattern (external/ is gitignored + populated by `setup-deps.sh`,
+   matching OTTO's layout). S2a extended setup-deps.sh with
+   `clap|free-audio/clap.git|1.2.6`. Operators on a fresh clone now run
+   `bash bash/setup-deps.sh` to populate `external/clap`.
+2. **SHM primitives live in `core/`, not `engine/`.** Initially placed in
+   engine in S2b (where `LockFreeSpscQueue` lives), then moved to core in
+   S2c when wiring revealed that linking the host binary against
+   `Sirius::Engine` would pull `juce_core` (engine's PRIVATE dep) and
+   violate the "host stays JUCE-free" constraint. `Sirius::Core` is the
+   JUCE-free pure library, and the SHM primitives belong there.
+   `PluginIpcMessage.h` also moved core-side so the host child can
+   include it without depending on `SiriusHost` (which carries JUCE).
+3. **`PluginIpcMessage::monotonicNs` is `int64_t` ns since
+   `steady_clock` epoch, NOT an LMC `Rational`.** The plan said "LMC
+   timestamps in headers" but LMC time is `Rational` (non-trivially-
+   constructible), which can't live in a `static_assert(trivially_copyable)`
+   POD. S3 will reinterpret the slot as LMC-domain when wiring the audio
+   thread; for S2c-era round-trip measurement, monotonic ns is the
+   meaningful unit.
+4. **`OutOfProcessPluginInstance` gained a second constructor**
+   `(hostBinaryPath, instanceId, clapPluginBundle)` for CLAP-mode spawn,
+   additive to the S1 identity-mode constructor. Existing tests build
+   binary-compatible.
+5. **CLAP-mode `process()` uses a `RingByteStream` abstraction** inside
+   `host_process/main.cpp` — reads the existing framed wire format
+   (`uint32_t frameCount` + interleaved stereo float pairs) on top of
+   message-by-message ring pops. Audio buffer ceiling is
+   `PluginIpcMessage::kMaxPayloadBytes = 8192` = 1024 stereo float
+   frames — matches the V7 outer block-size envelope.
+6. **macOS shm pages are 16 KiB, not 4 KiB.** Apple Silicon kernel
+   rounds shm segments up to a 16 KiB boundary; `SharedMemoryRegion::
+   size()` re-stats unconditionally so both sides agree on the
+   actual mapped bytes. Test assertions use `size() >= requested`.
+
+### First moves for the M7 S3 chat
+
+M7 S3 wires `OutOfProcessPluginInstance` into `OutputMixer`'s plug-in
+slot on a Constituent's `EffectChain`. This is **the first session that
+puts the IPC layer on the audio call chain** — design care required.
 
 1. Read this file end-to-end.
-2. Open `docs/superpowers/plans/2026-05-17-v7-alignment.md` and re-
-   read **M7 lines 487-554**. Session 2 is enumerated at line 532:
-   "S2: Replace stdin/stdout with POSIX shared-memory + SPSC rings;
-   LMC timestamps in headers; round-trip latency measurement; commit."
-3. Read `host/include/sirius/OutOfProcessPluginInstance.h` (S1's
-   surface — `sendBytes`/`readBytes`/`shutdown`/`isRunning` byte-
-   oriented API). S2 swaps the IMPLEMENTATION of `sendBytes`/`readBytes`
-   for shared-memory ring writes/reads; the header signature stays.
-4. Read `host_process/main.cpp` (S1's identity-mode pump). S2 adds a
-   `--mode clap --plugin-path <.clap>` CLI option that loads a real
-   CLAP plug-in instead of identity-copying.
-5. Read `engine/include/sirius/LockFreeSpscQueue.h` — the existing
-   wait-free SPSC primitive that S2 needs to wrap in a shared-memory
-   region.
-6. **Brainstorm before code.** S2's open questions:
-   - **CLAP SDK integration shape.** Three options: (a) git submodule
-     at `external/clap`, (b) vendored single-header copy, (c) CMake
-     `FetchContent_Declare` against the upstream tag. Submodule is
-     the project's existing pattern (juce/, soxr/) but adds an
-     operator-side init step. Vendored is heaviest in repo size but
-     zero-friction. FetchContent is build-time-fragile. **Recommend
-     git submodule** for consistency with juce/soxr.
-   - **Shared-memory ring layout.** A `LockFreeSpscQueue<T>` allocates
-     its buffer in heap memory — for shared memory, we need a
-     placement-new variant that maps the buffer to a pre-allocated
-     region (`mmap` over `shm_open`). Either (a) new type
-     `SharedMemorySpscQueue<T>` with the same API, or (b) refactor
-     `LockFreeSpscQueue` to accept an allocator. Option (a) is the
-     smaller surface; option (b) is the cleaner abstraction. **Lean
-     (a)** — keep the existing SPSC primitive frozen.
-   - **Message header shape.** Plan line 519 says "LMC-timestamps in
-     each message header." Message struct probably: `LmcTime ts`,
-     `MessageType kind`, `uint32_t payloadBytes`, then variable
-     payload. Variable-length means we can't use a fixed-size POD —
-     might need a two-pass push (header SPSC + payload arena SPSC),
-     OR fixed-size message with `kMaxPayloadBytes` ceiling. **Lean
-     fixed-size** — matches NotificationBus pattern from M6, simpler
-     overflow accounting.
-   - **Latency assertion threshold.** Plan line 522 says "< 10 µs on
-     Apple Silicon dev machine." Round-trip includes parent→child
-     ring push + child→parent ring push + scheduling latency.
-     Realistic? Measure first; flag if not achievable.
-   - **macOS sandbox entitlements** (deferred from M7 brainstorm
-     above). Shared-mem IPC requires
-     `com.apple.security.cs.allow-shared-memory` if the host binary
-     is sandboxed. S2 dev-build doesn't need signing; M7 milestone
-     close will. Note: **operator-side CI signing handoff (3 secrets
-     pending)** intersects this — see §"CI signing handoff" below.
-     S2 itself doesn't block on CI work.
-7. Adopt the same orchestrator+subagents execution mode. Backend
-   Architect for the IPC ring shape; Security Engineer for the
-   sandboxing review when M7 milestone close approaches.
+2. Open `docs/superpowers/plans/2026-05-17-v7-alignment.md` and re-read
+   **M7 lines 487-554**. Session 3 is enumerated at line 533: "S3:
+   Engine-side `OutOfProcessPluginInstance` wires through `OutputMixer`'s
+   plug-in slot on a Constituent's `EffectChain`; integration test plays
+   audio through the synthetic plug-in; commit."
+3. Read `engine/include/sirius/Bus.h` + `engine/include/sirius/OutputMixer.h`
+   to find the EffectChain entry point. M5 Session 3 noted: "When M7
+   wires real plugin invocation through EffectChain, the inline path
+   must become a real Bus::process invocation." S3 makes that real.
+4. Read `core/include/sirius/EffectChain.h` (the M5-era stub that holds
+   plug-in slots). S3 fills the slot with a real
+   `OutOfProcessPluginInstance` invocation.
+5. **Brainstorm before code.** S3 open questions:
+   - **Audio-thread `sendBytes`/`readBytes`?** Current API is message-
+     thread per the header docblock. The shm push/pop primitives are
+     wait-free, so the API *can* be made audio-thread-safe — but the
+     current `usleep` backoff in `readBytes` violates RT-safety. S3
+     needs an audio-thread variant: zero-wait `tryReadBytes` returning
+     immediately if the ring's empty. Watchdog (S4) handles the missed-
+     deadline case.
+   - **EffectChain → OutOfProcessPluginInstance shape.** EffectChain
+     currently holds `PluginDescriptor` slots. S3 either: (a) extends
+     EffectChain to own the OutOfProcessPluginInstance per slot, or
+     (b) introduces a sibling `EffectChainHost` that owns the spawned
+     processes and EffectChain stays descriptor-only. (b) keeps Core's
+     JUCE-free contract (OutOfProcessPluginInstance is in SiriusHost
+     which has JUCE deps); (a) would force Core to grow a JUCE dep.
+     **Lean (b)**.
+   - **Where instance ownership lives.** `MainComponent` owns mixers
+     per the M5+M6 pattern; should it also own the `EffectChainHost`
+     (or per-slot OutOfProcessPluginInstances)? Or does the OutputMixer
+     own them via injection? The M5-era injection pattern says owner
+     stays in MainComponent; OutputMixer holds raw pointers.
+   - **Integration test shape.** S3 acceptance criterion: "plays audio
+     through the synthetic plug-in." The synthetic plug-in is identity-
+     only this session, so the test asserts byte-for-byte audio round-
+     trip through an EffectChain slot. Catch2 tag suggestion:
+     `[output-mixer][plugin-host]`.
+6. Adopt the same orchestrator+subagents execution mode. Backend
+   Architect for the EffectChain ↔ OutOfProcessPluginInstance wiring.
 
-### S2 acceptance criteria
+### S3 acceptance criteria (V7 plan lines 533 + 487-503)
 
-- `host_process/main.cpp` gains `--mode clap --plugin-path <.clap>` —
-  loads a CLAP plug-in via the SDK API; pumps audio buffers through it
-  via the shared-memory ring.
-- `OutOfProcessPluginInstance` body swaps stdin/stdout for shared-mem
-  rings. Public API unchanged.
-- Two SPSC rings per instance: engine→host (input) + host→engine
-  (output). Pre-allocated at session start; LMC-timestamps in headers.
-- `tests/fixtures/SyntheticTestPlugin.cpp` (new) — minimal CLAP
-  plug-in with identity + deliberate-timeout variants. Identity test
-  passes round-trip audio.
-- Round-trip latency < 10 µs measured + asserted in a hidden
-  `[.rt-smoke]` Catch2 case (matches DirectLayer/OutputMixer pattern).
-- No allocation, no locks on the audio-thread side of the rings.
-- All existing 354 ctest cases still pass; new tests added.
+- `EffectChainHost` (or equivalent) owns one `OutOfProcessPluginInstance`
+  per active plug-in slot on a Constituent's `EffectChain`.
+- `Bus::process` (or `OutputMixer::renderBuffer` step 4) invokes the
+  hosted plug-in's audio-thread `tryReadBytes`/`tryWriteBytes` per
+  buffer, swapping the M5 inline pass-through with real plug-in dispatch.
+- An integration test loads the synthetic CLAP plug-in (already built
+  by S2a) into an EffectChain slot, plays stereo audio through it,
+  asserts byte-for-byte round-trip.
+- Audio-thread surface of OutOfProcessPluginInstance is audited in
+  `docs/RT_SAFETY_CONTRACT.md §6` (S2d added the §5 measured-latency
+  note; S3 adds the table row).
+- All existing 364 ctest cases still pass; new integration test added.
+- Test count target: ~365-368.
 
-### M7-era decisions already locked (S2 must preserve)
+### M7-era decisions locked (S3 must preserve)
 
-1. **POSIX-only scope** (Linux + macOS; Windows defers).
-2. **`OutOfProcessPluginInstance` public API is byte-oriented**
-   (`sendBytes`/`readBytes` — S2 changes the body, not the signature).
-3. **`isRunning()` is non-const + silently reaps + clears
+1. **POSIX-only scope** (macOS + Linux; Windows defers).
+2. **Host binary stays JUCE-free.** CLAP + SHM primitives are in
+   `Sirius::Core` (JUCE-free) for exactly this reason. **DO NOT**
+   link the host binary against `Sirius::Engine` or `Sirius::Host`.
+3. **`OutOfProcessPluginInstance` public API is byte-oriented** —
+   `sendBytes`/`readBytes` signatures unchanged through S2. S3 adds
+   audio-thread `tryReadBytes`/`tryWriteBytes` siblings (zero-wait,
+   noexcept).
+4. **`isRunning()` stays non-const + silently reaps + clears
    `childPid_`.** Don't restore the const.
-4. **Host binary has zero JUCE dependency.** Keep it that way in S2
-   even when CLAP SDK enters — CLAP is header-only on the host side.
+5. **Zero allocation / zero locks on the audio-thread side of the
+   rings.** The SPSC primitive is wait-free; SHM regions are created
+   at construction time (message thread). S3 must NOT introduce any
+   audio-thread allocation when wiring through EffectChain.
+6. **`NotificationBus` (M6) is the engine→UI truthfulness channel.**
+   When S4 wires plug-in watchdog events, they post into the existing
+   bus. S3 does not need to wire it (no watchdog events yet).
+7. **Drop-NEW overflow policy** for SPSC rings — if the engine→host
+   ring is full, `sendBytes` (and S3's `tryWriteBytes`) returns false
+   and the caller surfaces it. Watchdog work in S4 handles the back-
+   pressure semantics.
+8. **macOS shm_open name length cap (31 chars including leading slash).**
+   Current name layout is `/sirius.<instanceId>.<suffix>` with `suffix`
+   ∈ {`e2h`, `h2e`}. `<instanceId>` budget is ~18 chars. Long ids must
+   be hashed by the caller; S3 should add a `hashInstanceId(std::string)
+   -> std::string` helper if any Constituent path generates ids > 18.
+9. **`PluginIpcMessage::monotonicNs` will become LMC-domain in S3.**
+   Reinterpret the slot when wiring the audio thread; document the
+   semantic shift in the header.
 
-### Carryover from M6 still unresolved (M7 doesn't touch)
+### Carryover from M6 + earlier still unresolved (M7 doesn't touch)
 
-- **ProcessedRoute STILL passing empty span to DirectLayer.** Not
-  M7's problem.
+- **ProcessedRoute STILL passing empty span to DirectLayer.** Not M7's
+  problem (covered by OutputMixer's produced-mix path).
 - **Manual operator-launch eyes-on of M6 notification surface.**
-  Operator did launch the .app this session (M7 S1 chat); whether
-  they got to verify the notification list visually is unknown from
-  Claude's side — surfaced here for follow-up. Not blocking M7.
+  Operator launched the app during the M7 S1 chat; visual verification
+  status from operator's side is unknown to Claude. Not blocking M7.
+- **Operator-side CI signing handoff (3 secrets pending).** Does not
+  block M7 work. Will block the M7 milestone close (S10+) when the
+  binary signing has to cover `sirius_plugin_host` too — coordinate
+  with the signing-secrets handoff before then.
 
 ---
 
