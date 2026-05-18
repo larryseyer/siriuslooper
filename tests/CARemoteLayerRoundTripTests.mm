@@ -6,17 +6,23 @@
 // path. Constructs both ends in the same process; the API supports this
 // (the engine talks to its own serverPort).
 //
-// Skipped on non-Apple platforms.
+// Apple-only: tests/CMakeLists.txt gates the .mm on if(APPLE), so there
+// is no non-Apple TU to compile.
 //
 // Tag: [plugin-editor-xpc][in-process]
+//
+// Note: CARemoteLayerServer is a process-global singleton; clients from
+// prior TEST_CASEs in the same process may still be draining when the
+// next case starts. Apple's docs don't specify the timing of
+// `-[CARemoteLayerClient invalidate]`. If these tests flake, switch to
+// a single TEST_CASE with SECTIONs to make ordering explicit.
 
 #include <catch2/catch_test_macros.hpp>
 
-#ifdef __APPLE__
-  #import <QuartzCore/QuartzCore.h>
-  #import <QuartzCore/CARemoteLayerServer.h>
-  #import <QuartzCore/CARemoteLayerClient.h>
-  #import <AppKit/AppKit.h>
+#import <QuartzCore/QuartzCore.h>
+#import <QuartzCore/CARemoteLayerServer.h>
+#import <QuartzCore/CARemoteLayerClient.h>
+#import <AppKit/AppKit.h>
 
 TEST_CASE ("CARemoteLayerServer.sharedServer.serverPort is non-zero",
            "[plugin-editor-xpc][in-process]")
@@ -72,13 +78,3 @@ TEST_CASE ("+[CALayer layerWithRemoteClientId:] returns non-nil for live client"
         [client release];
     }
 }
-
-#else // !__APPLE__
-
-TEST_CASE ("CARemoteLayer round-trip (non-Apple — skipped)",
-           "[plugin-editor-xpc][in-process]")
-{
-    SKIP ("CARemoteLayer is macOS-only");
-}
-
-#endif
