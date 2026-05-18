@@ -1,20 +1,29 @@
 #include "sirius/TapeWriter.h"
 
+#include <juce_core/juce_core.h>
+
 #include <stdexcept>
 
 namespace sirius
 {
 
-TapeWriter::TapeWriter (juce::File partialDir,
+struct OpenFile { std::unique_ptr<juce::FileOutputStream> stream; };
+
+TapeWriter::TapeWriter (std::filesystem::path partialDir,
                         std::chrono::milliseconds flushInterval,
                         std::size_t queueCapacity)
     : partialDir_ (std::move (partialDir)),
       flushInterval_ (flushInterval),
       queue_ (queueCapacity)
 {
-    if (! partialDir_.exists() && ! partialDir_.createDirectory())
-        throw std::runtime_error ("TapeWriter: cannot create partial directory: "
-                                  + partialDir_.getFullPathName().toStdString());
+    if (! std::filesystem::exists (partialDir_))
+    {
+        std::error_code ec;
+        std::filesystem::create_directories (partialDir_, ec);
+        if (ec)
+            throw std::runtime_error ("TapeWriter: cannot create partial directory: "
+                                      + partialDir_.string() + " — " + ec.message());
+    }
 
     worker_ = std::thread (&TapeWriter::workerLoop, this);
 }
@@ -33,8 +42,8 @@ TapeWriter::~TapeWriter()
     writePendingMessages();
 
     std::scoped_lock lk (stateMutex_);
-    for (auto& [_, stream] : openFiles_)
-        if (stream) stream->flush();
+    for (auto& [_, of] : openFiles_)
+        if (of && of->stream) of->stream->flush();
 }
 
 bool TapeWriter::tryEnqueue (const TapeWriteMessage& msg) noexcept
@@ -42,7 +51,7 @@ bool TapeWriter::tryEnqueue (const TapeWriteMessage& msg) noexcept
     return queue_.push (msg);
 }
 
-juce::File TapeWriter::flushChannel (ChannelId channelId)
+std::filesystem::path TapeWriter::flushChannel (ChannelId channelId)
 {
     {
         std::scoped_lock lk (stateMutex_);
@@ -67,10 +76,9 @@ std::uint32_t TapeWriter::errorCountForChannel (ChannelId channelId) const
     return it == errorCounts_.end() ? 0u : it->second;
 }
 
-juce::File TapeWriter::partialPathFor (ChannelId channelId) const
+std::filesystem::path TapeWriter::partialPathFor (ChannelId channelId) const
 {
-    return partialDir_.getChildFile (
-        juce::String (channelId.value()) + ".tape.partial");
+    return partialDir_ / (std::to_string (channelId.value()) + ".tape.partial");
 }
 
 void TapeWriter::workerLoop()
@@ -96,9 +104,9 @@ void TapeWriter::workerLoop()
         {
             std::scoped_lock lk (stateMutex_);
             auto it = openFiles_.find (flushTarget);
-            if (it != openFiles_.end() && it->second)
+            if (it != openFiles_.end() && it->second && it->second->stream)
             {
-                it->second->flush();
+                it->second->stream->flush();
                 it->second.reset(); // close the stream
                 openFiles_.erase (it);
             }
@@ -118,20 +126,23 @@ void TapeWriter::writePendingMessages()
         {
             std::scoped_lock lk (stateMutex_);
             auto it = openFiles_.find (channelKey);
-            if (it == openFiles_.end() || ! it->second)
+            if (it == openFiles_.end() || ! it->second || ! it->second->stream)
             {
                 const auto path = partialPathFor (msg.id);
-                auto fresh = std::make_unique<juce::FileOutputStream> (path);
+                auto fresh = std::make_unique<juce::FileOutputStream> (
+                    juce::File (juce::String (path.string())));
                 if (! fresh->openedOk())
                 {
                     juce::Logger::writeToLog ("TapeWriter: cannot open partial file: "
-                                              + path.getFullPathName());
+                                              + juce::String (path.string()));
                     errorCounts_[channelKey]++;
                     continue;
                 }
-                it = openFiles_.emplace (channelKey, std::move (fresh)).first;
+                auto of = std::make_unique<OpenFile>();
+                of->stream = std::move (fresh);
+                it = openFiles_.emplace (channelKey, std::move (of)).first;
             }
-            stream = it->second.get();
+            stream = it->second->stream.get();
         }
 
         if (stream == nullptr) continue;

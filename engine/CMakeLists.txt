@@ -1,11 +1,11 @@
 # =============================================================================
 # SiriusEngine — the real-time engine layer
 # =============================================================================
-# Still JUCE-free at this layer, deliberately: the real-time-safe primitives
-# (the lock-free tape-write path), the retroactive ring, and the LMC's clock
-# model are pure C++ so they stay exhaustively unit-testable. The JUCE
-# audio-device wiring and the membranes are a thin layer added on top in later
-# steps of M2 — they depend on this foundation, not the other way around.
+# Public API is JUCE-free, deliberately: the real-time-safe primitives (the
+# lock-free tape-write path), the retroactive ring, and the LMC's clock model
+# expose pure C++ interfaces so they stay exhaustively unit-testable. juce_core
+# is a PRIVATE implementation detail of TapeWriter.cpp (filesystem streams,
+# logging) and does not leak into engine headers.
 # =============================================================================
 
 add_library(SiriusEngine STATIC
@@ -32,7 +32,7 @@ target_compile_features(SiriusEngine PUBLIC cxx_std_20)
 # a SiriusEngine public header).
 target_link_libraries(SiriusEngine
     PUBLIC  Sirius::Core
-            juce::juce_core
-    PRIVATE soxr)
+    PRIVATE juce::juce_core
+            soxr)
 
 add_library(Sirius::Engine ALIAS SiriusEngine)

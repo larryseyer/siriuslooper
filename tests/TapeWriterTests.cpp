@@ -20,6 +20,7 @@
 
 #include <array>
 #include <chrono>
+#include <filesystem>
 #include <thread>
 
 using sirius::ChannelId;
@@ -30,13 +31,13 @@ using sirius::TapeWriter;
 
 namespace
 {
-    juce::File freshTempDir (const juce::String& tag)
+    std::filesystem::path freshTempDir (const juce::String& tag)
     {
         auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory)
                        .getChildFile ("sirius-tapewriter-" + tag
                                       + "-" + juce::String (juce::Time::getMillisecondCounterHiRes()));
         dir.createDirectory();
-        return dir;
+        return std::filesystem::path (dir.getFullPathName().toStdString());
     }
 
     TapeWriteMessage makeMessage (ChannelId id, std::size_t sampleCount, std::byte fill)
@@ -67,13 +68,13 @@ TEST_CASE ("TapeWriter writes enqueued bytes to a per-channel partial file",
         for (int i = 0; i < 100; ++i)
         {
             std::this_thread::sleep_for (std::chrono::milliseconds (10));
-            const auto partial = tempDir.getChildFile ("7.tape.partial");
+            const juce::File partial (juce::String ((tempDir / "7.tape.partial").string()));
             if (partial.existsAsFile() && partial.getSize() >= 128)
                 break;
         }
     } // dtor joins worker and final-flushes
 
-    const auto partial = tempDir.getChildFile ("7.tape.partial");
+    const juce::File partial (juce::String ((tempDir / "7.tape.partial").string()));
     REQUIRE (partial.existsAsFile());
     CHECK (partial.getSize() == 128);
 
@@ -82,7 +83,7 @@ TEST_CASE ("TapeWriter writes enqueued bytes to a per-channel partial file",
     for (std::size_t i = 0; i < 128; ++i)
         CHECK (static_cast<unsigned char> (bytes[i]) == 0xAB);
 
-    tempDir.deleteRecursively();
+    juce::File (juce::String (tempDir.string())).deleteRecursively();
 }
 
 TEST_CASE ("tryEnqueue returns false when the queue is full",
@@ -104,7 +105,7 @@ TEST_CASE ("tryEnqueue returns false when the queue is full",
     CHECK (b);
     CHECK_FALSE (c);
 
-    tempDir.deleteRecursively();
+    juce::File (juce::String (tempDir.string())).deleteRecursively();
 }
 
 TEST_CASE ("TapeWriter destructor drains pending messages and joins cleanly",
@@ -121,11 +122,11 @@ TEST_CASE ("TapeWriter destructor drains pending messages and joins cleanly",
         // than truncating the in-flight messages.
     }
 
-    const auto partial = tempDir.getChildFile ("3.tape.partial");
+    const juce::File partial (juce::String ((tempDir / "3.tape.partial").string()));
     REQUIRE (partial.existsAsFile());
     CHECK (partial.getSize() == 5 * 8);
 
-    tempDir.deleteRecursively();
+    juce::File (juce::String (tempDir.string())).deleteRecursively();
 }
 
 TEST_CASE ("flushChannel finalizes the partial file so subsequent reads see all bytes",
@@ -138,10 +139,10 @@ TEST_CASE ("flushChannel finalizes the partial file so subsequent reads see all 
     const auto msg = makeMessage (ChannelId (9), 256, std::byte { 0xCD });
     REQUIRE (writer.tryEnqueue (msg));
 
-    const auto partial = writer.flushChannel (ChannelId (9));
+    const juce::File partial (juce::String (writer.flushChannel (ChannelId (9)).string()));
     REQUIRE (partial.existsAsFile());
     CHECK (partial.getSize() == 256);
     CHECK (writer.errorCountForChannel (ChannelId (9)) == 0);
 
-    tempDir.deleteRecursively();
+    juce::File (juce::String (tempDir.string())).deleteRecursively();
 }

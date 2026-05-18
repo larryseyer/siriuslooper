@@ -15,6 +15,7 @@
 
 #include <array>
 #include <chrono>
+#include <filesystem>
 #include <type_traits>
 
 using sirius::InputMixer;
@@ -40,10 +41,11 @@ TEST_CASE ("InputMixer::processBuffer enqueues one message per tape-bearing chan
     using sirius::TapeMode;
     using sirius::TapeWriter;
 
-    auto tempDir = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                       .getChildFile ("sirius-inputmixer-process-"
-                                      + juce::String (juce::Time::getMillisecondCounterHiRes()));
-    tempDir.createDirectory();
+    const auto tempDirJuce = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                                 .getChildFile ("sirius-inputmixer-process-"
+                                                + juce::String (juce::Time::getMillisecondCounterHiRes()));
+    tempDirJuce.createDirectory();
+    const std::filesystem::path tempDir (tempDirJuce.getFullPathName().toStdString());
 
     // 1 ms flush interval (Lavish-equivalent)
     TapeWriter writer (tempDir, std::chrono::milliseconds (1), 64);
@@ -65,16 +67,16 @@ TEST_CASE ("InputMixer::processBuffer enqueues one message per tape-bearing chan
     mixer.processBuffer (chNoTape, buffer.data(), buffer.size());
 
     // Finalize the CommitToTape channel and verify its partial holds the bytes.
-    const auto partial = writer.flushChannel (chCommit);
+    const juce::File partial (juce::String (writer.flushChannel (chCommit).string()));
     REQUIRE (partial.existsAsFile());
     CHECK (partial.getSize() == 64);
 
     // NoTape channel must not have written anything.
-    const auto notapeFile = tempDir.getChildFile (
-        juce::String (chNoTape.value()) + ".tape.partial");
+    const juce::File notapeFile (juce::String (
+        (tempDir / (std::to_string (chNoTape.value()) + ".tape.partial")).string()));
     CHECK_FALSE (notapeFile.existsAsFile());
 
-    tempDir.deleteRecursively();
+    juce::File (juce::String (tempDir.string())).deleteRecursively();
 }
 
 TEST_CASE ("InputMixer::processBuffer reports overload when the writer queue is full",
@@ -86,10 +88,11 @@ TEST_CASE ("InputMixer::processBuffer reports overload when the writer queue is 
     using sirius::TapeMode;
     using sirius::TapeWriter;
 
-    auto tempDir = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                       .getChildFile ("sirius-inputmixer-overload-"
-                                      + juce::String (juce::Time::getMillisecondCounterHiRes()));
-    tempDir.createDirectory();
+    const auto tempDirJuce = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                                 .getChildFile ("sirius-inputmixer-overload-"
+                                                + juce::String (juce::Time::getMillisecondCounterHiRes()));
+    tempDirJuce.createDirectory();
+    const std::filesystem::path tempDir (tempDirJuce.getFullPathName().toStdString());
 
     // 1000 ms flush interval (Survival-equivalent) — slow flush keeps queue full
     TapeWriter writer (tempDir, std::chrono::milliseconds (1000), 2);
@@ -108,5 +111,5 @@ TEST_CASE ("InputMixer::processBuffer reports overload when the writer queue is 
 
     CHECK (overload.lastReportedLoad() == 1.0);
 
-    tempDir.deleteRecursively();
+    juce::File (juce::String (tempDir.string())).deleteRecursively();
 }

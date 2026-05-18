@@ -4,14 +4,13 @@
 #include "sirius/LockFreeSpscQueue.h"
 #include "sirius/Rational.h"
 
-#include <juce_core/juce_core.h>
-
 #include <array>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
@@ -20,6 +19,8 @@ namespace sirius::persistence { class TapeStore; }
 
 namespace sirius
 {
+
+struct OpenFile;
 
 /// Per-message ceiling on the inline sample payload. 32 KB → 4096 stereo
 /// float32 samples → headroom for any reasonable EngineConfig buffer × 2
@@ -66,7 +67,7 @@ public:
     /// worker thread. `partialDir` is the per-session working directory;
     /// per-channel partial files live at `partialDir / <channelId>.tape.partial`.
     /// `flushInterval` is how often the worker thread drains pending messages.
-    TapeWriter (juce::File partialDir,
+    TapeWriter (std::filesystem::path partialDir,
                 std::chrono::milliseconds flushInterval,
                 std::size_t queueCapacity);
 
@@ -88,7 +89,7 @@ public:
     /// every pending message for `channelId` and closed the file handle.
     /// Returns the absolute path of the closed partial file (caller
     /// hashes it + hands to TapeStore::store + deletes).
-    juce::File flushChannel (ChannelId channelId);
+    std::filesystem::path flushChannel (ChannelId channelId);
 
     /// Per-channel error counter (incremented on I/O failure). Read
     /// from the message thread for diagnostics.
@@ -97,9 +98,9 @@ public:
 private:
     void workerLoop();
     void writePendingMessages();
-    juce::File partialPathFor (ChannelId channelId) const;
+    std::filesystem::path partialPathFor (ChannelId channelId) const;
 
-    juce::File partialDir_;
+    std::filesystem::path partialDir_;
     std::chrono::milliseconds flushInterval_;
     LockFreeSpscQueue<TapeWriteMessage> queue_;
 
@@ -109,7 +110,7 @@ private:
     std::thread worker_;
 
     mutable std::mutex stateMutex_;
-    std::unordered_map<std::int64_t, std::unique_ptr<juce::FileOutputStream>> openFiles_;
+    std::unordered_map<std::int64_t, std::unique_ptr<OpenFile>> openFiles_;
     std::unordered_map<std::int64_t, std::uint32_t> errorCounts_;
     std::int64_t flushRequestForChannel_ { -1 };
     std::condition_variable flushCompleteCv_;
