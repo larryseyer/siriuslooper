@@ -40,7 +40,11 @@ add_executable(SiriusTests
     TransportTests.cpp
     VideoTapeTests.cpp
     FrameMembraneTests.cpp
-    AudioCallbackTests.cpp)
+    AudioCallbackTests.cpp
+    SignalTypeTests.cpp
+    ChannelTests.cpp
+    InputMixerTests.cpp
+    OutputMixerTests.cpp)
 
 target_compile_features(SiriusTests PRIVATE cxx_std_20)
 
