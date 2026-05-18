@@ -20,7 +20,8 @@ add_library(SiriusEngine STATIC
     src/Channel.cpp
     src/InputMixer.cpp
     src/OutputMixer.cpp
-    src/ProcessingChain.cpp)
+    src/ProcessingChain.cpp
+    src/TapeWriter.cpp)
 
 target_include_directories(SiriusEngine PUBLIC include)
 
@@ -31,6 +32,7 @@ target_compile_features(SiriusEngine PUBLIC cxx_std_20)
 # a SiriusEngine public header).
 target_link_libraries(SiriusEngine
     PUBLIC  Sirius::Core
+            juce::juce_core
     PRIVATE soxr)
 
 add_library(Sirius::Engine ALIAS SiriusEngine)

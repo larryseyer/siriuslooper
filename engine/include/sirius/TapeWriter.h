@@ -1,0 +1,118 @@
+#pragma once
+
+#include "sirius/Channel.h"
+#include "sirius/LockFreeSpscQueue.h"
+#include "sirius/Rational.h"
+
+#include <juce_core/juce_core.h>
+
+#include <array>
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <cstddef>
+#include <cstdint>
+#include <mutex>
+#include <thread>
+#include <unordered_map>
+
+namespace sirius::persistence { class TapeStore; }
+
+namespace sirius
+{
+
+/// Per-message ceiling on the inline sample payload. 32 KB → 4096 stereo
+/// float32 samples → headroom for any reasonable EngineConfig buffer × 2
+/// channels at the upper end (M3 spec, brainstorm 2026-05-18). The message
+/// is a POD so the audio thread can construct it on the stack and the
+/// LockFreeSpscQueue can value-copy it through `push`.
+inline constexpr std::size_t kMaxTapeWriteMessageBytes = 32 * 1024;
+
+/// Audio-thread → writer-thread handoff. Self-contained: the audio thread
+/// memcpys processed bytes into `samples[0..sampleCount]` and enqueues. No
+/// pointers into shared memory; ownership is trivial. Default values are
+/// chosen so a zeroed message is harmless if a consumer races a producer.
+struct TapeWriteMessage
+{
+    ChannelId id { 0 };
+    Rational lmcTime { 0 };
+    std::size_t sampleCount { 0 };
+    std::array<std::byte, kMaxTapeWriteMessageBytes> samples {};
+};
+
+/// Owns one worker thread and one bounded SPSC queue. The audio thread is
+/// the sole producer (calls `tryEnqueue`); the worker is the sole consumer
+/// (drains in a loop, writes to per-channel `<channelId>.tape.partial` files
+/// inside `partialDir`, flushing at the caller-supplied interval).
+///
+/// Real-time-safety contract (docs/RT_SAFETY_CONTRACT.md): `tryEnqueue`
+/// never allocates, never blocks, never does I/O. Queue-full returns
+/// `false`; the audio-thread caller reports overload via OverloadProtection.
+///
+/// Error handling: I/O failures on the writer thread (disk full, permission
+/// denied) are caught, counted per channel, logged via juce::Logger, and
+/// surfaced via the same OverloadProtection.reportLoad(1.0) mechanism
+/// (semantically "engine can't keep up"). The channel keeps trying on
+/// subsequent buffers — recoverable, not fatal.
+///
+/// Tier policy: the caller converts CapabilityTier → flushInterval before
+/// constructing, keeping the engine layer free of the app-layer CapabilityTier
+/// header. A helper `tapeWriterFlushInterval(CapabilityTier)` lives in the
+/// app layer alongside CapabilityTier itself.
+class TapeWriter
+{
+public:
+    /// Constructs the queue with `queueCapacity` slots and starts the
+    /// worker thread. `partialDir` is the per-session working directory;
+    /// per-channel partial files live at `partialDir / <channelId>.tape.partial`.
+    /// `flushInterval` is how often the worker thread drains pending messages.
+    TapeWriter (juce::File partialDir,
+                std::chrono::milliseconds flushInterval,
+                std::size_t queueCapacity);
+
+    /// Signals shutdown, notifies the worker, joins, and drains any
+    /// remaining queue entries before returning. No in-flight samples
+    /// are lost (the worker is given a final flush pass).
+    ~TapeWriter();
+
+    TapeWriter (const TapeWriter&) = delete;
+    TapeWriter& operator= (const TapeWriter&) = delete;
+
+    /// Audio-thread entry. Returns true on enqueue, false on queue-full.
+    /// Wait-free. Caller is responsible for reporting overload on false.
+    [[nodiscard]] bool tryEnqueue (const TapeWriteMessage& msg) noexcept;
+
+    /// Worker-thread cooperative drain trigger used by
+    /// `InputMixer::finalizeChannel` before the channel's partial file
+    /// is finalized. Blocks the caller until the worker has flushed
+    /// every pending message for `channelId` and closed the file handle.
+    /// Returns the absolute path of the closed partial file (caller
+    /// hashes it + hands to TapeStore::store + deletes).
+    juce::File flushChannel (ChannelId channelId);
+
+    /// Per-channel error counter (incremented on I/O failure). Read
+    /// from the message thread for diagnostics.
+    std::uint32_t errorCountForChannel (ChannelId channelId) const;
+
+private:
+    void workerLoop();
+    void writePendingMessages();
+    juce::File partialPathFor (ChannelId channelId) const;
+
+    juce::File partialDir_;
+    std::chrono::milliseconds flushInterval_;
+    LockFreeSpscQueue<TapeWriteMessage> queue_;
+
+    std::atomic<bool> shouldExit_ { false };
+    std::condition_variable wakeCv_;
+    std::mutex wakeMutex_;
+    std::thread worker_;
+
+    mutable std::mutex stateMutex_;
+    std::unordered_map<std::int64_t, std::unique_ptr<juce::FileOutputStream>> openFiles_;
+    std::unordered_map<std::int64_t, std::uint32_t> errorCounts_;
+    std::int64_t flushRequestForChannel_ { -1 };
+    std::condition_variable flushCompleteCv_;
+};
+
+} // namespace sirius

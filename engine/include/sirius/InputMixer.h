@@ -1,51 +1,76 @@
 #pragma once
 
 #include "sirius/Channel.h"
+#include "sirius/ChannelDefaults.h"
 #include "sirius/InputDescriptor.h"
 #include "sirius/SignalType.h"
 #include "sirius/TapeMode.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <unordered_map>
+
 namespace sirius
 {
 
-/// V3 §2.1 / V7 alignment plan M2: the input-side mixer. Sits between
+class OverloadProtection;
+class TapeWriter;
+
+/// V3 §2.1 / V7 alignment plan M3: the input-side mixer. Sits between
 /// physical input registration and the tape/direct-layer split, owns the
-/// channel registry, and (in M3+) is responsible for dispatching audio-
-/// thread work into per-channel processing chains.
+/// channel registry, and dispatches audio-thread work into per-channel
+/// processing chains.
 ///
-/// Session 2 declares the surface only; every body in InputMixer.cpp
-/// asserts false so any accidental call site in the M1 audio path is
-/// loud, not silent (V7 alignment plan M2 Risks note line 257).
-/// `ChannelConfig`, `BusId`, `InputBuffers`, `OutputDestinations`, and
-/// `ChannelDefaults` aren't real types yet — M3 designs them; their
-/// places in these signatures are held by `// M3:` comments rather than
-/// speculative type names.
+/// Collaborators (TapeWriter, OverloadProtection) are injected via set-once
+/// setters on the message thread. The audio-thread entry point (processBuffer)
+/// is allocation-free, lock-free, and I/O-free per docs/RT_SAFETY_CONTRACT.md.
 class InputMixer
 {
 public:
     InputMixer();
     ~InputMixer();
 
+    // Injected non-owning collaborators (set-once on the message thread).
+    void setTapeWriter (TapeWriter* writer) noexcept;
+    void setOverloadProtection (OverloadProtection* overload) noexcept;
+
     // Input-layer registry --------------------------------------------------
     void registerInput (InputId, const InputDescriptor&);
     void setInputRawDirect (InputId, bool enabled);
     void setInputEnabled (InputId, bool enabled);
-    // M3: void setInputDefaults (InputId, ChannelDefaults);
+    void setInputDefaults (InputId, ChannelDefaults defaults);
 
     // Channel registry ------------------------------------------------------
-    ChannelId addChannel (InputId source, SignalType /* M3: ChannelConfig */);
+    ChannelId addChannel (InputId source, SignalType type);
     void removeChannel (ChannelId);
-    // M3: void setChannelProcessing (ChannelId, ProcessingChain);
     void setChannelTapeMode (ChannelId, TapeMode);
-    // M3: void setChannelDirectRouting (ChannelId, DirectRouting);
-    // M3: void setChannelDestinations (ChannelId, span<TapeId|BusId>);
 
-    // Bus registry ----------------------------------------------------------
-    // M3: BusId addBus (BusConfig);
-    // M3: void routeChannelToBus (ChannelId, BusId, SendLevel);
+    // Audio-thread interface (real-time safe) ------------------------------
+    /// Walks the channel, applies its ProcessingChain (no-op in M3), and
+    /// if the channel is tape-bearing, memcpys `bytes[0..byteCount]` into a
+    /// `TapeWriteMessage` and enqueues on the bound TapeWriter. On
+    /// queue-full, calls `OverloadProtection::reportLoad(1.0)` and drops.
+    /// No allocations, no locks, no I/O on this path.
+    void processBuffer (ChannelId, const std::byte* bytes, std::size_t byteCount) noexcept;
 
-    // Audio-thread interface (real-time safe in M3+) -----------------------
-    void processBuffer (/* M3: const InputBuffers&, OutputDestinations& */);
+    // Finalize a channel's recording — Session 3 wires the full flow.
+    void finalizeChannel (ChannelId);
+
+private:
+    struct InputState
+    {
+        InputDescriptor descriptor;
+        bool rawDirectMonitor;
+        bool enabled;
+        ChannelDefaults defaults;
+    };
+
+    std::unordered_map<std::int64_t, InputState> inputs_;
+    std::unordered_map<std::int64_t, Channel> channels_;
+    std::int64_t nextChannelId_ { 1 };
+
+    TapeWriter* tapeWriter_ { nullptr };
+    OverloadProtection* overload_ { nullptr };
 };
 
 } // namespace sirius

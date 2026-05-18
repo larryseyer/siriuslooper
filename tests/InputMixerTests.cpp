@@ -1,35 +1,112 @@
-// Skeleton tests for sirius::InputMixer — the M2 Session 2 stub of the V3
-// §2.1 input-side mixer. Every public method body in InputMixer.cpp is
-// `assert(false && "M3-M5 stub")` per V7 alignment plan M2 Risks note line
-// 257: stubs are loud, not silent, so a buggy caller in M1's audio path
-// is impossible to miss. That means these tests can only verify what is
-// safe to call today — the default ctor and the default dtor. The real
-// behavioural tests (register_input + channel-driven tape allocation +
-// process_buffer round-trip) land with M3.
+// Tests for sirius::InputMixer — real-body coverage added in M3 Session 2.
+// The M2 stubs have been replaced with real implementations; these tests
+// verify channel registration, tape-bearing buffer dispatch, and overload
+// reporting on queue-full.
 //
-// The point of this file isn't behavioural coverage — it's a regression
-// floor: if a future refactor accidentally makes InputMixer non-default-
-// constructible (e.g., adds a required ctor argument before the M3 design
-// is settled), this file fails to compile, which is the right time to
-// notice.
+// Note: TapeWriter takes std::chrono::milliseconds for the flush interval;
+// the caller converts from CapabilityTier before constructing.
 #include "sirius/InputMixer.h"
+#include "sirius/OverloadProtection.h"
+#include "sirius/TapeWriter.h"
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <juce_core/juce_core.h>
+
+#include <array>
+#include <chrono>
 #include <type_traits>
 
 using sirius::InputMixer;
 
 static_assert (std::is_default_constructible_v<InputMixer>,
-               "InputMixer must remain default-constructible until M3 designs its config");
+               "InputMixer must remain default-constructible");
 static_assert (std::is_destructible_v<InputMixer>);
 
 TEST_CASE ("InputMixer is default-constructible and destructible without crashing",
            "[input-mixer]")
 {
-    // No member methods are called — every body asserts false. The M3
-    // milestone replaces the stubs with real implementations and adds
-    // the behavioural test cases that exercise them.
     InputMixer mixer;
     (void) mixer;
+}
+
+TEST_CASE ("InputMixer::processBuffer enqueues one message per tape-bearing channel",
+           "[input-mixer][process-buffer]")
+{
+    using sirius::ChannelId;
+    using sirius::InputId;
+    using sirius::OverloadProtection;
+    using sirius::SignalType;
+    using sirius::TapeMode;
+    using sirius::TapeWriter;
+
+    auto tempDir = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                       .getChildFile ("sirius-inputmixer-process-"
+                                      + juce::String (juce::Time::getMillisecondCounterHiRes()));
+    tempDir.createDirectory();
+
+    // 1 ms flush interval (Lavish-equivalent)
+    TapeWriter writer (tempDir, std::chrono::milliseconds (1), 64);
+    OverloadProtection overload;
+
+    InputMixer mixer;
+    mixer.setTapeWriter (&writer);
+    mixer.setOverloadProtection (&overload);
+
+    const auto chCommit = mixer.addChannel (InputId (0), SignalType::Audio);
+    mixer.setChannelTapeMode (chCommit, TapeMode::CommitToTape);
+
+    const auto chNoTape = mixer.addChannel (InputId (1), SignalType::Audio);
+    mixer.setChannelTapeMode (chNoTape, TapeMode::NoTape);
+
+    std::array<std::byte, 64> buffer {};
+    for (auto& b : buffer) b = std::byte { 0x7E };
+    mixer.processBuffer (chCommit, buffer.data(), buffer.size());
+    mixer.processBuffer (chNoTape, buffer.data(), buffer.size());
+
+    // Finalize the CommitToTape channel and verify its partial holds the bytes.
+    const auto partial = writer.flushChannel (chCommit);
+    REQUIRE (partial.existsAsFile());
+    CHECK (partial.getSize() == 64);
+
+    // NoTape channel must not have written anything.
+    const auto notapeFile = tempDir.getChildFile (
+        juce::String (chNoTape.value()) + ".tape.partial");
+    CHECK_FALSE (notapeFile.existsAsFile());
+
+    tempDir.deleteRecursively();
+}
+
+TEST_CASE ("InputMixer::processBuffer reports overload when the writer queue is full",
+           "[input-mixer][overload]")
+{
+    using sirius::InputId;
+    using sirius::OverloadProtection;
+    using sirius::SignalType;
+    using sirius::TapeMode;
+    using sirius::TapeWriter;
+
+    auto tempDir = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                       .getChildFile ("sirius-inputmixer-overload-"
+                                      + juce::String (juce::Time::getMillisecondCounterHiRes()));
+    tempDir.createDirectory();
+
+    // 1000 ms flush interval (Survival-equivalent) — slow flush keeps queue full
+    TapeWriter writer (tempDir, std::chrono::milliseconds (1000), 2);
+    OverloadProtection overload;
+
+    InputMixer mixer;
+    mixer.setTapeWriter (&writer);
+    mixer.setOverloadProtection (&overload);
+    const auto ch = mixer.addChannel (InputId (0), SignalType::Audio);
+    mixer.setChannelTapeMode (ch, TapeMode::CommitToTape);
+
+    std::array<std::byte, 16> buffer {};
+    // 5 pushes against a capacity-2 queue: 3 will be dropped + report overload.
+    for (int i = 0; i < 5; ++i)
+        mixer.processBuffer (ch, buffer.data(), buffer.size());
+
+    CHECK (overload.lastReportedLoad() == 1.0);
+
+    tempDir.deleteRecursively();
 }
