@@ -44,7 +44,8 @@ add_executable(SiriusTests
     SignalTypeTests.cpp
     ChannelTests.cpp
     InputMixerTests.cpp
-    OutputMixerTests.cpp)
+    OutputMixerTests.cpp
+    ProcessingChainTests.cpp)
 
 target_compile_features(SiriusTests PRIVATE cxx_std_20)
 

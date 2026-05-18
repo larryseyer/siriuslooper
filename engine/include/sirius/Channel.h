@@ -1,9 +1,11 @@
 #pragma once
 
+#include "sirius/ProcessingChain.h"
 #include "sirius/SignalType.h"
 #include "sirius/TapeMode.h"
 
 #include <cstdint>
+#include <memory>
 
 namespace sirius
 {
@@ -48,22 +50,28 @@ private:
 
 /// A first-class channel inside the V3 mixer architecture (V7 alignment
 /// plan M2 line 210). A channel pairs an input source with a signal
-/// modality, a tape-routing decision, and (M3+) a typed processing chain
-/// plus its destination list.
+/// modality, a tape-routing decision, and a per-`SignalType` processing
+/// chain. The destinations vector lands in M3+ when bus routing exists.
 ///
-/// Session 2 only declares the type shape — the processing chain,
-/// destination list, and the audio-thread dispatch all land in M3-M5.
-/// The fields present here are the ones that have concrete types today.
+/// Constructor builds the matching `ProcessingChain` via
+/// `makeProcessingChain(signalType)` so callers never need to know which
+/// chain subclass goes with which modality. The chain is held by
+/// `unique_ptr` because each subclass has its own state; M5 begins to
+/// populate that state with real DSP for AudioChain.
 struct Channel
 {
+    Channel (ChannelId id_,
+             SignalType signalType_,
+             InputId source_,
+             TapeMode tapeMode_);
+
     ChannelId id;
     SignalType signalType;
     InputId source;
     TapeMode tapeMode;
+    std::unique_ptr<ProcessingChain> processing;
 
-    // M3: ProcessingChain processing;       — typed by signalType
-    // M3: std::vector<Destination> dests;   — TapeId | BusId
-    // M3: DirectRouting directRouting;
+    // M3+: std::vector<Destination> destinations; — TapeId | BusId
 };
 
 } // namespace sirius

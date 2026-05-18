@@ -6,6 +6,7 @@
 // down construction, equality of the underlying fields, and the optional-
 // channel semantics for kinds that have no channel concept (Transport,
 // System).
+#include "sirius/ChannelDefaults.h"
 #include "sirius/InputDescriptor.h"
 #include "sirius/InputKind.h"
 #include "sirius/TapeId.h"
@@ -132,4 +133,60 @@ TEST_CASE ("display name preserves whitespace and unicode",
         std::optional<int> (0)
     };
     CHECK (d.displayName == "  Vocal — Lead  ");
+}
+
+TEST_CASE ("InputDescriptor carries rawDirectMonitor / enabled / defaults initial values",
+           "[input-descriptor]")
+{
+    using sirius::ChannelDefaults;
+    using sirius::InputDescriptor;
+    using sirius::InputKind;
+    using sirius::TapeId;
+    using sirius::TapeMode;
+
+    SECTION ("default-initialized values match the spec")
+    {
+        const InputDescriptor d {
+            TapeId (1),
+            InputKind::Audio,
+            std::string ("Guitar"),
+            std::optional<int> (0)
+        };
+        CHECK_FALSE (d.rawDirectMonitor);
+        CHECK (d.enabled);
+        CHECK (d.defaults.defaultTapeMode == TapeMode::NoTape);
+        CHECK (d.defaults.defaultEnabled);
+    }
+
+    SECTION ("operator can specify all three at registration time")
+    {
+        const InputDescriptor d {
+            TapeId (2),
+            InputKind::Audio,
+            std::string ("Vocal"),
+            std::optional<int> (1),
+            true,                              // rawDirectMonitor
+            false,                             // enabled
+            ChannelDefaults { TapeMode::CommitToTape, true }
+        };
+        CHECK (d.rawDirectMonitor);
+        CHECK_FALSE (d.enabled);
+        CHECK (d.defaults.defaultTapeMode == TapeMode::CommitToTape);
+    }
+}
+
+TEST_CASE ("ChannelDefaults is value-typed and round-trips its fields",
+           "[input-descriptor][channel-defaults]")
+{
+    using sirius::ChannelDefaults;
+    using sirius::TapeMode;
+
+    const ChannelDefaults defaults { TapeMode::CommitToTape, true };
+
+    CHECK (defaults.defaultTapeMode == TapeMode::CommitToTape);
+    CHECK (defaults.defaultEnabled == true);
+
+    const ChannelDefaults empty {};
+    CHECK (empty.defaultTapeMode == TapeMode::NoTape);
+    CHECK (empty.defaultEnabled == true);
 }

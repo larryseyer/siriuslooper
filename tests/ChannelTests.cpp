@@ -1,15 +1,10 @@
-// Tests for the M2 Session 2 type shapes in engine/include/sirius/Channel.h:
-// the strong-typed InputId and ChannelId wrappers, and the Channel aggregate
-// itself. These are skeleton tests — they pin down construction, equality,
-// and field round-trip only. The ProcessingChain / destinations members
-// land in M3 along with the real InputMixer body, and the buffer-flow
-// assertions land then too (V7 alignment plan line 238).
-//
-// The strong-typed IDs follow the house pattern set by TapeId /
+// Tests for engine/include/sirius/Channel.h: the strong-typed InputId and
+// ChannelId wrappers, and the Channel class with its ProcessingChain-building
+// constructor. Strong-typed IDs follow the house pattern set by TapeId /
 // ConstituentId: explicit constexpr ctor, value() accessor, ==/!= operators,
-// no implicit conversion to or from the underlying integer. Tests here
-// mirror the shape of TapeId / ConstituentId tests where they exist.
+// no implicit conversion to or from the underlying integer.
 #include "sirius/Channel.h"
+#include "sirius/ProcessingChain.h"
 #include "sirius/SignalType.h"
 #include "sirius/TapeMode.h"
 
@@ -54,48 +49,45 @@ TEST_CASE ("ChannelId is a strong-typed wrapper around int64", "[channel][channe
     CHECK (a != c);
 }
 
-TEST_CASE ("Channel aggregate pairs an id, signal type, input source, and tape mode",
+TEST_CASE ("Channel constructor builds a ProcessingChain matching its SignalType",
            "[channel]")
 {
-    const Channel ch {
-        ChannelId (5),
-        SignalType::Audio,
-        InputId (0),
-        TapeMode::CommitToTape
-    };
+    const Channel ch (ChannelId (5), SignalType::Audio, InputId (0), TapeMode::CommitToTape);
 
     CHECK (ch.id == ChannelId (5));
     CHECK (ch.signalType == SignalType::Audio);
     CHECK (ch.source == InputId (0));
     CHECK (ch.tapeMode == TapeMode::CommitToTape);
+    REQUIRE (ch.processing != nullptr);
+    CHECK (ch.processing->signalType() == SignalType::Audio);
 }
 
 TEST_CASE ("Channel admits every SignalType × TapeMode combination",
            "[channel]")
 {
-    // Until M3 adds invariants (ProcessingChain must match SignalType,
-    // tape allocation tied to TapeMode), the aggregate is a plain bag.
-    // This test pins that down: no combination is rejected, all 12 build.
     SECTION ("MIDI on a non-destructive tape")
     {
-        const Channel ch { ChannelId (1), SignalType::Midi, InputId (2),
-                           TapeMode::NonDestructive };
+        const Channel ch (ChannelId (1), SignalType::Midi, InputId (2), TapeMode::NonDestructive);
         CHECK (ch.signalType == SignalType::Midi);
         CHECK (ch.tapeMode == TapeMode::NonDestructive);
+        REQUIRE (ch.processing != nullptr);
+        CHECK (ch.processing->signalType() == SignalType::Midi);
     }
     SECTION ("video with no tape (direct layer only)")
     {
-        const Channel ch { ChannelId (2), SignalType::Video, InputId (3),
-                           TapeMode::NoTape };
+        const Channel ch (ChannelId (2), SignalType::Video, InputId (3), TapeMode::NoTape);
         CHECK (ch.signalType == SignalType::Video);
         CHECK (ch.tapeMode == TapeMode::NoTape);
+        REQUIRE (ch.processing != nullptr);
+        CHECK (ch.processing->signalType() == SignalType::Video);
     }
     SECTION ("file (parameter automation) committed to tape")
     {
-        const Channel ch { ChannelId (3), SignalType::File, InputId (4),
-                           TapeMode::CommitToTape };
+        const Channel ch (ChannelId (3), SignalType::File, InputId (4), TapeMode::CommitToTape);
         CHECK (ch.signalType == SignalType::File);
         CHECK (ch.tapeMode == TapeMode::CommitToTape);
+        REQUIRE (ch.processing != nullptr);
+        CHECK (ch.processing->signalType() == SignalType::File);
     }
 }
 

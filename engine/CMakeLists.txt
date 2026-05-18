@@ -19,7 +19,8 @@ add_library(SiriusEngine STATIC
     src/OverloadProtection.cpp
     src/Channel.cpp
     src/InputMixer.cpp
-    src/OutputMixer.cpp)
+    src/OutputMixer.cpp
+    src/ProcessingChain.cpp)
 
 target_include_directories(SiriusEngine PUBLIC include)
 
