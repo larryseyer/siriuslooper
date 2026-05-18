@@ -1,5 +1,5 @@
 // =============================================================================
-// gui_cocoa.mm — Cocoa shim for sirius_plugin_host (M7 S5)
+// gui_cocoa.mm — Cocoa shim for sirius_plugin_host (M7 S5 + S6)
 // =============================================================================
 // Companion translation unit to host_process/main.cpp. Pulled into a .mm so
 // AppKit includes don't leak into the plain C++ pump loop. The pump calls
@@ -11,22 +11,21 @@
 // `set_parent`; plug-in adds its content as a subview). That host NSView
 // pointer is invalid in the engine process, so this child creates its OWN
 // placeholder NSView, calls the plug-in's `set_parent` with that
-// placeholder, and produces a process-unique "contextId" that the engine
-// embeds via `OutOfProcessEditorView`. The contextId surfaces as a
-// non-zero handle through the GUI shared-memory state region the engine
-// polls.
+// placeholder, and binds a `CARemoteLayerClient` to placeholder.layer.
+// The client's `clientId` is published as the contextId that the engine
+// passes to `+[CALayer layerWithRemoteClientId:]`, which composites the
+// child's layer tree cross-process via the window-server.
 //
-// **CARemoteLayer Mach-port handoff is deferred to a follow-on session.**
-// Apple's modern public API for cross-process layer compositing is
-// `CARemoteLayerServer` (engine side) + `CARemoteLayerClient` (child
-// side), which requires transferring a Mach port from engine to child.
-// The legacy NSMachBootstrapServer path was removed in 10.10; the modern
-// replacement is XPC, which carries enough setup overhead (XPC service
-// manifest, endpoint registration, connection lifecycle) to belong in
-// its own session. S5 ships the complete IPC + lifecycle + supervisor-
-// restart re-publication contracts — the placeholder contextId proves
-// the round-trip works end-to-end. Real GPU compositing lights up when
-// the Mach-port session lands; nothing in the engine API changes.
+// **CARemoteLayer-first; counter-based placeholder as fallback.** When
+// `sirius_engine_server_port()` returns the engine's
+// `CARemoteLayerServer.sharedServer.serverPort` (Task 6 XPC bootstrap),
+// the child constructs a `CARemoteLayerClient` and uses its `clientId`
+// as the contextId — real GPU compositing. When that port is unavailable
+// (binary run outside a signed .app bundle, e.g. ctest from build/), the
+// child falls back to the S5 process-unique counter so the editor
+// surface still publishes a non-zero contextId; the engine then renders
+// a tinted placeholder NSView. Both paths exercise the same publish/poll
+// IPC contract; only the visible pixels differ.
 //
 // **Single-instance assumption.** Each `sirius_plugin_host` child hosts
 // exactly one plug-in instance, so a single static editor slot suffices.
