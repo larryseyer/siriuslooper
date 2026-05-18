@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-18 (M5 COMPLETE on origin; M6 next — NotificationBus)
+# Session Continuation — 2026-05-18 (M6 COMPLETE on origin; M7 next — out-of-process plugin hosting)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,7 +8,149 @@
 
 ---
 
-## RESUME HERE (2026-05-18 — M5 fully shipped on origin; M6 next)
+## RESUME HERE (2026-05-18 — M6 fully shipped on origin; M7 next)
+
+**M6 of the V7 alignment plan is fully on `origin/master`.** HEAD is
+`a5b86bb`. Three session commits shipped:
+
+| SHA | Subject |
+|---|---|
+| `7e6b3e6` | M6 Session 1 — NotificationBus + per-category SPSC + tests |
+| `a9567f6` | M6 Session 2 — wire NotificationBus into AudioCallback + InputMixer + TapeWriter + MainComponent drain |
+| `a5b86bb` | M6 Session 3 — Preparation-tab notification surface + rolling history + integration tests |
+
+Test count: **349/349** green (was 336 at M5 close; +13 across M6 —
+8 for S1, 1 for S2, 4 for S3). Full `cmake --build` clean. Manual
+operator-launch verification of the notification surface is the one
+remaining M6 verification step (deferred from automated smoke — the
+spec called for "launch app, trigger an overload, confirm notification
+appears" which is fragile to drive via macOS AX).
+
+**Execution mode used:** orchestrator+subagents (Backend Architect
+implementer per session; spec review + code review per session; final
+milestone review at end). The final milestone review caught a real
+layout bug — `kPreparationTopAndBottomReservedPx = 180` was
+double-counting the notifications row's height (the bottom-anchored
+stack had already been `removeFromBottom`ed before the clamp executed,
+so the 80→180 bump silently stole ~100 px of timeline headroom on
+small windows). Reverted to 80 + renamed to
+`kPreparationTreeMinHeightPx` before the close-out commit. Both per-
+session reviews caught real polish items: drop-new overflow doc + a
+static_assert pinning kCategoryCount; channel-id in TapeWriter failure
+messages; deferred-TapeWriter-injection comment.
+
+### First moves for the M7 chat
+
+M7 is **the largest single piece of architectural work in the plan**
+(V7 plan line 489): out-of-process plug-in hosting. Standalone
+`sirius_plugin_host` executable, shared-memory SPSC IPC rings,
+watchdog, supervisor, GUI host process with platform-specific window
+embedding (macOS first per the platform-order rule), parameter
+marshalling. **No in-process fallback** per V7 §9.1.
+
+1. Read this file end-to-end.
+2. Open `docs/superpowers/plans/2026-05-17-v7-alignment.md` and read
+   **M7 in full** (starts at line 487). Sessions 1-12 (estimated)
+   break-out is at lines 530-535: S1 = host executable + stdin/stdout
+   identity; S2 = shared-mem + SPSC rings + LMC timestamps; S3 = engine-
+   side OutOfProcessPluginInstance wired through OutputMixer; S4-N =
+   watchdog + supervisor + macOS GUI embedding + platform conditionals.
+3. Read V7 §9.1 in the white paper for the full IPC + watchdog spec.
+4. M7 is significantly larger than M3-M6. **Sessions 1-3 are the
+   foundational layer** (executable, IPC, engine integration);
+   subsequent sessions add the watchdog + supervisor + GUI embedding.
+   Treat the first chat as Sessions 1-3 only; subsequent chats handle
+   later sessions. The V7 plan acknowledges "Sessions 4-N (estimated)"
+   without pinning specifics — let the brainstorm + first 3 sessions
+   inform the rest.
+5. Brainstorm pass for M7 before code. Likely open questions:
+   - **CLAP-first format choice.** M8 spec says CLAP is the first
+     hosted format (cleanest API, no legacy baggage). VST3 + AU follow
+     in M20 + M21. M7 itself is format-agnostic — verify the host
+     binary's plug-in-loading layer is abstracted enough that adding
+     VST3/AU later is a new translation unit, not a rewrite.
+   - **macOS sandbox entitlements.** The signed CI workflow
+     (`ci-macos-signed.yml`) needs updating to sign `sirius_plugin_host`
+     too; shared-memory IPC requires careful entitlement design under
+     `com.apple.security.app-sandbox` + `com.apple.security.cs.allow-shared-memory`.
+     The CI signing handoff (3 secrets still pending per §"CI signing
+     handoff" below) intersects this — M7 may push the operator-side
+     CI work to actually finish before the M7 milestone closes.
+   - **Wet-capture pre-allocation budget.** Per the plan line 551, M8
+     commits the wet-capture budget; M7 only allocates input/output
+     rings. Verify M7 doesn't accidentally consume the M8 budget.
+   - **Host process lifecycle: spawn-per-instance vs pool.** V7 §9.1
+     prescribes per-instance spawn. Confirm this isn't relitigated in
+     brainstorm.
+6. Adopt the same orchestrator+subagents execution mode. M7's V7 plan
+   suggests Backend Architect for the IPC ring shape; Security Engineer
+   for sandboxing review; Performance Benchmarker for round-trip
+   latency. Use the specialists when their scope matches.
+
+### M6-era decisions that constrain M7 (DO NOT "fix" without operator approval)
+
+These are NEW constraints landed in M6; combine with the M5-era +
+M4-era constraints further down (still all load-bearing).
+
+1. **`NotificationBus` is the engine→UI truthfulness channel.**
+   `post(level, category, const char*) noexcept` is allocation-free,
+   wait-free on the audio-thread path via per-category SPSC rings (256
+   entries each). M7's watchdog + supervisor will post `PluginEvent`
+   notifications when a host process misses deadlines, crashes, or
+   restarts — use the existing bus, do NOT spin a parallel signal
+   channel.
+2. **Drain is message-thread-only + must pre-reserve** to
+   `kCategoryCount * kRingCapacity = 2304` to honor the bus's
+   `bad_alloc` contract (drain is NOT `noexcept`). MainComponent
+   already does this at `app/MainComponent.cpp:643`.
+3. **Bus is owned by `MainComponent`; set-once on collaborators**
+   BEFORE `audioDeviceAboutToStart` (same pattern as DirectLayer/
+   OutputMixer per M5 #8). M7's `OutOfProcessPluginInstance` will
+   likely follow the same: MainComponent (or a per-Constituent owner)
+   constructs + injects.
+4. **Overflow policy is drop-NEW** (not drop-oldest as plan line 479
+   suggested) — the only SPSC-correct choice since the producer can't
+   touch the consumer's head. `overflowCount(Category)` exposes the
+   per-category counter. M7's IPC ring should follow the same policy.
+5. **`drain()` signature is out-param `void drain(vector&)`**, NOT
+   return-by-value (deviation from plan line 444, documented at
+   `engine/include/sirius/NotificationBus.h:139-151`).
+6. **`TapeWriter` has `setNotificationBus` wired but is NOT currently
+   owned by `MainComponent`.** When TapeWriter joins the owned app
+   graph (M11 SAF wiring is the likely trigger), inject the bus per
+   the comment at `app/MainComponent.cpp:537-541`. M7 doesn't touch
+   TapeWriter.
+7. **AudioCallback posts `DeviceEvent` only from
+   `audioDeviceAboutToStart`/`audioDeviceStopped`** (JUCE setup
+   callbacks, not the render thread). No render-thread post sites yet
+   from AudioCallback itself. M7's audio-thread plug-in dispatch will
+   add render-thread posts (`Warning, PluginEvent, ...`) for
+   watchdog misses — that IS allowed, post is noexcept.
+8. **`kNotificationHistorySize = 20` in MainComponent**; M22 redesigns
+   the UI surface. M7 may add more notification post sites that
+   surface here — fine.
+
+### Carryover from M5 NOT resolved (still deferred — M7 doesn't touch)
+
+- **ProcessedRoute STILL passing empty span to DirectLayer.** M5+M6
+  did not unblock this. Deferral comment lives at
+  `audio/src/AudioCallback.cpp:66-77`. Not urgent — OutputMixer's
+  produced-mix path (Step 4) covers the surface DirectLayer would have
+  used. M7 doesn't need to fix this.
+- **Manual operator-launch verification of M6 notification surface**
+  is the one remaining M6 verification step (deferred from automated
+  smoke per the AX-fragility constraint from M4 GUI smoke work).
+  Not blocking M7; operator should launch the .app once at their
+  convenience to eyes-on the surface.
+
+---
+
+## HISTORICAL — M5 close + M6 handoff (superseded 2026-05-18 — M6 now complete)
+
+The original M6 first-moves + M5-era constraints follow. M5-era
+constraints #1-#9 ARE STILL LOAD-BEARING for M7+; the rest is history.
+
+### M6 first moves (superseded)
 
 **M5 of the V7 alignment plan is fully on `origin/master`.** HEAD is
 `6cd3810`. Three session commits shipped:
