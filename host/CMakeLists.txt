@@ -13,7 +13,8 @@
 add_library(SiriusHost STATIC
     src/PluginScanner.cpp
     src/GenericParameterView.cpp
-    src/OutOfProcessPluginInstance.cpp)
+    src/OutOfProcessPluginInstance.cpp
+    src/OutOfProcessEffectChainHost.cpp)
 
 target_include_directories(SiriusHost PUBLIC include)
 

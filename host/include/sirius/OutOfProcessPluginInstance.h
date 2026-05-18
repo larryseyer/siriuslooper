@@ -19,11 +19,14 @@ namespace sirius
 /// shared-memory + SPSC rings), and tears the child down cleanly at
 /// shutdown.
 ///
-/// **Message-thread only.** This class has no audio-thread surface: every
-/// public method may block, allocate, or invoke system calls. The S2 path
-/// will add a separate audio-thread-safe `pump()` over the shared-memory
-/// rings; until then, do not call these from `processBlock`-equivalent
-/// contexts.
+/// **Mixed thread surface (M7 S3+).** Most methods are message-thread only —
+/// `sendBytes`/`readBytes`, the constructors, `shutdown`, `isRunning` —
+/// they may block, allocate, or invoke system calls. The audio-thread
+/// surface is the two `try…` methods added in M7 S3: `tryWriteBytes` and
+/// `tryReadBytes`. Both wrap the underlying `SharedMemorySpscQueue` push
+/// and pop directly (already wait-free noexcept per
+/// `core/include/sirius/SharedMemorySpscQueue.h:103-124`), do exactly one
+/// SPSC operation, allocate nothing, and never spin.
 ///
 /// The instance is non-copyable + non-movable. The owner keeps it alive
 /// for the lifetime of the hosted plug-in slot; `OutputMixer` will own
@@ -91,6 +94,39 @@ public:
     /// number of bytes actually read; 0 on timeout or clean EOF. Negative
     /// timeouts block indefinitely until data or EOF.
     std::size_t readBytes (std::byte* buffer, std::size_t capacity, int timeoutMs);
+
+    /// Audio-thread sibling of `sendBytes` (M7 S3). Packages `count`
+    /// bytes into a single `PluginIpcMessage` and attempts ONE wait-free
+    /// `SharedMemorySpscQueue::push`. Returns true if the push succeeded;
+    /// false if the engine→host ring is full, `count` exceeds
+    /// `PluginIpcMessage::kMaxPayloadBytes`, or the queue is not attached.
+    ///
+    /// No retries, no spin loops, no timeouts, no allocation, no syscalls.
+    /// Bounded execution per the M7 S3 row in `docs/RT_SAFETY_CONTRACT.md
+    /// §6`. The caller (e.g. `OutOfProcessEffectChainHost::pumpSlot`) is
+    /// responsible for "miss" handling — a `false` return on a full ring
+    /// is the dry-on-miss path.
+    bool tryWriteBytes (const std::byte* data, std::size_t count) noexcept;
+
+    /// Audio-thread sibling of `readBytes` (M7 S3). Attempts ONE wait-free
+    /// `SharedMemorySpscQueue::pop` from the host→engine ring; on success,
+    /// copies up to `capacity` bytes from the popped message's payload
+    /// into `buffer` and sets `bytesRead` to the number of bytes written.
+    /// Returns true if a message was popped (even if the payload was
+    /// zero-length); false (with `bytesRead = 0`) if the ring is empty
+    /// or the queue is not attached.
+    ///
+    /// Unlike `readBytes`, this method does NOT preserve leftover bytes
+    /// across calls — a single message is consumed in a single call. If
+    /// the popped payload is larger than `capacity`, the excess is
+    /// silently discarded (the caller's contract is to pass a buffer big
+    /// enough to hold one frame's worth of audio bytes).
+    ///
+    /// No retries, no spin loops, no timeouts, no allocation, no syscalls.
+    /// Bounded execution per the M7 S3 row in `docs/RT_SAFETY_CONTRACT.md
+    /// §6`.
+    bool tryReadBytes (std::byte* buffer, std::size_t capacity,
+                       std::size_t& bytesRead) noexcept;
 
     /// Closes the child's stdin (signals EOF), waits up to
     /// `kShutdownGraceMs` for the child to exit on its own, then sends

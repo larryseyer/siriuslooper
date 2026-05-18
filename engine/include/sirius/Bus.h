@@ -2,6 +2,7 @@
 
 #include "sirius/Channel.h"
 #include "sirius/EffectChain.h"
+#include "sirius/IEffectChainHost.h"
 
 #include <cstddef>
 #include <string>
@@ -82,13 +83,41 @@ public:
 
     const EffectChain& effectChain() const noexcept { return effectChain_; }
 
-    /// Audio-thread mix entry point. M5 Session 3 body: for each active
-    /// channel, additively write `mixBuffer_[c]` content into `output[c]`,
-    /// then zero `mixBuffer_` so the next buffer starts fresh. EffectChain
-    /// is HELD but NOT invoked in M5 — actual plugin dispatch lands in M7
-    /// (V7 alignment plan M5 line 387: "EQ/dynamics stubs in M5"). Callers
-    /// (typically `OutputMixer::renderBuffer`) populate `mixBuffer_` via
-    /// `mixBufferChannel(int)` BEFORE invoking `process`.
+    /// Message-thread setter — wires the audio-thread effect-chain
+    /// dispatcher (M7 S3). The bus does NOT own the host; lifetime is
+    /// the caller's responsibility (the integration test owns one
+    /// `OutOfProcessEffectChainHost`, MainComponent will own one once
+    /// the plug-in-adding UI lands). Pass `nullptr` to disable
+    /// dispatch — the M5 inline path runs unchanged.
+    ///
+    /// Set-once before the audio thread starts (same M5/M6 collaborator
+    /// contract as `setEffectChain`); mutating after start is a
+    /// threading-contract violation.
+    void setEffectChainHost (IEffectChainHost* host) noexcept { host_ = host; }
+
+    IEffectChainHost* effectChainHost() const noexcept { return host_; }
+
+    /// Audio-thread mix entry point. Two paths:
+    ///
+    ///  - **M5 inline path** (taken when no `IEffectChainHost` is bound,
+    ///    or `effectChain_` is empty / all bypassed — the default
+    ///    configuration). For each active channel, additively write
+    ///    `mixBuffer_[c]` into `output[c]`, then zero `mixBuffer_` so the
+    ///    next buffer starts fresh. Bit-for-bit equivalent to the M5
+    ///    Session 3 body; zero performance regression for the default.
+    ///
+    ///  - **M7 S3 effect-chain path** (taken when a host is bound AND at
+    ///    least one non-bypassed slot exists). Copy `mixBuffer_` →
+    ///    `processedBuffer_`, dispatch each non-bypassed slot via
+    ///    `host_->pumpSlot(...)` IN-PLACE on `processedBuffer_`, then
+    ///    additively sum `processedBuffer_` into `output` and zero
+    ///    `mixBuffer_`. The pumpSlot miss case leaves `processedBuffer_`
+    ///    unchanged — the dry signal carries through — which gives the
+    ///    pipelined 1-buffer delay model the M7 S3 design decisions
+    ///    locked in.
+    ///
+    /// Callers (typically `OutputMixer::renderBuffer`) populate
+    /// `mixBuffer_` via `mixBufferChannel(int)` BEFORE invoking `process`.
     ///
     /// `const noexcept` because `OutputMixer::renderBuffer` is const and
     /// holds the Bus by const reference; the mix scratch is implementation
@@ -113,9 +142,10 @@ public:
     float* mixBufferChannel (int c) const noexcept;
 
 private:
-    BusId            id_;
-    BusConfig        config_;
-    EffectChain      effectChain_;
+    BusId             id_;
+    BusConfig         config_;
+    EffectChain       effectChain_;
+    IEffectChainHost* host_ { nullptr }; ///< M7 S3 — null = M5 inline path.
 
     /// Pre-allocated mix scratch. Sized to
     /// `kMaxBusMixSamples * kMaxBusChannelsHard` in the constructor; the
@@ -123,6 +153,15 @@ private:
     /// because audio-thread callers write through `mixBufferChannel(int)
     /// const` (see class doc).
     mutable std::vector<float> mixBuffer_;
+
+    /// Pre-allocated per-slot processing scratch (M7 S3). Sized
+    /// identically to `mixBuffer_`. `process()` copies `mixBuffer_` →
+    /// `processedBuffer_`, iterates the effect chain calling
+    /// `host_->pumpSlot(...)` in-place on this buffer, then additively
+    /// sums the result into `output`. `mutable` for the same reason
+    /// `mixBuffer_` is — `process()` is `const noexcept` but the
+    /// scratch is implementation detail the audio thread owns end-to-end.
+    mutable std::vector<float> processedBuffer_;
 };
 
 } // namespace sirius

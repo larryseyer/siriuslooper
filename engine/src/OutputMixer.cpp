@@ -101,6 +101,10 @@ BusId OutputMixer::addBus (BusConfig config)
 
     const BusId id { nextBusId_++ };
     buses_.emplace_back (id, std::move (config));
+    // Forward the stashed effect-chain host to the newly registered bus
+    // so post-`setEffectChainHost` `addBus` calls get the same wiring as
+    // pre-existing buses. Null is a valid value (M5 inline path).
+    buses_.back().setEffectChainHost (effectChainHost_);
     return id;
 }
 
@@ -114,6 +118,13 @@ void OutputMixer::setBusEffectChain (BusId id, EffectChain chain)
             return;
         }
     }
+}
+
+void OutputMixer::setEffectChainHost (IEffectChainHost* host) noexcept
+{
+    effectChainHost_ = host;
+    for (auto& bus : buses_)
+        bus.setEffectChainHost (host);
 }
 
 void OutputMixer::routeChannelToBus (OutputChannelId channel, BusId bus, float sendLevel)
@@ -261,6 +272,33 @@ void OutputMixer::renderBuffer (const float* const* inputChannelData,
         float* const busRight = bus.mixBufferChannel (1);
         if (busLeft == nullptr || busRight == nullptr) continue;
 
+        // M7 S3 — buses with a non-empty non-all-bypassed effect chain AND
+        // a host bound take the Bus::process path, which handles the
+        // chain dispatch internally (copy mixBuffer → processedBuffer,
+        // pumpSlot per slot, additive accumulate, zero mixBuffer).
+        // Output destination for an aux bus is the master's mixBuffer,
+        // not the physical outputs — that preserves the "buses sum into
+        // master, master writes to outputs" architecture.
+        bool busHasActiveChain = false;
+        if (bus.effectChainHost() != nullptr)
+        {
+            for (const auto& entry : bus.effectChain().entries())
+            {
+                if (! entry.bypassed) { busHasActiveChain = true; break; }
+            }
+        }
+
+        if (busHasActiveChain && masterLeft != nullptr && masterRight != nullptr)
+        {
+            float* masterPtrs[2] = { masterLeft, masterRight };
+            bus.process (masterPtrs, 2, clampedSamples);
+            // Bus::process zeros its own mixBuffer; no explicit memset needed.
+            continue;
+        }
+
+        // M5 inline path — preserved bit-for-bit when the bus has no
+        // active chain (the default for empty-config sessions). Zero
+        // perf regression for the M5 default configuration.
         if (masterLeft != nullptr && masterRight != nullptr)
         {
             for (int s = 0; s < clampedSamples; ++s)

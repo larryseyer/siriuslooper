@@ -10,9 +10,7 @@
 #include <chrono>
 #include <csignal>
 #include <cstring>
-#include <stdexcept>
 #include <sys/wait.h>
-#include <thread>
 #include <unistd.h>
 #include <utility>
 #include <vector>
@@ -220,6 +218,64 @@ bool OutOfProcessPluginInstance::sendBytes (const std::byte* data, std::size_t c
         }
         offset += chunk;
     }
+    return true;
+}
+
+bool OutOfProcessPluginInstance::tryWriteBytes (const std::byte* data,
+                                                std::size_t count) noexcept
+{
+    // Audio-thread variant: one SPSC push, no retries, no timeouts. The
+    // caller's contract is that `count` fits in a single PluginIpcMessage —
+    // typical CLAP-mode payload is `4 (frameCount) + N×kChannels×4` bytes,
+    // so the absolute ceiling at kMaxPayloadBytes = 8192 is frameCount ≤
+    // 1023 for stereo (the 1024-frame envelope is one frame over because
+    // of the 4-byte header). Realistic block sizes are 64..512 and fit
+    // comfortably. Caller violation on oversize → false return, no crash.
+    if (engineToHostQueue_ == nullptr || data == nullptr)
+        return false;
+    if (count > PluginIpcMessage::kMaxPayloadBytes)
+        return false;
+
+    PluginIpcMessage msg {};
+    // monotonicNs is the LMC-domain reinterpret slot per M7 decision #9.
+    // S3 does not yet write an LMC sample index here — the producer-side
+    // caller (`OutOfProcessEffectChainHost::pumpSlot`) sets it once the
+    // engine surfaces an LMC handle to the host. S2c-era latency tests
+    // that read the field as steady_clock ns are unaffected because
+    // those tests use sendBytes, not tryWriteBytes.
+    msg.monotonicNs  = 0;
+    msg.kind         = PluginIpcMessage::Bytes;
+    msg.payloadBytes = static_cast<std::uint32_t> (count);
+    if (count > 0)
+        std::memcpy (msg.payload, data, count);
+
+    return engineToHostQueue_->push (msg);
+}
+
+bool OutOfProcessPluginInstance::tryReadBytes (std::byte* buffer,
+                                               std::size_t capacity,
+                                               std::size_t& bytesRead) noexcept
+{
+    // Audio-thread variant: one SPSC pop, no retries, no leftover-byte
+    // stashing. Each call consumes at most one message; if the popped
+    // payload is larger than `capacity`, the excess is silently dropped
+    // (the caller's contract is to pass a buffer big enough to hold one
+    // frame's worth of audio bytes — i.e. the same packaging the producer
+    // used). The pop itself is wait-free noexcept.
+    bytesRead = 0;
+    if (hostToEngineQueue_ == nullptr || buffer == nullptr)
+        return false;
+
+    PluginIpcMessage msg {};
+    if (! hostToEngineQueue_->pop (msg))
+        return false;
+
+    if (msg.payloadBytes == 0)
+        return true; // popped, but nothing to copy
+
+    const std::size_t take = std::min<std::size_t> (capacity, msg.payloadBytes);
+    std::memcpy (buffer, msg.payload, take);
+    bytesRead = take;
     return true;
 }
 

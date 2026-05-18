@@ -24,10 +24,16 @@ namespace sirius
 /// envelope (2 × 1024 × sizeof(float) = 8192) with headroom; parameter
 /// events are well under.
 ///
-/// `monotonicNs` is the producer-side wall clock at push time, used by
-/// the round-trip latency tests. Once S3 wires the engine-side audio
-/// thread, this slot is reinterpreted as an LMC-domain Rational —
-/// scheduled for that session, not S2.
+/// `monotonicNs` is the LMC sample index at producer-push time as of S3+
+/// (was `steady_clock` ns through S2). Reinterpreted, not retyped; the
+/// field stays `int64_t` so consumer code that wants wall-clock latency
+/// reads it as before. S3 producer-side (`OutOfProcessPluginInstance::
+/// tryWriteBytes`) currently writes `0` here — the LMC handle is not yet
+/// surfaced to the audio-thread caller (`OutOfProcessEffectChainHost::
+/// pumpSlot`). M7 S4+ watchdog work fills the real LMC sample index in.
+/// The existing S2 `sendBytes` / host-side `RingByteStream::flush` paths
+/// still write the steady_clock timestamp, so the `[plugin-ipc][.rt-smoke]`
+/// latency case keeps working unchanged.
 struct PluginIpcMessage
 {
     enum Kind : std::uint32_t

@@ -12,7 +12,8 @@ namespace sirius
 Bus::Bus (BusId id, BusConfig config)
     : id_ (id),
       config_ (std::move (config)),
-      mixBuffer_ (kMaxBusMixSamples * static_cast<std::size_t> (kMaxBusChannelsHard), 0.0f)
+      mixBuffer_ (kMaxBusMixSamples * static_cast<std::size_t> (kMaxBusChannelsHard), 0.0f),
+      processedBuffer_ (kMaxBusMixSamples * static_cast<std::size_t> (kMaxBusChannelsHard), 0.0f)
 {
     // Fail loud per CLAUDE.md rule 8 — silently truncating an out-of-range
     // channelCount in Bus::process would mask configuration mistakes.
@@ -21,31 +22,97 @@ Bus::Bus (BusId id, BusConfig config)
 
 void Bus::process (float* const* output, int numChannels, int numSamples) const noexcept
 {
-    // M5 Session 3 body — additive accumulate from mixBuffer_ into output,
-    // then zero mixBuffer_ for the next buffer. effectChain_ is held but
-    // NOT invoked in M5 (V7 alignment plan line 387: "EQ/dynamics stubs in
-    // M5"); plugin invocation lands with M7. When that lands, run the
-    // effect chain between "read mixBuffer_" and "write output" — for now,
-    // it's a pass-through with zero on read.
+    // M7 S3 body. Two paths:
+    //   1. No host bound OR effect chain empty / all bypassed → take the
+    //      M5 inline path (bit-for-bit equivalent to the previous body).
+    //      Zero performance regression for the default configuration.
+    //   2. Host bound AND at least one active slot → copy mixBuffer_ into
+    //      processedBuffer_, dispatch each non-bypassed slot through
+    //      host_->pumpSlot in-place on processedBuffer_, then additively
+    //      sum processedBuffer_ into output. On a pumpSlot miss (returns
+    //      false), the slot's contribution is the dry mix carried into
+    //      processedBuffer_ in step 1 — pipelined 1-buffer delay model
+    //      per the M7 S3 design decisions.
     if (output == nullptr || numChannels <= 0 || numSamples <= 0) return;
 
     const int activeChannels = std::min (numChannels, kMaxBusChannelsHard);
     const int clampedSamples = std::min (numSamples,
                                          static_cast<int> (kMaxBusMixSamples));
 
+    // Determine whether the effect-chain path applies. Empty chain or
+    // all-bypassed counts as "no chain" — same as not having a host bound.
+    bool hasActiveSlot = false;
+    if (host_ != nullptr)
+    {
+        for (const auto& entry : effectChain_.entries())
+        {
+            if (! entry.bypassed) { hasActiveSlot = true; break; }
+        }
+    }
+
+    if (! hasActiveSlot)
+    {
+        // Inline path — identical to the M5 Session 3 body.
+        for (int c = 0; c < activeChannels; ++c)
+        {
+            if (output[c] == nullptr) continue;
+            float* const mix = mixBuffer_.data()
+                             + static_cast<std::size_t> (c) * kMaxBusMixSamples;
+
+            for (int s = 0; s < clampedSamples; ++s)
+                output[c][s] += mix[s];
+
+            std::memset (mix, 0,
+                         static_cast<std::size_t> (clampedSamples) * sizeof (float));
+        }
+        return;
+    }
+
+    // Effect-chain path — set up the per-channel processed scratch from
+    // the current bus mix. processedBuffer_ uses the same channel-major
+    // layout as mixBuffer_ (stride = kMaxBusMixSamples per channel).
+    float* processedPtrs[kMaxBusChannelsHard] = { nullptr, nullptr };
+    for (int c = 0; c < activeChannels; ++c)
+    {
+        float* const mix = mixBuffer_.data()
+                         + static_cast<std::size_t> (c) * kMaxBusMixSamples;
+        float* const proc = processedBuffer_.data()
+                          + static_cast<std::size_t> (c) * kMaxBusMixSamples;
+        std::memcpy (proc, mix,
+                     static_cast<std::size_t> (clampedSamples) * sizeof (float));
+        processedPtrs[c] = proc;
+    }
+
+    // Iterate the effect chain. Each non-bypassed slot pumps in-place
+    // through processedBuffer_ — on a miss, processedBuffer_ keeps the
+    // dry signal from this slot (which becomes the input to the next
+    // slot, or to the additive accumulate below if this was the last).
+    const auto& entries = effectChain_.entries();
+    for (std::size_t slotIdx = 0; slotIdx < entries.size(); ++slotIdx)
+    {
+        if (entries[slotIdx].bypassed) continue;
+
+        // In-place: in and out both point at processedBuffer_. The host
+        // is contractually required to read all input before writing any
+        // output (or to copy through internal scratch); see
+        // `IEffectChainHost::pumpSlot` docblock.
+        (void) host_->pumpSlot (id_.value(), slotIdx,
+                                processedPtrs, processedPtrs,
+                                activeChannels, clampedSamples);
+    }
+
+    // Additively accumulate processedBuffer_ into output, then zero
+    // mixBuffer_ for the next buffer (same shape as the inline path).
     for (int c = 0; c < activeChannels; ++c)
     {
         if (output[c] == nullptr) continue;
+
+        const float* const proc = processedPtrs[c];
+        for (int s = 0; s < clampedSamples; ++s)
+            output[c][s] += proc[s];
+
         float* const mix = mixBuffer_.data()
                          + static_cast<std::size_t> (c) * kMaxBusMixSamples;
-
-        // Additive into the output — bus contribution layered on top of any
-        // prior writer's signal (e.g. DirectLayer's bypass routes that also
-        // additively write into the same physical output buffers).
-        for (int s = 0; s < clampedSamples; ++s)
-            output[c][s] += mix[s];
-
-        // Zero the mix scratch so the next buffer starts at silence.
         std::memset (mix, 0,
                      static_cast<std::size_t> (clampedSamples) * sizeof (float));
     }
