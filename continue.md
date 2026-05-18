@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-18 (M4 COMPLETE on origin; M5 next — OutputMixer expansion)
+# Session Continuation — 2026-05-18 (M5 COMPLETE on origin; M6 next — NotificationBus)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,7 +8,164 @@
 
 ---
 
-## RESUME HERE (2026-05-18 — M4 fully shipped on origin; M5 next)
+## RESUME HERE (2026-05-18 — M5 fully shipped on origin; M6 next)
+
+**M5 of the V7 alignment plan is fully on `origin/master`.** HEAD is
+`6cd3810`. Three session commits shipped:
+
+| SHA | Subject |
+|---|---|
+| `2eb296c` | M5 Session 1 — ChannelStrip<Audio> + InputMixer input-side gain/pan |
+| `25da0ff` | M5 Session 2 — Bus + send/return + master bus + OutputMixer surfaces |
+| `6cd3810` | M5 Session 3 — OutputMixer::renderBuffer + Bus::process audio-thread wiring + AudioCallback Step 4 |
+
+Test count: **336/336** green (was 310 at M4 close; +26 across M5 — 6
+for S1, 14 for S2, 6 for S3). Full `cmake --build` clean. `bash bash/autotest.sh`
+not re-run this session (S1–S3 are headless code changes; the M4 close-out
+GUI smoke is still the last operator-verified launch).
+
+**RT-budget result for the 32-channel × 8-bus configuration:** 17.5 µs
+max elapsed on the dev machine. At 48kHz/256-sample buffer (5.33 ms
+budget), that's **0.33% of buffer time** — well inside any realistic
+audio-thread budget. Hidden `[output-mixer][.rt-smoke]` Catch2 tag,
+matches the DirectLayer pattern.
+
+**Execution mode used:** orchestrator+subagents (Backend Architect
+implementer per session; spec review + code review per session; final
+milestone review at end). The final milestone review caught a stale
+ProcessedRoute deferral comment + a `routeChannelToOutput` dead-code
+placeholder + a missing `static_assert` linking
+`OutputMixer.cpp:kMaxBlockSamples` to `Bus::kMaxBusMixSamples` — all
+folded into the S3 commit before push, so HEAD is the M5 close.
+
+### First moves for the M6 chat
+
+M6 ships the **NotificationBus** — V5 §8.6 engine↔UI truthfulness
+channel. Wait-free SPSC per category for audio-thread posts (failure
+events, accessibility cues, capacity warnings, partition events);
+message-thread drain renders into a minimal Preparation-tab UI
+surface (M22 redesigns the surface — M6 is just the plumbing).
+
+1. Read this file end-to-end.
+2. Open `docs/superpowers/plans/2026-05-17-v7-alignment.md` and read
+   **M6 in full** (starts at line 435). Sessions 1-3 break-out: S1 =
+   `NotificationBus.{h,cpp}` + per-category SPSC + unit tests; S2 =
+   wire into existing emitters (M1 device events, M3 tape rotation,
+   M5 overload); S3 = Preparation-tab UI surface + smoke test.
+3. Read V5 §8.6 in the white paper for the category enum + ordering
+   semantics, and V5 §17.9 for failure-event categories.
+4. Brainstorm pass for M6 before code. Likely open questions:
+   - **Per-category ring depth.** Plan says 256 entries per category
+     as a starting cap. Audio-thread is wait-free but message-thread
+     drain cadence matters — if drain is on the 30 Hz UI timer, that's
+     8.5 s of buffer at full posting before overflow. Probably fine
+     for "rare" notifications; verify the categories that could spam
+     (overload reports could fire once per buffer at 44.1 kHz / 256
+     samples = ~170 Hz; ring fills in 1.5 s if drain pauses).
+   - **Where the engine-side post sites live.** S2 wires existing
+     emitters: M1's `OverloadProtection::reportLoad(1.0)` becomes a
+     `notificationBus_->post(Warning, CpuPressure, "audio thread
+     missed deadline")`; M3's `TapeWriter` flush failure becomes a
+     `post(Error, DiskPressure, ...)` etc. List the existing
+     emit sites first, decide the ones M6 wires now vs defers.
+   - **Atomic-snapshot vs ring per category.** The plan calls for
+     SPSC rings per category. If a category never has >1 entry
+     pending at a time (e.g. `ClockEvent` with infrequent device
+     resyncs), a single-cell atomic snapshot would be cheaper. Worth
+     a one-question pass — but defaulting to ring keeps the contract
+     uniform across categories, which is probably the right call.
+5. Adopt the same orchestrator+subagents execution mode. Per-session
+   spec review + code review caught real issues across all three M5
+   sessions (`static_assert` cross-file linking, deep-const escape
+   hatch on `ChannelStrip::process`, jassertfalse fail-loud asserts,
+   tautological tests deleted). M6's V7 plan suggests the same mode.
+
+### M5-era decisions that constrain M6 (DO NOT "fix" without operator approval)
+
+These are NEW constraints landed in M5; combine with the M4-era
+constraints further down (still all load-bearing).
+
+1. **`ChannelStrip<SignalType>` is the per-modality processing template,
+   inheriting `ProcessingChain`.** `ChannelStrip<Audio>` is the only
+   real one; `<Midi>`/`<Video>`/`<File>` are stubs in `ChannelStrip.h`.
+   The M3-era `AudioChain` is REMOVED — `makeProcessingChain(Audio)`
+   returns `ChannelStrip<Audio>`. M9/M12/M13 will rename
+   `MidiChain`/`VideoChain`/`FileChain` to their `ChannelStrip`
+   counterparts (left as-is in `ProcessingChain.h` for now — M6 does
+   NOT need to touch this).
+2. **`OutputMixer` comes up empty by default.** No channels auto-register
+   in M5 (operator UX for mixer config is M22+). `renderBuffer` early-
+   returns on `channels_.empty()`. M6's NotificationBus integration
+   does NOT need to register OutputMixer channels.
+3. **Per-OutputChannel audio source in M5 is `inputChannelData[OutputChannelId.value()-1]`.**
+   One-to-one with input device channels. This is a placeholder until
+   Constituent rendering lands (post-M6). Don't take a hard dependency
+   on this mapping in M6.
+4. **`Bus::process` zeroes its own `mixBuffer_` after the additive
+   write to output.** `mixBuffer_` is `mutable` because the bus
+   accumulation path (via `mixBufferChannel(int) const noexcept`) is
+   called from `OutputMixer::renderBuffer`, which is `const`. M6's
+   NotificationBus post-from-audio-thread interface will likely use the
+   same `mutable` + `const post()` pattern.
+5. **Non-master buses' `mixBuffer_`s are zeroed INLINE in
+   `OutputMixer::renderBuffer` step 3** (not via `Bus::process`).
+   Only the master bus invokes `Bus::process` (at step 4). When M7
+   wires real plugin invocation through `EffectChain`, the inline
+   path must become a real `Bus::process` invocation; flag for M7's plan.
+6. **`BusId{0}` is the implicit master bus, auto-created in OutputMixer
+   ctor, not removable.** `addBus` returns `BusId{1+}` for aux buses.
+   M6 doesn't add buses.
+7. **`EffectChain` is held on `Bus` but not invoked in M5.** Real
+   plugin dispatch lands with M7 (out-of-process hosting). M6 does
+   not need to do anything with `EffectChain`.
+8. **`AudioCallback` orchestrates a 6-step audio path:** 1 zero
+   outputs → 2 InputMixer → 3 DirectLayer (monitoring-gated) → 4
+   OutputMixer (ungated) → 5 Lmc → 6 publish elapsed. The class-level
+   threading-contract docblock at `AudioCallback.h:45-57` documents
+   the configure-before-audio-starts invariant for every collaborator
+   setter. M6's NotificationBus will likely become a new
+   collaborator via `setNotificationBus(NotificationBus*)` — follow
+   the same set-once pattern.
+9. **`OutputMixer*` in AudioCallback is `const OutputMixer*`**
+   (matches `const DirectLayer*` per M4 constraint #4). `renderBuffer`
+   is `const noexcept`. If M6's NotificationBus has a `post()` that
+   can fire from any thread including audio, and if AudioCallback
+   holds it as a collaborator, it'll likely be `NotificationBus*`
+   non-const (post mutates the ring), with `post` itself being
+   `const noexcept` from the bus's POV (mutates only internal
+   atomic-published ring state). Decide the const-ness in S1
+   brainstorm.
+
+### Operator-side TODOs for M6
+
+1. **CI signing secrets** (still operator-pending — unchanged from M4).
+   Three secrets remain. See "CI signing handoff" section further down.
+2. **Decide per-category ring depth** (see brainstorm open questions).
+3. **Decide which existing emit sites M6 wires now vs M11+ defers.**
+
+### Carryover from M5 NOT resolved (defer to M6 or later)
+
+- **ProcessedRoute is STILL passing empty span to DirectLayer.** M5
+  was supposed to unblock this once `ChannelStrip<Audio>` is real,
+  but `InputMixer` doesn't expose the post-strip float buffer publicly
+  (applies strip into a private scratch then memcpys to TapeWriter).
+  The deferral comment at `audio/src/AudioCallback.cpp:66-72` now
+  documents this honestly. **M6 may unblock** by adding either an
+  audio-thread getter to InputMixer (post-strip float view) or a
+  parallel output pointer for the audio callback to capture — but
+  it's not urgent; OutputMixer's own processed path (Step 4) covers
+  the produced-mix surface.
+- **AudioCallback diagnostics pane height** (60 → 84 px after M1 S3
+  Load line). If M6's notification UI sits on the Preparation tab,
+  it'll likely need another bump or a switch to dynamic height — flag
+  to the M6 S3 implementer when the surface lands.
+
+---
+
+## HISTORICAL — M4 close + M5 handoff (superseded 2026-05-18 — M5 now complete)
+
+The original M5 first-moves and M4-era constraints follow. M4-era
+constraints #1-#7 ARE STILL LOAD-BEARING for M6+; the rest is history.
 
 **M4 of the V7 alignment plan is fully on `origin/master`.** HEAD is
 `d0aa45f`. Four commits shipped this session, all green:
