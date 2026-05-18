@@ -10,12 +10,13 @@
 
 ## RESUME HERE (2026-05-18 — M7 S5 committed locally; M7 S6 next)
 
-**M7 S5 is committed locally** (push pending — see end of this
-section). Single commit landing the macOS GUI embedding scaffolding:
+**M7 S5 is committed locally at `52fcd7f`** (push pending — see end
+of this section). Single commit landing the macOS GUI embedding
+scaffolding:
 
-| SHA   | Subject |
+| SHA       | Subject |
 |---|---|
-| *TBD* | M7 S5 — macOS GUI embedding (PluginGuiState + clap_gui_cocoa lifecycle, CARemoteLayer Mach handoff deferred) |
+| `52fcd7f` | M7 S5 — macOS GUI embedding (PluginGuiState + clap_gui_cocoa lifecycle, CARemoteLayer Mach handoff deferred to S6) |
 
 Test count: **378/378** green (was 375 at S4; +3 in S5 — three
 `[plugin-editor]` integration cases: Show round-trip, Hide release,
