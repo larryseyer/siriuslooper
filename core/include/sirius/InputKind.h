@@ -1,5 +1,7 @@
 #pragma once
 
+#include "sirius/SignalType.h"
+
 namespace sirius
 {
 
@@ -19,5 +21,29 @@ enum class InputKind
     Transport,
     System
 };
+
+/// Project the seven `InputKind` cases onto the four-case `SignalType`
+/// the V3 mixer architecture uses (V3 transition guide §2.4 / V7
+/// alignment plan M2 Risks note).
+///
+/// `Audio`, `Midi`, and `Video` map one-to-one. The remaining cases —
+/// `Control`, `ParameterAutomation`, `Transport`, `System` — collapse to
+/// `SignalType::File`: their tapes are JSONL streams in the Sirius
+/// Archive Format until M11's SAF design forces a split.
+constexpr SignalType signalTypeOf (InputKind kind) noexcept
+{
+    switch (kind)
+    {
+        case InputKind::Audio: return SignalType::Audio;
+        case InputKind::Midi:  return SignalType::Midi;
+        case InputKind::Video: return SignalType::Video;
+        case InputKind::Control:
+        case InputKind::ParameterAutomation:
+        case InputKind::Transport:
+        case InputKind::System:
+            return SignalType::File;
+    }
+    return SignalType::File;
+}
 
 } // namespace sirius

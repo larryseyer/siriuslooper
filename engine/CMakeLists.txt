@@ -16,7 +16,10 @@ add_library(SiriusEngine STATIC
     src/LoopRenderer.cpp
     src/Asrc.cpp
     src/RenderPipeline.cpp
-    src/OverloadProtection.cpp)
+    src/OverloadProtection.cpp
+    src/Channel.cpp
+    src/InputMixer.cpp
+    src/OutputMixer.cpp)
 
 target_include_directories(SiriusEngine PUBLIC include)
 
