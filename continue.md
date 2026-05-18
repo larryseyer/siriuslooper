@@ -39,19 +39,20 @@ lands. This is a *real* session, not a rename or scaffolding pass.
    `ProcessingChain`, adds `TapeWriter` + lock-free queue, extends
    `TapeStore` with `appendBytes`, and adds three flags to
    `InputDescriptor`. Files-touched list is long.
-3. **Brainstorm first.** M3 is large enough that it deserves a
-   `superpowers:brainstorming` pass before any code: the audio-thread /
-   writer-thread split, the SPSC queue contract (back-pressure?
-   overflow policy?), and the `NonDestructive` tape + parameter-tape
-   pairing all have decisions worth surfacing to the operator before
-   touching code. Specifically:
-   - **Q for operator:** what does `process_buffer` do when the SPSC
-     write queue is full? Drop the buffer? Block (illegal on audio
-     thread)? Surface as overload via `OverloadProtection`? My read of
-     the M1 work says option C, but it's worth confirming.
-   - **Q for operator:** for `NonDestructive` mode, where does the
-     "processing delta" parameter-tape format live? JSONL like
-     ParameterAutomation? Or a new binary format? Plan doesn't pin it.
+3. **Brainstorm first, then propose a sub-session break-out.** M3 is
+   large enough that it deserves a `superpowers:brainstorming` pass
+   before any code, and a retro-split into 3-or-4 sessions (matching
+   the M2 pattern) before execution. Do not dive straight into
+   implementation — the M2 break-out earned its keep, M3's will too.
+
+   The two would-be operator questions about audio-thread contract and
+   parameter-tape format are **already resolved** (decisions locked
+   2026-05-18 — see "Operator decisions locked for M3" below). The
+   brainstorm should focus on remaining open shapes — `ProcessingChain`
+   parameterization by `SignalType`, the audio-thread / writer-thread
+   handoff struct, and how `InputDescriptor`'s three new flags
+   (`rawDirectMonitor`, `enabled`, `defaults`) interact with the
+   already-shipped `InputMixer::setInputRawDirect` / `setInputEnabled`.
 4. Read the V3 transition guide §2 (the same lines used in M2) plus
    §2.4 / §3.3 / §3.4 for the channel/tape/effects topology that M3
    makes real.
@@ -70,6 +71,27 @@ lands. This is a *real* session, not a rename or scaffolding pass.
    (Sessions 1/2/3) was added retroactively after brainstorming with
    the operator; do the same for M3 — propose a 3-or-4-session split
    in the first chat, get operator agreement, then execute.
+
+### Operator decisions locked for M3 (2026-05-18)
+
+These came out of the M2-close-out conversation and remove two would-be
+brainstorm questions:
+
+1. **SPSC overflow on `processBuffer`:** when the audio-thread → writer-
+   thread queue is full, the audio thread **drops the buffer and
+   reports overload** via `OverloadProtection.reportLoad(1.0)`. Matches
+   the M1 Session 3 pattern (overload is the existing surface for
+   "audio thread couldn't keep up"). Never block on the audio thread;
+   no silent drops. The diagnostics pane already shows shed-count from
+   OverloadProtection, so the operator-visible signal is in place.
+2. **`NonDestructive` parameter-tape format:** JSONL, same shape as the
+   existing `ParameterAutomation` tape. Keeps SAF consistent and lets
+   the same parameter-merge/diff utilities work across both tape kinds.
+   Defer any "binary format would be smaller" optimization to a future
+   milestone — premature today.
+
+Both decisions belong in the M3 Risks section of the V7 alignment plan
+when M3 lands; capture them there as part of Session 1's commit.
 
 ### M2 Session 3 — what landed and pushed (commit `f1b4d58`)
 
