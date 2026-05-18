@@ -1,5 +1,6 @@
 #pragma once
 
+#include "sirius/INotificationSink.h"
 #include "sirius/LockFreeSpscQueue.h"
 
 #include <array>
@@ -13,36 +14,12 @@
 namespace sirius
 {
 
-/// Severity of a `Notification`. The four levels are the V5 §8.6 contract:
-/// `Info` is a cue (e.g. tape rotation completed), `Degradation` signals a
-/// shed (UI was rendered at half rate to keep audio sacred), `Warning`
-/// signals something the operator should look at soon (disk approaching
-/// fill), and `Error` signals a failure semantic per V7 §17.9 (a tape write
-/// failed, a device dropped).
-enum class NotificationLevel
-{
-    Info,
-    Degradation,
-    Warning,
-    Error
-};
-
-/// Truthfulness-channel category. One SPSC ring per category prevents
-/// priority inversion: a flood of `CpuPressure` posts cannot starve a single
-/// `DeviceEvent`. The list mirrors V5 §8.6 exactly — do not extend without
-/// updating the white paper and the per-category storage in `NotificationBus`.
-enum class Category
-{
-    DiskPressure,
-    CpuPressure,
-    RamPressure,
-    DeviceEvent,
-    PluginEvent,
-    ClockEvent,
-    NetworkEvent,
-    StateRepair,
-    TapeRotation
-};
+// `NotificationLevel` and `Category` live in
+// `core/include/sirius/INotificationSink.h` so JUCE-free libraries
+// (notably `host/`) can name the enumerators without pulling in the
+// engine layer. The definitions are unchanged from M6 Session 1 — this
+// header keeps them visible at `sirius::NotificationLevel` /
+// `sirius::Category` for all existing call sites.
 
 /// The number of `Category` values. Keep in sync with the enum above; the bus
 /// constructor uses this to size the per-category storage. The `static_assert`
@@ -103,7 +80,7 @@ static_assert (std::is_trivially_copyable_v<Notification>,
 /// Each category SPSC has its own head/tail atomics — the bus does NOT
 /// serialize across categories. This is the priority-inversion-free property
 /// called out in the M6 spec.
-class NotificationBus
+class NotificationBus : public INotificationSink
 {
 public:
     /// Per-category ring capacity (V7 alignment plan M6 line 479).
@@ -134,7 +111,7 @@ public:
     ///
     /// `noexcept` and allocation-free. Safe to call from the audio thread.
     /// `message` may be null — null is treated as empty string.
-    bool post (NotificationLevel level, Category category, const char* message) noexcept;
+    bool post (NotificationLevel level, Category category, const char* message) noexcept override;
 
     /// Message-thread drain. Walks each category once in declaration order,
     /// popping all available notifications into `out`. Per-category ordering
