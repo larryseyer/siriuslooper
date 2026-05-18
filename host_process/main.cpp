@@ -1,36 +1,47 @@
 // =============================================================================
-// sirius_plugin_host — standalone child-process binary (M7 S1+)
+// sirius_plugin_host — standalone child-process binary (M7 S1–S2c)
 // =============================================================================
 // V7 alignment plan Milestone 7. The engine launches one of these per hosted
 // plug-in instance; this binary loads the plug-in into its own address space
 // and shuttles audio through it.
 //
 // Modes:
-//   --mode identity                       — copy stdin → stdout (S1 path).
+//   --mode identity                       — copy engine→host ring messages
+//                                          straight back into the host→engine
+//                                          ring (byte-stream pass-through).
 //   --mode clap --plugin-path <bundle>   — load a .clap bundle via dlopen +
 //                                          pump audio buffers through its
-//                                          process() callback (S2a).
+//                                          process() callback.
 //
-// Deliberately JUCE-free: the engine spawns one of these per hosted plug-in,
-// so link-time weight here multiplies. CLAP is header-only (`clap` target
-// from external/clap is INTERFACE), and the only S2a runtime addition is
-// `dl` on Linux. The shared-memory IPC swap-in (S2c) replaces this file's
-// stdin/stdout transport without touching the CLAP loader.
+// S2c transport: POSIX shared-memory SPSC rings (one engine→host, one
+// host→engine), opened by the child via shm names derived from --instance-id.
+// CLAP is header-only (`clap` target from external/clap is INTERFACE), and
+// the only S2 runtime addition is `dl` on Linux.
 //
-// Wire format for both modes (stdin reads + stdout writes):
-//   per audio buffer: uint32_t frameCount (host byte order),
-//                     followed by frameCount × 2 × float (interleaved L,R)
-// EOF on stdin = clean exit.
+// Wire format inside the rings:
+//   - identity mode: each ring carries `PluginIpcMessage` records; the host
+//     pops one and pushes the same payload back as a single record.
+//   - CLAP mode: each engine→host ring record is a fragment of the framed
+//     stream `uint32_t frameCount, frameCount × 2 × float (L,R)`; the host
+//     drains via RingByteStream::readExact, processes, and writes the
+//     output stream back through RingByteStream::writeAll + flush.
 // =============================================================================
+
+#include "sirius/PluginIpcMessage.h"
+#include "sirius/SharedMemoryRegion.h"
+#include "sirius/SharedMemorySpscQueue.h"
 
 #include <clap/clap.h>
 
+#include <algorithm>
 #include <cerrno>
+#include <chrono>
 #include <csignal>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -39,11 +50,6 @@
 
 namespace
 {
-    /// Pipe-pump chunk size. 4 KiB matches a typical Darwin / Linux pipe
-    /// page boundary; larger reads on a pipe just block until either the
-    /// requested bytes arrive or the writer closes. Smaller wastes syscalls.
-    constexpr std::size_t kPipeChunkBytes = 4096;
-
     /// Process exit codes. main() returns these — kept named so test
     /// assertions don't have to traffic in magic integers.
     constexpr int kExitOk            = 0;
@@ -51,24 +57,32 @@ namespace
     constexpr int kExitBadArgs       = 2;
     constexpr int kExitUnknownMode   = 3;
     constexpr int kExitClapLoadErr   = 4;
+    constexpr int kExitShmErr        = 5;
 
     /// CLAP plug-in audio buffer sizing — must accommodate the largest
     /// frameCount the engine may send. 1024 is the V7 plan's outer block-
-    /// size envelope; if the engine ever sends more, the host re-allocates
-    /// before processing. Two channels (stereo) fixed for S2a.
+    /// size envelope; if the engine ever sends more, the host re-activates
+    /// before processing. Two channels (stereo) fixed for S2c.
     constexpr uint32_t kInitialMaxFrames = 1024;
     constexpr uint32_t kChannels         = 2;
+    constexpr double   kSampleRate       = 48000.0;
 
-    /// CLAP activate() parameters — sample rate is informational for the
-    /// identity plug-in, but real plug-ins need it. 48 kHz is the engine's
-    /// canonical rate (LMC fundamental); deviate only when the engine
-    /// negotiates differently.
-    constexpr double   kSampleRate = 48000.0;
+    /// Ring poll backoff — matches the engine-side cadence in
+    /// OutOfProcessPluginInstance. Short spin + brief sleep keeps round-
+    /// trip latency in the µs range while still yielding the CPU when
+    /// nothing's in flight.
+    constexpr int kRingSpinIterations    = 32;
+    constexpr int kRingPollMicroseconds  = 50;
 
-    /// Set by the SIGTERM / SIGINT handlers so the pump loop notices the
-    /// signal between reads and exits cleanly instead of being torn down
-    /// mid-write. `volatile sig_atomic_t` is the only type the C++ standard
-    /// guarantees an async signal handler may touch portably.
+    /// Bound on push retries when the host→engine ring is full. 100 ms is
+    /// the same as the engine side — exists to prevent a stuck pump from
+    /// holding a CPU forever; in practice the engine drains continuously.
+    constexpr int kRingPushTimeoutMs = 100;
+
+    /// Set by the SIGTERM / SIGINT handlers so pump loops notice the
+    /// signal between iterations and exit cleanly. `volatile sig_atomic_t`
+    /// is the only type the C++ standard guarantees an async signal
+    /// handler may touch portably.
     volatile std::sig_atomic_t shouldExit = 0;
 
     extern "C" {
@@ -80,81 +94,144 @@ namespace
         shouldExit = 1;
     }
 
-    /// Writes `count` bytes from `data` to fd, retrying on partial writes
-    /// and EINTR. Returns true on full delivery, false on a fatal write
-    /// error (broken pipe, etc.).
-    bool writeAll (int fd, const char* data, std::size_t count)
-    {
-        std::size_t written = 0;
-        while (written < count)
-        {
-            const auto chunk = ::write (fd, data + written, count - written);
-            if (chunk < 0)
-            {
-                if (errno == EINTR)
-                    continue;
-                return false;
-            }
-            if (chunk == 0)
-                return false;
-            written += static_cast<std::size_t> (chunk);
-        }
-        return true;
-    }
+    using IpcQueue = sirius::SharedMemorySpscQueue<sirius::PluginIpcMessage>;
 
-    /// Reads exactly `count` bytes from fd into `data`. Returns:
-    ///   true       — all bytes read,
-    ///   false + eof=true — clean EOF before any data read,
-    ///   false + eof=false — partial read then EOF, or read error.
-    bool readAll (int fd, char* data, std::size_t count, bool& eof)
+    /// Pops one PluginIpcMessage from `q`, honoring `shouldExit`. Returns
+    /// false only when the loop was asked to exit; callers should treat
+    /// that as "no more work, time to leave."
+    bool popMessageBlocking (IpcQueue& q, sirius::PluginIpcMessage& out)
     {
-        eof = false;
-        std::size_t got = 0;
-        while (got < count)
-        {
-            const auto chunk = ::read (fd, data + got, count - got);
-            if (chunk < 0)
-            {
-                if (errno == EINTR)
-                    continue;
-                return false;
-            }
-            if (chunk == 0)
-            {
-                eof = (got == 0);
-                return false;
-            }
-            got += static_cast<std::size_t> (chunk);
-        }
-        return true;
-    }
-
-    /// Identity-mode pump: read up to kPipeChunkBytes from stdin, echo
-    /// the exact bytes to stdout, flush, repeat until EOF or signal.
-    /// This mode does NOT use the framed wire format above — it's the
-    /// byte-stream pass-through the S1 transport tests depend on.
-    int runIdentityMode()
-    {
-        char buffer[kPipeChunkBytes];
-
         while (shouldExit == 0)
         {
-            const auto bytesRead = ::read (STDIN_FILENO, buffer, kPipeChunkBytes);
-            if (bytesRead < 0)
+            for (int i = 0; i < kRingSpinIterations; ++i)
             {
-                if (errno == EINTR)
-                    continue;
-                // Fail loud per CLAUDE.md rule 8 — a real stdin read error
-                // is genuinely unusual and the parent's supervisor needs to
-                // observe a non-zero exit code to escalate. Only EOF
-                // (bytesRead == 0) below counts as clean teardown.
-                return kExitErr;
+                if (q.pop (out))
+                    return true;
             }
-            if (bytesRead == 0)
-                return kExitOk; // parent closed our stdin — clean EOF.
+            ::usleep (kRingPollMicroseconds);
+        }
+        return false;
+    }
 
-            if (! writeAll (STDOUT_FILENO, buffer, static_cast<std::size_t> (bytesRead)))
-                return kExitOk; // parent closed our stdout — clean teardown.
+    /// Pushes one PluginIpcMessage onto `q`, retrying briefly if the ring
+    /// is full. Returns false on shutdown or sustained full-ring stall.
+    bool pushMessageBlocking (IpcQueue& q, const sirius::PluginIpcMessage& msg)
+    {
+        using clock = std::chrono::steady_clock;
+        const auto deadline = clock::now() + std::chrono::milliseconds (kRingPushTimeoutMs);
+        while (shouldExit == 0)
+        {
+            if (q.push (msg))
+                return true;
+            if (clock::now() >= deadline)
+                return false;
+            ::usleep (kRingPollMicroseconds);
+        }
+        return false;
+    }
+
+    // -------------------------------------------------------------------------
+    // RingByteStream — turns the two SPSC rings into a familiar stream
+    // pair (readExact / writeAll / flush). Used by CLAP-mode; identity-mode
+    // operates directly on messages because it never re-packages payloads.
+    // -------------------------------------------------------------------------
+    class RingByteStream
+    {
+    public:
+        RingByteStream (IpcQueue& inRing, IpcQueue& outRing)
+            : inRing_ (inRing), outRing_ (outRing) {}
+
+        /// Reads exactly `count` bytes into `data`. Returns false if the
+        /// loop was asked to exit before the read completed; eof flag
+        /// distinguishes clean-shutdown from short-read.
+        bool readExact (char* data, std::size_t count, bool& eof)
+        {
+            eof = false;
+            std::size_t got = 0;
+            while (got < count)
+            {
+                if (readCursor_ < pendingRead_.payloadBytes)
+                {
+                    const std::size_t take = std::min<std::size_t> (
+                        count - got, pendingRead_.payloadBytes - readCursor_);
+                    std::memcpy (data + got, pendingRead_.payload + readCursor_, take);
+                    readCursor_ += take;
+                    got += take;
+                    continue;
+                }
+                if (! popMessageBlocking (inRing_, pendingRead_))
+                {
+                    eof = (got == 0);
+                    return false;
+                }
+                readCursor_ = 0;
+            }
+            return true;
+        }
+
+        /// Buffers `count` bytes into pendingWrite_, splitting across
+        /// messages as needed; pushes whenever a message fills.
+        bool writeAll (const char* data, std::size_t count)
+        {
+            while (count > 0)
+            {
+                if (pendingWrite_.payloadBytes >= sirius::PluginIpcMessage::kMaxPayloadBytes)
+                    if (! flush())
+                        return false;
+
+                const std::size_t room = sirius::PluginIpcMessage::kMaxPayloadBytes
+                                       - pendingWrite_.payloadBytes;
+                const std::size_t take = std::min (count, room);
+                std::memcpy (pendingWrite_.payload + pendingWrite_.payloadBytes,
+                             data, take);
+                pendingWrite_.payloadBytes += static_cast<std::uint32_t> (take);
+                data  += take;
+                count -= take;
+            }
+            return true;
+        }
+
+        /// Pushes whatever's currently buffered in pendingWrite_.
+        bool flush()
+        {
+            if (pendingWrite_.payloadBytes == 0)
+                return true;
+
+            pendingWrite_.kind        = sirius::PluginIpcMessage::Bytes;
+            pendingWrite_.monotonicNs = std::chrono::duration_cast<std::chrono::nanoseconds> (
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+
+            const bool ok = pushMessageBlocking (outRing_, pendingWrite_);
+            pendingWrite_ = {};
+            return ok;
+        }
+
+    private:
+        IpcQueue& inRing_;
+        IpcQueue& outRing_;
+        sirius::PluginIpcMessage pendingRead_  {};
+        std::size_t              readCursor_   { 0 };
+        sirius::PluginIpcMessage pendingWrite_ {};
+    };
+
+    // -------------------------------------------------------------------------
+    // Identity mode: pop a message, echo the same payload back.
+    // -------------------------------------------------------------------------
+    int runIdentityMode (IpcQueue& inRing, IpcQueue& outRing)
+    {
+        sirius::PluginIpcMessage msg {};
+        while (shouldExit == 0)
+        {
+            if (! popMessageBlocking (inRing, msg))
+                return kExitOk;
+
+            // Refresh the timestamp on the echo path so the round-trip
+            // latency tests can measure (push-time → echo-time) deltas.
+            msg.monotonicNs = std::chrono::duration_cast<std::chrono::nanoseconds> (
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+
+            if (! pushMessageBlocking (outRing, msg))
+                return kExitOk;
         }
         return kExitOk;
     }
@@ -183,26 +260,23 @@ namespace
        #endif
     }
 
-    /// Minimal `clap_host` shim. The synthetic identity plug-in does not
-    /// query any host extensions, but real plug-ins do — return null and
-    /// let CLAP version negotiation do its job.
-    const void* hostGetExtension (const clap_host_t*, const char* /*id*/)
-    {
-        return nullptr;
-    }
-    void hostRequestRestart  (const clap_host_t*) {}
-    void hostRequestProcess  (const clap_host_t*) {}
-    void hostRequestCallback (const clap_host_t*) {}
+    /// Minimal `clap_host` shim. Synthetic identity does not query host
+    /// extensions; real plug-ins do — return null and let version
+    /// negotiation do its job.
+    const void* hostGetExtension (const clap_host_t*, const char*) { return nullptr; }
+    void hostRequestRestart      (const clap_host_t*) {}
+    void hostRequestProcess      (const clap_host_t*) {}
+    void hostRequestCallback     (const clap_host_t*) {}
 
     clap_host_t makeHost()
     {
         clap_host_t host {};
-        host.clap_version = CLAP_VERSION_INIT;
-        host.host_data    = nullptr;
-        host.name         = "sirius_plugin_host";
-        host.vendor       = "Sirius Looper";
-        host.url          = "https://example.invalid/sirius";
-        host.version      = "0.1.0";
+        host.clap_version    = CLAP_VERSION_INIT;
+        host.host_data       = nullptr;
+        host.name            = "sirius_plugin_host";
+        host.vendor          = "Sirius Looper";
+        host.url             = "https://example.invalid/sirius";
+        host.version         = "0.1.0";
         host.get_extension   = hostGetExtension;
         host.request_restart = hostRequestRestart;
         host.request_process = hostRequestProcess;
@@ -210,7 +284,7 @@ namespace
         return host;
     }
 
-    int runClapMode (const std::string& pluginPath)
+    int runClapMode (const std::string& pluginPath, IpcQueue& inRing, IpcQueue& outRing)
     {
         const auto binaryPath = resolveClapBinaryPath (pluginPath);
 
@@ -230,7 +304,6 @@ namespace
             ::dlclose (handle);
             return kExitClapLoadErr;
         }
-
         if (! entry->init (binaryPath.c_str()))
         {
             std::fprintf (stderr, "sirius_plugin_host: entry->init failed\n");
@@ -247,7 +320,6 @@ namespace
             ::dlclose (handle);
             return kExitClapLoadErr;
         }
-
         const auto* desc = factory->get_plugin_descriptor (factory, 0);
         if (desc == nullptr || desc->id == nullptr)
         {
@@ -257,7 +329,7 @@ namespace
             return kExitClapLoadErr;
         }
 
-        auto host   = makeHost();
+        auto host = makeHost();
         const auto* plugin = factory->create_plugin (factory, &host, desc->id);
         if (plugin == nullptr || ! plugin->init (plugin))
         {
@@ -266,7 +338,6 @@ namespace
             ::dlclose (handle);
             return kExitClapLoadErr;
         }
-
         if (! plugin->activate (plugin, kSampleRate, 1, kInitialMaxFrames))
         {
             std::fprintf (stderr, "sirius_plugin_host: plugin->activate failed\n");
@@ -275,26 +346,23 @@ namespace
             ::dlclose (handle);
             return kExitClapLoadErr;
         }
-
         plugin->start_processing (plugin);
 
-        // Channel-deinterleaved buffers for CLAP's process() call. Resized
-        // on demand if the engine sends more frames than the current peak.
-        std::vector<float>  inLeft  (kInitialMaxFrames);
-        std::vector<float>  inRight (kInitialMaxFrames);
-        std::vector<float>  outLeft (kInitialMaxFrames);
-        std::vector<float>  outRight(kInitialMaxFrames);
-        std::vector<float>  scratch (kInitialMaxFrames * kChannels);
+        std::vector<float> inLeft  (kInitialMaxFrames);
+        std::vector<float> inRight (kInitialMaxFrames);
+        std::vector<float> outLeft (kInitialMaxFrames);
+        std::vector<float> outRight(kInitialMaxFrames);
+        std::vector<float> scratch (kInitialMaxFrames * kChannels);
 
         const auto ensureCapacity = [&] (uint32_t frames)
         {
             if (frames > inLeft.size())
             {
-                inLeft .resize (frames);
-                inRight.resize (frames);
-                outLeft.resize (frames);
-                outRight.resize(frames);
-                scratch.resize (frames * kChannels);
+                inLeft  .resize (frames);
+                inRight .resize (frames);
+                outLeft .resize (frames);
+                outRight.resize (frames);
+                scratch .resize (frames * kChannels);
                 plugin->deactivate (plugin);
                 plugin->activate   (plugin, kSampleRate, 1, frames);
                 plugin->start_processing (plugin);
@@ -312,15 +380,15 @@ namespace
                                            const clap_event_header_t*) -> bool { return true; };
         const clap_output_events_t outEvents { nullptr, outEventsTry };
 
+        RingByteStream stream (inRing, outRing);
         int exitCode = kExitOk;
 
         while (shouldExit == 0)
         {
             uint32_t frameCount = 0;
             bool eof = false;
-            if (! readAll (STDIN_FILENO,
-                           reinterpret_cast<char*> (&frameCount),
-                           sizeof (frameCount), eof))
+            if (! stream.readExact (reinterpret_cast<char*> (&frameCount),
+                                    sizeof (frameCount), eof))
             {
                 exitCode = eof ? kExitOk : kExitErr;
                 break;
@@ -330,13 +398,9 @@ namespace
 
             ensureCapacity (frameCount);
 
-            // Read interleaved L,R floats from stdin into scratch, then
-            // deinterleave into inLeft/inRight for CLAP's channel-per-buffer
-            // layout.
             const auto interleavedBytes = frameCount * kChannels * sizeof (float);
-            if (! readAll (STDIN_FILENO,
-                           reinterpret_cast<char*> (scratch.data()),
-                           interleavedBytes, eof))
+            if (! stream.readExact (reinterpret_cast<char*> (scratch.data()),
+                                    interleavedBytes, eof))
             {
                 exitCode = eof ? kExitOk : kExitErr;
                 break;
@@ -350,12 +414,8 @@ namespace
             float*       inChannels [kChannels] = { inLeft .data(), inRight.data() };
             float*       outChannels[kChannels] = { outLeft.data(), outRight.data() };
 
-            const clap_audio_buffer_t audioIn = {
-                inChannels, nullptr, kChannels, 0, 0
-            };
-            clap_audio_buffer_t audioOut = {
-                outChannels, nullptr, kChannels, 0, 0
-            };
+            const clap_audio_buffer_t audioIn  = { inChannels,  nullptr, kChannels, 0, 0 };
+            clap_audio_buffer_t       audioOut = { outChannels, nullptr, kChannels, 0, 0 };
 
             const clap_process_t process = {
                 /*steady_time*/        0,
@@ -368,20 +428,22 @@ namespace
                 /*in_events*/          &inEvents,
                 /*out_events*/         &outEvents
             };
-
             (void) plugin->process (plugin, &process);
 
-            // Re-interleave processed output and ship it.
             for (uint32_t f = 0; f < frameCount; ++f)
             {
                 scratch[f * kChannels + 0] = outLeft [f];
                 scratch[f * kChannels + 1] = outRight[f];
             }
-            if (! writeAll (STDOUT_FILENO,
-                            reinterpret_cast<const char*> (scratch.data()),
-                            interleavedBytes))
+            if (! stream.writeAll (reinterpret_cast<const char*> (scratch.data()),
+                                   interleavedBytes))
             {
-                exitCode = kExitOk; // parent closed stdout — clean teardown.
+                exitCode = kExitOk; // engine asked us to leave
+                break;
+            }
+            if (! stream.flush())
+            {
+                exitCode = kExitOk;
                 break;
             }
         }
@@ -394,10 +456,8 @@ namespace
         return exitCode;
     }
 
-    /// Parses `argv` looking for `--instance-id <value>`, `--mode <value>`,
-    /// and optionally `--plugin-path <value>`. instance-id and mode are
-    /// required for all modes; plugin-path is required for `--mode clap`.
-    /// Returns true if required args were present.
+    /// Parses `argv`. Required: --instance-id, --mode. CLAP mode adds
+    /// --plugin-path. Returns true on success.
     bool parseArgs (int argc, char** argv,
                     std::string& instanceId,
                     std::string& mode,
@@ -429,16 +489,38 @@ int main (int argc, char** argv)
         return kExitBadArgs;
     }
 
-    // Wire SIGTERM + SIGINT so the supervisor can ask us to leave without
-    // the kernel having to send SIGKILL. SIGPIPE -> ignore: a writer that
-    // dies mid-stream should surface as a write() error in the pump loop,
-    // not a process-killing signal.
+    // SIGTERM / SIGINT → request shutdown. SIGPIPE → ignore (legacy from
+    // the S1 pipe transport; harmless to keep).
     std::signal (SIGTERM, onTerminationSignal);
     std::signal (SIGINT,  onTerminationSignal);
     std::signal (SIGPIPE, SIG_IGN);
 
+    // Attach to the rings the engine created before forking us.
+    std::unique_ptr<sirius::SharedMemoryRegion> e2hRegion;
+    std::unique_ptr<sirius::SharedMemoryRegion> h2eRegion;
+    std::unique_ptr<IpcQueue> e2hQueue;
+    std::unique_ptr<IpcQueue> h2eQueue;
+    try
+    {
+        e2hRegion = std::make_unique<sirius::SharedMemoryRegion> (
+            sirius::makeEngineToHostRingName (instanceId), 0,
+            sirius::SharedMemoryRegion::Mode::OpenExisting);
+        h2eRegion = std::make_unique<sirius::SharedMemoryRegion> (
+            sirius::makeHostToEngineRingName (instanceId), 0,
+            sirius::SharedMemoryRegion::Mode::OpenExisting);
+        e2hQueue = std::make_unique<IpcQueue> (
+            IpcQueue::attach (e2hRegion->data(), sirius::kPluginIpcRingCapacity));
+        h2eQueue = std::make_unique<IpcQueue> (
+            IpcQueue::attach (h2eRegion->data(), sirius::kPluginIpcRingCapacity));
+    }
+    catch (const std::exception& e)
+    {
+        std::fprintf (stderr, "sirius_plugin_host: shm attach failed: %s\n", e.what());
+        return kExitShmErr;
+    }
+
     if (mode == "identity")
-        return runIdentityMode();
+        return runIdentityMode (*e2hQueue, *h2eQueue);
 
     if (mode == "clap")
     {
@@ -448,7 +530,7 @@ int main (int argc, char** argv)
                           "sirius_plugin_host: --mode clap requires --plugin-path <bundle>\n");
             return kExitBadArgs;
         }
-        return runClapMode (pluginPath);
+        return runClapMode (pluginPath, *e2hQueue, *h2eQueue);
     }
 
     std::fprintf (stderr,

@@ -19,7 +19,8 @@ add_library(SiriusCore STATIC
     src/RoleResolver.cpp
     src/CaptureSession.cpp
     src/Promotion.cpp
-    src/EffectChain.cpp)
+    src/EffectChain.cpp
+    src/SharedMemoryRegion.cpp)
 
 target_include_directories(SiriusCore PUBLIC include)
 

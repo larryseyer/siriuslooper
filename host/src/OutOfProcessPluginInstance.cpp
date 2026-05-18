@@ -1,14 +1,18 @@
 #include "sirius/OutOfProcessPluginInstance.h"
 
+#include "sirius/PluginIpcMessage.h"
+#include "sirius/SharedMemoryRegion.h"
+#include "sirius/SharedMemorySpscQueue.h"
+
 #include <juce_core/juce_core.h>
 
-#include <cerrno>
+#include <algorithm>
 #include <chrono>
 #include <csignal>
 #include <cstring>
-#include <fcntl.h>
-#include <poll.h>
+#include <stdexcept>
 #include <sys/wait.h>
+#include <thread>
 #include <unistd.h>
 #include <utility>
 #include <vector>
@@ -18,81 +22,43 @@ namespace sirius
 
 namespace
 {
-    /// Index aliases for the int[2] arrays POSIX `pipe()` returns. Reads
-    /// happen from kReadEnd; writes to kWriteEnd. Named so the code below
-    /// doesn't read like "pipe[0]" magic numbers.
-    constexpr int kReadEnd  = 0;
-    constexpr int kWriteEnd = 1;
-
     /// Poll interval used while waiting for the child to exit during
     /// shutdown(). Short enough that a clean exit is observed promptly,
     /// long enough that we don't burn the CPU spinning on waitpid().
     constexpr int kShutdownPollMs = 5;
 
-    /// Closes a file descriptor if it is currently open. Sets it to -1
-    /// so repeat calls are no-ops. `noexcept` — used from destructors.
-    void closeIfOpen (int& fd) noexcept
-    {
-        if (fd >= 0)
-        {
-            ::close (fd);
-            fd = -1;
-        }
-    }
-}
+    /// Audio-thread-friendly backoff for ring polling. The engine side is
+    /// driven from the message thread for now (S3 will move audio-thread
+    /// traffic onto AudioCallback), so a brief spin + short sleep is
+    /// fine. Total per-iteration cost dominates over the latency contract
+    /// only when the host is genuinely starved.
+    constexpr int kRingSpinIterations    = 32;
+    constexpr int kRingPollMicroseconds  = 50;
 
-namespace
-{
-    /// Shared spawn body for both constructors. Forks, rewires stdin/stdout
-    /// pipes, and execs `hostBinaryPath` with `--instance-id <id> --mode
-    /// <mode> [--plugin-path <path>]`. On success, populates
-    /// `(outStdinWriteFd, outStdoutReadFd, outPid)`; on any failure, leaves
-    /// them at -1 so `isRunning()` will report false.
+    /// Max wait time per chunk push when the engine→host ring is full.
+    /// 100 ms is generous — covers a transient stall but surfaces a real
+    /// deadlock as a `sendBytes` failure rather than a hang.
+    constexpr int kRingPushTimeoutMs = 100;
+
+    /// Spawn the host child. `instanceId` is forwarded via `--instance-id`
+    /// (also used by the child as the shm segment name root). On success
+    /// `outPid` holds the live pid; on failure it stays -1.
     void spawnHostChild (const std::string& binaryPath,
                          const std::string& instanceId,
                          const std::string& mode,
                          const std::string& pluginPath,
-                         int& outStdinWriteFd,
-                         int& outStdoutReadFd,
                          int& outPid)
     {
-        outStdinWriteFd = outStdoutReadFd = outPid = -1;
-
-        int stdinPipe[2]  = { -1, -1 };
-        int stdoutPipe[2] = { -1, -1 };
-        if (::pipe (stdinPipe) != 0 || ::pipe (stdoutPipe) != 0)
-        {
-            for (int fd : { stdinPipe[0], stdinPipe[1], stdoutPipe[0], stdoutPipe[1] })
-                if (fd >= 0) ::close (fd);
-            return;
-        }
+        outPid = -1;
 
         const pid_t pid = ::fork();
         if (pid < 0)
-        {
-            for (int fd : { stdinPipe[0], stdinPipe[1], stdoutPipe[0], stdoutPipe[1] })
-                ::close (fd);
             return;
-        }
 
         if (pid == 0)
         {
-            // Child: rewire stdin/stdout to the pipes the parent will speak
-            // over, close every other inherited fd we know about, exec the
-            // host binary. Anything that goes wrong below kills the child
-            // with _exit() — never propagate errors up via exceptions or
-            // atexit handlers from a fork()ed context.
-            if (::dup2 (stdinPipe[kReadEnd],   STDIN_FILENO)  < 0) ::_exit (127);
-            if (::dup2 (stdoutPipe[kWriteEnd], STDOUT_FILENO) < 0) ::_exit (127);
-
-            ::close (stdinPipe[kReadEnd]);
-            ::close (stdinPipe[kWriteEnd]);
-            ::close (stdoutPipe[kReadEnd]);
-            ::close (stdoutPipe[kWriteEnd]);
-
-            // execvp() wants a NUL-terminated argv. Strings live for the
-            // duration of the call only — execvp either replaces this
-            // process image or returns on failure.
+            // Child: exec the host binary. No stdin/stdout rewiring — the
+            // child opens the shm rings by name via `--instance-id`.
             std::vector<std::string> argvStorage;
             argvStorage.reserve (7);
             argvStorage.push_back (binaryPath);
@@ -116,14 +82,7 @@ namespace
             ::_exit (127); // exec failed
         }
 
-        // Parent: keep the parent-side ends, close the child-side ends so
-        // the child sees a clean EOF when we eventually close our write end.
-        ::close (stdinPipe[kReadEnd]);
-        ::close (stdoutPipe[kWriteEnd]);
-
-        outStdinWriteFd = stdinPipe[kWriteEnd];
-        outStdoutReadFd = stdoutPipe[kReadEnd];
-        outPid          = static_cast<int> (pid);
+        outPid = static_cast<int> (pid);
     }
 }
 
@@ -131,9 +90,39 @@ OutOfProcessPluginInstance::OutOfProcessPluginInstance (const juce::File& hostBi
                                                         std::string instanceId)
     : instanceId_ (std::move (instanceId))
 {
+    try
+    {
+        const auto e2hName = makeEngineToHostRingName (instanceId_);
+        const auto h2eName = makeHostToEngineRingName (instanceId_);
+        const auto bytes   = SharedMemorySpscQueue<PluginIpcMessage>::bytesNeeded (
+                                 kPluginIpcRingCapacity);
+
+        engineToHostRegion_ = std::make_unique<SharedMemoryRegion> (
+            e2hName, bytes, SharedMemoryRegion::Mode::CreateExclusive);
+        hostToEngineRegion_ = std::make_unique<SharedMemoryRegion> (
+            h2eName, bytes, SharedMemoryRegion::Mode::CreateExclusive);
+
+        engineToHostQueue_ = std::make_unique<SharedMemorySpscQueue<PluginIpcMessage>> (
+            SharedMemorySpscQueue<PluginIpcMessage>::create (
+                engineToHostRegion_->data(), kPluginIpcRingCapacity));
+        hostToEngineQueue_ = std::make_unique<SharedMemorySpscQueue<PluginIpcMessage>> (
+            SharedMemorySpscQueue<PluginIpcMessage>::create (
+                hostToEngineRegion_->data(), kPluginIpcRingCapacity));
+    }
+    catch (const std::exception&)
+    {
+        // shm_open / mmap failure leaves childPid_ == -1; isRunning()
+        // reports false and the caller's REQUIRE catches it. The regions
+        // that DID construct successfully unlink themselves via RAII.
+        engineToHostRegion_.reset();
+        hostToEngineRegion_.reset();
+        engineToHostQueue_.reset();
+        hostToEngineQueue_.reset();
+        return;
+    }
+
     spawnHostChild (hostBinaryPath.getFullPathName().toStdString(),
-                    instanceId_, "identity", {},
-                    stdinWriteFd_, stdoutReadFd_, childPid_);
+                    instanceId_, "identity", {}, childPid_);
 }
 
 OutOfProcessPluginInstance::OutOfProcessPluginInstance (const juce::File& hostBinaryPath,
@@ -141,10 +130,38 @@ OutOfProcessPluginInstance::OutOfProcessPluginInstance (const juce::File& hostBi
                                                         const juce::File& clapPluginBundle)
     : instanceId_ (std::move (instanceId))
 {
+    try
+    {
+        const auto e2hName = makeEngineToHostRingName (instanceId_);
+        const auto h2eName = makeHostToEngineRingName (instanceId_);
+        const auto bytes   = SharedMemorySpscQueue<PluginIpcMessage>::bytesNeeded (
+                                 kPluginIpcRingCapacity);
+
+        engineToHostRegion_ = std::make_unique<SharedMemoryRegion> (
+            e2hName, bytes, SharedMemoryRegion::Mode::CreateExclusive);
+        hostToEngineRegion_ = std::make_unique<SharedMemoryRegion> (
+            h2eName, bytes, SharedMemoryRegion::Mode::CreateExclusive);
+
+        engineToHostQueue_ = std::make_unique<SharedMemorySpscQueue<PluginIpcMessage>> (
+            SharedMemorySpscQueue<PluginIpcMessage>::create (
+                engineToHostRegion_->data(), kPluginIpcRingCapacity));
+        hostToEngineQueue_ = std::make_unique<SharedMemorySpscQueue<PluginIpcMessage>> (
+            SharedMemorySpscQueue<PluginIpcMessage>::create (
+                hostToEngineRegion_->data(), kPluginIpcRingCapacity));
+    }
+    catch (const std::exception&)
+    {
+        engineToHostRegion_.reset();
+        hostToEngineRegion_.reset();
+        engineToHostQueue_.reset();
+        hostToEngineQueue_.reset();
+        return;
+    }
+
     spawnHostChild (hostBinaryPath.getFullPathName().toStdString(),
                     instanceId_, "clap",
                     clapPluginBundle.getFullPathName().toStdString(),
-                    stdinWriteFd_, stdoutReadFd_, childPid_);
+                    childPid_);
 }
 
 OutOfProcessPluginInstance::~OutOfProcessPluginInstance()
@@ -177,24 +194,31 @@ bool OutOfProcessPluginInstance::isRunning() noexcept
 
 bool OutOfProcessPluginInstance::sendBytes (const std::byte* data, std::size_t count)
 {
-    if (stdinWriteFd_ < 0 || data == nullptr)
+    if (engineToHostQueue_ == nullptr || data == nullptr)
         return false;
 
-    std::size_t written = 0;
-    while (written < count)
+    using clock = std::chrono::steady_clock;
+
+    std::size_t offset = 0;
+    while (offset < count)
     {
-        const auto chunk = ::write (stdinWriteFd_,
-                                    data + written,
-                                    count - written);
-        if (chunk < 0)
+        const std::size_t chunk = std::min (count - offset,
+                                            PluginIpcMessage::kMaxPayloadBytes);
+        PluginIpcMessage msg {};
+        msg.monotonicNs = std::chrono::duration_cast<std::chrono::nanoseconds> (
+                              clock::now().time_since_epoch()).count();
+        msg.kind         = PluginIpcMessage::Bytes;
+        msg.payloadBytes = static_cast<std::uint32_t> (chunk);
+        std::memcpy (msg.payload, data + offset, chunk);
+
+        const auto deadline = clock::now() + std::chrono::milliseconds (kRingPushTimeoutMs);
+        while (! engineToHostQueue_->push (msg))
         {
-            if (errno == EINTR)
-                continue;
-            return false;
+            if (clock::now() >= deadline)
+                return false;
+            ::usleep (kRingPollMicroseconds);
         }
-        if (chunk == 0)
-            return false;
-        written += static_cast<std::size_t> (chunk);
+        offset += chunk;
     }
     return true;
 }
@@ -203,64 +227,59 @@ std::size_t OutOfProcessPluginInstance::readBytes (std::byte* buffer,
                                                    std::size_t capacity,
                                                    int timeoutMs)
 {
-    if (stdoutReadFd_ < 0 || buffer == nullptr || capacity == 0)
+    if (hostToEngineQueue_ == nullptr || buffer == nullptr || capacity == 0)
         return 0;
 
+    // Path 1: drain any leftover bytes from the previously-popped message
+    // first. Preserves the "stop after first non-empty read" semantic the
+    // S1 readExact helper depends on.
+    if (leftoverCursor_ < leftoverMessage_.payloadBytes)
+    {
+        const std::size_t remaining = leftoverMessage_.payloadBytes - leftoverCursor_;
+        const std::size_t take      = std::min (capacity, remaining);
+        std::memcpy (buffer, leftoverMessage_.payload + leftoverCursor_, take);
+        leftoverCursor_ += take;
+        return take;
+    }
+
+    // Path 2: pop a fresh message. Spin briefly, then nanosleep/poll until
+    // either the timeout elapses or a message arrives.
     using clock = std::chrono::steady_clock;
     const auto deadline = (timeoutMs < 0)
                               ? clock::time_point::max()
                               : clock::now() + std::chrono::milliseconds (timeoutMs);
 
-    std::size_t total = 0;
-    while (total < capacity)
+    PluginIpcMessage msg {};
+    while (true)
     {
-        int pollWaitMs = -1;
-        if (timeoutMs >= 0)
+        for (int i = 0; i < kRingSpinIterations; ++i)
         {
-            const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds> (
-                                       deadline - clock::now()).count();
-            if (remaining <= 0)
-                break;
-            pollWaitMs = static_cast<int> (remaining);
+            if (hostToEngineQueue_->pop (msg))
+                goto popped;
         }
-
-        pollfd pfd { stdoutReadFd_, POLLIN, 0 };
-        const int p = ::poll (&pfd, 1, pollWaitMs);
-        if (p < 0)
-        {
-            if (errno == EINTR)
-                continue;
-            break;
-        }
-        if (p == 0)
-            break; // timeout
-
-        const auto chunk = ::read (stdoutReadFd_,
-                                   buffer + total,
-                                   capacity - total);
-        if (chunk < 0)
-        {
-            if (errno == EINTR)
-                continue;
-            break;
-        }
-        if (chunk == 0)
-            break; // EOF
-        total += static_cast<std::size_t> (chunk);
-
-        // Stop after the first non-empty read so the caller can decide
-        // whether to wait for more. Otherwise a slow producer forces us
-        // to block until either capacity is filled or the timeout
-        // elapses, which is rarely what the caller wants.
-        if (total > 0)
-            break;
+        if (timeoutMs >= 0 && clock::now() >= deadline)
+            return 0;
+        ::usleep (kRingPollMicroseconds);
     }
-    return total;
-}
+popped:
+    if (msg.payloadBytes == 0)
+        return 0;
 
-void OutOfProcessPluginInstance::closeStdinWrite() noexcept
-{
-    closeIfOpen (stdinWriteFd_);
+    const std::size_t take = std::min<std::size_t> (capacity, msg.payloadBytes);
+    std::memcpy (buffer, msg.payload, take);
+
+    if (take < msg.payloadBytes)
+    {
+        // Save the remainder for the next readBytes call.
+        leftoverMessage_ = msg;
+        leftoverCursor_  = take;
+    }
+    else
+    {
+        leftoverMessage_ = {};
+        leftoverCursor_  = 0;
+    }
+    return take;
 }
 
 bool OutOfProcessPluginInstance::reapIfExited() noexcept
@@ -284,17 +303,19 @@ void OutOfProcessPluginInstance::shutdown()
         return;
     shutdownCalled_ = true;
 
-    // Close stdin first — that's the polite "we're done" signal the host
-    // binary's identity loop reads as EOF and exits on.
-    closeStdinWrite();
-
     if (childPid_ < 0)
     {
-        closeIfOpen (stdoutReadFd_);
+        engineToHostQueue_.reset();
+        hostToEngineQueue_.reset();
+        engineToHostRegion_.reset();
+        hostToEngineRegion_.reset();
         return;
     }
 
-    // Wait up to kShutdownGraceMs for a clean exit before escalating.
+    // SIGTERM signals the host's pump to drop out at its next backoff
+    // wake-up — same role stdin EOF used to play in the S1 pipe transport.
+    ::kill (childPid_, SIGTERM);
+
     using clock = std::chrono::steady_clock;
     const auto deadline = clock::now() + std::chrono::milliseconds (kShutdownGraceMs);
     while (clock::now() < deadline)
@@ -306,29 +327,19 @@ void OutOfProcessPluginInstance::shutdown()
 
     if (childPid_ >= 0)
     {
-        // Child is still alive past the grace period — send SIGTERM
-        // (asks for a clean exit), then SIGKILL as a hard backstop.
-        ::kill (childPid_, SIGTERM);
-        const auto killDeadline = clock::now() + std::chrono::milliseconds (kShutdownGraceMs);
-        while (clock::now() < killDeadline)
-        {
-            if (reapIfExited())
-                break;
-            ::usleep (kShutdownPollMs * 1000);
-        }
-
-        if (childPid_ >= 0)
-        {
-            ::kill (childPid_, SIGKILL);
-            // Blocking wait — the kernel guarantees SIGKILL is honored,
-            // so this returns promptly.
-            int status = 0;
-            ::waitpid (childPid_, &status, 0);
-            childPid_ = -1;
-        }
+        ::kill (childPid_, SIGKILL);
+        int status = 0;
+        ::waitpid (childPid_, &status, 0);
+        childPid_ = -1;
     }
 
-    closeIfOpen (stdoutReadFd_);
+    // Tear down the SPSC handles and shm regions only AFTER the child has
+    // exited — otherwise an in-flight host-side pop into munmapped memory
+    // would segfault and turn a clean shutdown into a SIGSEGV exit code.
+    engineToHostQueue_.reset();
+    hostToEngineQueue_.reset();
+    engineToHostRegion_.reset();
+    hostToEngineRegion_.reset();
 }
 
 } // namespace sirius

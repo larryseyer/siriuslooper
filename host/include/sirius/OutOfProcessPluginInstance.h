@@ -1,6 +1,11 @@
 #pragma once
 
+#include "sirius/PluginIpcMessage.h"
+#include "sirius/SharedMemoryRegion.h"
+#include "sirius/SharedMemorySpscQueue.h"
+
 #include <cstddef>
+#include <memory>
 #include <string>
 
 namespace juce { class File; }
@@ -102,13 +107,23 @@ public:
 
 private:
     std::string instanceId_;
-    int  stdinWriteFd_  = -1; ///< parent's write end of child's stdin
-    int  stdoutReadFd_  = -1; ///< parent's read end of child's stdout
-    int  childPid_      = -1; ///< -1 once reaped
+    int  childPid_       = -1; ///< -1 once reaped
     bool shutdownCalled_ = false;
 
-    /// Closes the stdin write fd if still open; signals EOF to the child.
-    void closeStdinWrite() noexcept;
+    /// Engine→host ring backing storage (parent owns + shm_unlinks).
+    std::unique_ptr<SharedMemoryRegion> engineToHostRegion_;
+    /// Host→engine ring backing storage (parent owns + shm_unlinks).
+    std::unique_ptr<SharedMemoryRegion> hostToEngineRegion_;
+    /// Engine→host SPSC queue placement-new'd into engineToHostRegion_.
+    std::unique_ptr<SharedMemorySpscQueue<PluginIpcMessage>> engineToHostQueue_;
+    /// Host→engine SPSC queue placement-new'd into hostToEngineRegion_.
+    std::unique_ptr<SharedMemorySpscQueue<PluginIpcMessage>> hostToEngineQueue_;
+
+    /// Leftover bytes from a partially-consumed message — preserves the
+    /// "stop at first non-empty read" stream semantics across calls that
+    /// pull less than a whole payload.
+    PluginIpcMessage leftoverMessage_ {};
+    std::size_t      leftoverCursor_  { 0 };
 
     /// Reaps the child non-blockingly. Returns true if the child is gone.
     bool reapIfExited() noexcept;

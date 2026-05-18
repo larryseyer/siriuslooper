@@ -17,7 +17,7 @@ add_executable(sirius_plugin_host
 
 target_compile_features(sirius_plugin_host PRIVATE cxx_std_20)
 
-target_link_libraries(sirius_plugin_host PRIVATE clap)
+target_link_libraries(sirius_plugin_host PRIVATE Sirius::Core clap)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(sirius_plugin_host PRIVATE dl)
