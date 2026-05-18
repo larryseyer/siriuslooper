@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-18 (M7 S3 SHIPPED locally; M7 S4 next — watchdog + supervisor + plug-in NotificationBus events)
+# Session Continuation — 2026-05-18 (M7 S4 SHIPPED locally; M7 S5 next — macOS GUI window embedding [NSView reparenting via clap_gui_cocoa])
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,7 +8,283 @@
 
 ---
 
-## RESUME HERE (2026-05-18 — M7 S3 committed locally; M7 S4 next)
+## RESUME HERE (2026-05-18 — M7 S4 committed locally; M7 S5 next)
+
+**M7 S4 is committed locally at `ae00237`** (push pending — see
+end of this section). Single commit:
+
+| SHA | Subject |
+|---|---|
+| `ae00237` | M7 S4 — plug-in watchdog + supervisor + PluginEvent posts (shared_ptr SlotState, bypass-flag fence) |
+
+Test count: **375/375** green (was 368 at S3; +7 in S4 — 4
+`[plugin-supervisor][unit]` slot-state cases + 3
+`[plugin-supervisor]` integration cases driving real host
+SIGKILL + restart cycles).
+
+**S4 made the audio call chain survivable.** RT_SAFETY_CONTRACT
+§5's promise ("no plug-in failure mode can produce an audio-thread
+glitch") is now load-bearing. Concretely:
+
+- **Per-slot watchdog** lives inside `pumpSlot` — per-slot
+  `std::atomic<std::uint32_t> consecutiveMisses` increments on
+  `tryWriteBytes` ring-full OR `tryReadBytes` empty-after-write,
+  resets on full success. Supervisor reads with
+  `memory_order_relaxed` at 50ms polling cadence.
+- **Off-thread supervisor** is a single `std::thread` member on
+  `OutOfProcessEffectChainHost`. Started in the ctor, joined in
+  the dtor BEFORE `instances_` destruction. Wakes on
+  `condition_variable` + 50ms tick (TapeWriter pattern).
+- **Bypass-flag fence restart protocol**: supervisor sets
+  `bypassed_=true` (release) → sleeps `kRestartGraceMs = 100` ms
+  (audio buffer ≪ 100ms; pumpSlot itself <1ms; so any in-flight
+  pumpSlot completes inside this window) → `state.instance.reset()`
+  → `state.instance = std::make_unique<OutOfProcessPluginInstance>(...)`
+  inside try/catch → resets miss counter → `bypassed_.store(false)`
+  (release). Posts `Info / PluginEvent / "<instanceId>
+  restarted (attempt N of 3)"` to NotificationBus.
+- **Permanent bypass**: after `kMaxRestartAttempts = 3` restart
+  attempts, slot is permanently bypassed via
+  `permanentlyBypassed_=true` (audio thread dry-on-misses
+  forever). Posts `Error / PluginEvent` to NotificationBus.
+  Slot's instance is destroyed; no further attempts.
+- **Spawn-failure handling**: if the new
+  `OutOfProcessPluginInstance` ctor throws (shm exhaustion,
+  missing binary, etc.), the supervisor catches, posts
+  `Warning / PluginEvent` (stack `char[128]` + `snprintf` — no
+  heap allocation on the supervisor thread), leaves
+  `bypassed_=true` and `instance` empty, increments
+  `restartCount`. Next supervisor cycle escalates to permanent
+  bypass if `restartCount >= kMaxRestartAttempts`.
+- **Map ownership**: `instances_` is
+  `std::unordered_map<SlotKey, std::shared_ptr<SlotState>>`.
+  The supervisor snapshots `shared_ptr` copies into a local
+  vector before releasing `instancesMutex_`, so a concurrent
+  `configureBus` erase cannot free a SlotState mid-restart. The
+  audio thread continues to access via `it->second.get()` — NO
+  shared_ptr refcount manipulation on the audio path; the
+  refcount is only touched by message thread (configureBus
+  emplace/erase) and supervisor thread (snapshot copy + drop).
+
+**Measured RT cost (Apple Silicon dev machine, 2026-05-18):** the
+S2c-era `[plugin-ipc][.rt-smoke]` regression check passes with
+median 67 µs, p99 139 µs, max 143 µs — well inside the 300 µs p99
+ceiling. S4's audio-path additions (2 atomic acquire-loads + 1
+atomic fetch_add on the miss path; 1 atomic store on the success
+path) are invisible at this resolution. The shared_ptr ownership
+refactor is invisible too because the audio path is unchanged in
+shape (raw pointer deref via `it->second.get()`).
+
+**Scope deviations locked in S4** (carry forward):
+
+1. **`INotificationSink` port + enum move to `core/`.** The
+   original plan said host depends on engine for NotificationBus;
+   reality is `host/CMakeLists.txt` only links `Sirius::Core`. The
+   professional fix (locked in S3 with `IEffectChainHost`): create
+   a pure-virtual port in `core/` and have the concrete engine
+   class implement it. `core/include/sirius/INotificationSink.h`
+   is the new port; `NotificationLevel` + `Category` enums moved
+   to it. `NotificationBus` in `engine/` now `: public
+   INotificationSink`. All existing `sirius::NotificationLevel::X`
+   / `sirius::Category::Y` spellings work unchanged across
+   InputMixer / AudioCallback / TapeWriter / the 3 NotificationBus
+   test files (no call-site edits). **This is now the canonical
+   pattern** for any future engine surface host needs to talk to.
+2. **Supervisor starts in the ctor**, not lazily on first
+   `configureBus`. Symmetric lifecycle (ctor starts, dtor joins),
+   no first-configure race against the audio thread.
+3. **SlotState doesn't store `busId`/`slotIndex`.** The map key
+   already carries them; only `makeRestartInstanceId` needs them.
+4. **Test-only `childPidForTestingAtSlot(busId, slotIndex)`**
+   added to `OutOfProcessEffectChainHost`. The permanent-bypass
+   test needs to SIGKILL each successive child generation; the
+   accessor lets it reach the new pid after each restart.
+5. **Permanent-bypass test polls for forward progress** (gate
+   each restart iteration on `restartCountForTesting` advancing,
+   3-second per-iteration timeout) instead of fixed sleeps.
+   Deterministic under any CI load; flakes only on genuine
+   supervisor failure.
+6. **`shared_ptr<SlotState>` ownership** (B1 reviewer-found
+   blocker fix). Closes a use-after-free hole where a concurrent
+   `configureBus` erase could free a SlotState mid-restart while
+   the supervisor was inside the 100ms grace + spawn window. The
+   set-once contract makes this theoretical today, but the
+   MainComponent plug-in-adding UI (M20+) will reconfigure during
+   audio and would have hit this. Fixed now while the surface is
+   small.
+7. **Off-by-one fix landed**: comparison is `restartCount >=
+   kMaxRestartAttempts` (was `>`). With `kMaxRestartAttempts =
+   3`, three restart attempts total; the 4th supervisor cycle
+   posts permanent bypass.
+8. **LMC handle to pumpSlot — STILL not wired in S4.** Continues
+   to defer (per M7 decision #9). `PluginIpcMessage::monotonicNs`
+   stays 0 in the audio-thread path. S5+ wires it when the
+   M7 decision-9 reinterpret becomes load-bearing.
+9. **`MainComponent` STILL not wired.** Same as S3. The
+   plug-in-adding UI session (M20+) does the production wiring.
+
+### First moves for the M7 S5 chat
+
+M7 S5 adds **macOS GUI window embedding**. The plug-in's editor
+window opens in the separate `sirius_plugin_host` process, but
+the operator-facing window must visually live INSIDE the Sirius
+Looper process's UI. The mechanism is **NSView reparenting via
+`clap_gui_cocoa`**: the child process creates the editor NSView,
+hands the parent its handle, and the parent reparents that view
+into its own NSView hierarchy.
+
+This is the platform-specific session per V7 plan M7 lines
+487-554. macOS only this session (per the
+`feedback_mac_first_linux_windows_last` platform-order rule);
+Windows + Linux variants come in their own much-later sessions.
+
+1. Read this file end-to-end.
+2. Open `docs/superpowers/plans/2026-05-17-v7-alignment.md` and
+   re-read **M7 lines 487-554**. GUI-embedding work is in the
+   acceptance criteria (lines 491-501) and listed as Session
+   4-N (estimated) at line 535. S5 takes the macOS slice.
+3. Read V7 §9.1 in the white paper for the embedding spec.
+4. Read JUCE's `juce::AudioProcessorEditor` + `juce::Component`
+   docs for the parent-window side. The out-of-process twist is
+   the cross-process reparenting.
+5. **Brainstorm before code.** S5 open questions:
+   - **CGSConnection vs NSView pointer over Mach IPC.** macOS
+     has two APIs for cross-process view sharing. CGS is
+     simpler; NSView/Mach is more sandbox-friendly. V7 plan
+     line 552 mentions "macOS sandbox entitlements" —
+     reconcile with the CI signing handoff (still operator-
+     pending) before picking. **Lean toward CGS for S5**
+     (simpler, no entitlement work yet); sandbox-aware NSView
+     migration deferred to whenever the CI signing surface
+     forces it.
+   - **CLAP GUI extension**. The CLAP spec has `clap_gui` with
+     platform-specific entry points (`clap_gui_cocoa` for
+     macOS). For macOS, the plug-in gives the host an NSView
+     handle. `sirius_plugin_host` child binary needs to add
+     `clap_gui_cocoa` interaction in its CLAP pump loop.
+   - **SyntheticTestPlugin** needs a minimal `clap_gui_cocoa`
+     impl so the S5 integration test has something to embed.
+     Tiny addition — a single NSView with a fixed background
+     color is enough.
+   - **IPC message kind**. Add `PluginIpcMessage::Kind::GuiShow`
+     and `GuiHide` (and possibly `GuiResize`). Out-of-band
+     from the audio-thread message kind; uses the same SPSC
+     ring but at message-thread cadence so no RT impact.
+   - **Editor lifecycle**. When does the child create the
+     editor? Lazily on first `gui-show`, or eagerly at host
+     spawn? Lazy is leaner (saves resources if operator never
+     opens the editor); eager is simpler. **Lean lazy**.
+6. **Brainstorm protocol**: design the embedding API first.
+   - `OutOfProcessPluginInstance` gains
+     `bool requestEditorShow() noexcept` (message-thread) +
+     `bool requestEditorHide() noexcept` + accessor for the
+     returned NSView handle once ready.
+   - The CLAP-mode pump loop in `host_process/main.cpp` adds
+     a "gui" message branch: parent sends `gui-show`, child
+     dlopens `clap_gui_cocoa`, creates the editor view,
+     replies with the view handle.
+   - The parent UI (eventually `MainComponent`, but S5 stays
+     test-driven) creates a `juce::Component` wrapper
+     (`OutOfProcessEditorView` in `host/`) that embeds the
+     NSView at the right Z-order via JUCE's `setColour` +
+     `addAndMakeVisible` pattern adapted for foreign views.
+7. Adopt the same orchestrator+subagents execution mode.
+   Backend Architect for the cross-process view-sharing
+   wiring (NSView Mach port serialization is delicate);
+   Code Reviewer before commit (found 2 real blockers in
+   S4 — keep the pattern).
+
+### S5 acceptance criteria (V7 plan lines 491-501 + first-moves above)
+
+- `sirius_plugin_host` child binary opens the CLAP plug-in's
+  editor via `clap_gui_cocoa` when the parent sends a
+  `gui-show` IPC message. Returns the NSView handle via the
+  reply message.
+- `OutOfProcessPluginInstance` exposes message-thread
+  `requestEditorShow()` + `requestEditorHide()` + accessor
+  for the returned NSView handle.
+- A JUCE `Component` wrapper (probably `OutOfProcessEditorView`
+  in `host/`) embeds the NSView into the parent process's
+  NSView hierarchy at the specified bounds.
+- Integration test loads the synthetic CLAP plug-in's editor
+  (synthetic plug-in needs a minimal `clap_gui_cocoa` impl —
+  add to `tests/fixtures/SyntheticTestPlugin`), embeds it
+  into a dummy JUCE window, verifies the NSView is parented
+  (e.g. by checking the view hierarchy contains the
+  cross-process view handle). Headless GUI test — acceptable
+  to skip under CI if JUCE's offscreen window doesn't
+  support the embedding, but should pass when driven by an
+  operator from a real `.app`.
+- All existing 375 ctest cases still pass; new tests for the
+  GUI embedding (`[plugin-editor]` tag). Test count target:
+  ~377-380.
+- `RT_SAFETY_CONTRACT.md §6` does NOT change (GUI is
+  message-thread only; no audio-thread surface).
+- `MainComponent` STILL not wired (the plug-in-adding UI is
+  a separate later session).
+
+### M7-era decisions locked (S5 must preserve — superset of the S4 list)
+
+1. **POSIX-only scope for non-GUI work** (macOS + Linux). GUI
+   embedding is macOS-only this session.
+2. **Host binary stays JUCE-free.** S5 adds NSView creation in
+   the child binary via direct Cocoa (no JUCE) — `Sirius::Core`
+   stays JUCE-free; the host binary may grow Cocoa direct
+   linkage on macOS only.
+3. **Dependency-inversion port pattern** is load-bearing
+   convention (S3 `IEffectChainHost`, S4 `INotificationSink`).
+   If S5 needs a third engine→host surface, define a port in
+   `core/` and have the engine class implement it.
+4. **OutOfProcessPluginInstance public API split**: byte-
+   oriented audio-thread (`tryWriteBytes`/`tryReadBytes`) +
+   byte-oriented message-thread (`sendBytes`/`readBytes`) +
+   editor message-thread (S5 adds `requestEditorShow` /
+   `requestEditorHide`). GUI methods are NOT audio-thread
+   surface.
+5. **`isRunning()` non-const + silently reaps**. Unchanged.
+6. **Zero allocation / zero locks on the audio thread.**
+   Unchanged.
+7. **`NotificationBus` / `INotificationSink`** is the engine→UI
+   truthfulness channel. S5 may post editor-failure events
+   (e.g. "<instanceId> editor failed to open") at
+   `Warning / PluginEvent`.
+8. **Drop-NEW overflow policy** for SPSC rings. Unchanged.
+9. **macOS shm_open name cap = 18 chars** for instance ids
+   (`kMaxPluginInstanceIdLength`). Unchanged.
+10. **`IEffectChainHost` is the audio-thread port; concrete
+    `OutOfProcessEffectChainHost` is the only impl.** Tests may
+    use a stub. S5 does not change this.
+11. **Pipelined 1-buffer delay** for audio-thread sync.
+    Unchanged. S5 is GUI-only.
+12. **Bypass-flag fence + 100ms grace** for restart protocol.
+    Unchanged from S4.
+13. **`shared_ptr<SlotState>` ownership** in the slot map.
+    Unchanged from S4.
+14. **`kConsecutiveMissThreshold = 16`,
+    `kMaxRestartAttempts = 3`, `kSupervisorPollMs = 50`,
+    `kRestartGraceMs = 100`**. Unchanged from S4.
+
+### Carryover NOT resolved (S5 doesn't touch unless flagged)
+
+- **Push of S4 to `origin/master` is pending operator
+  go-ahead.** S4 is committed locally at `ae00237`. Per
+  standing rule (memory:
+  `feedback_claude_commits_and_pushes_master`) Claude is
+  authorized to push. If operator says go: `git push origin
+  master` (no force, no PR).
+- **MainComponent has no production wiring** of
+  `OutOfProcessEffectChainHost` or its editor surface.
+  Plug-in-adding UI session (M20+) wires both.
+- **`PluginIpcMessage::monotonicNs` LMC reinterpret** still
+  pending the audio-thread LMC handle.
+- **Carryover from M6 + earlier still unresolved**
+  (ProcessedRoute empty span, manual operator-launch eyes-on
+  of M6 surface, CI signing handoff) — all unchanged from
+  S3/S4-era state. None block M7.
+
+---
+
+## HISTORICAL — M7 S3 close + M7 S4 handoff (superseded 2026-05-18 — M7 S4 now shipped)
 
 **M7 S3 is committed locally at `566d1a0`** (push pending operator
 go-ahead — the operator may want eyes-on-diff before it lands on
