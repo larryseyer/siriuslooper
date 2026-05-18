@@ -1,5 +1,6 @@
 #include "sirius/InputMixer.h"
 
+#include "sirius/ChannelStrip.h"
 #include "sirius/OverloadProtection.h"
 #include "sirius/TapeStore.h"
 #include "sirius/TapeWriter.h"
@@ -9,10 +10,25 @@
 #include <cassert>
 #include <cstring>
 
+namespace
+{
+    // Per-instance scratch ceiling for `InputMixer::processBuffer`'s
+    // byte→float→byte round-trip. 8192 floats = 16 kHz × 0.5 s — well above
+    // any realistic device buffer size (typical: 64..2048 samples). File-
+    // scope in the .cpp rather than the header so it does not leak into
+    // the engine's public surface, matching the same convention
+    // AudioCallback.cpp uses for `kMaxScratchChannels`.
+    constexpr std::size_t kMaxScratchSamples = 8192;
+}
+
 namespace sirius
 {
 
-InputMixer::InputMixer() = default;
+InputMixer::InputMixer()
+    : processingScratch_ (kMaxScratchSamples, 0.0f)
+{
+}
+
 InputMixer::~InputMixer() = default;
 
 void InputMixer::setTapeWriter (TapeWriter* writer) noexcept       { tapeWriter_ = writer; }
@@ -87,9 +103,52 @@ void InputMixer::processBuffer (ChannelId id,
     if (it == channels_.end()) return;
 
     const auto& channel = it->second;
-    // Processing chain is a no-op in M3; the call exists so the audio-thread
-    // shape is right when M5 fills in real DSP.
-    (void) channel.processing;
+
+    // M5 Session 1: Audio chains do real gain/pan work. Copy the byte stream
+    // into the pre-allocated float scratch (the byte stream IS a float stream
+    // byte-aligned — AudioCallback passes `reinterpret_cast<const std::byte*>`
+    // of the live `float*` buffer), run ChannelStrip<Audio>::process in-place
+    // on the scratch, then memcpy the scratch back into the TapeWriteMessage.
+    // The source `bytes` pointer is never mutated — DirectLayer's raw routes
+    // read the same float pointers from AudioCallback and a write through
+    // would break the raw-monitor contract. Non-Audio channels skip the DSP
+    // path entirely (their chains are stubs until M9/M12/M13).
+    const bool isAudio = (channel.signalType == SignalType::Audio
+                          && channel.processing != nullptr);
+
+    // Clamp byteCount to scratch capacity (samples * sizeof(float)). M3's
+    // earlier clamp already capped at kMaxTapeWriteMessageBytes = 32768 which
+    // matches 8192 floats — but keep this clamp explicit so a future
+    // re-sizing of either constant cannot quietly silently overflow.
+    constexpr std::size_t kScratchByteCap = kMaxScratchSamples * sizeof (float);
+    if (byteCount > kScratchByteCap) byteCount = kScratchByteCap;
+
+    // For Audio channels we cast the byte stream to floats — the byteCount
+    // MUST be sample-aligned or the trailing 1-3 bytes would slip into the
+    // TapeWriteMessage without being attenuated (caller would see a partial
+    // raw tail mixed with processed audio). Floor here so the contract holds
+    // regardless of what callers (real or test) hand us.
+    if (channel.signalType == SignalType::Audio)
+        byteCount = (byteCount / sizeof (float)) * sizeof (float);
+    if (byteCount == 0) return;
+
+    const std::byte* outBytes = bytes;
+    if (isAudio)
+    {
+        const std::size_t sampleCount = byteCount / sizeof (float);
+        std::memcpy (processingScratch_.data(), bytes, byteCount);
+
+        // ChannelStrip<Audio>::process takes non-interleaved float* const*
+        // pointers; the inbound buffer is one channel of audio (one input
+        // device channel at a time per AudioCallback's dispatch loop), so
+        // numChannels = 1 and pan is ignored. Multi-channel input strips
+        // come with the OutputMixer surface (Session 2-3 own that path).
+        float* channelData[1] { processingScratch_.data() };
+        auto* strip = static_cast<ChannelStrip<SignalType::Audio>*> (channel.processing.get());
+        strip->process (channelData, 1, static_cast<int> (sampleCount));
+
+        outBytes = reinterpret_cast<const std::byte*> (processingScratch_.data());
+    }
 
     if (channel.tapeMode == TapeMode::NoTape || tapeWriter_ == nullptr)
         return;
@@ -98,10 +157,17 @@ void InputMixer::processBuffer (ChannelId id,
     msg.id = id;
     msg.lmcTime = Rational (0); // M3 has no per-channel LMC time wiring yet; M4 adds it
     msg.payloadByteCount = byteCount;
-    std::memcpy (msg.samples.data(), bytes, byteCount);
+    std::memcpy (msg.samples.data(), outBytes, byteCount);
 
     if (! tapeWriter_->tryEnqueue (msg) && overload_ != nullptr)
         overload_->reportLoad (1.0);
+}
+
+ProcessingChain* InputMixer::processingChainFor (ChannelId id) noexcept
+{
+    auto it = channels_.find (id.value());
+    if (it == channels_.end()) return nullptr;
+    return it->second.processing.get();
 }
 
 void InputMixer::finalizeChannel (ChannelId id)

@@ -11,8 +11,9 @@ namespace sirius
 /// the type shape with no-op bodies for every modality; real bodies arrive
 /// per-modality:
 ///
-///   - AudioChain  — real DSP (gain/pan) lands with M5's `ChannelStrip<SignalType::Audio>`
-///                   per V7 alignment plan amendment §3.
+///   - Audio  — real DSP (gain/pan) shipped in M5 as `ChannelStrip<SignalType::Audio>`
+///              (header: `sirius/ChannelStrip.h`); supersedes the M3-era
+///              `AudioChain` per plan amendment §3.
 ///   - MidiChain   — real UMP handling lands with M9.
 ///   - VideoChain  — real video processing lands with M12.
 ///   - FileChain   — real file-input processing lands with M13.
@@ -28,13 +29,6 @@ class ProcessingChain
 public:
     virtual ~ProcessingChain() = default;
     virtual SignalType signalType() const noexcept = 0;
-};
-
-class AudioChain final : public ProcessingChain
-{
-public:
-    SignalType signalType() const noexcept override { return SignalType::Audio; }
-    // M5 adds: void process (juce::AudioBuffer<float>& inOut) noexcept;
 };
 
 class MidiChain final : public ProcessingChain
@@ -60,7 +54,10 @@ public:
 
 /// Build the concrete ProcessingChain matching `type`. Used by `Channel`'s
 /// constructor so callers never need to know which subclass goes with which
-/// SignalType.
+/// SignalType. For `SignalType::Audio` this returns a
+/// `ChannelStrip<SignalType::Audio>` (M5 supersedes the M3-era `AudioChain`);
+/// for the other modalities it still returns their M3-era stub chains
+/// (`MidiChain` / `VideoChain` / `FileChain`) until M9 / M12 / M13.
 std::unique_ptr<ProcessingChain> makeProcessingChain (SignalType type);
 
 } // namespace sirius

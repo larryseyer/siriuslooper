@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <unordered_map>
+#include <vector>
 
 namespace sirius { namespace persistence { class TapeStore; } }
 
@@ -59,6 +60,13 @@ public:
     // Finalize a channel's recording — Session 3 wires the full flow.
     void finalizeChannel (ChannelId);
 
+    /// Message-thread accessor for a channel's ProcessingChain. Returns
+    /// nullptr if the ChannelId is unknown. Callers down-cast via
+    /// `dynamic_cast` (or `static_cast` after checking `signalType()`) to
+    /// reach the per-modality strip surface — e.g. setting gain/pan on
+    /// `ChannelStrip<SignalType::Audio>`. Never call from the audio thread.
+    ProcessingChain* processingChainFor (ChannelId) noexcept;
+
 private:
     struct InputState
     {
@@ -75,6 +83,16 @@ private:
     TapeWriter* tapeWriter_ { nullptr };
     OverloadProtection* overload_ { nullptr };
     sirius::persistence::TapeStore* tapeStore_ { nullptr };
+
+    // Audio-thread scratch — pre-allocated in the constructor (sized to
+    // `kMaxScratchSamples`, defined at file-scope in InputMixer.cpp). M5
+    // Session 1: `processBuffer` copies the inbound byte stream into this
+    // float buffer, calls `ChannelStrip<Audio>::process` for Audio channels,
+    // and copies the processed result back into the TapeWriteMessage. The
+    // source `bytes` pointer is never mutated — DirectLayer's raw routes
+    // read the same float buffers from AudioCallback and a write through
+    // them would break the raw-monitor contract.
+    std::vector<float> processingScratch_;
 };
 
 } // namespace sirius

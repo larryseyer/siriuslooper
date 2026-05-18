@@ -1,21 +1,27 @@
 // Tests for sirius::InputMixer — real-body coverage added in M3 Session 2.
 // The M2 stubs have been replaced with real implementations; these tests
 // verify channel registration, tape-bearing buffer dispatch, and overload
-// reporting on queue-full.
+// reporting on queue-full. M5 Session 1 adds [audio-dsp] coverage —
+// InputMixer now invokes ChannelStrip<Audio>::process before tape writes
+// (per V7 alignment plan amendment §3).
 //
 // Note: TapeWriter takes std::chrono::milliseconds for the flush interval;
 // the caller converts from CapabilityTier before constructing.
+#include "sirius/Channel.h"
+#include "sirius/ChannelStrip.h"
 #include "sirius/InputMixer.h"
 #include "sirius/OverloadProtection.h"
 #include "sirius/TapeStore.h"
 #include "sirius/TapeWriter.h"
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <juce_core/juce_core.h>
 
 #include <array>
 #include <chrono>
+#include <cstring>
 #include <filesystem>
 #include <type_traits>
 
@@ -247,4 +253,66 @@ TEST_CASE ("addChannel honors the per-input default TapeMode set via setInputDef
     CHECK (partial.existsAsFile());
 
     tempDir.deleteRecursively();
+}
+
+TEST_CASE ("InputMixer applies ChannelStrip<Audio> gain before enqueueing to TapeWriter",
+           "[input-mixer][audio-dsp]")
+{
+    using namespace sirius;
+
+    // Per V7 alignment plan amendment §3 / M5 Session 1: InputMixer channels
+    // run their ProcessingChain on the inbound buffer before writing to tape.
+    // For Audio channels, that means ChannelStrip<Audio>::process — so a
+    // buffer of all-1.0f samples with strip gain=0.5 must land on tape as
+    // all-0.5f samples.
+    auto tempDirJuce = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                           .getChildFile ("sirius-audio-dsp-"
+                                          + juce::String (juce::Time::getMillisecondCounterHiRes()));
+    tempDirJuce.createDirectory();
+    const std::filesystem::path tempDir (tempDirJuce.getFullPathName().toStdString());
+
+    TapeWriter writer (tempDir, std::chrono::milliseconds (1), 64);
+    OverloadProtection overload;
+    InputMixer mixer;
+    mixer.setTapeWriter (&writer);
+    mixer.setOverloadProtection (&overload);
+
+    const auto ch = mixer.addChannel (InputId (0), SignalType::Audio);
+    mixer.setChannelTapeMode (ch, TapeMode::CommitToTape);
+
+    // Reach the channel's strip and dial gain to 0.5.
+    auto* chain = mixer.processingChainFor (ch);
+    REQUIRE (chain != nullptr);
+    auto* strip = dynamic_cast<ChannelStrip<SignalType::Audio>*> (chain);
+    REQUIRE (strip != nullptr);
+    strip->setGain (0.5f);
+
+    // Build a buffer of 8 all-1.0f floats and pass it in as raw bytes (the
+    // exact wire shape AudioCallback uses).
+    constexpr std::size_t kSamples = 8;
+    std::array<float, kSamples> inputFloats;
+    inputFloats.fill (1.0f);
+    const auto* asBytes = reinterpret_cast<const std::byte*> (inputFloats.data());
+    const std::size_t byteCount = kSamples * sizeof (float);
+
+    mixer.processBuffer (ch, asBytes, byteCount);
+
+    // Source buffer must be unmodified — DirectLayer raw routes read the
+    // same float pointers; mutating would break the raw-monitor contract.
+    for (float v : inputFloats) CHECK (v == 1.0f);
+
+    // The partial's bytes must decode to all-0.5f.
+    const juce::File partial (juce::String (writer.flushChannel (ch).string()));
+    REQUIRE (partial.existsAsFile());
+    REQUIRE (partial.getSize() == static_cast<juce::int64> (byteCount));
+
+    juce::MemoryBlock bytes;
+    REQUIRE (partial.loadFileAsData (bytes));
+    REQUIRE (bytes.getSize() == byteCount);
+
+    std::array<float, kSamples> recorded {};
+    std::memcpy (recorded.data(), bytes.getData(), byteCount);
+    for (float v : recorded) CHECK (v == Catch::Approx (0.5f));
+
+    juce::File (juce::String (tempDir.string())).deleteRecursively();
 }
