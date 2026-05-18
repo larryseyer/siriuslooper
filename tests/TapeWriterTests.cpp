@@ -146,3 +146,26 @@ TEST_CASE ("flushChannel finalizes the partial file so subsequent reads see all 
 
     juce::File (juce::String (tempDir.string())).deleteRecursively();
 }
+
+TEST_CASE ("flushChannel returns promptly even on Survival-tier flush intervals",
+           "[tape-writer][latency]")
+{
+    auto tempDir = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                       .getChildFile ("sirius-flush-latency-"
+                                      + juce::String (juce::Time::getMillisecondCounterHiRes()));
+    tempDir.createDirectory();
+
+    // Survival-tier interval is 1000 ms; an empty-queue flush must still
+    // return well under that (the wait predicate flips on the atomic flag).
+    sirius::TapeWriter writer (std::filesystem::path (tempDir.getFullPathName().toStdString()),
+                               std::chrono::milliseconds (1000), 16);
+
+    const auto start = std::chrono::steady_clock::now();
+    (void) writer.flushChannel (sirius::ChannelId (7));
+    const auto elapsed = std::chrono::steady_clock::now() - start;
+
+    // Allow generous slack for CI runners; the bug case is ~1000 ms.
+    CHECK (std::chrono::duration_cast<std::chrono::milliseconds> (elapsed).count() < 200);
+
+    tempDir.deleteRecursively();
+}

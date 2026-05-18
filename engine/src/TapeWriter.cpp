@@ -61,13 +61,13 @@ std::filesystem::path TapeWriter::flushChannel (ChannelId channelId)
                 && "TapeWriter::flushChannel called concurrently — see header doc");
         flushRequestForChannel_ = channelId.value();
     }
+    flushRequestPending_.store (true, std::memory_order_release);
     wakeCv_.notify_all();
 
     std::unique_lock lk (stateMutex_);
-    flushCompleteCv_.wait (lk, [this, channelId]
+    flushCompleteCv_.wait (lk, [this]
     {
-        return flushRequestForChannel_ == -1
-            || flushRequestForChannel_ != channelId.value();
+        return flushRequestForChannel_ == -1;
     });
 
     return partialPathFor (channelId);
@@ -105,7 +105,8 @@ void TapeWriter::workerLoop()
             wakeCv_.wait_for (lk, flushInterval_, [this]
             {
                 return shouldExit_.load (std::memory_order_acquire)
-                    || ! queue_.empty();
+                    || ! queue_.empty()
+                    || flushRequestPending_.load (std::memory_order_acquire);
             });
         }
         writePendingMessages();
@@ -128,6 +129,7 @@ void TapeWriter::workerLoop()
             flushRequestForChannel_ = -1;
             flushCompleteCv_.notify_all();
         }
+        flushRequestPending_.store (false, std::memory_order_release);
     }
 }
 

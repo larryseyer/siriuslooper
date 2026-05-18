@@ -99,6 +99,11 @@ public:
     /// becomes a requirement (e.g. M22 batch-disarm), upgrade the slot
     /// to a per-channel completion map.
     ///
+    /// In NDEBUG/release builds where the assert is elided, violating this
+    /// precondition causes the second caller to block until the first's
+    /// flush completes (loud — finalize blocks — preferable to silent data
+    /// loss).
+    ///
     /// RETURNS: the partial-file path. NOTE: the file may not exist on
     /// disk if no messages were ever enqueued for this channel. Caller
     /// must check existence (std::filesystem::exists or equivalent)
@@ -127,6 +132,7 @@ private:
     LockFreeSpscQueue<TapeWriteMessage> queue_;
 
     std::atomic<bool> shouldExit_ { false };
+    std::atomic<bool> flushRequestPending_ { false };
     std::condition_variable wakeCv_;
     std::mutex wakeMutex_;
     std::thread worker_;
