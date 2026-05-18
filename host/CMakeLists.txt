@@ -22,8 +22,16 @@ add_library(SiriusHost STATIC
 # C-linkage shim in OutOfProcessEditorView.mm so the .cpp body stays plain
 # C++. Manual retain/release for the NSView + CALayerHost (-fno-objc-arc)
 # matches the editor-lifecycle bracketing in OutOfProcessEditorView.cpp.
+#
+# M7 S6 — engine-side XPC bridge to the sirius_gui_bridge.xpc service.
+# PluginGuiBridge.mm is the Cocoa half exposing CARemoteLayerServer.sharedServer
+# .serverPort via a C-linkage shim. It only reads an AppKit property, so it
+# uses default ARC (no -fno-objc-arc) — unlike the manual retain/release
+# NSView lifecycle in OutOfProcessEditorView.mm.
 if(APPLE)
-    target_sources(SiriusHost PRIVATE src/OutOfProcessEditorView.mm)
+    target_sources(SiriusHost PRIVATE
+        src/OutOfProcessEditorView.mm
+        src/PluginGuiBridge.mm)
     set_source_files_properties(src/OutOfProcessEditorView.mm PROPERTIES
         COMPILE_FLAGS "-fno-objc-arc")
 endif()
