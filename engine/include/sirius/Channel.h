@@ -48,6 +48,26 @@ private:
     std::int64_t value_;
 };
 
+/// Identifies a single output channel within the OutputMixer / DirectLayer
+/// destination space. Strong-typed for the same reasons as `InputId` and
+/// `ChannelId`; M4 ships this as a thin opaque integer wrapper (per V7
+/// alignment plan M4 Risks line 368: "M4 defines it as an opaque ID with
+/// an `int` underlying"). M5 promotes it to a real `OutputChannel` when
+/// the OutputMixer grows per-channel strips and the registry takes shape.
+class OutputChannelId
+{
+public:
+    explicit constexpr OutputChannelId (std::int64_t value) noexcept : value_ (value) {}
+
+    std::int64_t value() const noexcept { return value_; }
+
+    bool operator== (const OutputChannelId& other) const noexcept { return value_ == other.value_; }
+    bool operator!= (const OutputChannelId& other) const noexcept { return value_ != other.value_; }
+
+private:
+    std::int64_t value_;
+};
+
 /// A first-class channel inside the V3 mixer architecture (V7 alignment
 /// plan M2 line 210). A channel pairs an input source with a signal
 /// modality, a tape-routing decision, and a per-`SignalType` processing

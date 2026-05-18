@@ -43,6 +43,7 @@ add_executable(SiriusTests
     AudioCallbackTests.cpp
     SignalTypeTests.cpp
     ChannelTests.cpp
+    DirectLayerTests.cpp
     InputMixerTests.cpp
     OutputMixerTests.cpp
     ProcessingChainTests.cpp

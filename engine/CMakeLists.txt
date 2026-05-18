@@ -18,6 +18,7 @@ add_library(SiriusEngine STATIC
     src/RenderPipeline.cpp
     src/OverloadProtection.cpp
     src/Channel.cpp
+    src/DirectLayer.cpp
     src/InputMixer.cpp
     src/OutputMixer.cpp
     src/ProcessingChain.cpp
