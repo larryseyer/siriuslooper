@@ -23,7 +23,8 @@ add_library(SiriusEngine STATIC
     src/InputMixer.cpp
     src/OutputMixer.cpp
     src/ProcessingChain.cpp
-    src/TapeWriter.cpp)
+    src/TapeWriter.cpp
+    src/NotificationBus.cpp)
 
 target_include_directories(SiriusEngine PUBLIC include)
 
