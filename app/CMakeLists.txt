@@ -95,7 +95,8 @@ endif()
 # sirius_gui_bridge.xpc (OUTPUT_NAME set in xpc_service/CMakeLists.txt)
 # does not affect service lookup.
 if(APPLE)
-    add_dependencies(SiriusLooper sirius_gui_bridge)
+    add_dependencies(SiriusLooper sirius_gui_bridge sirius_plugin_host)
+
     add_custom_command(TARGET SiriusLooper POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory
             "$<TARGET_BUNDLE_DIR:SiriusLooper>/Contents/XPCServices"
@@ -105,7 +106,6 @@ if(APPLE)
         VERBATIM
         COMMENT "Sirius: install XPC service into app bundle")
 
-    add_dependencies(SiriusLooper sirius_plugin_host)
     add_custom_command(TARGET SiriusLooper POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy
             "$<TARGET_FILE:sirius_plugin_host>"
@@ -113,6 +113,14 @@ if(APPLE)
         VERBATIM
         COMMENT "Sirius: install sirius_plugin_host into app bundle")
 endif()
+# NOTE: the embedded helpers are copied AFTER SiriusLooper.app is signed,
+# so the outer bundle's CodeResources seal does not cover them. For
+# ad-hoc / dev-loop builds this is harmless (Gatekeeper is not enforced
+# on locally-built ad-hoc bundles); for Developer-ID distribution the
+# operator-pending CI signing handoff must re-sign the outer bundle
+# after these copies AND ad-hoc-sign sirius_plugin_host (which is not a
+# MACOSX_BUNDLE so CMake's auto-ad-hoc-sign doesn't fire). Tracked in
+# docs/operator/macos-sandbox.md (Task 11).
 
 # Notarization (opt-in, slow). Requires a Developer-ID-signed bundle, so it
 # only makes sense alongside the Xcode-generator signing block above. The
