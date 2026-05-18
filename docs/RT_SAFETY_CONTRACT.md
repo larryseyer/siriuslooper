@@ -98,16 +98,34 @@ changes an existing row's hot path re-verifies it.
 
 | Class / function | Allocation-free? | Lock-free? | Bounded? | Notes |
 |---|---|---|---|---|
-| `sirius::AudioCallback::audioDeviceIOCallbackWithContext` | yes | yes | yes (O(numSamples * numChannels)) | Identity pass-through (memcpy/memset) + LMC advance. M1 Session 1+2 — verified by inspection. |
+| `sirius::AudioCallback::audioDeviceIOCallbackWithContext` | yes | yes | yes (O(numSamples * numChannels)) | Identity pass-through (memcpy/memset) + LMC advance + `juce::Time::getHighResolutionTicks` pair (M1 Session 3 — RT-safe; on Apple Silicon maps to `mach_absolute_time`, a userspace VDSO read). Trailing `std::atomic<double>` store publishes elapsed seconds for the non-RT load consumer. M1 Sessions 1+2+3 — verified by inspection. |
 | `sirius::Lmc::advanceBySamples` | yes | yes | yes (constant time) | One fetch_add and one store on `std::atomic<int64_t>`. M1 Session 2 — verified by inspection. |
-| `sirius::Asrc::process` | TBD | TBD | TBD | Session 3 wires it. Pre-existing implementation in `engine/src/Asrc.cpp` — audit before hooking up. |
-| `sirius::OverloadProtection::tick` | TBD | TBD | TBD | Session 3 wires it. |
-| `sirius::RetroactiveRing::push` | TBD | TBD | TBD | Session 3 wires it. |
-| `sirius::AudioDeviceCalibration::apply` | TBD | TBD | TBD | Session 3 wires it. |
+| `sirius::Asrc::process` | yes | yes | yes (O(inputCount + outputCapacity)) | soxr handle created with `runtimeSpec=1` (single-threaded — no internal locking) and the variable-rate path; per soxr docs `soxr_process` does not allocate once the handle is initialised. **M1 Session 3 — held by `AudioCallback` as scaffolding but not invoked from the buffer body. Audit established now so M2 routing can call it without further audit work.** Note: `setIoRatio` throws on out-of-range and is for message-thread use only; the audio thread must not call it. |
+| `sirius::OverloadProtection::reportLoad` | yes | yes | yes (constant time) | Three independent state-machine updates over fixed hysteresis bands; no loops, no allocation. **Throws `std::invalid_argument` on negative input — never called from the audio thread.** M1 Session 3 wiring: audio thread publishes the per-buffer elapsed time via `AudioCallback::lastCallbackElapsedSec()` (`std::atomic<double>` store); message thread (30 Hz timer in `MainComponent`) reads, divides by the buffer-time budget, and calls `reportLoad` with a guaranteed-non-negative fraction. |
+| `sirius::RetroactiveRing::push` | yes | yes | yes (O(1)) | Single modulo + one assignment into a pre-allocated buffer. **Not on the audio thread per the class doc** — lives engine-side, consumer of the (M3/M4) SPSC tape-event queue. `snapshot()` *does* allocate (`reserve`/`push_back`) and is explicitly off the audio path. M1 Session 3 — held by `MainComponent` as scaffolding sized at construction; first writer is the M3 tape-event drain thread. |
+| `sirius::AudioDeviceCalibration::deviceToLmc` / `lmcToDevice` | yes | yes | yes (constant time) | Pure `Rational` arithmetic on an immutable value object — one multiply / add / subtract / divide on `Rational` (which is itself allocation-free for `int64_t` operands). **M1 Session 3 — held by `AudioCallback` as scaffolding (identity calibration) but not invoked from the buffer body. M8 fills the first call site once a measured calibration replaces the identity default.** |
 
-`TBD` rows must be resolved before the class is invoked from the audio
-thread. The Session 3 commit that lands the wiring also lands the
-audit row in this table.
+The four Session 3 rows close M1's RT-safety audit. Two distinct shapes
+emerged from the M1-Session-3 brainstorm:
+
+1. **Held-but-not-invoked scaffolding** (Asrc, AudioDeviceCalibration).
+   The audio callback holds non-owning references so the routing path
+   exists structurally; M2-M8 grow real calls into them. The audit
+   verifies they would be RT-safe when invoked, so later milestones
+   can wire them without re-auditing.
+2. **Atomic-publish, message-thread consumes** (OverloadProtection).
+   The audio thread does the minimal RT-safe work (a single elapsed-time
+   measurement and `std::atomic<double>` store); the message thread
+   reads the atomic and calls the throwing `reportLoad` API. This is
+   the canonical pattern for any future class whose API straddles the
+   RT/non-RT boundary — keep the throwing/allocating side off-thread
+   and bridge with a lock-free atomic.
+
+`RetroactiveRing` is a third shape: explicitly off the audio thread by
+design, consumer of an SPSC queue the audio thread will write to in M3/M4.
+The producer side (the queue's `push`) will land its own audit row when
+the queue lands; the ring's own `push` stays a single-threaded
+non-RT operation.
 
 ---
 

@@ -21,6 +21,14 @@ void AudioCallback::audioDeviceIOCallbackWithContext (
     int                 numSamples,
     const juce::AudioIODeviceCallbackContext& /*context*/)
 {
+    // Wall-clock at the start of the buffer — `getHighResolutionTicks` maps
+    // to `mach_absolute_time` on Apple Silicon (userspace VDSO, ~10 ns,
+    // RT-safe). End-of-buffer minus start gives the elapsed seconds we
+    // publish for the non-RT load consumer to divide against the buffer-time
+    // budget. The pair lives off the audio thread's hot work so it never
+    // gates on a syscall or a lock.
+    const auto startTicks = juce::Time::getHighResolutionTicks();
+
     const bool monitoring = monitoringEnabled_.load (std::memory_order_acquire);
 
     const int passThroughChannels =
@@ -49,6 +57,14 @@ void AudioCallback::audioDeviceIOCallbackWithContext (
     if (lmc_ != nullptr)
         lmc_->advanceBySamples (numSamples,
                                 currentSampleRate_.load (std::memory_order_acquire));
+
+    // Publish the elapsed wall-clock for the buffer. The message thread
+    // divides by `currentBufferSize() / currentSampleRate()` to get a load
+    // fraction it then feeds into `OverloadProtection::reportLoad`. Done
+    // last so the measurement covers all of the audio-thread work above.
+    const auto elapsedTicks = juce::Time::getHighResolutionTicks() - startTicks;
+    const double elapsedSec = juce::Time::highResolutionTicksToSeconds (elapsedTicks);
+    lastCallbackElapsedSec_.store (elapsedSec, std::memory_order_release);
 }
 
 void AudioCallback::audioDeviceAboutToStart (juce::AudioIODevice* device)
@@ -68,6 +84,7 @@ void AudioCallback::audioDeviceStopped()
 {
     currentSampleRate_.store (0.0, std::memory_order_release);
     currentBufferSize_.store (0,   std::memory_order_release);
+    lastCallbackElapsedSec_.store (0.0, std::memory_order_release);
 }
 
 } // namespace sirius

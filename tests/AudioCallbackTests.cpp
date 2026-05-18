@@ -209,3 +209,63 @@ TEST_CASE ("AudioCallback carries the EngineConfig it was constructed with", "[a
     CHECK (cb.config().preferredBufferSize    == 256u);
     CHECK (cb.config().minPreferredBufferSize == 64u);
 }
+
+// =============================================================================
+// M1 Session 3 — load-publish path
+//
+// The audio thread measures wall-clock elapsed per buffer and publishes it via
+// `lastCallbackElapsedSec()`. MainComponent's 30 Hz timer divides this by the
+// buffer-time budget (currentBufferSize / currentSampleRate) to derive the
+// load fraction it then hands to OverloadProtection::reportLoad — keeping the
+// throwing API entirely off the audio thread.
+//
+// These tests exercise the publish side directly (no JUCE device needed).
+// =============================================================================
+
+TEST_CASE ("AudioCallback elapsed-seconds is zero before any callback fires", "[audio-callback][load-publish]")
+{
+    AudioCallback cb { EngineConfig {} };
+    CHECK (cb.lastCallbackElapsedSec() == 0.0);
+}
+
+TEST_CASE ("AudioCallback publishes a positive elapsed time after a buffer", "[audio-callback][load-publish]")
+{
+    AudioCallback cb { EngineConfig {} };
+
+    constexpr int channels = 2;
+    constexpr int samples  = 256;
+    Buffers in  (channels, samples);
+    Buffers out (channels, samples);
+
+    auto ctx = emptyContext();
+    cb.audioDeviceIOCallbackWithContext (in.readable(), channels,
+                                         out.writable(), channels,
+                                         samples, ctx);
+
+    const double elapsed = cb.lastCallbackElapsedSec();
+    // Positive — a real wall-clock measurement was taken — and small.
+    // Even on the slowest CI runner a 256-sample memcpy + advance pair
+    // takes microseconds; anything over 1 ms here means the measurement
+    // is reading something other than this buffer.
+    CHECK (elapsed > 0.0);
+    CHECK (elapsed < 1.0e-3);
+}
+
+TEST_CASE ("AudioCallback elapsed-seconds resets to zero on device stop", "[audio-callback][load-publish]")
+{
+    AudioCallback cb { EngineConfig {} };
+
+    constexpr int channels = 2;
+    constexpr int samples  = 64;
+    Buffers in  (channels, samples);
+    Buffers out (channels, samples);
+
+    auto ctx = emptyContext();
+    cb.audioDeviceIOCallbackWithContext (in.readable(), channels,
+                                         out.writable(), channels,
+                                         samples, ctx);
+    REQUIRE (cb.lastCallbackElapsedSec() > 0.0);
+
+    cb.audioDeviceStopped();
+    CHECK (cb.lastCallbackElapsedSec() == 0.0);
+}

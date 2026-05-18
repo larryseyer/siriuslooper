@@ -4,23 +4,28 @@
 #include "DemoSession.h"
 
 #include "sirius/AudioCallback.h"
+#include "sirius/AudioDeviceCalibration.h"
 #include "sirius/CaptureSession.h"
 #include "sirius/EngineConfig.h"
 #include "sirius/InputDescriptor.h"
 #include "sirius/LatencyBudget.h"
 #include "sirius/Lmc.h"
 #include "sirius/MonotonicClock.h"
+#include "sirius/OverloadProtection.h"
 #include "sirius/PerformanceView.h"
 #include "sirius/PluginScanner.h"
 #include "sirius/Promotion.h"
+#include "sirius/RetroactiveRing.h"
 #include "sirius/TapeId.h"
 #include "sirius/UndoStack.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <cstdint>
 #include <memory>
 #include <unordered_set>
+#include <vector>
 
 namespace sirius
 {
@@ -116,6 +121,21 @@ private:
     juce::AudioDeviceManager              audioDeviceManager_;
     std::unique_ptr<AudioCallback>        audioCallback_;
     juce::String                          audioDeviceLastError_;
+
+    // M1 Session 3 — engine pieces wired alongside the audio thread.
+    // ASRCs are held by the callback (one per input/output channel) but
+    // not invoked from the buffer body for M1; M2-M5 grow real routing
+    // through them. Calibration sits at identity until M8 measures drift.
+    // OverloadProtection is a non-RT consumer driven by the 30 Hz
+    // timerCallback off `audioCallback_->lastCallbackElapsedSec()`.
+    // RetroactiveRing is the engine-side consumer the (M3/M4) lock-free
+    // tape-event queue will eventually drain into; T is provisionally
+    // std::uint8_t until the real tape-event type lands.
+    std::vector<std::unique_ptr<Asrc>>    asrcInputs_;
+    std::vector<std::unique_ptr<Asrc>>    asrcOutputs_;
+    AudioDeviceCalibration                calibration_ { AudioDeviceCalibration::identity() };
+    OverloadProtection                    overloadProtection_;
+    RetroactiveRing<std::uint8_t>         retroactiveRing_ { 1024 };
 
     // --- top-level layout ---
     juce::TabbedComponent tabs_ { juce::TabbedButtonBar::TabsAtTop };

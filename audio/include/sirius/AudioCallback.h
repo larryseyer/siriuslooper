@@ -6,11 +6,13 @@
 
 #include <atomic>
 #include <cstddef>
+#include <vector>
 
 namespace sirius
 {
 
 class Lmc;
+class AudioDeviceCalibration;
 
 /// The single audio-thread entry point for the standalone app — V7 white paper
 /// Part V plus Part 5.6's realtime-safety contract, lowered to JUCE's
@@ -22,8 +24,11 @@ class Lmc;
 /// feedback). Session 2 wires the LMC sample-clock — if an Lmc is attached,
 /// every buffer ends with a single `lmc->advanceBySamples(...)` call so the
 /// LMC tracks the device's hardware-counted sample-clock (white paper §4.4).
-/// The existing engine pieces — Asrc, OverloadProtection, AudioDeviceCalibration,
-/// RetroactiveRing — (Session 3) attach to this same callback later in M1.
+/// Session 3 attaches the remaining engine pieces (Asrc, AudioDeviceCalibration)
+/// as held-but-not-invoked references — the scaffolding M3-M5 routes through —
+/// and publishes the per-buffer wall-clock elapsed time so a non-RT consumer
+/// (`OverloadProtection` on the message thread) can derive a load fraction
+/// without the audio thread ever calling the throwing `reportLoad` API.
 ///
 /// Realtime-safety invariants (V7 §5.6, codified for this class):
 ///  * No allocation, no lock acquisition, no synchronous I/O, no unbounded
@@ -48,6 +53,34 @@ public:
     /// which `MainComponent` guarantees by destroying the callback first.
     /// Pass `nullptr` to detach (used in tests).
     void setLmc (Lmc* lmc) noexcept { lmc_ = lmc; }
+
+    /// Attach per-channel input ASRCs (M1 Session 3 scaffolding). Held but
+    /// not invoked from the audio thread for M1 — M2 routes input through
+    /// them. Set once on the message thread before the device starts; the
+    /// audio thread reads `asrcInputs_[ch]` by index without locking. Each
+    /// pointer is non-owning; the ASRCs must outlive this callback. Pass
+    /// an empty vector to detach.
+    void setAsrcInputs (std::vector<class Asrc*> asrcsByChannel) noexcept
+    {
+        asrcInputs_ = std::move (asrcsByChannel);
+    }
+
+    /// Attach per-channel output ASRCs (M1 Session 3 scaffolding). Same
+    /// ownership / lifetime contract as `setAsrcInputs`.
+    void setAsrcOutputs (std::vector<class Asrc*> asrcsByChannel) noexcept
+    {
+        asrcOutputs_ = std::move (asrcsByChannel);
+    }
+
+    /// Attach the audio-device calibration (M1 Session 3 scaffolding).
+    /// Held but not invoked from the audio thread for M1 — M8 reads it
+    /// to convert between device-native and LMC time once a measured
+    /// calibration replaces the identity default. Non-owning; the
+    /// calibration must outlive this callback. Pass `nullptr` to detach.
+    void setCalibration (const AudioDeviceCalibration* calibration) noexcept
+    {
+        calibration_ = calibration;
+    }
 
     // -- juce::AudioIODeviceCallback ------------------------------------------------
     void audioDeviceIOCallbackWithContext (
@@ -93,13 +126,33 @@ public:
     /// new callback rather than mutating an existing one.
     const EngineConfig& config() const noexcept { return config_; }
 
+    /// Wall-clock seconds the most recent buffer's callback took, end-to-end.
+    /// Zero before the first buffer and after `audioDeviceStopped`. The
+    /// non-RT consumer (`MainComponent`'s 30 Hz timer) divides this by the
+    /// buffer-time budget (`currentBufferSize() / currentSampleRate()`) to
+    /// derive an `OverloadProtection` load fraction. Doing the division off
+    /// the audio thread keeps the audio thread's contribution to a single
+    /// `mach_absolute_time` pair + one `std::atomic<double>` store per buffer.
+    double lastCallbackElapsedSec() const noexcept
+    {
+        return lastCallbackElapsedSec_.load (std::memory_order_acquire);
+    }
+
 private:
     EngineConfig config_;
     Lmc*         lmc_ { nullptr };
 
-    std::atomic<bool>   monitoringEnabled_ { false };
-    std::atomic<double> currentSampleRate_ { 0.0 };
-    std::atomic<int>    currentBufferSize_ { 0 };
+    // Session 3 scaffolding: held but not invoked from the audio thread
+    // for M1. M2-M8 grow real routing through these references; the
+    // RT-safety audit row for each is filled in by Session 3's contract.
+    std::vector<class Asrc*>             asrcInputs_;
+    std::vector<class Asrc*>             asrcOutputs_;
+    const AudioDeviceCalibration*        calibration_ { nullptr };
+
+    std::atomic<bool>   monitoringEnabled_       { false };
+    std::atomic<double> currentSampleRate_       { 0.0 };
+    std::atomic<int>    currentBufferSize_       { 0 };
+    std::atomic<double> lastCallbackElapsedSec_  { 0.0 };
 };
 
 } // namespace sirius

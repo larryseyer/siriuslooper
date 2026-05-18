@@ -223,7 +223,7 @@ public:
         monitoringToggle_.setBounds (area.removeFromTop (24));
         area.removeFromTop (8);
 
-        diagnosticsLabel_.setBounds (area.removeFromBottom (60));
+        diagnosticsLabel_.setBounds (area.removeFromBottom (84));
         area.removeFromBottom (6);
 
         // The timeline gets the dominant share of vertical space — it's the
@@ -499,9 +499,45 @@ MainComponent::MainComponent()
     lmc_             = std::make_unique<Lmc> (monotonicClock_);
     audioCallback_   = std::make_unique<AudioCallback> (engineConfig_);
     audioCallback_->setLmc (lmc_.get());
-    audioDeviceLastError_ = audioDeviceManager_.initialiseWithDefaultDevices (
+
+    // M1 Session 3 — engine pieces handed to the audio callback as
+    // scaffolding. ASRCs sized 2/2 to match the device request below; the
+    // input-mixer milestone (M2) widens this. 1.01 maxIoRatio gives 1% drift
+    // headroom (real crystal drift is ppm — well under 0.001%). soxr_create
+    // can throw if the platform's soxr is broken; absorb that here so the
+    // app still comes up, with the error surfaced through the existing
+    // audioDeviceLastError_ channel.
+    try
+    {
+        for (int ch = 0; ch < 2; ++ch)
+            asrcInputs_.push_back (
+                std::make_unique<Asrc> (1.01, engineConfig_.asrcQuality));
+        for (int ch = 0; ch < 2; ++ch)
+            asrcOutputs_.push_back (
+                std::make_unique<Asrc> (1.01, engineConfig_.asrcQuality));
+
+        std::vector<Asrc*> inputPtrs, outputPtrs;
+        inputPtrs.reserve (asrcInputs_.size());
+        outputPtrs.reserve (asrcOutputs_.size());
+        for (auto& a : asrcInputs_)  inputPtrs.push_back (a.get());
+        for (auto& a : asrcOutputs_) outputPtrs.push_back (a.get());
+        audioCallback_->setAsrcInputs  (std::move (inputPtrs));
+        audioCallback_->setAsrcOutputs (std::move (outputPtrs));
+    }
+    catch (const std::exception& e)
+    {
+        asrcInputs_.clear();
+        asrcOutputs_.clear();
+        audioDeviceLastError_ = juce::String ("ASRC init failed: ") + e.what();
+    }
+
+    audioCallback_->setCalibration (&calibration_);
+
+    const auto deviceInitError = audioDeviceManager_.initialiseWithDefaultDevices (
         /*numInputChannelsNeeded*/  2,
         /*numOutputChannelsNeeded*/ 2);
+    if (deviceInitError.isNotEmpty())
+        audioDeviceLastError_ = deviceInitError;
     audioDeviceManager_.addAudioCallback (audioCallback_.get());
 
     // --- Performance tab ---
@@ -698,6 +734,20 @@ void MainComponent::timerCallback()
     }
     expectedTickMicros_ = microsInt + 33'333; // ~1/30 s
 
+    // M1 Session 3 — feed OverloadProtection from the audio thread's
+    // published per-buffer elapsed time. Division happens here, off the
+    // audio thread, so the audio thread's contribution stays a single
+    // atomic store. The reportLoad throw is unreachable because elapsed
+    // and budget are both non-negative by construction.
+    const double elapsed = audioCallback_->lastCallbackElapsedSec();
+    const int    bufSize = audioCallback_->currentBufferSize();
+    const double rate    = audioCallback_->currentSampleRate();
+    if (bufSize > 0 && rate > 0.0)
+    {
+        const double budget = static_cast<double> (bufSize) / rate;
+        overloadProtection_.reportLoad (elapsed / budget);
+    }
+
     refreshDiagnostics();
 }
 
@@ -785,6 +835,17 @@ void MainComponent::refreshDiagnostics()
                 << juce::String (latencyBudget_.fractionWithinBudget() * 100.0, 1)
                 << "% within 30 ms";
 
+    // Load: last audio-callback load fraction the OverloadProtection state
+    // machine saw, plus current shed count. M1 Session 3 publishes the
+    // metric; M11 (capability tiers) wires the shed flags back into the
+    // video/UI/analyzer subsystems they gate.
+    juce::String loadLine;
+    loadLine << "Load: "
+             << juce::String (overloadProtection_.lastReportedLoad() * 100.0, 1)
+             << "% of budget (shed: "
+             << juce::String (overloadProtection_.shedCount())
+             << ")";
+
     juce::String undoLine;
     undoLine << "Undo: " << juce::String (undoStack_.currentIndex() + 1)
              << " / "    << juce::String (undoStack_.depth());
@@ -833,7 +894,8 @@ void MainComponent::refreshDiagnostics()
     }
 
     preparationPane_->setDiagnostics (
-        tierLine + "\n" + latencyLine + "\n" + undoLine + "\n" + captureLine);
+        tierLine + "\n" + latencyLine + "\n" + loadLine + "\n"
+        + undoLine + "\n" + captureLine);
 
     undoButton_.setEnabled (undoStack_.canUndo());
     redoButton_.setEnabled (undoStack_.canRedo());
