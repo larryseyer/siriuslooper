@@ -3,10 +3,47 @@
 #include "sirius/Channel.h"
 
 #include <cstdint>
+#include <span>
 #include <vector>
 
 namespace sirius
 {
+
+/// Non-owning view of a raw input buffer for a single AudioCallback block.
+/// Constructed and consumed within one `DirectLayer::routeBuffers` call;
+/// the pointer must stay valid for the duration of that call only.
+//
+// RawInputBufferView wraps a raw float input buffer as it arrives from the
+// host audio device callback (e.g. JUCE's audioDeviceIOCallbackWithContext
+// inputChannelData[ch]) — NOT the std::byte-typed payload that M3's
+// InputMixer::processBuffer serializes for tape. The DirectLayer operates
+// on the live audio-thread float buffer pre-serialization.
+struct RawInputBufferView
+{
+    InputId      id;
+    const float* samples;
+    int          sampleCount;
+};
+
+/// Non-owning view of a processed channel buffer for a single AudioCallback
+/// block. Same lifetime contract as `RawInputBufferView`.
+struct ProcessedChannelBufferView
+{
+    ChannelId    id;
+    const float* samples;
+    int          sampleCount;
+};
+
+/// Non-owning writable view of an output buffer for a single AudioCallback
+/// block. `routeBuffers` performs additive mix into `samples`; the caller
+/// (Session 3 AudioCallback) is responsible for the buffer's initial
+/// contents (typically zero-filled or pre-loaded by OutputMixer).
+struct OutputBufferView
+{
+    OutputChannelId id;
+    float*          samples;
+    int             sampleCount;
+};
 
 /// V3 §2.3 / V7 alignment plan M4: the Direct Layer is the parallel
 /// signal path from input mixer to output mixer that bypasses the tape
@@ -92,6 +129,44 @@ public:
     // error and asserts in debug; in release the call is a silent no-op
     // so a misbehaving caller cannot corrupt the route table.
     void removeRoute (RouteId);
+
+    /// Audio-thread entry point. For each registered route, locates the
+    /// matching source buffer and destination buffer in the supplied spans
+    /// and **mix-adds** the source samples into the destination. The
+    /// destination is never overwritten — DirectLayer contributes alongside
+    /// OutputMixer, which also writes into the same output buffers.
+    ///
+    /// Threading: audio thread only. `noexcept`. No allocation, no locks,
+    /// no logging, no I/O, no map lookups. Lookups are linear scans over
+    /// the supplied buffer spans (bounded by buffer count, typically <16).
+    /// Cost is bounded by `route count × buffer count` and is allocation-
+    /// free; this matches the RT_SAFETY_CONTRACT §6 commitment.
+    ///
+    /// Buffer-size mismatch between a route's source and destination is
+    /// handled by mixing only `min(src.sampleCount, dst.sampleCount)`
+    /// samples — never reads past the source, never writes past the
+    /// destination. A route whose source or destination is absent from
+    /// the supplied spans is skipped silently; this is expected in normal
+    /// operation when a buffer is not present in the current callback.
+    ///
+    /// Gain control is intentionally NOT part of this signature — Session 2
+    /// ships pure pass-through routing. Per-route gain (with an atomic gain
+    /// field per route) is a future addition tracked in the V7 plan; the
+    /// RT_SAFETY_CONTRACT §6 wording explicitly anticipates "reading a
+    /// couple of gain atomics" on the hot path when that lands.
+    ///
+    /// Caller responsibility — span storage MUST NOT allocate on the audio
+    /// thread. AudioCallback (Session 3) is expected to either:
+    ///   (a) hold a fixed-capacity std::array<RawInputBufferView, kMax> as a
+    ///       message-thread-configured member, or
+    ///   (b) pre-allocate std::vector<RawInputBufferView> scratch in
+    ///       audioDeviceAboutToStart and only mutate (never resize) it in
+    ///       the callback.
+    /// Constructing spans from heap-resized vectors inside the callback would
+    /// violate RT_SAFETY_CONTRACT §6.
+    void routeBuffers (std::span<const RawInputBufferView>         rawInputs,
+                       std::span<const ProcessedChannelBufferView> processedChannels,
+                       std::span<const OutputBufferView>           outputs) const noexcept;
 
     // Diagnostic accessors — Session 1 test surface only. Audio-thread
     // routeBuffers (Session 2) will iterate the active subset directly.

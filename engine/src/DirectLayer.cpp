@@ -1,9 +1,67 @@
 #include "sirius/DirectLayer.h"
 
+#include <algorithm>
 #include <cassert>
 
 namespace sirius
 {
+
+namespace
+{
+
+// Linear scan over the buffer views supplied to routeBuffers. Bounded by
+// the (small) buffer-count argument from AudioCallback; cheap, branch-light,
+// and allocation-free. Returns nullptr on miss so routeBuffers can skip
+// the route silently.
+const float* findRawInput (std::span<const RawInputBufferView> rawInputs,
+                           InputId                              id,
+                           int&                                 outSampleCount) noexcept
+{
+    for (const auto& view : rawInputs)
+    {
+        if (view.id == id)
+        {
+            outSampleCount = view.sampleCount;
+            return view.samples;
+        }
+    }
+    outSampleCount = 0;
+    return nullptr;
+}
+
+const float* findProcessed (std::span<const ProcessedChannelBufferView> processed,
+                            ChannelId                                    id,
+                            int&                                         outSampleCount) noexcept
+{
+    for (const auto& view : processed)
+    {
+        if (view.id == id)
+        {
+            outSampleCount = view.sampleCount;
+            return view.samples;
+        }
+    }
+    outSampleCount = 0;
+    return nullptr;
+}
+
+float* findOutput (std::span<const OutputBufferView> outputs,
+                   OutputChannelId                    id,
+                   int&                               outSampleCount) noexcept
+{
+    for (const auto& view : outputs)
+    {
+        if (view.id == id)
+        {
+            outSampleCount = view.sampleCount;
+            return view.samples;
+        }
+    }
+    outSampleCount = 0;
+    return nullptr;
+}
+
+} // namespace
 
 DirectLayer::DirectLayer()  = default;
 DirectLayer::~DirectLayer() = default;
@@ -54,6 +112,42 @@ void DirectLayer::removeRoute (RouteId id)
             assert (false && "DirectLayer::removeRoute: processed RouteId not found (double-remove or forged handle)");
             return;
         }
+        default: assert (false && "DirectLayer::removeRoute — unknown RouteId::Kind"); return;
+    }
+}
+
+void DirectLayer::routeBuffers (std::span<const RawInputBufferView>         rawInputs,
+                                std::span<const ProcessedChannelBufferView> processedChannels,
+                                std::span<const OutputBufferView>           outputs) const noexcept
+{
+    for (const auto& route : rawRoutes_)
+    {
+        int          srcCount = 0;
+        int          dstCount = 0;
+        const float* src      = findRawInput (rawInputs, route.source,      srcCount);
+        float*       dst      = findOutput   (outputs,   route.destination, dstCount);
+
+        if (src == nullptr || dst == nullptr)
+            continue;
+
+        const int n = std::min (srcCount, dstCount);
+        for (int i = 0; i < n; ++i)
+            dst[i] += src[i];
+    }
+
+    for (const auto& route : processedRoutes_)
+    {
+        int          srcCount = 0;
+        int          dstCount = 0;
+        const float* src      = findProcessed (processedChannels, route.source,      srcCount);
+        float*       dst      = findOutput    (outputs,           route.destination, dstCount);
+
+        if (src == nullptr || dst == nullptr)
+            continue;
+
+        const int n = std::min (srcCount, dstCount);
+        for (int i = 0; i < n; ++i)
+            dst[i] += src[i];
     }
 }
 
