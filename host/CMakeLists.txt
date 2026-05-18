@@ -15,7 +15,8 @@ add_library(SiriusHost STATIC
     src/GenericParameterView.cpp
     src/OutOfProcessPluginInstance.cpp
     src/OutOfProcessEffectChainHost.cpp
-    src/OutOfProcessEditorView.cpp)
+    src/OutOfProcessEditorView.cpp
+    src/PluginGuiBridge.cpp)
 
 # M7 S5 — macOS GUI embedding bridge. AppKit / QuartzCore lives behind a
 # C-linkage shim in OutOfProcessEditorView.mm so the .cpp body stays plain
