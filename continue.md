@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-17 (M1 complete; M2 next)
+# Session Continuation — 2026-05-17 (M2 Session 1 shipped; M2 Session 2 next)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,41 +8,78 @@
 
 ---
 
-## RESUME HERE (2026-05-17 — M1 complete on master; M2 next)
+## RESUME HERE (2026-05-17 — M2 Session 1 shipped; Session 2 next)
 
-**M1 of the V7 alignment plan is fully shipped on master.** Session 3
-wired the remaining engine pieces (`Asrc`, `OverloadProtection`,
-`AudioDeviceCalibration`, `RetroactiveRing`) into the audio thread as
-scaffolding-with-audit-rows, published an elapsed-time metric from the
-audio callback so the message thread can drive `OverloadProtection`
-without the audio thread ever calling its throwing API, and filled the
-four `TBD` rows in `docs/RT_SAFETY_CONTRACT.md`. Test count moved from
-**267 → 270** (+3 `[load-publish]` cases on `AudioCallback`). The full
-`bash bash/autotest.sh` 4-phase gate passes — headless ctest, signed
-Xcode bundle, codesign + spctl verify, GUI smoke Save/Load. HEAD is
-`b1515d8` on `origin/master`.
+**M2 Session 1 of the V7 alignment plan is on master.** The
+`Membrane` → `LatencyTiming` rename landed (engine header, .cpp, test,
+namespace `sirius::membrane` → `sirius::latency`, CMake wiring, test
+tags), no behaviour change. The two M1 Session 3 load-publish tests
+that flaked on cold-cache / sub-tick callbacks were stabilised via a
+`pumpUntilPositive` helper that loops the callback until the clock
+registers a non-zero elapsed (or hits a 1000-iteration safety cap).
+The full `bash bash/autotest.sh` 4-phase gate passes — test count
+holds at **270**, all green across five consecutive ctest runs. HEAD
+is `ca92a08` on `origin/master`.
 
-### First moves for the fresh M2 chat
+### First moves for the M2 Session 2 chat
 
 1. Read this file end-to-end.
 2. Open `docs/superpowers/plans/2026-05-17-v7-alignment.md` and skim
-   the M2 block (starts around line 200 — "Membrane → Mixer rename +
-   SignalType + Channel concept"). M2 is a **rename + scaffolding**
-   milestone, not a behaviour milestone. No new audio-thread work.
-3. Confirm the M1 acceptance criteria are all green by spot-checking
-   `docs/RT_SAFETY_CONTRACT.md` — the four ex-`TBD` rows are now
-   filled, with notes describing each piece's M1 state ("held but
-   not invoked" / "atomic-publish, message-thread consumes" / "off
-   the audio thread by design").
-4. Grep for `sirius::membrane::` and the `engine/Membrane.{h,cpp}`
-   call sites before touching anything — that's the rename surface
-   M2 enumerates (expected hits in `engine/src/RenderPipeline.cpp`,
-   `app/MainComponent.cpp`, and the existing `MembraneTests.cpp`).
-5. Brainstorm via AskUserQuestion any open M2 decisions surfaced by
-   the grep — the plan calls out a `Control` SignalType as TBD; that
-   may or may not need to land in M2. Operator's call.
-6. Implement; verify with `rm -rf build build-xcode && bash bash/autotest.sh`;
-   commit + push as `feat: M2 — Membrane → Mixer rename + SignalType + Channel`.
+   lines 200-260 — Session 2's deliverables are spelled out at the
+   "Sessions 1-3 broken out" subsection (line ~240). Session 2 adds
+   the new types (no behaviour, just type shapes).
+3. Read the operator-locked plan note: the `Control` SignalType TBD
+   is **resolved** by the plan's "Risks & open decisions" entry —
+   InputKind's Control / ParameterAutomation / Transport / System
+   all map to `SignalType::File` for now (parameter tapes are JSONL
+   files in SAF). No new operator question on that point.
+4. Skim the V3 transition guide for the InputMixer / OutputMixer /
+   Channel interface sketches — that's what the skeleton method
+   signatures need to honour:
+   `docs/sirius-looper-v2-to-v7-transition.md`.
+5. Implement Session 2's file additions:
+   - `core/include/sirius/SignalType.h` (new — enum)
+   - `core/include/sirius/InputKind.h` (modified — add `signalTypeOf` helper)
+   - `engine/include/sirius/TapeMode.h` (new — enum)
+   - `engine/include/sirius/Channel.h`, `engine/src/Channel.cpp` (new)
+   - `engine/include/sirius/InputMixer.h`, `engine/src/InputMixer.cpp` (new — skeleton; bodies assert-false per Risks note line ~257)
+   - `engine/include/sirius/OutputMixer.h`, `engine/src/OutputMixer.cpp` (new — same shape as InputMixer)
+   - `engine/CMakeLists.txt` (modified — add the 3 new .cpps)
+6. Verify with `rm -rf build build-xcode && bash bash/autotest.sh`;
+   commit as `feat: M2 Session 2 — SignalType + TapeMode + Channel + Mixer skeletons`.
+7. Session 3 adds the skeleton tests for the new types. Session 3
+   commits and pushes.
+
+What landed this session (M2 Session 1):
+
+- `engine/include/sirius/LatencyTiming.h`, `engine/src/LatencyTiming.cpp`
+  — new, namespace `sirius::latency`. Content is the verbatim former
+  Membrane content with namespace + error-message string updates only.
+  Two free functions: `inboundCaptureTime`, `outboundPresentTime`.
+- `engine/include/sirius/Membrane.h`, `engine/src/Membrane.cpp` —
+  deleted. Zero remaining `sirius::membrane::` references in the tree
+  (verified by grep).
+- `tests/LatencyTimingTests.cpp` — renamed from `MembraneTests.cpp`.
+  Catch2 tags updated `[membrane]` → `[latency]`. Test descriptions /
+  prose updated. Assertions byte-identical.
+- `engine/CMakeLists.txt`, `tests/CMakeLists.txt` — updated.
+- `tests/AudioCallbackTests.cpp` — added a `pumpUntilPositive` helper
+  so the M1 Session 3 load-publish tests don't depend on a single
+  cold-cache callback registering a non-zero tick delta. 1000-iteration
+  safety cap so a fundamentally-broken clock can't hang the test.
+
+**Plan deviations from M2 Session 1:**
+
+- The plan predicted "expected hits in `engine/src/RenderPipeline.cpp`,
+  `app/MainComponent.cpp`" for `sirius::membrane::` usages. **Zero
+  actual hits in either** — `Membrane.{h,cpp}` was already unused by
+  product code, only referenced by its own test. The rename surface
+  was 3 files, not the 5+ the plan implied. Session 2's "Files
+  touched" enumeration is more accurate (no widespread call-site
+  rewrites needed).
+- `video/include/sirius/FrameMembrane.h` + `video/src/FrameMembrane.cpp`
+  are a separate concept (video frame timing) and are **explicitly
+  out of scope** for M2 per the plan's narrow wording. Left untouched.
 
 What landed this session (M1 Session 3):
 
