@@ -10,15 +10,15 @@
 
 ## RESUME HERE (2026-05-18 — M7 S2 fully shipped on origin; M7 S3 next)
 
-**M7 Sessions 1 + 2 are on `origin/master`.** S2 head is `<latest>` (filled
-in after push). Four sub-session commits landed for S2:
+**M7 Sessions 1 + 2 are on `origin/master`.** S2 head is `8e95503`.
+Four sub-session commits landed for S2:
 
 | SHA | Subject |
 |---|---|
 | `de3179b` | M7 S2a — CLAP via setup-deps + SyntheticTestPlugin + host `--mode clap` |
 | `c0cf0d6` | M7 S2b — SharedMemoryRegion (shm_open/mmap RAII) + SharedMemorySpscQueue<T> |
 | `6e1df55` | M7 S2c — swap stdin/stdout for shared-mem SPSC rings + PluginIpcMessage |
-| `<S2d>`   | M7 S2d — round-trip latency [.rt-smoke] + RT_SAFETY_CONTRACT §5 row |
+| `8e95503` | M7 S2d — round-trip latency [.rt-smoke] + RT_SAFETY_CONTRACT §5 row |
 
 Test count: **364/364** green (was 354 at S1; +1 CLAP smoke in S2a, +9 in
 S2b for 6 SPSC tests + 3 region tests, hidden latency smoke in S2d).
