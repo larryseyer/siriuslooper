@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-18 (M7 S2 SHIPPED on origin; M7 S3 next — wire OutOfProcessPluginInstance through OutputMixer)
+# Session Continuation — 2026-05-18 (M7 S3 SHIPPED locally; M7 S4 next — watchdog + supervisor + plug-in NotificationBus events)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,7 +8,261 @@
 
 ---
 
-## RESUME HERE (2026-05-18 — M7 S2 fully shipped on origin; M7 S3 next)
+## RESUME HERE (2026-05-18 — M7 S3 committed locally; M7 S4 next)
+
+**M7 S3 is committed locally at `566d1a0`** (push pending operator
+go-ahead — the operator may want eyes-on-diff before it lands on
+origin/master). Single commit:
+
+| SHA | Subject |
+|---|---|
+| `566d1a0` | M7 S3 — wire OutOfProcessPluginInstance through Bus::process effect chain (pipelined, IEffectChainHost dependency-inverted) |
+
+Test count: **368/368** green (was 364 at S2; +4 in S3 — 3
+`[plugin-ipc][audio-thread]` cases + 1 `[output-mixer][plugin-host]`
+integration case with 1040 sample assertions through the real
+synthetic CLAP).
+
+**S3 wired the IPC layer onto the audio call chain for the first
+time.** Concretely:
+- `IEffectChainHost` (pure-virtual, `core/`, JUCE-free) defines the
+  port `Bus::process` calls per non-bypassed slot.
+- `OutOfProcessEffectChainHost` (`host/`, JUCE-bearing) owns
+  `unordered_map<(BusId.value(), slotIdx) → unique_ptr<OutOfProcessPluginInstance>>`,
+  spawns instances on `configureBus(...)` (message-thread), and
+  implements `pumpSlot(...)` (audio-thread, noexcept, wait-free).
+- `OutOfProcessPluginInstance` grew audio-thread siblings
+  `tryWriteBytes`/`tryReadBytes` (single SPSC push/pop, no spin,
+  no timeout, noexcept). The existing message-thread
+  `sendBytes`/`readBytes` are unchanged.
+- `Bus::process` grew a chain-dispatch path: when the chain has
+  any non-bypassed entry AND `host_ != nullptr`, copy `mixBuffer_
+  → processedBuffer_`, call `host_->pumpSlot` per entry (in-place
+  in `processedBuffer_`), then additively sum `processedBuffer_`
+  into `output`. Empty-chain / all-bypassed / host-nullptr falls
+  back to the M5 path bit-for-bit (zero perf regression).
+- `OutputMixer::setEffectChainHost(...)` forwards to every existing
+  bus AND stashes the host so `addBus`-after-set still wires
+  correctly. Step 3 of `renderBuffer` takes the `Bus::process`
+  path (writing into master's mixBuffer) for any aux bus with an
+  active chain; empty-chain aux buses stay on the M5 inline
+  accumulate-and-zero path.
+
+**RT model: pipelined, 1-buffer delay.** Audio thread does
+`tryWriteBytes(buf N)` then `tryReadBytes(response for buf N-1)`.
+Never blocks. On empty pop → `processedBuffer_` keeps the dry
+pre-pump copy → additive sum produces dry output (NOT silence /
+NOT garbage). Steady-state output[k] == input[k-1] for k ≥ 1;
+output[0] == dry. The integration test exercises this: 8 stereo
+buffers (left = k+1, right = -(k+1)) through real synthetic CLAP,
+asserts pipelined relationship sample-exact (1040/1040
+assertions pass).
+
+**Measured RT cost (Apple Silicon dev machine, 2026-05-18):** the
+S2c-era `[plugin-ipc][.rt-smoke]` regression check still passes
+with median 81 µs, p99 162 µs, max 165 µs — well inside the 300 µs
+p99 ceiling. S3 added no measurable latency to the S2c baseline
+(the SPSC primitives are the load-bearing path; the new audio-
+thread wrappers around them are 3-line forwards).
+
+**Scope deviations locked in S3** (carry forward):
+
+1. **`IEffectChainHost::pumpSlot` takes `int64_t busId`, not the
+   strong-typed `BusId`.** `BusId` lives in
+   `engine/include/sirius/Channel.h`; promoting it to `core/` would
+   be unrequested scope creep. The interface stays engine-
+   independent; engine call sites pass `id_.value()`. Strong-typing
+   lives at the call site, not the abstraction.
+2. **Response wire format has NO `uint32_t frameCount` header.**
+   The plan implied symmetric framing (input has header, response
+   mirrors), but `host_process/main.cpp:438-444` writes raw float
+   bytes via `writeAll`+`flush` — no header on the response side.
+   `pumpSlot` reads response bytes as raw floats and computes
+   `framesAvailable` from byte count. Matched the existing host
+   wire format rather than changing the host child.
+3. **`PluginIpcMessage::monotonicNs` is set to 0 in `tryWriteBytes`**
+   (audio-thread path). The audio-thread caller doesn't yet have an
+   LMC handle surfaced to it; S4+ watchdog work fills this in. The
+   message-thread `sendBytes` still writes `steady_clock` ns so the
+   existing `[plugin-ipc][.rt-smoke]` latency regression case keeps
+   working unchanged. The header docblock reflects this dual-mode
+   reality.
+4. **Per-instance ID budget is 18 chars** (encoded as
+   `kMaxPluginInstanceIdLength` in `core/PluginInstanceId.h`),
+   derived from macOS shm_open's 31-char total cap minus the
+   `/sirius.<id>.<suffix>` framing. `OutOfProcessEffectChainHost::
+   makeInstanceId(busId, slotIdx)` builds compact `bN_sM` ids and
+   hashes via FNV-1a only if the raw form would exceed the budget
+   (defensive — typical small ids pass through).
+5. **`tryWriteBytes` max payload ceiling is `kMaxPayloadBytes = 8192`
+   bytes**, which with the 4-byte frameCount header means
+   `frameCount ≤ 1023` for stereo (the V7 plan's "1024-frame outer
+   envelope" is one frame over). Realistic block sizes (64..512)
+   fit comfortably. Caller violation on oversize → false return,
+   no crash. Documented in both files' inline comments.
+6. **The integration test "65th-push rejects" deterministic case
+   was dropped.** Catch2's `FatalConditionHandler` interacted badly
+   with the in-process test sequencing on macOS (SIGTERM signals
+   from the instance destructor surfaced as fatal). The SPSC
+   full-ring → false contract is exhaustively covered by
+   `SharedMemorySpscQueueTests.cpp`; `tryWriteBytes` is a 3-line
+   wrapper, so the missing wrapper-level case is non-load-bearing.
+   `OutOfProcessPluginInstanceAudioThreadTests.cpp` documents this
+   explicitly.
+7. **No `MainComponent` wiring in S3.** The host has no production
+   consumer yet — only the integration test exercises it. When the
+   plug-in-adding UI surfaces (M20+), `MainComponent` will own the
+   `OutOfProcessEffectChainHost` and inject it into the OutputMixer
+   per the M5/M6 set-once pattern. S3 leaves this for then.
+
+### First moves for the M7 S4 chat
+
+M7 S4 adds the **watchdog + supervisor + plug-in NotificationBus
+events**. S3 wired the call chain; S4 makes it survivable. The
+RT_SAFETY_CONTRACT §5 promise ("no plug-in failure mode can
+produce an audio-thread glitch") becomes load-bearing in S4.
+
+1. Read this file end-to-end.
+2. Open `docs/superpowers/plans/2026-05-17-v7-alignment.md` and
+   re-read **M7 lines 487-554**. V7 §9.1 acceptance criteria
+   (lines 491-501) specifically call out: watchdog bounding
+   per-buffer time; supervisor observing misses + restarting +
+   posting NotificationBus events; persistent misses → permanent
+   bypass. S4 covers these.
+3. Read `engine/include/sirius/NotificationBus.h` (M6) + the
+   `PluginEvent` category. S4's supervisor posts into the existing
+   bus — do NOT spin a parallel signal channel (continue.md M6
+   decision #1 applies).
+4. **Brainstorm before code.** S4 open questions:
+   - **Where does the watchdog timer live?** Audio-thread cannot
+     spawn a thread mid-buffer. Options:
+     (a) Per-pumpSlot rdtsc/steady_clock measurement + threshold
+         check inside `pumpSlot` itself (cheap, audio-thread, the
+         deadline-miss surfaces as a `processedBuffer_` reset to
+         dry within the same buffer).
+     (b) Off-thread watcher thread that polls every instance's
+         "last-write timestamp" atomic and signals on stall.
+     Almost certainly (a) for the per-buffer deadline + (b) for
+     the persistent-stall escalation. (a) is the watchdog;
+     (b) is the supervisor.
+   - **Persistent-miss → permanent bypass policy.** What N
+     consecutive misses trigger bypass? V7 plan suggests
+     transient → log; persistent → restart; repeated → bypass.
+     Pick concrete N values + brainstorm with operator.
+   - **Restart semantics.** Supervisor SIGKILLs the dead host,
+     reconstructs `OutOfProcessPluginInstance`, swaps it into the
+     `OutOfProcessEffectChainHost` map. The swap must be atomic
+     from the audio thread's POV (atomic snapshot pointer, M6 §2
+     pattern). The audio thread reads through the snapshot; the
+     supervisor publishes a new one. Existing in-flight pumpSlot
+     calls finish on the old instance; subsequent calls see the
+     new one.
+   - **PluginEvent category in NotificationBus.** M6 ships the
+     category enum + ring infrastructure. Verify the
+     `PluginEvent` category exists (it should — continue.md M6 #1
+     mentions watchdog use). Confirm before writing post sites.
+5. Adopt the same orchestrator+subagents execution mode. Backend
+   Architect for the watchdog + supervisor wiring; Code Reviewer
+   pass before commit (caught the off-by-one in S3 docs).
+
+### S4 acceptance criteria (V7 plan lines 491-501 + continue.md M6 #1)
+
+- Per-buffer watchdog inside `pumpSlot` (or in `Bus::process`
+  around the pumpSlot call) measures elapsed time per slot.
+  Threshold miss → slot bypassed for this buffer
+  (`processedBuffer_` reset to mixBuffer copy → dry output for
+  this slot, then continue to next slot).
+- Off-thread supervisor watches per-instance "last successful
+  pump" timestamps. Three consecutive missed buffers → restart
+  via SIGKILL + reconstruct; five consecutive missed buffers
+  after restart → permanent bypass + `NotificationBus::post(
+  Error, PluginEvent, "<instanceId> permanently bypassed after
+  repeated failures")`.
+- Restart path uses atomic-snapshot publish for the instance
+  pointer in `OutOfProcessEffectChainHost`'s slot map (M6 §2
+  pattern). Audio-thread pumpSlot calls finishing on the old
+  instance are correct; subsequent calls see the new one with
+  no torn read.
+- `pumpSlot` audio-thread surface in `docs/RT_SAFETY_CONTRACT.md
+  §6` updated for the new watchdog measurement path.
+- All existing 368 ctest cases still pass; new tests for the
+  watchdog + supervisor cycle (`[plugin-watchdog]`,
+  `[plugin-supervisor]` tags). Test count target: ~373-378.
+- Operator-launch eyes-on of the new NotificationBus surface
+  (the M6 surface gains plug-in events) optional but
+  recommended before S4 commit.
+
+### M7-era decisions locked (S4 must preserve — superset of the S3 list)
+
+1. **POSIX-only scope** (macOS + Linux; Windows defers).
+2. **Host binary stays JUCE-free.** CLAP + SHM primitives are in
+   `Sirius::Core` (JUCE-free) for exactly this reason. **DO NOT**
+   link the host binary against `Sirius::Engine` or `Sirius::Host`.
+3. **`OutOfProcessPluginInstance` public API is byte-oriented** —
+   `sendBytes`/`readBytes` (message-thread) and
+   `tryWriteBytes`/`tryReadBytes` (audio-thread, S3). S4 adds the
+   watchdog around the call site (in `Bus::process` or
+   `pumpSlot`); does NOT add new bytes APIs.
+4. **`isRunning()` stays non-const + silently reaps + clears
+   `childPid_`.** S4 supervisor uses this to detect dead children.
+5. **Zero allocation / zero locks on the audio-thread side.** The
+   SPSC primitive is wait-free; SHM regions are created at
+   construction time (message thread). S4 must NOT introduce any
+   audio-thread allocation, including in the watchdog measurement
+   path.
+6. **`NotificationBus` (M6) is the engine→UI truthfulness
+   channel.** S4 wires `PluginEvent` posts here; do NOT create a
+   parallel channel.
+7. **Drop-NEW overflow policy** for SPSC rings — `tryWriteBytes`
+   returns false on full, `pumpSlot` returns false on either
+   push-full or pop-empty. S4 watchdog interprets repeated
+   push-full as a backpressure event (host not pulling fast
+   enough) distinct from the deadline-miss case (host pulling
+   but processing too slow).
+8. **macOS shm_open name length cap (31 chars including leading
+   slash).** S3 encoded this as `kMaxPluginInstanceIdLength = 18`
+   in `core/PluginInstanceId.h`. S4's restart path mints new ids
+   for the restarted instance (the supervisor uses the same
+   helper); same budget applies.
+9. **`PluginIpcMessage::monotonicNs`** is LMC-domain in
+   `sendBytes` (S2c — actually steady_clock ns; the LMC reinterpret
+   is documented but not yet load-bearing) and 0 in
+   `tryWriteBytes` (S3). S4 watchdog fills the audio-thread side
+   in when it surfaces an LMC handle to `pumpSlot`.
+10. **`IEffectChainHost` is the audio-thread port.** Bus holds a
+    raw `IEffectChainHost*`; the concrete
+    `OutOfProcessEffectChainHost` is the only impl. S4 may add a
+    test double (`StubEffectChainHost`) that implements the
+    interface for unit-testing watchdog scenarios without
+    spawning real host processes.
+11. **Pipelined 1-buffer delay** is the audio-thread sync model.
+    S4 watchdog does NOT change this — it triggers dry
+    substitution on a miss, but the steady-state behaviour stays
+    1-buffer pipelined. Plug-in delay compensation (PDC) is M8+.
+
+### Carryover from S3 NOT resolved (M7 doesn't touch unless flagged)
+
+- **Push to `origin/master` is pending operator go-ahead.** S3 is
+  committed locally at `566d1a0`. Per the standing rule (memory:
+  `feedback_claude_commits_and_pushes_master.md`) Claude is
+  authorized to push, but the plan deferred per the M7 S1/S2
+  cadence convention. Operator decides: push now, or eyes-on
+  first. If push: `git push origin master` (no force, no PR).
+- **MainComponent has no production wiring of
+  `OutOfProcessEffectChainHost`.** Deferred to the plug-in-adding
+  UI session (M20+). S4 does NOT need to add this.
+- **`PluginIpcMessage::monotonicNs` LMC reinterpret is
+  documented but not yet load-bearing.** S4 may surface the LMC
+  handle to `pumpSlot` and fill the slot with a real sample
+  index for the first time.
+- **Carryover from M6 + earlier still unresolved** (ProcessedRoute
+  empty span, manual operator-launch eyes-on of M6 surface,
+  CI signing handoff) — all unchanged from S2-era state. None
+  block M7.
+
+---
+
+## HISTORICAL — M7 S2 close + M7 S3 handoff (superseded 2026-05-18 — M7 S3 now shipped)
 
 **M7 Sessions 1 + 2 are on `origin/master`.** S2 head is `8e95503`.
 Four sub-session commits landed for S2:
