@@ -22,6 +22,11 @@ public:
     /// Returns the current bridge. Defaults to a NullGuiBridge that
     /// reports `isReady() == false`; first real-use construction
     /// happens inside `host/src/PluginGuiBridge.cpp` on Apple.
+    ///
+    /// The returned reference is valid for the full process lifetime.
+    /// Callers may cache it; tests that toggle inject/uninject must
+    /// re-call `instance()` after each toggle rather than caching
+    /// across `setInstanceForTesting` boundaries.
     static IGuiBridge& instance() noexcept;
 
     /// Test-only: replace the active bridge with the given stub.
@@ -29,9 +34,9 @@ public:
     /// of `bridge`.
     static void setInstanceForTesting (IGuiBridge* bridge) noexcept;
 
-    /// Test-only: drop any injected bridge AND tear down the lazily-
-    /// constructed real impl (so the next `instance()` re-constructs
-    /// from scratch — necessary for tests that toggle inject/uninject).
+    /// Test-only: clears the injected bridge so the next `instance()`
+    /// returns the default (NullGuiBridge in Task 1, real impl in
+    /// Task 3+).
     static void resetForTesting() noexcept;
 };
 
