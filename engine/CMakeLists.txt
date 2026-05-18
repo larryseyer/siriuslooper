@@ -12,7 +12,7 @@ add_library(SiriusEngine STATIC
     src/MonotonicClock.cpp
     src/Lmc.cpp
     src/AudioDeviceCalibration.cpp
-    src/Membrane.cpp
+    src/LatencyTiming.cpp
     src/LoopRenderer.cpp
     src/Asrc.cpp
     src/RenderPipeline.cpp

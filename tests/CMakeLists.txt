@@ -18,7 +18,7 @@ add_executable(SiriusTests
     LmcTests.cpp
     SampleClockTests.cpp
     AudioDeviceCalibrationTests.cpp
-    MembraneTests.cpp
+    LatencyTimingTests.cpp
     LoopRendererTests.cpp
     AsrcTests.cpp
     RenderPipelineTests.cpp

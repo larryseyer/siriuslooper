@@ -1,8 +1,9 @@
-// Tests for the membrane latency-compensation math (white paper Part 5.5).
-// These pin down the two transforms that make latency compensation
-// architectural: a captured sample's true capture time, and an output sample's
-// true presentation time — both exact, both relative to the audio callback.
-#include "sirius/Membrane.h"
+// Tests for the latency-timing math (white paper Part 5.5). These pin down the
+// two transforms that make latency compensation architectural: a captured
+// sample's true capture time, and an output sample's true presentation time —
+// both exact, both relative to the audio callback. M2 Session 1 renamed the
+// conceptual "membrane" surface to "latency"; assertions are preserved.
+#include "sirius/LatencyTiming.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -10,10 +11,10 @@
 
 using sirius::Rational;
 using sirius::SampleClock;
-using sirius::membrane::inboundCaptureTime;
-using sirius::membrane::outboundPresentTime;
+using sirius::latency::inboundCaptureTime;
+using sirius::latency::outboundPresentTime;
 
-TEST_CASE ("inbound capture time backdates each sample from the callback", "[membrane]")
+TEST_CASE ("inbound capture time backdates each sample from the callback", "[latency]")
 {
     const SampleClock device (Rational (48000));
     const Rational callbackTime (10);          // callback fired at LMC t = 10 s
@@ -31,7 +32,7 @@ TEST_CASE ("inbound capture time backdates each sample from the callback", "[mem
            == callbackTime - inputLatency - Rational (3, 48000));
 }
 
-TEST_CASE ("captured samples carry strictly increasing capture times", "[membrane][conceptual-time]")
+TEST_CASE ("captured samples carry strictly increasing capture times", "[latency][conceptual-time]")
 {
     // White paper Part 5.5: every tape entry carries its true conceptual time
     // of capture, not its arrival time. Within one buffer, capture time must
@@ -49,7 +50,7 @@ TEST_CASE ("captured samples carry strictly increasing capture times", "[membran
     }
 }
 
-TEST_CASE ("outbound presentation time projects each sample into the future", "[membrane]")
+TEST_CASE ("outbound presentation time projects each sample into the future", "[latency]")
 {
     const SampleClock device (Rational (48000));
     const Rational callbackTime (10);
@@ -64,7 +65,7 @@ TEST_CASE ("outbound presentation time projects each sample into the future", "[
            == callbackTime + outputLatency + Rational (1));
 }
 
-TEST_CASE ("the membrane math rejects out-of-range sample indices", "[membrane]")
+TEST_CASE ("the latency math rejects out-of-range sample indices", "[latency]")
 {
     const SampleClock device (Rational (48000));
 

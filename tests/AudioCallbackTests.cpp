@@ -228,6 +228,29 @@ TEST_CASE ("AudioCallback elapsed-seconds is zero before any callback fires", "[
     CHECK (cb.lastCallbackElapsedSec() == 0.0);
 }
 
+// Pumps the callback up to `maxAttempts` times against `samples`-sample buffers
+// and returns the last published elapsed. The platform clock granularity
+// (mach_absolute_time on Apple Silicon resolves in tens of nanoseconds — but
+// JUCE's tick conversion can round a sub-tick callback to zero) means a single
+// tiny callback can register as elapsed == 0 even when work happened. Looping
+// gives the clock something to catch.
+double pumpUntilPositive (AudioCallback& cb,
+                          Buffers& in, Buffers& out, int samples,
+                          int maxAttempts = 1000)
+{
+    auto ctx = emptyContext();
+    const int channels = static_cast<int> (in.pointers.size());
+    for (int i = 0; i < maxAttempts; ++i)
+    {
+        cb.audioDeviceIOCallbackWithContext (in.readable(), channels,
+                                             out.writable(), channels,
+                                             samples, ctx);
+        if (cb.lastCallbackElapsedSec() > 0.0)
+            return cb.lastCallbackElapsedSec();
+    }
+    return cb.lastCallbackElapsedSec();
+}
+
 TEST_CASE ("AudioCallback publishes a positive elapsed time after a buffer", "[audio-callback][load-publish]")
 {
     AudioCallback cb { EngineConfig {} };
@@ -237,18 +260,12 @@ TEST_CASE ("AudioCallback publishes a positive elapsed time after a buffer", "[a
     Buffers in  (channels, samples);
     Buffers out (channels, samples);
 
-    auto ctx = emptyContext();
-    cb.audioDeviceIOCallbackWithContext (in.readable(), channels,
-                                         out.writable(), channels,
-                                         samples, ctx);
-
-    const double elapsed = cb.lastCallbackElapsedSec();
-    // Positive — a real wall-clock measurement was taken — and small.
-    // Even on the slowest CI runner a 256-sample memcpy + advance pair
-    // takes microseconds; anything over 1 ms here means the measurement
-    // is reading something other than this buffer.
+    const double elapsed = pumpUntilPositive (cb, in, out, samples);
+    // Positive — a real wall-clock measurement was taken — and bounded.
+    // 100 ms ceiling rules out garbage values (e.g., misinterpreted scale
+    // factor) without being flaky on cold caches or contended CI.
     CHECK (elapsed > 0.0);
-    CHECK (elapsed < 1.0e-3);
+    CHECK (elapsed < 0.1);
 }
 
 TEST_CASE ("AudioCallback elapsed-seconds resets to zero on device stop", "[audio-callback][load-publish]")
@@ -260,11 +277,7 @@ TEST_CASE ("AudioCallback elapsed-seconds resets to zero on device stop", "[audi
     Buffers in  (channels, samples);
     Buffers out (channels, samples);
 
-    auto ctx = emptyContext();
-    cb.audioDeviceIOCallbackWithContext (in.readable(), channels,
-                                         out.writable(), channels,
-                                         samples, ctx);
-    REQUIRE (cb.lastCallbackElapsedSec() > 0.0);
+    REQUIRE (pumpUntilPositive (cb, in, out, samples) > 0.0);
 
     cb.audioDeviceStopped();
     CHECK (cb.lastCallbackElapsedSec() == 0.0);

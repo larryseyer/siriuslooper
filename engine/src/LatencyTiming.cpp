@@ -1,8 +1,8 @@
-#include "sirius/Membrane.h"
+#include "sirius/LatencyTiming.h"
 
 #include <stdexcept>
 
-namespace sirius::membrane
+namespace sirius::latency
 {
 
 Rational inboundCaptureTime (Rational lmcCallbackTime,
@@ -12,7 +12,7 @@ Rational inboundCaptureTime (Rational lmcCallbackTime,
                              const SampleClock& deviceClock)
 {
     if (sampleIndex < 0 || sampleIndex >= bufferSize)
-        throw std::out_of_range ("sirius::membrane::inboundCaptureTime: sampleIndex out of range");
+        throw std::out_of_range ("sirius::latency::inboundCaptureTime: sampleIndex out of range");
 
     // The newest sample (bufferSize - 1) was captured `inputLatencySeconds` ago.
     // Sample `sampleIndex` was captured this many samples earlier than that:
@@ -29,11 +29,11 @@ Rational outboundPresentTime (Rational lmcCallbackTime,
                               const SampleClock& deviceClock)
 {
     if (sampleIndex < 0)
-        throw std::out_of_range ("sirius::membrane::outboundPresentTime: sampleIndex must be >= 0");
+        throw std::out_of_range ("sirius::latency::outboundPresentTime: sampleIndex must be >= 0");
 
     return lmcCallbackTime
          + outputLatencySeconds
          + deviceClock.secondsForSamples (sampleIndex);
 }
 
-} // namespace sirius::membrane
+} // namespace sirius::latency
