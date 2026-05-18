@@ -20,7 +20,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
         Sirius::Core
         clap
         "-framework AppKit"
-        "-framework QuartzCore")
+        "-framework QuartzCore"
+        "-framework Foundation")
     # Manual retain/release in the .mm — see header docblock for the
     # editor-lifetime contract bracketed by sirius_gui_show / hide.
     set_source_files_properties(gui_cocoa.mm PROPERTIES

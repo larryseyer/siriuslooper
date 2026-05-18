@@ -50,8 +50,82 @@
 #include <dlfcn.h>
 #include <unistd.h>
 
+#ifdef __APPLE__
+  #include <xpc/xpc.h>
+  #include <mach/mach.h>
+  #include <dispatch/dispatch.h>
+  #include <atomic>
+#endif
+
 namespace
 {
+   #ifdef __APPLE__
+    /// M7 S6 — child-side XPC bootstrap. Populated by bootstrapXpcBridge()
+    /// at startup; consumed by gui_cocoa.mm (Task 7) to address the
+    /// engine's CARemoteLayer server. Stays at MACH_PORT_NULL on any
+    /// failure (no bundle context, bridge timeout, etc.), in which case
+    /// gui_cocoa.mm falls back to the S5 placeholder editor surface.
+    std::atomic<mach_port_t> g_engineServerPort { MACH_PORT_NULL };
+
+    void bootstrapXpcBridge()
+    {
+        dispatch_queue_t queue = dispatch_queue_create (
+            "com.larryseyer.siriuslooper.host.bridge-client",
+            DISPATCH_QUEUE_SERIAL);
+
+        xpc_connection_t conn = xpc_connection_create_mach_service (
+            "com.larryseyer.siriuslooper.gui-bridge",
+            queue,
+            /* flags */ 0);
+
+        if (conn == nullptr)
+        {
+            dispatch_release (queue);
+            return;
+        }
+
+        xpc_connection_set_event_handler (conn, ^(xpc_object_t /*event*/) {
+            // No-op; we only care about the get_server_port reply, which
+            // is delivered via send_message_with_reply below.
+        });
+        xpc_connection_resume (conn);
+
+        xpc_object_t req = xpc_dictionary_create (nullptr, nullptr, 0);
+        xpc_dictionary_set_string (req, "op", "get_server_port");
+
+        // 250 ms cap on the bridge cold-start path. Bridge is ~150
+        // LOC; observed cold-start is well under 50 ms on Apple
+        // Silicon, so this has plenty of headroom.
+        dispatch_semaphore_t done = dispatch_semaphore_create (0);
+        __block mach_port_t fetched = MACH_PORT_NULL;
+
+        xpc_connection_send_message_with_reply (conn, req, queue,
+            ^(xpc_object_t reply) {
+                if (xpc_get_type (reply) == XPC_TYPE_DICTIONARY)
+                    fetched = xpc_dictionary_copy_mach_send (reply, "port");
+                dispatch_semaphore_signal (done);
+            });
+
+        const dispatch_time_t timeout = dispatch_time (
+            DISPATCH_TIME_NOW, 250 * NSEC_PER_MSEC);
+        if (dispatch_semaphore_wait (done, timeout) == 0)
+            g_engineServerPort.store (fetched, std::memory_order_release);
+        else
+            std::fprintf (stderr,
+                "sirius_plugin_host: XPC bridge timeout (250 ms); "
+                "falling back to S5 placeholder editor surface\n");
+
+        xpc_release (req);
+        // Intentionally do NOT release `conn` or `queue`: keeping the
+        // connection alive for the child's lifetime prevents the kernel
+        // from reclaiming the fetched send-right (the XPC connection
+        // owns the right's lifetime in this process). Process exit
+        // reclaims everything. dispatch_release(done) is also skipped
+        // (semaphore is a local; on-modern-macOS it's automatically
+        // managed when no longer referenced).
+    }
+   #endif
+
     /// Process exit codes. main() returns these — kept named so test
     /// assertions don't have to traffic in magic integers.
     constexpr int kExitOk            = 0;
@@ -576,6 +650,15 @@ namespace
     }
 }
 
+#ifdef __APPLE__
+extern "C" std::uint32_t sirius_engine_server_port()
+{
+    return (std::uint32_t) g_engineServerPort.load (std::memory_order_acquire);
+}
+#else
+extern "C" std::uint32_t sirius_engine_server_port() { return 0; }
+#endif
+
 int main (int argc, char** argv)
 {
     std::string instanceId;
@@ -590,6 +673,14 @@ int main (int argc, char** argv)
                       "         sirius_plugin_host --instance-id <id> --mode clap --plugin-path <bundle>\n");
         return kExitBadArgs;
     }
+
+   #ifdef __APPLE__
+    // M7 S6 — fetch the engine's CARemoteLayer serverPort via the bundled
+    // XPC bridge. Runs BEFORE shm attach so launchd has maximum cold-start
+    // headroom; degrades to MACH_PORT_NULL on failure (gui_cocoa.mm then
+    // uses the S5 placeholder editor surface).
+    bootstrapXpcBridge();
+   #endif
 
     // SIGTERM / SIGINT → request shutdown. SIGPIPE → ignore (legacy from
     // the S1 pipe transport; harmless to keep).
