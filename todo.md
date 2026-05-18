@@ -1,5 +1,57 @@
 # Sirius Looper — Deferred Items
 
+### 2026-05-17 — V7 alignment milestone tracking — 24 milestones, M1 ready to start
+
+- **Status:** Plan spec'd in full at
+  `docs/superpowers/plans/2026-05-17-v7-alignment.md`. No code work
+  this session — design + roadmap only.
+- **Files:** plan + design-pointer spec landed in repo; `continue.md`
+  RESUME HERE updated; `continue.md §6` marked superseded.
+- **What's needed to finish each milestone:** see the plan file's
+  per-milestone block (Goal, Acceptance, Dependencies, Files,
+  Tests, Sessions 1-3, Verification, Risks, Execution mode).
+- **Execution doctrine:** orchestrator+subagents default; ralph inner
+  loop after PRD for M13, M19, M22, M24. Ralph is operator-launched
+  per memory rule.
+- **Open per-milestone sub-design parks** (deferred, will defrost as
+  their parent milestone starts; each gets a fresh `todo.md` entry at
+  defrost time):
+  - M5 — EQ + dynamics DSP implementations (M5 ships gain + pan only)
+  - M10 — transition Curve representation (M10 ships Cut + LinearFade only)
+  - M14 — direct-routing rule table (sub-spec session)
+  - V7 §18.3 UX-research items: control surface ergonomics; phrase-
+    relationship UX; structured improvisation interfaces; AI assistance
+    role; capability-tier auto-detection heuristics; real-world flush-
+    interval validation
+- **Milestone status tracker** (update as each completes):
+
+| ID | Title | Status |
+|----|-------|--------|
+| M1 | Audio I/O foundation + RT-safety contract | not started |
+| M2 | Membrane→Mixer rename + SignalType + Channel | not started |
+| M3 | Channel-driven tape allocation + processing chains | not started |
+| M4 | Direct Layer (manual routing) | not started |
+| M5 | Output Mixer expansion: strips + buses + sends | not started |
+| M6 | NotificationBus engine↔UI channel | not started |
+| M7 | Out-of-process plug-in hosting framework | not started |
+| M8 | Plug-in determinism + failure semantics + CLAP | not started |
+| M9 | MIDI 2.0 / UMP end-to-end | not started |
+| M10 | Mix snapshots | not started |
+| M11 | Sirius Archive Format (clean break from JSON) | not started |
+| M12 | Video tier-aware rendering | not started |
+| M13 | File I/O + export (ralph inner loop) | not started |
+| M14 | Automatic direct-routing inference | not started |
+| M15 | LMC discipline tiers (GPS/PTP/NTP/Link) | not started |
+| M16 | Ensemble consistency (vector clocks + partition) | not started |
+| M17 | Ensemble security (libsodium + Noise + X25519) | not started |
+| M18 | Inclusive-design surfaces | not started |
+| M19 | Validation test harness (ralph inner loop) | not started |
+| M20 | VST3 host | not started |
+| M21 | AU host | not started |
+| M22 | UI vocabulary cleanup (ralph inner loop) | not started |
+| M23 | iOS AUv3 port | not started |
+| M24 | Docs final alignment pass (ralph inner loop) | not started |
+
 ### 2026-05-16 — CI signing secrets — three of six set, three pending operator hands
 
 - **Status:** half-done as of end of session 2026-05-16. Three repo

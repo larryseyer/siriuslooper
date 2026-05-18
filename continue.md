@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-16 (auto-testing infrastructure shipped end-to-end)
+# Session Continuation — 2026-05-17 (V7 alignment plan shipped; M1 ready to start)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,7 +8,44 @@
 
 ---
 
-## RESUME HERE (2026-05-16 evening — operator stepped out mid-CI-secret-setup)
+## RESUME HERE (2026-05-17 — V7 alignment plan is the new milestone spine)
+
+**The white paper grew from V2 to V7.** A V2→V7 transition guide
+landed at `docs/sirius-looper-v2-to-v7-transition.md`. The white-paper
+alignment pass that §6 below queued up has now been **spec'd in full**:
+
+→ **`docs/superpowers/plans/2026-05-17-v7-alignment.md`** — the canonical
+  24-milestone roadmap across 11 parts. Start at M1 (Audio I/O foundation
+  + RT-safety contract audit); do not start anywhere else; the dependency
+  graph is real.
+
+→ `docs/superpowers/specs/2026-05-17-v7-alignment-design.md` — pointer
+  stub honoring the paired-file convention; canonical content is in the
+  plan.
+
+**The first new chat opening that plan must:**
+
+1. Read this file end-to-end.
+2. Read `docs/Sirius_Looper.md` (V7 white paper).
+3. Read `docs/sirius-looper-v2-to-v7-transition.md`.
+4. Read the plan end-to-end.
+5. Open M1's block; brainstorm any open questions; start Session 1.
+
+Execution doctrine (encoded per-milestone in the plan):
+`orchestrator+subagents` default; `ralph inner loop after PRD` for M13,
+M19, M22, M24. Operator launches ralph in a separate terminal when those
+milestones reach their inner-loop phase — Claude does not invoke ralph
+(memory rule).
+
+The auto-testing milestone described below (sections 0-5) is **closed and
+shipped**. The CI signing handoff (3 of 6 secrets pending) is **still
+open** — those three secrets remain operator-only work, and the alignment
+plan does not depend on them landing first. Treat sections 0-5 as
+historical state; the actionable surface is the V7 alignment plan above.
+
+---
+
+## HISTORICAL — Auto-testing CI signing handoff (still operator-pending, not blocking V7 work)
 
 Auto-testing milestone is shipped on master. CI workflow is in place
 but **first run will fail** until the remaining three repo secrets are
@@ -262,37 +299,36 @@ either is acceptable; build + sign + verify must pass).
 
 ---
 
-## 6. Next milestone — white-paper alignment pass
+## 6. Next milestone — white-paper alignment pass — SUPERSEDED-AND-SPEC'D 2026-05-17
 
-Per the operator's stated sequence (signing → auto-testing → white-
-paper alignment). Auto-testing is done; alignment is up.
+The alignment pass that this section queued has been spec'd in full at
+`docs/superpowers/plans/2026-05-17-v7-alignment.md` (24 milestones across
+11 parts; M1 = Audio I/O foundation + RT-safety contract audit; see
+RESUME HERE at the top of this file). The original V2 white paper
+referenced below is superseded by V7 (`docs/Sirius_Looper.md`); the
+V2→V7 transition guide (`docs/sirius-looper-v2-to-v7-transition.md`)
+is the bridge.
 
-**What this means (from the prior session's notes in commit
-`6de2bed`):** the white-paper alignment pass will reshape design
-choices around UI complexity vs. under-the-hood concepts. The
-operator was explicit earlier that auto-testing decisions should NOT
-pre-commit to a UI surface the alignment pass might move under the
-hood. With auto-testing in place, that constraint lifts — the
-alignment pass can freely reshape UI without breaking the test
-harness, because the harness exercises code paths, not specific UI
-copy or layout.
+Original §6 contents preserved for historical context follow; treat as
+read-only:
 
-**Reading order before starting alignment work:**
-
-1. `docs/Sirius Looper Whitepaper V2.md` — the white paper.
-2. `docs/Sirius Looper User Guide.md` — the operator-facing how-to.
-3. `docs/superpowers/specs/2026-05-16-shared-placement-design.md` — the
-   most-recent shipped spec (a useful template for what
-   "design-spec-shaped" looks like in this project).
-4. `todo.md` — five 2026-05-15 entries are alignment-adjacent
-   (DemoSession intro/outro hybrids, Session directory format,
-   M5 plugin scanner redesign, marketing site asset gaps,
-   OTTO L&F integration). Worth scanning for which slot into the
-   alignment pass naturally.
-
-**What this session does NOT decide:** the scope, structure, or
-deliverables of the alignment pass. That's the next session's first-
-half work (brainstorm + spec) before any code lands.
+> Per the operator's stated sequence (signing → auto-testing → white-
+> paper alignment). Auto-testing is done; alignment is up.
+>
+> **Reading order before starting alignment work:**
+>
+> 1. `docs/Sirius Looper Whitepaper V2.md` — the white paper.
+>    *(Superseded — read V7 at `docs/Sirius_Looper.md` instead.)*
+> 2. `docs/Sirius Looper User Guide.md` — the operator-facing how-to.
+> 3. `docs/superpowers/specs/2026-05-16-shared-placement-design.md` — the
+>    most-recent shipped spec.
+> 4. `todo.md` — alignment-adjacent entries.
+>
+> **What this session does NOT decide:** the scope, structure, or
+> deliverables of the alignment pass. That's the next session's first-
+> half work (brainstorm + spec) before any code lands.
+>    *(That brainstorm + spec is what 2026-05-17 produced. The plan
+>    file is the output.)*
 
 ---
 
