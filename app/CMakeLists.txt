@@ -79,6 +79,39 @@ if(APPLE AND CMAKE_GENERATOR STREQUAL "Xcode")
         XCODE_ATTRIBUTE_ENABLE_HARDENED_RUNTIME "YES"
         XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS
             "${CMAKE_CURRENT_SOURCE_DIR}/SiriusLooper.macos.entitlements")
+
+    # sirius_gui_bridge signing is already set in xpc_service/CMakeLists.txt
+    # for the Xcode generator — omitted here to avoid duplication.
+    set_target_properties(sirius_plugin_host PROPERTIES
+        XCODE_ATTRIBUTE_CODE_SIGN_STYLE "Manual"
+        XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "RR5DY39W4Q"
+        XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "Developer ID Application"
+        XCODE_ATTRIBUTE_ENABLE_HARDENED_RUNTIME "YES")
+endif()
+
+# Copy the XPC service and the plug-in host helper into the app bundle.
+# launchd dispatches the XPC service by CFBundleIdentifier
+# (com.larryseyer.siriuslooper.gui-bridge); the on-disk directory name
+# sirius_gui_bridge.xpc (OUTPUT_NAME set in xpc_service/CMakeLists.txt)
+# does not affect service lookup.
+if(APPLE)
+    add_dependencies(SiriusLooper sirius_gui_bridge)
+    add_custom_command(TARGET SiriusLooper POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            "$<TARGET_BUNDLE_DIR:SiriusLooper>/Contents/XPCServices"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "$<TARGET_BUNDLE_DIR:sirius_gui_bridge>"
+            "$<TARGET_BUNDLE_DIR:SiriusLooper>/Contents/XPCServices/$<TARGET_BUNDLE_DIR_NAME:sirius_gui_bridge>"
+        VERBATIM
+        COMMENT "Sirius: install XPC service into app bundle")
+
+    add_dependencies(SiriusLooper sirius_plugin_host)
+    add_custom_command(TARGET SiriusLooper POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy
+            "$<TARGET_FILE:sirius_plugin_host>"
+            "$<TARGET_BUNDLE_DIR:SiriusLooper>/Contents/MacOS/$<TARGET_FILE_NAME:sirius_plugin_host>"
+        VERBATIM
+        COMMENT "Sirius: install sirius_plugin_host into app bundle")
 endif()
 
 # Notarization (opt-in, slow). Requires a Developer-ID-signed bundle, so it
