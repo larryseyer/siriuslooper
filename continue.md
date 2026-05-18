@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-17 (M1 Session 1 shipped; Session 2 next)
+# Session Continuation — 2026-05-17 (M1 Session 2 shipped; Session 3 next)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,144 +8,109 @@
 
 ---
 
-## RESUME HERE (2026-05-17 — M1 Session 1 shipped; Session 2 next)
+## RESUME HERE (2026-05-17 — M1 Session 2 shipped; Session 3 next)
 
-**M1 Session 1 of the V7 alignment plan is on master.** Commit
-`fdc465e` — *feat: M1 Session 1 — AudioCallback skeleton + identity
-pass-through*. AudioCallback + EngineConfig + AudioDeviceManager wiring
-+ Preparation-tab UI all landed. ctest is **262 / 262 green** (was 256;
-+6 AudioCallbackTests). The full `bash bash/autotest.sh` 4-phase gate
-passes — headless ctest, signed Xcode bundle, codesign+spctl verify,
-GUI smoke Save/Load.
+**M1 Session 2 of the V7 alignment plan is on master.** Sample-clock
+wiring from `AudioCallback` into the LMC landed, the RT-safety
+contract is now a checked-in doc, the V7 alignment plan's stale
+file paths got fixed, and the unit-test count moved from **262 → 267**
+(+5 `[sample-clock]` cases on `Lmc`). The full `bash bash/autotest.sh`
+4-phase gate passes — headless ctest, signed Xcode bundle, codesign +
+spctl verify, GUI smoke Save/Load.
 
-### First moves for the fresh Session 2 chat
+### First moves for the fresh Session 3 chat
 
 1. Read this file end-to-end.
 2. Skim the M1 block in `docs/superpowers/plans/2026-05-17-v7-alignment.md`
-   (~lines 119-171). Note: the file paths there for AudioCallback are
-   stale — actual paths landed under `audio/`, not `engine/`. See the
-   "deviation" callout below.
-3. Skim white paper Part IV (Logical Master Clock,
-   `docs/Sirius_Looper.md`, esp. §4.3 calibration model + §4.4
-   re-engagement / slewing).
-4. Read `audio/include/sirius/AudioCallback.h` and
-   `engine/include/sirius/Lmc.h` to see the surfaces Session 2 connects.
-5. Use AskUserQuestion to lock in the two Session 2 design choices
-   listed in "Open questions for Session 2's brainstorm" below.
-6. Implement; verify with `bash bash/autotest.sh`; commit + push as
-   `feat: M1 Session 2 — LMC sample-clock + RT-safety contract`.
+   (file paths there are now accurate — Session 2 fixed the
+   `engine/` → `audio/` deviation).
+3. Read `docs/RT_SAFETY_CONTRACT.md` — the rubric Session 3's wiring
+   must self-certify against before merging.
+4. Read the four engine pieces Session 3 hooks into the audio thread:
+   `engine/include/sirius/Asrc.h`,
+   `engine/include/sirius/OverloadProtection.h`,
+   `engine/include/sirius/RetroactiveRing.h`,
+   `engine/include/sirius/AudioDeviceCalibration.h`. Each row in the
+   subsystem audit table starts `TBD`; Session 3 fills them in.
+5. Brainstorm via AskUserQuestion: where does each piece sit in the
+   pass-through chain (input → ASRC in → ... → ASRC out → output)?
+   What does the "no audio yet flows through anything but pass-through"
+   acceptance criterion mean here — strictly scaffolding the wiring,
+   or actually routing samples through the ASRC at unity rate? Both
+   are defensible; the operator decides.
+6. Implement; verify with `rm -rf build build-xcode && bash bash/autotest.sh`;
+   commit + push as `feat: M1 Session 3 — engine pieces wired to audio thread`.
 
-What landed this session:
+What landed this session (M1 Session 2):
 
-- `engine/include/sirius/EngineConfig.h` — plain config struct (JUCE-free).
-  Carries `Asrc::Quality` (default `High`), `preferredSampleRate` (48000),
-  `preferredBufferSize` (0 = smallest reliable), `minPreferredBufferSize`
-  (128). M11 (capability tiers) will steer these per tier.
-- `audio/` — new top-level library `Sirius::Audio`. Bridges
-  `juce_audio_devices` to the engine; keeps the engine layer JUCE-free
-  per its own design comment. Holds `sirius::AudioCallback`
-  (juce::AudioIODeviceCallback) with identity input→output pass-through,
-  gated by an atomic monitoring flag (default OFF — feedback-loop
-  landmine prevention).
-- `app/MainComponent.{h,cpp}` — owns `juce::AudioDeviceManager` and
-  `AudioCallback`. PreparationPane gained an "Audio device" section:
-  JUCE's stock `AudioDeviceSelectorComponent` (220 px tall, advanced
-  options collapsed) plus the "Enable monitoring" toggle.
-- `tests/AudioCallbackTests.cpp` — 6 cases: silence-by-default,
-  identity pass-through on, fewer-input-than-output channels silenced,
-  extra-input dropped, sample-rate/buffer-size capture from device
-  start, EngineConfig round-trip.
-- `app/CMakeLists.txt` — links `Sirius::Audio` and
-  `juce::juce_audio_utils` (the picker is in audio_utils, not
-  audio_devices).
-- `audio/CMakeLists.txt`, top-level `CMakeLists.txt`,
-  `tests/CMakeLists.txt` — new library wiring.
+- `engine/include/sirius/Lmc.h`, `engine/src/Lmc.cpp` — added
+  `advanceBySamples(numSamples, sampleRate)`, `nowSecondsFromSamples()`,
+  `sampleCount()`. Two new atomics (`sampleCount_`, `sampleRateHz_`).
+  Existing `nowSeconds()` wall-clock reader untouched — both readers
+  coexist until §4.3 calibration tables reconcile them in M8.
+- `audio/include/sirius/AudioCallback.h`, `audio/src/AudioCallback.cpp`
+  — added non-owning `Lmc*` + `setLmc()`. The callback now ends each
+  buffer with `lmc_->advanceBySamples(numSamples, currentSampleRate_.load(...))`.
+  Null-safe; no allocation; no locking.
+- `app/MainComponent.{h,cpp}` — owns
+  `std::shared_ptr<MonotonicClock> monotonicClock_` and
+  `std::unique_ptr<Lmc> lmc_` alongside the existing device manager.
+  Construction order: clock → LMC → callback → device manager wiring,
+  which makes the destructor's existing `removeAudioCallback` ordering
+  correct without further changes.
+- `tests/LmcTests.cpp` — 5 new `[sample-clock]` cases:
+  exact rational at 48 kHz, exact across non-standard buffer sizes,
+  monotone across 1000 varying-size buffers at a fixed rate, no-op on
+  `rate <= 0` or `samples <= 0`, zero-before-first-buffer (with
+  `nowSeconds()` proving independence from the sample-clock path).
+- `docs/RT_SAFETY_CONTRACT.md` — new. Six commitments from white
+  paper §5.6 as section headers + per-class subsystem audit table
+  (Lmc and AudioCallback rows filled, four engine pieces marked TBD
+  for Session 3) + a "how to audit" grep heuristic.
+- `docs/superpowers/plans/2026-05-17-v7-alignment.md` — M1 file-list
+  fixed (lines ~145-167 now): explicit deviation callout, accurate
+  `audio/` paths, EngineConfig added, app/CMakeLists.txt accurate.
 
-**Deviation from the plan's stated file list (worth flagging):** the
-plan called for `engine/include/sirius/AudioCallback.{h,cpp}`, but
-`engine/CMakeLists.txt` has a deliberate "JUCE-free" design comment.
-Putting an `AudioIODeviceCallback` subclass in the engine would force
-`juce_audio_devices` into that layer and break the comment's contract.
-I created a new `audio/` top-level library instead — the "thin layer
-added on top" the engine comment itself anticipates. The V7 alignment
-plan should be edited to reflect the actual file paths during Session 2
-or Session 3.
+**Operator decisions locked in 2026-05-17 brainstorm (captured in
+`~/.claude/plans/read-continue-md-soft-sparkle.md`):**
 
-**Operator decisions locked in 2026-05-17 (captured in
-`~/.claude/plans/read-continue-md-foamy-abelson.md`):**
+- Q1 — *Push* (option A): `AudioCallback` calls
+  `lmc.advanceBySamples(numSamples, sampleRate)` per buffer. LMC
+  holds atomic sample-count + atomic sample-rate.
+- Q2 — *Fix in Session 2* (option B): patched the V7 alignment plan's
+  stale file paths in the same commit.
 
-- Sample rate: accept all; default 48 kHz when nothing specified.
-- Buffer size: accept all; default smallest reliable (128–512).
-- ASRC quality: plumbed via EngineConfig, hard-coded `High` in M1.
-- Calibration cache: M1 uses `AudioDeviceCalibration::identity()` only.
-- Device picker: JUCE stock, attempt L&F styling later in shared-L&F
-  milestone, fall back to unstyled if not feasible.
+**Subtle constraint surfaced during Session 2 (worth flagging):**
+the original Q1A description claimed "monotone across mixed sample
+rates" — that turned out to be false with a single
+`Rational(sampleCount, sampleRateHz)` design (e.g., 1000/44100 ≈ 0.02268
+but 1064/48000 ≈ 0.02217 — time runs *backwards* across a rate change).
+In practice JUCE delivers a single rate per device-session and a true
+rate change is a stop+start cycle, so the API contract is *monotone
+within a rate-epoch*; the doc comment on `advanceBySamples` says so
+explicitly. Reconciling rate epochs into a continuous LMC is the
+§4.3 calibration / §4.4 slewing story in M8.
 
-### What Session 2 picks up (from the V7 alignment plan, lines 161-167)
+### What Session 3 picks up (from the V7 alignment plan, line 168)
 
-**Session 2 deliverables:** wire LMC sample-clock from `AudioCallback`,
-extend `LmcTests`, and land `docs/RT_SAFETY_CONTRACT.md`.
+**Session 3 deliverables:** wire
+`Asrc` / `OverloadProtection` / `RetroactiveRing` /
+`AudioDeviceCalibration` into the audio thread. Fill in the four `TBD`
+rows in the `docs/RT_SAFETY_CONTRACT.md` subsystem audit. Verify
+`bash bash/autotest.sh` stays 4/4 green. Commit and push as
+`feat: M1 Session 3 — engine pieces wired to audio thread`.
 
 Current state to know going in:
 
-- `engine/include/sirius/Lmc.h` reads time from a `MonotonicClock` at
-  every `nowSeconds()` call. No audio-callback-driven sample-clock API
-  exists. The class is JUCE-free and the `engine/CMakeLists.txt` design
-  comment requires it stay JUCE-free — any new Lmc API Session 2 adds
-  must take `int numSamples` + `double sampleRate` (or similar plain
-  scalars), not JUCE buffer types.
-- `audio/include/sirius/AudioCallback.h` already exposes
-  `currentSampleRate()` and gets `numSamples` per buffer. The hook for
-  the new Lmc call is `audioDeviceIOCallbackWithContext`.
-- `tests/LmcTests.cpp` exists with the "LMC never runs backwards"
-  case (test #253). Extend it; don't rewrite it.
-
-Work for Session 2:
-
-1. Add the Lmc sample-clock-advance API (signature to be locked in
-   the brainstorm — see Q1 below). Keep it RT-safe: no allocation,
-   no locking. Atomic accumulator probably.
-2. Wire `AudioCallback` to call that API each buffer.
-3. Extend `LmcTests` to verify monotonicity across simulated buffer
-   deliveries at varying sample rates (44.1, 48, 96, 192) and varying
-   buffer sizes.
-4. Write `docs/RT_SAFETY_CONTRACT.md` enumerating the V7 §5.6
-   invariants. The six commitments from the white paper §5.6 are the
-   skeleton; add an audit checklist Session 3 will measure
-   Asrc/OverloadProtection/RetroactiveRing/AudioDeviceCalibration
-   against.
-
-### Open questions for Session 2's brainstorm (resolve via AskUserQuestion before coding)
-
-**Q1. Push vs pull for the audio→LMC sample-clock relationship.**
-
-- **A.** *Push (recommended):* `AudioCallback` calls
-  `lmc.advanceBySamples(numSamples, sampleRate)` at the end of each
-  buffer. Lmc holds an atomic sample-count + the current rate. Simple,
-  testable headless (feed N samples, assert `nowSeconds()` advanced
-  exactly by N/rate).
-- **B.** *Pull:* Lmc owns a callback that the audio thread registers;
-  Lmc.nowSeconds() reads from that callback. More indirection, harder
-  to test, more complex thread-safety story.
-- **C.** *Hybrid:* AudioCallback pushes sample-counts into a lock-free
-  ring; a separate consumer feeds Lmc. Overkill for a single-source
-  clock; defer to ensemble (M8).
-
-**Q2. Does Session 2 backfill the "stale plan file paths" deviation, or defer to a documentation pass?**
-
-- **A.** *Defer:* leave the V7 alignment plan as-is; this continue.md
-  documents the divergence. Cheapest; risk is the plan drifts further
-  from reality across milestones.
-- **B.** *Fix in Session 2:* edit
-  `docs/superpowers/plans/2026-05-17-v7-alignment.md` to point at the
-  actual `audio/` paths and call out the new `Sirius::Audio` library.
-  ~10-line edit. Lands alongside Session 2's commit.
-
-### Session 3 then wires the existing engine pieces
-
-Asrc / OverloadProtection / AudioDeviceCalibration / RetroactiveRing
-into the AudioCallback. With Session 2's RT-safety doc in hand, the
-wiring's allocation-on-audio-thread review has a written rubric.
+- `audio/src/AudioCallback.cpp` ends each buffer with the LMC advance.
+  Session 3's engine-piece calls go *before* the LMC advance, in the
+  pass-through chain.
+- The four engine pieces are isolated scaffolding today — no caller
+  in `audio/` or `app/`. Each has its own existing unit tests in
+  `tests/` (already covered by the 267 green cases).
+- `docs/RT_SAFETY_CONTRACT.md` audit checklist exists and waits for
+  Session 3 to fill the TBD rows. Use the grep heuristic in the
+  "How to audit" subsection before claiming yes/yes/yes.
 
 Once Session 3 commits, M1 is complete and M2 (Input Mixer) is unblocked.
 

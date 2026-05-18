@@ -8,6 +8,8 @@
 #include "sirius/EngineConfig.h"
 #include "sirius/InputDescriptor.h"
 #include "sirius/LatencyBudget.h"
+#include "sirius/Lmc.h"
+#include "sirius/MonotonicClock.h"
 #include "sirius/PerformanceView.h"
 #include "sirius/PluginScanner.h"
 #include "sirius/Promotion.h"
@@ -100,15 +102,20 @@ private:
     CapabilityTier tier_            { CapabilityTier::Survival };
     TierPolicy     tierPolicy_      { policyFor (CapabilityTier::Survival) };
 
-    // --- audio I/O (M1 Session 1) ---
+    // --- audio I/O (M1 Sessions 1-2) ---
     // The device manager owns OS-side device lifecycle; the callback is the
-    // single audio-thread entry point. Constructed at MainComponent
-    // construction, torn down in the destructor; PreparationPane binds the
-    // device picker and monitoring toggle against them.
-    EngineConfig                       engineConfig_;
-    juce::AudioDeviceManager           audioDeviceManager_;
-    std::unique_ptr<AudioCallback>     audioCallback_;
-    juce::String                       audioDeviceLastError_;
+    // single audio-thread entry point. The LMC is the V7 §4 logical master
+    // clock — the callback drives its sample-clock via advanceBySamples per
+    // buffer (Session 2). The shared_ptr<MonotonicClock> backs the LMC's
+    // existing wall-clock reader (nowSeconds()) and stays alive for the LMC
+    // lifetime. Declaration order matters: monotonicClock_ → lmc_ →
+    // audioCallback_ so destruction unwinds in the safe reverse order.
+    std::shared_ptr<const MonotonicClock> monotonicClock_;
+    std::unique_ptr<Lmc>                  lmc_;
+    EngineConfig                          engineConfig_;
+    juce::AudioDeviceManager              audioDeviceManager_;
+    std::unique_ptr<AudioCallback>        audioCallback_;
+    juce::String                          audioDeviceLastError_;
 
     // --- top-level layout ---
     juce::TabbedComponent tabs_ { juce::TabbedButtonBar::TabsAtTop };

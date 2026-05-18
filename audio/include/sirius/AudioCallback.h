@@ -10,16 +10,20 @@
 namespace sirius
 {
 
+class Lmc;
+
 /// The single audio-thread entry point for the standalone app — V7 white paper
 /// Part V plus Part 5.6's realtime-safety contract, lowered to JUCE's
 /// `AudioIODeviceCallback`.
 ///
-/// Session 1 of M1 lands the skeleton: identity input→output pass-through
+/// Session 1 of M1 landed the skeleton: identity input→output pass-through
 /// behind an explicit `Enable monitoring` gate (the gate exists because a
 /// looper on stage with a hot mic and live monitoring is one slip away from
-/// feedback). LMC sample-clock wiring (Session 2) and the existing engine
-/// pieces — Asrc, OverloadProtection, AudioDeviceCalibration, RetroactiveRing
-/// — (Session 3) attach to this same callback later in M1.
+/// feedback). Session 2 wires the LMC sample-clock — if an Lmc is attached,
+/// every buffer ends with a single `lmc->advanceBySamples(...)` call so the
+/// LMC tracks the device's hardware-counted sample-clock (white paper §4.4).
+/// The existing engine pieces — Asrc, OverloadProtection, AudioDeviceCalibration,
+/// RetroactiveRing — (Session 3) attach to this same callback later in M1.
 ///
 /// Realtime-safety invariants (V7 §5.6, codified for this class):
 ///  * No allocation, no lock acquisition, no synchronous I/O, no unbounded
@@ -37,6 +41,13 @@ public:
 
     AudioCallback (const AudioCallback&) = delete;
     AudioCallback& operator= (const AudioCallback&) = delete;
+
+    /// Attach a Logical Master Clock for sample-clock advancement. Set on
+    /// the message thread before the device starts and not changed for the
+    /// callback's lifetime. Non-owning — the LMC must outlive this callback,
+    /// which `MainComponent` guarantees by destroying the callback first.
+    /// Pass `nullptr` to detach (used in tests).
+    void setLmc (Lmc* lmc) noexcept { lmc_ = lmc; }
 
     // -- juce::AudioIODeviceCallback ------------------------------------------------
     void audioDeviceIOCallbackWithContext (
@@ -84,6 +95,7 @@ public:
 
 private:
     EngineConfig config_;
+    Lmc*         lmc_ { nullptr };
 
     std::atomic<bool>   monitoringEnabled_ { false };
     std::atomic<double> currentSampleRate_ { 0.0 };

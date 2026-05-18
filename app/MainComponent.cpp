@@ -479,7 +479,7 @@ MainComponent::MainComponent()
         undoStack_.push (renamed, "rename session");
     }
 
-    // --- Audio I/O (M1 Session 1) ---------------------------------------------
+    // --- Audio I/O (M1 Sessions 1-2) ------------------------------------------
     // Initialise the device manager at OS-default sample rate / buffer size
     // (operator decision 2026-05-17: accept whatever the OS reports; the
     // EngineConfig defaults of 48 kHz / smallest-reliable only apply when the
@@ -487,7 +487,18 @@ MainComponent::MainComponent()
     // topology — the input mixer milestone (M2) will widen this. Errors here
     // are surfaced via the diagnostics row rather than throwing: a user on a
     // machine without an audio device should still see the UI come up.
-    audioCallback_ = std::make_unique<AudioCallback> (engineConfig_);
+    //
+    // Session 2: the LMC is constructed before the audio callback and handed
+    // to it. The callback then advances the LMC's sample-clock once per
+    // buffer (white paper §4.4 — hardware-counted sample-clock is the best
+    // disciplined local time source once a device is running). The
+    // SteadyMonotonicClock backs the LMC's wall-clock reader, which stays
+    // available alongside the sample-clock reader until later milestones
+    // reconcile the two via §4.3 calibration tables.
+    monotonicClock_  = std::make_shared<SteadyMonotonicClock>();
+    lmc_             = std::make_unique<Lmc> (monotonicClock_);
+    audioCallback_   = std::make_unique<AudioCallback> (engineConfig_);
+    audioCallback_->setLmc (lmc_.get());
     audioDeviceLastError_ = audioDeviceManager_.initialiseWithDefaultDevices (
         /*numInputChannelsNeeded*/  2,
         /*numOutputChannelsNeeded*/ 2);

@@ -144,15 +144,26 @@ Source: the three Explore-agent inventories run 2026-05-17 against engine/core/h
 
 **Files touched (created, unless marked).**
 
-- `engine/include/sirius/AudioCallback.h`, `engine/src/AudioCallback.cpp` (new)
-- `app/Main.cpp` (modified: instantiate `AudioCallback`, register with `AudioDeviceManager`)
-- `app/MainComponent.cpp` (modified: device-selection UI under Preparation tab; eventually moves to a Settings surface in M22)
-- `engine/include/sirius/Lmc.h`, `engine/src/Lmc.cpp` (modified: accept sample-clock advances from `AudioCallback`)
-- `engine/src/Asrc.cpp`, `engine/src/OverloadProtection.cpp`, `engine/src/AudioDeviceCalibration.cpp`, `engine/src/RetroactiveRing.cpp` (modified: usage hookup, not internal change)
-- `docs/RT_SAFETY_CONTRACT.md` (new)
-- `tests/AudioCallbackTests.cpp` (new) — sample-clock-monotone test, RT-budget test (run inbound→outbound through a synthetic device 10000 times, assert no allocations via JUCE's `JUCE_DEBUG_XHEAP` or a custom allocator audit)
+> **Deviation note (filed 2026-05-17, M1 Session 2):** the plan
+> originally listed `engine/include/sirius/AudioCallback.{h,cpp}`,
+> but `engine/CMakeLists.txt` has a deliberate "JUCE-free" design
+> comment. Putting an `AudioIODeviceCallback` subclass in the engine
+> would force `juce_audio_devices` into that layer and break the
+> contract. A new top-level `audio/` library (`Sirius::Audio`) was
+> created instead — the "thin layer added on top" the engine comment
+> itself anticipates. File paths below reflect the actual landed layout.
+
+- `audio/include/sirius/AudioCallback.h`, `audio/src/AudioCallback.cpp`, `audio/CMakeLists.txt` (new — `Sirius::Audio` static library linking `juce_audio_devices` PUBLIC; engine stays JUCE-free)
+- `engine/include/sirius/EngineConfig.h` (new — plain config struct, JUCE-free, carrying `Asrc::Quality` + preferred sample-rate / buffer-size; M11 capability tiers will steer these)
+- `app/MainComponent.{h,cpp}` (modified: owns `AudioDeviceManager`, `AudioCallback`, `Lmc`, and `SteadyMonotonicClock`; `PreparationPane` gains an Audio-device section with JUCE's `AudioDeviceSelectorComponent` and an `Enable monitoring` toggle)
+- `app/CMakeLists.txt` (modified: link `Sirius::Audio` and `juce::juce_audio_utils` — the picker lives in `audio_utils`, not `audio_devices`)
+- `engine/include/sirius/Lmc.h`, `engine/src/Lmc.cpp` (modified: Session 2 adds `advanceBySamples`, `nowSecondsFromSamples`, `sampleCount` — sample-clock surface alongside the existing `nowSeconds()` wall-clock reader)
+- `engine/src/Asrc.cpp`, `engine/src/OverloadProtection.cpp`, `engine/src/AudioDeviceCalibration.cpp`, `engine/src/RetroactiveRing.cpp` (modified in Session 3: usage hookup, not internal change)
+- `docs/RT_SAFETY_CONTRACT.md` (new — Session 2)
+- `tests/AudioCallbackTests.cpp` (new — Session 1) — silence-by-default, identity pass-through, fewer-input-than-output silenced, extra-input dropped, sample-rate/buffer-size capture, EngineConfig round-trip
+- `tests/LmcTests.cpp` (modified in Session 2: 5 new `[sample-clock]` cases — exact rational at 48 kHz, exact across non-standard buffer sizes, monotone within a rate-epoch, no-op on rate ≤ 0 / samples ≤ 0, zero-before-first-buffer)
 - `tests/CMakeLists.txt` (modified: add `AudioCallbackTests`)
-- `CMakeLists.txt` (modified: link `juce_audio_devices`)
+- `CMakeLists.txt` (modified: `add_subdirectory(audio)` so the new library participates in the build graph)
 
 **Existing utilities to reuse.** `Asrc`, `OverloadProtection`, `RetroactiveRing`, `AudioDeviceCalibration`, `LockFreeSpscQueue`, `Lmc`, `MonotonicClock` — all already implemented; this milestone wires them.
 

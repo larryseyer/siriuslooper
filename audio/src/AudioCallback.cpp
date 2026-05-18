@@ -1,5 +1,7 @@
 #include "sirius/AudioCallback.h"
 
+#include "sirius/Lmc.h"
+
 #include <algorithm>
 #include <cstring>
 
@@ -40,6 +42,13 @@ void AudioCallback::audioDeviceIOCallbackWithContext (
         if (dst != nullptr)
             std::memset (dst, 0, static_cast<std::size_t> (numSamples) * sizeof (float));
     }
+
+    // Sample-clock to LMC (white paper §4.4): a single fetch_add + store on
+    // the LMC's atomic pair. Re-loading the rate per buffer rather than
+    // capturing it at start handles devices that change rate mid-session.
+    if (lmc_ != nullptr)
+        lmc_->advanceBySamples (numSamples,
+                                currentSampleRate_.load (std::memory_order_acquire));
 }
 
 void AudioCallback::audioDeviceAboutToStart (juce::AudioIODevice* device)
