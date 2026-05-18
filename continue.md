@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-18 (M2 COMPLETE on origin; M3 next — first behaviour-bearing milestone in Part B)
+# Session Continuation — 2026-05-18 (M3 COMPLETE on origin; M4 next — Direct Layer subsystem)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,7 +8,140 @@
 
 ---
 
-## RESUME HERE (2026-05-18 — M2 complete on origin; M3 next)
+## RESUME HERE (2026-05-18 — M3 fully shipped on origin; M4 next)
+
+**M3 of the V7 alignment plan is fully on `origin/master`.** HEAD is
+`b395f2e`. Six commits shipped this session, all green:
+
+| SHA | Subject |
+|---|---|
+| `58a6d7d` | M3 Session 1 — ProcessingChain + ChannelDefaults + InputDescriptor flags + Channel ctor |
+| `aba4e0e` | M3 Session 2 — TapeWriter + InputMixer::processBuffer real bodies |
+| `ada4858` | M3 Session 2 fix — keep SiriusEngine public API JUCE-free (TapeWriter PIMPL) |
+| `f4ef59f` | M3 Session 2 fix — sampleCount→payloadByteCount + flushChannel preconditions + OverloadProtection::reportLoad noexcept |
+| `94aed46` | M3 Session 3 — finalizeChannel + NonDestructive params + setInputDefaults end-to-end |
+| `b395f2e` | M3 follow-up — TapeWriter flushChannel prompt wake on empty queue + simplify predicate to fail loud in NDEBUG |
+
+Test count: **293/293** green (was 279 at M2 close; +14 across M3).
+Full 4-phase `bash bash/autotest.sh` green.
+
+**Execution mode used:** subagent-driven (one implementer + spec
+review + code review per session, then a final milestone review).
+Caught 2 spec deviations (juce_core PUBLIC leak; sampleCount misnomer)
+that the per-session reviews surfaced and the milestone review caught
+2 more real bugs (1000ms flush latency on Survival tier; NDEBUG
+silent-corruption hazard) that the per-session reviews missed. All
+fixed before closing the milestone.
+
+### First moves for the M4 chat
+
+M4 ships the **Direct Layer subsystem** — V3 §2.3 / Step 6: parallel
+signal path from input mixer to output mixer that bypasses the tape.
+Manual routing only; automatic inference is deferred to M14.
+
+1. Read this file end-to-end.
+2. Open `docs/superpowers/plans/2026-05-17-v7-alignment.md` and read
+   **M4 in full** (starts at line ~325). Sessions 1-3 break-out is at
+   the end of the M4 section.
+3. Read V3 transition guide §2.3 (`docs/sirius-looper-v2-to-v7-transition.md`
+   lines ~188-215) for the DirectLayer interface sketch.
+4. Brainstorm pass for M4 before code. The plan body covers most of
+   what's needed but a few design questions are unresolved:
+   - `OutputChannelId` is described as an opaque int in M4 and a real
+     type in M5. What's the bridge — does M4 ship a placeholder strong-
+     typed wrapper that M5 promotes, or does M4 use raw `int`?
+   - Direct Layer needs to be wired into `AudioCallback`'s callback
+     flow (input mixer → direct layer → output mixer skeleton). The
+     M3 work didn't touch AudioCallback yet — `processBuffer` is
+     called by tests directly. M4 has to bridge `AudioCallback` →
+     `InputMixer::processBuffer` AND insert the DirectLayer hop. This
+     is a meaningful audio-thread wiring change worth surfacing to the
+     operator before code.
+5. Adopt the same subagent-driven execution mode that worked for M3.
+   Plan-write → spec-review → code-review per session; final-milestone
+   review at the end. Two-stage reviews caught real bugs in M3 —
+   especially the engine-JUCE-free leak and the flush-latency issue.
+
+### M3-era decisions that constrain M4 (DO NOT "fix" without operator approval)
+
+1. **`TapeWriter` takes `std::chrono::milliseconds`, not `CapabilityTier&`.**
+   Plan body called for `CapabilityTier&` but engine cannot depend on
+   the app layer where CapabilityTier lives. The tier→interval
+   conversion happens at the call site (currently tests; the real app
+   wiring lands in M4 or M5). The `tapeWriterFlushInterval(CapabilityTier)`
+   helper belongs in `app/CapabilityTier.h` when wired.
+2. **TapeMode lives in `core/`, not `engine/`.** M3 Session 1 moved
+   it because `ChannelDefaults` (also in core/) needs it. Don't move
+   it back.
+3. **InputMixer collaborator setters are set-once on the message
+   thread, never null-checked at every audio-thread call.**
+   `processBuffer` checks `tapeWriter_ != nullptr` once; the
+   `overload_` and `tapeStore_` pointers follow the same pattern. M4
+   Direct Layer must use the same pattern — do not introduce
+   thread-safe rebinding of collaborators.
+4. **Engine public API is JUCE-free** via PIMPL where filesystem
+   types are needed. `TapeWriter.h` uses `std::filesystem::path` and
+   forward-declares `struct OpenFile`; `juce::FileOutputStream` lives
+   only in `TapeWriter.cpp`. If M4 needs file I/O, use the same PIMPL
+   pattern. **Never add `juce::` types to any header in
+   `engine/include/sirius/`.**
+5. **`flushChannel` has a single-caller precondition.** Documented in
+   header. Asserted in debug; blocks-loud in NDEBUG. Do not introduce
+   concurrent callers.
+6. **`TapeWriteMessage::payloadByteCount`** is the field name (not
+   `sampleCount`). It holds byte counts. M4 wires per-channel LMC
+   time on `TapeWriteMessage::lmcTime` — currently hardcoded to
+   `Rational(0)` because M3 had no per-channel sample-rate context.
+
+### Known M3 deviations + minors deferred to later milestones
+
+These are real but intentionally not fixed in M3. Don't pick them up
+opportunistically in M4 — they belong to their named milestones.
+
+- `touchParamsPartial` silent-fail if `setChannelTapeMode(ch, NonDestructive)`
+  is called before `setTapeWriter(...)`. Today's tests always wire
+  the writer first. Flagged for M11 SAF orchestration where set-up
+  ordering becomes formal.
+- `touchParamsPartial` holds `stateMutex_` across an `std::ofstream`
+  open. Negligible — one-shot per mode transition. Defer.
+- `finalizeChannel` doesn't `removeChannel` — channel stays in
+  `channels_` after finalize. M4 will iterate channels per buffer for
+  Direct Layer routing; revisit then if it matters.
+- `[finalize]` test doesn't cover the no-messages-enqueued path. The
+  body handles it (existence check), but cheap insurance is missing.
+- No mechanical RT-safety counter on `processBuffer` (no allocator
+  instrumentation). Audit-by-inspection per `docs/RT_SAFETY_CONTRACT.md`.
+  M11+ may add an `RtSafetyHarness`.
+
+### RT-safety invariants M4 Direct Layer must preserve
+
+- Zero allocation, zero locks, zero I/O, zero logging on the audio
+  thread. `noexcept` on every hot-path function.
+- For any API that could throw, follow the `OverloadProtection`
+  pattern: atomic-publish on the audio thread, message-thread
+  consumes / reacts.
+- Direct Layer per `docs/RT_SAFETY_CONTRACT.md §6` is stricter than
+  InputMixer — "stateless, audio-thread-exclusive" — so no snapshot
+  pointer load beyond a couple of gain atomics.
+- The M3 `processBuffer` body is the reference shape: one
+  `unordered_map::find`, one `std::memcpy`, one wait-free `queue.push`,
+  one `noexcept` atomic-store overload report. Model M4's
+  `route_buffers` on the same shape.
+
+### Operator-side TODOs for M4
+
+1. **CI signing secrets** (still operator-pending from way back —
+   does NOT block any V7 alignment work, but the auto-testing
+   milestone won't go fully green on CI until done). See the historical
+   "CI signing handoff" section below. Three secrets remain.
+2. **Decide M4 break-out granularity.** The plan has Sessions 1-3.
+   The subagent-driven execution worked well; brainstorm pass +
+   per-session implementer + reviews is probably the right shape
+   again. The brainstorm is where Q1/Q2 in step 4 above get resolved.
+
+---
+
+## HISTORICAL — M2 close-out + M3 handoff (superseded 2026-05-18 — M3 now complete)
 
 **M2 of the V7 alignment plan is fully shipped on `origin/master`.**
 All three sessions are pushed (HEAD `f1b4d58`):
