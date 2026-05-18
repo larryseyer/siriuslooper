@@ -52,7 +52,9 @@ add_executable(SiriusTests
     TapeWriterTests.cpp
     NotificationBusTests.cpp
     NotificationBusIntegrationTests.cpp
-    OutOfProcessPluginTests.cpp)
+    OutOfProcessPluginTests.cpp
+    SharedMemorySpscQueueTests.cpp
+    SharedMemoryRegionTests.cpp)
 
 target_compile_features(SiriusTests PRIVATE cxx_std_20)
 
