@@ -10,6 +10,7 @@
 #include "sirius/Channel.h"
 #include "sirius/ChannelStrip.h"
 #include "sirius/InputMixer.h"
+#include "sirius/NotificationBus.h"
 #include "sirius/OverloadProtection.h"
 #include "sirius/TapeStore.h"
 #include "sirius/TapeWriter.h"
@@ -117,6 +118,61 @@ TEST_CASE ("InputMixer::processBuffer reports overload when the writer queue is 
         mixer.processBuffer (ch, buffer.data(), buffer.size());
 
     CHECK (overload.lastReportedLoad() == 1.0);
+
+    juce::File (juce::String (tempDir.string())).deleteRecursively();
+}
+
+// M6 Session 2 — queue-full now ALSO posts a Warning/CpuPressure notification
+// onto the engine→UI truthfulness channel. Mirrors the [input-mixer][overload]
+// case above, but binds a NotificationBus and asserts the drain side sees the
+// post (instead of asserting on the OverloadProtection load fraction).
+TEST_CASE ("InputMixer::processBuffer posts a CpuPressure notification on queue-full",
+           "[input-mixer][notification]")
+{
+    using sirius::Category;
+    using sirius::InputId;
+    using sirius::Notification;
+    using sirius::NotificationBus;
+    using sirius::NotificationLevel;
+    using sirius::OverloadProtection;
+    using sirius::SignalType;
+    using sirius::TapeMode;
+    using sirius::TapeWriter;
+
+    const auto tempDirJuce = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                                 .getChildFile ("sirius-inputmixer-notification-"
+                                                + juce::String (juce::Time::getMillisecondCounterHiRes()));
+    tempDirJuce.createDirectory();
+    const std::filesystem::path tempDir (tempDirJuce.getFullPathName().toStdString());
+
+    // Slow flush + tiny queue keeps the queue full once we push past capacity.
+    TapeWriter writer (tempDir, std::chrono::milliseconds (1000), 2);
+    OverloadProtection overload;
+    NotificationBus bus;
+
+    InputMixer mixer;
+    mixer.setTapeWriter (&writer);
+    mixer.setOverloadProtection (&overload);
+    mixer.setNotificationBus (&bus);
+    const auto ch = mixer.addChannel (InputId (0), SignalType::Audio);
+    mixer.setChannelTapeMode (ch, TapeMode::CommitToTape);
+
+    std::array<std::byte, 16> buffer {};
+    for (int i = 0; i < 5; ++i)
+        mixer.processBuffer (ch, buffer.data(), buffer.size());
+
+    std::vector<Notification> drained;
+    drained.reserve (sirius::kCategoryCount * NotificationBus::kRingCapacity);
+    bus.drain (drained);
+
+    // At least one Warning/CpuPressure notification must have been posted for
+    // the 3 drops (5 pushes against a 2-slot queue). The drain may also see
+    // duplicate posts; we only assert the truthfulness signal exists.
+    int cpuWarnings = 0;
+    for (const auto& n : drained)
+        if (n.level == NotificationLevel::Warning && n.category == Category::CpuPressure)
+            ++cpuWarnings;
+    CHECK (cpuWarnings >= 1);
 
     juce::File (juce::String (tempDir.string())).deleteRecursively();
 }

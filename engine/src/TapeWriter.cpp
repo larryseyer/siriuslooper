@@ -1,8 +1,11 @@
 #include "sirius/TapeWriter.h"
 
+#include "sirius/NotificationBus.h"
+
 #include <juce_core/juce_core.h>
 
 #include <cassert>
+#include <cstdio>
 #include <fstream>
 #include <stdexcept>
 
@@ -84,6 +87,11 @@ void TapeWriter::touchParamsPartial (ChannelId channelId)
     }
 }
 
+void TapeWriter::setNotificationBus (NotificationBus* bus) noexcept
+{
+    notificationBus_ = bus;
+}
+
 std::uint32_t TapeWriter::errorCountForChannel (ChannelId channelId) const
 {
     std::scoped_lock lk (stateMutex_);
@@ -153,6 +161,20 @@ void TapeWriter::writePendingMessages()
                     juce::Logger::writeToLog ("TapeWriter: cannot open partial file: "
                                               + juce::String (path.string()));
                     errorCounts_[channelKey]++;
+                    // M6 Session 2 — truthfulness post on the writer thread.
+                    // Not RT-safe-constrained (writer thread, not audio
+                    // thread); the post itself is allocation-free regardless.
+                    // Channel id in the message so the S3 UI surface can
+                    // disambiguate concurrent failures across channels.
+                    if (notificationBus_ != nullptr)
+                    {
+                        char notifyMsg[128];
+                        std::snprintf (notifyMsg, sizeof (notifyMsg),
+                                       "tape flush failed (ch %lld) — cannot open partial file",
+                                       static_cast<long long> (channelKey));
+                        notificationBus_->post (NotificationLevel::Error,
+                                                Category::DiskPressure, notifyMsg);
+                    }
                     continue;
                 }
                 auto of = std::make_unique<OpenFile>();
@@ -171,6 +193,18 @@ void TapeWriter::writePendingMessages()
                                       + juce::String (channelKey));
             std::scoped_lock lk (stateMutex_);
             errorCounts_[channelKey]++;
+            // M6 Session 2 — truthfulness post on the writer thread (see
+            // the openedOk failure branch above for the rationale). Channel
+            // id in the message so the S3 UI surface can disambiguate.
+            if (notificationBus_ != nullptr)
+            {
+                char notifyMsg[128];
+                std::snprintf (notifyMsg, sizeof (notifyMsg),
+                               "tape flush failed (ch %lld) — write error, see logs",
+                               static_cast<long long> (channelKey));
+                notificationBus_->post (NotificationLevel::Error,
+                                        Category::DiskPressure, notifyMsg);
+            }
         }
     }
 }

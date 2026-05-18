@@ -13,6 +13,7 @@
 #include "sirius/LatencyBudget.h"
 #include "sirius/Lmc.h"
 #include "sirius/MonotonicClock.h"
+#include "sirius/NotificationBus.h"
 #include "sirius/OutputMixer.h"
 #include "sirius/OverloadProtection.h"
 #include "sirius/PerformanceView.h"
@@ -148,6 +149,21 @@ private:
     AudioDeviceCalibration                calibration_ { AudioDeviceCalibration::identity() };
     OverloadProtection                    overloadProtection_;
     RetroactiveRing<std::uint8_t>         retroactiveRing_ { 1024 };
+
+    // M6 Session 2 — engine→UI truthfulness channel (V5 §8.6, V7 §17.9).
+    // Owned here so the bus outlives every collaborator that posts to it
+    // (AudioCallback, InputMixer, TapeWriter). Declared after the engine
+    // pieces it does NOT outlive (mixers/callback hold raw pointers to the
+    // bus, but the bus has no back-pointer to them); the destructor sequence
+    // remains correct because MainComponent's destructor first removes the
+    // audio callback from the device manager, then unwinds members in
+    // reverse declaration order. The drain buffer is reserved up-front so
+    // `drain()` never reallocates on the message-thread timer tick (the bus
+    // header documents that `drain` may throw bad_alloc if the caller
+    // under-reserves — `kCategoryCount * kRingCapacity` is the worst-case
+    // single-drain payload).
+    std::unique_ptr<NotificationBus>      notificationBus_;
+    std::vector<Notification>             notificationDrainBuffer_;
 
     // --- top-level layout ---
     juce::TabbedComponent tabs_ { juce::TabbedButtonBar::TabsAtTop };

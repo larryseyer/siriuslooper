@@ -20,6 +20,7 @@ namespace sirius::persistence { class TapeStore; }
 namespace sirius
 {
 
+class NotificationBus;
 struct OpenFile;
 
 /// Per-message ceiling on the inline sample payload. 32 KB → 4096 stereo
@@ -122,6 +123,17 @@ public:
     /// from the message thread for diagnostics.
     std::uint32_t errorCountForChannel (ChannelId channelId) const;
 
+    /// M6 Session 2 — attach the engine→UI truthfulness channel. On flush
+    /// failure (open failure or write failure inside `writePendingMessages`)
+    /// the worker thread posts an `Error/DiskPressure` notification alongside
+    /// the existing per-channel error counter bump and juce::Logger write.
+    /// Set-once on the message thread before the worker is doing real work;
+    /// non-owning. The bus must outlive this TapeWriter. The worker thread
+    /// is NOT the audio thread — the post here can technically allocate (it
+    /// doesn't, but the contract is more permissive) since RT-safety isn't
+    /// the concern; the value is operator-visible truthfulness.
+    void setNotificationBus (NotificationBus* bus) noexcept;
+
 private:
     void workerLoop();
     void writePendingMessages();
@@ -142,6 +154,14 @@ private:
     std::unordered_map<std::int64_t, std::uint32_t> errorCounts_;
     std::int64_t flushRequestForChannel_ { -1 };
     std::condition_variable flushCompleteCv_;
+
+    // M6 Session 2 — non-owning truthfulness sink. Read by the worker
+    // thread from `writePendingMessages` on I/O failure; written set-once
+    // on the message thread before the worker has any failure to report.
+    // std::atomic isn't necessary — the pointer is set before the worker
+    // ever reads it, matching the same set-once pattern used for
+    // `tapeWriter_` / `overload_` in InputMixer.
+    NotificationBus* notificationBus_ { nullptr };
 };
 
 } // namespace sirius

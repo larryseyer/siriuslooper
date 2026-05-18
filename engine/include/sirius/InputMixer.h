@@ -16,6 +16,7 @@ namespace sirius { namespace persistence { class TapeStore; } }
 namespace sirius
 {
 
+class NotificationBus;
 class OverloadProtection;
 class TapeWriter;
 
@@ -37,6 +38,13 @@ public:
     void setTapeWriter (TapeWriter* writer) noexcept;
     void setOverloadProtection (OverloadProtection* overload) noexcept;
     void setTapeStore (sirius::persistence::TapeStore* store) noexcept;
+    /// M6 Session 2 — attach the engine→UI truthfulness channel. When bound,
+    /// the queue-full branch of `processBuffer` posts a `Warning/CpuPressure`
+    /// notification alongside the existing `OverloadProtection::reportLoad`
+    /// call. Set-once on the message thread before the audio device starts;
+    /// non-owning. `NotificationBus::post` is `noexcept` and allocation-free,
+    /// so this preserves the audio-thread contract on `processBuffer`.
+    void setNotificationBus (NotificationBus* bus) noexcept;
 
     // Input-layer registry --------------------------------------------------
     void registerInput (InputId, const InputDescriptor&);
@@ -83,6 +91,7 @@ private:
     TapeWriter* tapeWriter_ { nullptr };
     OverloadProtection* overload_ { nullptr };
     sirius::persistence::TapeStore* tapeStore_ { nullptr };
+    NotificationBus* notificationBus_ { nullptr };
 
     // Audio-thread scratch — pre-allocated in the constructor (sized to
     // `kMaxScratchSamples`, defined at file-scope in InputMixer.cpp). M5

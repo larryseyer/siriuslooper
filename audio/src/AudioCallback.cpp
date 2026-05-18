@@ -2,9 +2,11 @@
 
 #include "sirius/InputMixer.h"
 #include "sirius/Lmc.h"
+#include "sirius/NotificationBus.h"
 #include "sirius/OutputMixer.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 
 namespace
@@ -213,6 +215,28 @@ void AudioCallback::audioDeviceIOCallbackWithContext (
 
 void AudioCallback::audioDeviceAboutToStart (juce::AudioIODevice* device)
 {
+    // M6 Session 2 — engine→UI truthfulness post for the device-up event.
+    // Built on the stack so the message buffer is bounded; NotificationBus::post
+    // copies into its own 128-byte buffer with truncation, so any device name
+    // longer than the prefix-plus-suffix budget is safely clipped. We don't go
+    // through `juce::String::operator+` here because that allocates on the heap;
+    // `snprintf` on a stack buffer is allocation-free and the equivalent in shape
+    // to NotificationBus's own copy-into-fixed-array discipline. The post happens
+    // BEFORE we record the scratch counts so a post-side failure cannot leave
+    // the audio thread looking at a partially-initialized callback.
+    if (notificationBus_ != nullptr)
+    {
+        char msg[128];
+        const char* deviceName = (device != nullptr)
+            ? device->getName().toRawUTF8()
+            : "(no device)";
+        std::snprintf (msg, sizeof (msg),
+                       "audio device started — %s", deviceName);
+        notificationBus_->post (NotificationLevel::Info,
+                                Category::DeviceEvent,
+                                msg);
+    }
+
     // Scratch is pre-sized in the constructor to kMaxScratchChannels; here we only
     // RECORD how many slots the current device actually exercises. Zero allocation,
     // zero throw — the audio thread sees a stable vector pointing at message-thread
@@ -238,6 +262,11 @@ void AudioCallback::audioDeviceAboutToStart (juce::AudioIODevice* device)
 
 void AudioCallback::audioDeviceStopped()
 {
+    if (notificationBus_ != nullptr)
+        notificationBus_->post (NotificationLevel::Info,
+                                Category::DeviceEvent,
+                                "audio device stopped");
+
     currentSampleRate_.store (0.0, std::memory_order_release);
     currentBufferSize_.store (0,   std::memory_order_release);
     lastCallbackElapsedSec_.store (0.0, std::memory_order_release);

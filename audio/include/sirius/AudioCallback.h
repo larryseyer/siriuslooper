@@ -16,6 +16,7 @@ class Lmc;
 class AudioDeviceCalibration;
 class InputMixer;
 class OutputMixer;
+class NotificationBus;
 
 /// The single audio-thread entry point for the standalone app — V7 white paper
 /// Part V plus Part 5.6's realtime-safety contract, lowered to JUCE's
@@ -45,10 +46,10 @@ class OutputMixer;
 /// Threading contract — configure-before-audio-starts:
 ///  * All collaborator setters (`setInputMixer`, `setOutputMixer`,
 ///    `setDirectLayer`, `setLmc`, `setAsrcInputs`, `setAsrcOutputs`,
-///    `setCalibration`) are SET-ONCE on the message thread BEFORE
-///    `audioDeviceAboutToStart` is called. The audio thread reads the
-///    collaborator pointers without synchronization — mutation during a
-///    live callback is undefined behavior. Stop the device before
+///    `setCalibration`, `setNotificationBus`) are SET-ONCE on the message
+///    thread BEFORE `audioDeviceAboutToStart` is called. The audio thread
+///    reads the collaborator pointers without synchronization — mutation
+///    during a live callback is undefined behavior. Stop the device before
 ///    reconfiguring.
 ///  * Inherited from `DirectLayer.h`'s contract (continue.md M4
 ///    constraint #6); M5 OutputMixer extends it. Operator-facing
@@ -116,6 +117,18 @@ public:
     void setInputMixer  (InputMixer*  mixer) noexcept   { inputMixer_  = mixer;  }
     void setOutputMixer (const OutputMixer* mixer) noexcept { outputMixer_ = mixer; }
     void setDirectLayer (const DirectLayer* layer) noexcept { directLayer_ = layer; }
+
+    /// M6 Session 2 — attach the engine→UI truthfulness channel (V5 §8.6).
+    /// The audio thread posts `DeviceEvent` notifications from
+    /// `audioDeviceAboutToStart` and `audioDeviceStopped` (both of which run
+    /// on JUCE's device-setup callback, not the render thread, but still
+    /// must remain allocation-free per the class contract). `NotificationBus::post`
+    /// is `noexcept` and allocation-free in either direction, so the contract
+    /// holds even if a future JUCE backend invokes these on the render thread.
+    /// Set-once on the message thread before `audioDeviceAboutToStart`;
+    /// non-owning. The bus must outlive this callback (MainComponent owns
+    /// the bus and destroys the callback first).
+    void setNotificationBus (NotificationBus* bus) noexcept { notificationBus_ = bus; }
 
     // -- juce::AudioIODeviceCallback ------------------------------------------------
     void audioDeviceIOCallbackWithContext (
@@ -194,6 +207,7 @@ private:
     InputMixer*        inputMixer_  { nullptr };
     const OutputMixer* outputMixer_ { nullptr };
     const DirectLayer* directLayer_ { nullptr };
+    NotificationBus*   notificationBus_ { nullptr };
     std::vector<RawInputBufferView> rawInputScratch_;
     std::vector<OutputBufferView>   outputScratch_;
     int activeRawScratchCount_    { 0 };

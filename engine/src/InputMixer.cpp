@@ -1,6 +1,7 @@
 #include "sirius/InputMixer.h"
 
 #include "sirius/ChannelStrip.h"
+#include "sirius/NotificationBus.h"
 #include "sirius/OverloadProtection.h"
 #include "sirius/TapeStore.h"
 #include "sirius/TapeWriter.h"
@@ -34,6 +35,7 @@ InputMixer::~InputMixer() = default;
 void InputMixer::setTapeWriter (TapeWriter* writer) noexcept       { tapeWriter_ = writer; }
 void InputMixer::setOverloadProtection (OverloadProtection* o) noexcept { overload_ = o; }
 void InputMixer::setTapeStore (sirius::persistence::TapeStore* store) noexcept { tapeStore_ = store; }
+void InputMixer::setNotificationBus (NotificationBus* bus) noexcept { notificationBus_ = bus; }
 
 void InputMixer::registerInput (InputId id, const InputDescriptor& desc)
 {
@@ -159,8 +161,20 @@ void InputMixer::processBuffer (ChannelId id,
     msg.payloadByteCount = byteCount;
     std::memcpy (msg.samples.data(), outBytes, byteCount);
 
-    if (! tapeWriter_->tryEnqueue (msg) && overload_ != nullptr)
-        overload_->reportLoad (1.0);
+    if (! tapeWriter_->tryEnqueue (msg))
+    {
+        // M6 Session 2 — post the truthfulness signal BEFORE reporting load so
+        // a UI drain seeing the notification can correlate it with the load
+        // spike. Both calls are noexcept and allocation-free; either or both
+        // collaborators may be unbound (tests exercise the partial-wiring
+        // case) and we just no-op the missing leg.
+        if (notificationBus_ != nullptr)
+            notificationBus_->post (NotificationLevel::Warning,
+                                    Category::CpuPressure,
+                                    "audio thread missed deadline — tape buffer dropped");
+        if (overload_ != nullptr)
+            overload_->reportLoad (1.0);
+    }
 }
 
 ProcessingChain* InputMixer::processingChainFor (ChannelId id) noexcept

@@ -519,11 +519,25 @@ MainComponent::MainComponent()
     for (int ch = 0; ch < kDefaultStereoChannels; ++ch)
         directLayer_->addRawRoute (InputId (ch), OutputChannelId (ch));
 
+    // M6 Session 2 — construct the truthfulness bus before the audio callback
+    // so the setter below sees a live pointer, and pre-reserve the drain
+    // buffer to its documented worst-case payload so `drain()` on the timer
+    // tick never reallocates (the bus header documents that drain may throw
+    // bad_alloc otherwise).
+    notificationBus_ = std::make_unique<NotificationBus>();
+    notificationDrainBuffer_.reserve (kCategoryCount * NotificationBus::kRingCapacity);
+    inputMixer_->setNotificationBus (notificationBus_.get());
+
     audioCallback_   = std::make_unique<AudioCallback> (engineConfig_);
     audioCallback_->setLmc (lmc_.get());
     audioCallback_->setInputMixer  (inputMixer_.get());
     audioCallback_->setOutputMixer (outputMixer_.get());
     audioCallback_->setDirectLayer (directLayer_.get());
+    audioCallback_->setNotificationBus (notificationBus_.get());
+    // TapeWriter::setNotificationBus deferred — MainComponent doesn't
+    // currently construct a TapeWriter (per M6 S2 audit). When TapeWriter
+    // joins the owned app graph (M11 SAF wiring, likely), add a parallel
+    // `tapeWriter_->setNotificationBus(notificationBus_.get())` here.
 
     // M1 Session 3 — engine pieces handed to the audio callback as
     // scaffolding. ASRCs sized 2/2 to match the device request below; the
@@ -771,6 +785,19 @@ void MainComponent::timerCallback()
     {
         const double budget = static_cast<double> (bufSize) / rate;
         overloadProtection_.reportLoad (elapsed / budget);
+    }
+
+    // M6 Session 2 — drain the engine→UI truthfulness channel on the same
+    // 30 Hz cadence as the diagnostics refresh. Drained count is logged via
+    // DBG for the session; the UI surface (a scrollable notification list in
+    // the Preparation tab) is M6 Session 3's job. The buffer is pre-reserved
+    // in the ctor so `drain()` does not reallocate here.
+    if (notificationBus_ != nullptr)
+    {
+        notificationBus_->drain (notificationDrainBuffer_);
+        if (! notificationDrainBuffer_.empty())
+            DBG ("NotificationBus drained " << static_cast<int> (notificationDrainBuffer_.size())
+                 << " notifications");
     }
 
     refreshDiagnostics();
