@@ -9,6 +9,8 @@
 #include "sirius/TimelineViewState.h"
 #include "sirius/VideoPreview.h"
 
+#include <juce_audio_utils/juce_audio_utils.h>
+
 #include <exception>
 #include <functional>
 #include <optional>
@@ -135,12 +137,25 @@ namespace
 }
 
 // =============================================================================
-// PreparationPane — PreparationView on top, a diagnostics row at the bottom
+// PreparationPane — PreparationView on top, a diagnostics row at the bottom,
+// and (since M1 Session 1) an audio-device section that exposes JUCE's stock
+// device selector plus the explicit `Enable monitoring` toggle the audio
+// callback gates input→output pass-through on. Monitoring is off at startup
+// (a hot mic plus live monitoring is one slip away from feedback).
 // =============================================================================
 class MainComponent::PreparationPane final : public juce::Component
 {
 public:
-    PreparationPane()
+    PreparationPane (juce::AudioDeviceManager& deviceManager,
+                     AudioCallback&            audioCallback)
+        : audioCallback_ (audioCallback),
+          deviceSelector_ (deviceManager,
+                           /*minInputChannels*/  0, /*maxInputChannels*/  2,
+                           /*minOutputChannels*/ 0, /*maxOutputChannels*/ 2,
+                           /*showMidiInputOptions*/  false,
+                           /*showMidiOutputSelector*/ false,
+                           /*showChannelsAsStereoPairs*/ true,
+                           /*hideAdvancedOptionsWithButton*/ true)
     {
         saveButton_.setButtonText ("Save...");
         loadButton_.setButtonText ("Load...");
@@ -152,6 +167,21 @@ public:
         statusLabel_.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
         statusLabel_.setMinimumHorizontalScale (1.0f);
         addAndMakeVisible (statusLabel_);
+
+        audioHeaderLabel_.setText ("Audio device", juce::dontSendNotification);
+        audioHeaderLabel_.setFont (juce::FontOptions (14.0f, juce::Font::bold));
+        addAndMakeVisible (audioHeaderLabel_);
+
+        addAndMakeVisible (deviceSelector_);
+
+        monitoringToggle_.setButtonText ("Enable monitoring (input → output pass-through)");
+        monitoringToggle_.setToggleState (audioCallback_.isMonitoringEnabled(),
+                                          juce::dontSendNotification);
+        monitoringToggle_.onClick = [this]
+        {
+            audioCallback_.setMonitoringEnabled (monitoringToggle_.getToggleState());
+        };
+        addAndMakeVisible (monitoringToggle_);
 
         addAndMakeVisible (preparationView_);
         addAndMakeVisible (timelineView_);
@@ -185,6 +215,14 @@ public:
         statusLabel_.setBounds      (topRow);
         area.removeFromTop (6);
 
+        // Audio-device block: header, JUCE picker, monitoring toggle. The
+        // picker collapses its advanced controls behind a button so the
+        // default block stays compact; 220 leaves room for the basic rows.
+        audioHeaderLabel_.setBounds (area.removeFromTop (22));
+        deviceSelector_.setBounds   (area.removeFromTop (220));
+        monitoringToggle_.setBounds (area.removeFromTop (24));
+        area.removeFromTop (8);
+
         diagnosticsLabel_.setBounds (area.removeFromBottom (60));
         area.removeFromBottom (6);
 
@@ -201,10 +239,14 @@ public:
     }
 
 private:
+    AudioCallback&   audioCallback_;
     juce::TextButton saveButton_;
     juce::TextButton loadButton_;
     juce::TextButton reloadDemoButton_;
     juce::Label      statusLabel_;
+    juce::Label      audioHeaderLabel_;
+    juce::AudioDeviceSelectorComponent deviceSelector_;
+    juce::ToggleButton                 monitoringToggle_;
     PreparationView  preparationView_;
     TimelineView     timelineView_;
     juce::Label      diagnosticsLabel_;
@@ -437,11 +479,26 @@ MainComponent::MainComponent()
         undoStack_.push (renamed, "rename session");
     }
 
+    // --- Audio I/O (M1 Session 1) ---------------------------------------------
+    // Initialise the device manager at OS-default sample rate / buffer size
+    // (operator decision 2026-05-17: accept whatever the OS reports; the
+    // EngineConfig defaults of 48 kHz / smallest-reliable only apply when the
+    // OS doesn't dictate). 2 in / 2 out matches the existing demo input
+    // topology — the input mixer milestone (M2) will widen this. Errors here
+    // are surfaced via the diagnostics row rather than throwing: a user on a
+    // machine without an audio device should still see the UI come up.
+    audioCallback_ = std::make_unique<AudioCallback> (engineConfig_);
+    audioDeviceLastError_ = audioDeviceManager_.initialiseWithDefaultDevices (
+        /*numInputChannelsNeeded*/  2,
+        /*numOutputChannelsNeeded*/ 2);
+    audioDeviceManager_.addAudioCallback (audioCallback_.get());
+
     // --- Performance tab ---
     tabs_.addTab ("Performance", juce::Colours::black, &performanceView_, false);
 
     // --- Preparation tab ---
-    preparationPane_ = std::make_unique<PreparationPane>();
+    preparationPane_ = std::make_unique<PreparationPane> (audioDeviceManager_,
+                                                          *audioCallback_);
     preparationPane_->saveButton().onClick       = [this] { chooseFileAndSave(); };
     preparationPane_->loadButton().onClick       = [this] { chooseFileAndLoad(); };
     preparationPane_->reloadDemoButton().onClick = [this] { reloadDemo(); };
@@ -530,7 +587,18 @@ MainComponent::MainComponent()
     startTimerHz (30);
 }
 
-MainComponent::~MainComponent() = default;
+MainComponent::~MainComponent()
+{
+    // Explicit teardown order: detach the callback from the device manager
+    // *before* the callback is destroyed, so the audio thread cannot deliver
+    // one last buffer into freed memory. Then close the device — the manager
+    // would do this itself in its own destructor, but doing it explicitly
+    // here lets the dev-loop log a clean shutdown rather than racing the
+    // automatic teardown.
+    if (audioCallback_)
+        audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+    audioDeviceManager_.closeAudioDevice();
+}
 
 void MainComponent::paint (juce::Graphics& g)
 {

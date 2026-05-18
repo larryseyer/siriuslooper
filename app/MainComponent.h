@@ -3,7 +3,9 @@
 #include "CapabilityTier.h"
 #include "DemoSession.h"
 
+#include "sirius/AudioCallback.h"
 #include "sirius/CaptureSession.h"
+#include "sirius/EngineConfig.h"
 #include "sirius/InputDescriptor.h"
 #include "sirius/LatencyBudget.h"
 #include "sirius/PerformanceView.h"
@@ -12,6 +14,7 @@
 #include "sirius/TapeId.h"
 #include "sirius/UndoStack.h"
 
+#include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <memory>
@@ -96,6 +99,16 @@ private:
     juce::int64   expectedTickMicros_ { 0 };
     CapabilityTier tier_            { CapabilityTier::Survival };
     TierPolicy     tierPolicy_      { policyFor (CapabilityTier::Survival) };
+
+    // --- audio I/O (M1 Session 1) ---
+    // The device manager owns OS-side device lifecycle; the callback is the
+    // single audio-thread entry point. Constructed at MainComponent
+    // construction, torn down in the destructor; PreparationPane binds the
+    // device picker and monitoring toggle against them.
+    EngineConfig                       engineConfig_;
+    juce::AudioDeviceManager           audioDeviceManager_;
+    std::unique_ptr<AudioCallback>     audioCallback_;
+    juce::String                       audioDeviceLastError_;
 
     // --- top-level layout ---
     juce::TabbedComponent tabs_ { juce::TabbedButtonBar::TabsAtTop };

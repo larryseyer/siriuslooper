@@ -22,6 +22,10 @@ add_subdirectory(core)
 # Real-time engine layer — JUCE-free real-time primitives, retroactive ring, LMC.
 add_subdirectory(engine)
 
+# JUCE audio-device bridge — the thin layer the engine comment alludes to,
+# turning juce::AudioIODeviceCallback into the single audio-thread entry point.
+add_subdirectory(audio)
+
 # Session persistence — Constituent-graph JSON, content-addressed tape store.
 add_subdirectory(persistence)
 

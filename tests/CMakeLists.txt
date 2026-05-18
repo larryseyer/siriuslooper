@@ -39,7 +39,8 @@ add_executable(SiriusTests
     SessionMergeTests.cpp
     TransportTests.cpp
     VideoTapeTests.cpp
-    FrameMembraneTests.cpp)
+    FrameMembraneTests.cpp
+    AudioCallbackTests.cpp)
 
 target_compile_features(SiriusTests PRIVATE cxx_std_20)
 
@@ -47,6 +48,7 @@ target_compile_features(SiriusTests PRIVATE cxx_std_20)
 # Core's headers and library along transitively — no need to list it twice.
 target_link_libraries(SiriusTests PRIVATE
     Sirius::Engine
+    Sirius::Audio
     Sirius::AppCore
     Sirius::Persistence
     Sirius::Host

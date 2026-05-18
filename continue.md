@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-17 (V7 alignment plan shipped; M1 ready to start)
+# Session Continuation — 2026-05-17 (M1 Session 1 shipped; Session 2 next)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,40 +8,94 @@
 
 ---
 
-## RESUME HERE (2026-05-17 — V7 alignment plan is the new milestone spine)
+## RESUME HERE (2026-05-17 — M1 Session 1 shipped; Session 2 next)
 
-**The white paper grew from V2 to V7.** A V2→V7 transition guide
-landed at `docs/sirius-looper-v2-to-v7-transition.md`. The white-paper
-alignment pass that §6 below queued up has now been **spec'd in full**:
+**M1 Session 1 of the V7 alignment plan is on master.** AudioCallback +
+EngineConfig + AudioDeviceManager wiring + Preparation-tab UI all
+landed. ctest is **262 / 262 green** (was 256; +6 AudioCallbackTests).
+The full `bash bash/autotest.sh` 4-phase gate passes — headless ctest,
+signed Xcode bundle, codesign+spctl verify, GUI smoke Save/Load.
 
-→ **`docs/superpowers/plans/2026-05-17-v7-alignment.md`** — the canonical
-  24-milestone roadmap across 11 parts. Start at M1 (Audio I/O foundation
-  + RT-safety contract audit); do not start anywhere else; the dependency
-  graph is real.
+What landed this session:
 
-→ `docs/superpowers/specs/2026-05-17-v7-alignment-design.md` — pointer
-  stub honoring the paired-file convention; canonical content is in the
-  plan.
+- `engine/include/sirius/EngineConfig.h` — plain config struct (JUCE-free).
+  Carries `Asrc::Quality` (default `High`), `preferredSampleRate` (48000),
+  `preferredBufferSize` (0 = smallest reliable), `minPreferredBufferSize`
+  (128). M11 (capability tiers) will steer these per tier.
+- `audio/` — new top-level library `Sirius::Audio`. Bridges
+  `juce_audio_devices` to the engine; keeps the engine layer JUCE-free
+  per its own design comment. Holds `sirius::AudioCallback`
+  (juce::AudioIODeviceCallback) with identity input→output pass-through,
+  gated by an atomic monitoring flag (default OFF — feedback-loop
+  landmine prevention).
+- `app/MainComponent.{h,cpp}` — owns `juce::AudioDeviceManager` and
+  `AudioCallback`. PreparationPane gained an "Audio device" section:
+  JUCE's stock `AudioDeviceSelectorComponent` (220 px tall, advanced
+  options collapsed) plus the "Enable monitoring" toggle.
+- `tests/AudioCallbackTests.cpp` — 6 cases: silence-by-default,
+  identity pass-through on, fewer-input-than-output channels silenced,
+  extra-input dropped, sample-rate/buffer-size capture from device
+  start, EngineConfig round-trip.
+- `app/CMakeLists.txt` — links `Sirius::Audio` and
+  `juce::juce_audio_utils` (the picker is in audio_utils, not
+  audio_devices).
+- `audio/CMakeLists.txt`, top-level `CMakeLists.txt`,
+  `tests/CMakeLists.txt` — new library wiring.
 
-**The first new chat opening that plan must:**
+**Deviation from the plan's stated file list (worth flagging):** the
+plan called for `engine/include/sirius/AudioCallback.{h,cpp}`, but
+`engine/CMakeLists.txt` has a deliberate "JUCE-free" design comment.
+Putting an `AudioIODeviceCallback` subclass in the engine would force
+`juce_audio_devices` into that layer and break the comment's contract.
+I created a new `audio/` top-level library instead — the "thin layer
+added on top" the engine comment itself anticipates. The V7 alignment
+plan should be edited to reflect the actual file paths during Session 2
+or Session 3.
 
-1. Read this file end-to-end.
-2. Read `docs/Sirius_Looper.md` (V7 white paper).
-3. Read `docs/sirius-looper-v2-to-v7-transition.md`.
-4. Read the plan end-to-end.
-5. Open M1's block; brainstorm any open questions; start Session 1.
+**Operator decisions locked in 2026-05-17 (captured in
+`~/.claude/plans/read-continue-md-foamy-abelson.md`):**
 
-Execution doctrine (encoded per-milestone in the plan):
-`orchestrator+subagents` default; `ralph inner loop after PRD` for M13,
-M19, M22, M24. Operator launches ralph in a separate terminal when those
-milestones reach their inner-loop phase — Claude does not invoke ralph
-(memory rule).
+- Sample rate: accept all; default 48 kHz when nothing specified.
+- Buffer size: accept all; default smallest reliable (128–512).
+- ASRC quality: plumbed via EngineConfig, hard-coded `High` in M1.
+- Calibration cache: M1 uses `AudioDeviceCalibration::identity()` only.
+- Device picker: JUCE stock, attempt L&F styling later in shared-L&F
+  milestone, fall back to unstyled if not feasible.
 
-The auto-testing milestone described below (sections 0-5) is **closed and
+### What Session 2 picks up (from the V7 alignment plan, lines 161-167)
+
+**Session 2: Wire LMC sample-clock from `AudioCallback`; extend
+`LmcTests`; write `docs/RT_SAFETY_CONTRACT.md`.**
+
+The current `Lmc` (engine/include/sirius/Lmc.h) reads time from a
+`MonotonicClock` at every `nowSeconds()` call — there's no
+audio-callback-driven sample-clock API yet. Session 2 needs to:
+
+1. Add an Lmc API for advancing time from the audio callback (likely
+   `advanceBySamples(int numSamples, double sampleRate)` or similar —
+   to be designed; the white paper §4.3 calibration model is the
+   reference). Decision: does the audio thread *push* sample-counts
+   into Lmc, or does Lmc *pull* via a callback the audio thread
+   registers? Architectural choice for Session 2's brainstorm.
+2. Wire `AudioCallback` to feed that API in
+   `audioDeviceIOCallbackWithContext`.
+3. Extend `LmcTests` to verify monotonicity across simulated buffer
+   deliveries at varying sample rates.
+4. Write `docs/RT_SAFETY_CONTRACT.md` codifying V5 §5.6 invariants —
+   the audit checklist the rest of M2-M24 will measure against.
+
+### Session 3 then wires the existing engine pieces
+
+Asrc / OverloadProtection / AudioDeviceCalibration / RetroactiveRing
+into the AudioCallback. With Session 2's RT-safety doc in hand, the
+wiring's allocation-on-audio-thread review has a written rubric.
+
+Once Session 3 commits, M1 is complete and M2 (Input Mixer) is unblocked.
+
+The auto-testing milestone (sections 0-5 below) is **closed and
 shipped**. The CI signing handoff (3 of 6 secrets pending) is **still
-open** — those three secrets remain operator-only work, and the alignment
-plan does not depend on them landing first. Treat sections 0-5 as
-historical state; the actionable surface is the V7 alignment plan above.
+open** — operator-only Keychain/AppleID work, doesn't gate M1+.
+Treat sections 0-5 as historical state.
 
 ---
 

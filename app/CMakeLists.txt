@@ -53,11 +53,13 @@ target_compile_definitions(SiriusLooper PRIVATE
 
 target_link_libraries(SiriusLooper PRIVATE
     Sirius::Engine
+    Sirius::Audio
     Sirius::AppCore
     Sirius::Ui
     Sirius::Host
     Sirius::Video
     Sirius::Persistence
+    juce::juce_audio_utils
     juce::juce_gui_extra
     juce::juce_recommended_config_flags
     juce::juce_recommended_lto_flags
