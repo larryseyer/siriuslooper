@@ -66,17 +66,19 @@ namespace
 
     void handleMessage (xpc_object_t req, xpc_connection_t peer)
     {
+        // Wrong message type — libxpc has no request dictionary to reply
+        // against; sender's connection error handler is what'll see this.
         if (xpc_get_type (req) != XPC_TYPE_DICTIONARY)
-            return;
-        const char* op = xpc_dictionary_get_string (req, "op");
-        if (op == nullptr)
             return;
 
         xpc_object_t reply = xpc_dictionary_create_reply (req);
         if (reply == nullptr)
             return;
 
-        if (std::strcmp (op, "set_server_port") == 0)
+        const char* op = xpc_dictionary_get_string (req, "op");
+        if (op == nullptr)
+            xpc_dictionary_set_string (reply, "error", "missing_op");
+        else if (std::strcmp (op, "set_server_port") == 0)
             handleSetServerPort (req, reply);
         else if (std::strcmp (op, "get_server_port") == 0)
             handleGetServerPort (req, reply);
