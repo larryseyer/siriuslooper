@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-18 (M3 COMPLETE on origin; M4 next — Direct Layer subsystem)
+# Session Continuation — 2026-05-18 (M4 COMPLETE on origin; M5 next — OutputMixer expansion)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,10 +8,188 @@
 
 ---
 
-## RESUME HERE (2026-05-18 — M3 fully shipped on origin; M4 next)
+## RESUME HERE (2026-05-18 — M4 fully shipped on origin; M5 next)
 
-**M3 of the V7 alignment plan is fully on `origin/master`.** HEAD is
-`b395f2e`. Six commits shipped this session, all green:
+**M4 of the V7 alignment plan is fully on `origin/master`.** HEAD is
+`d0aa45f`. Four commits shipped this session, all green:
+
+| SHA | Subject |
+|---|---|
+| `70f8030` | M4 Session 1 — DirectLayer registry + OutputChannelId + dense generation handles |
+| `0130a5f` | M4 Session 2 — DirectLayer::routeBuffers audio-thread additive routing |
+| `3dff703` | M4 Session 3 — AudioCallback orchestrates InputMixer + DirectLayer; MainComponent owns mixers |
+| `d0aa45f` | docs: M4 close-out — RT_SAFETY_CONTRACT §6 rows for DirectLayer::routeBuffers + InputMixer::processBuffer + AudioCallback orchestration update |
+
+Test count: **310/310** green (was 293 at M3 close; +17 across M4).
+Full 4-phase `bash bash/autotest.sh` green (Phase 4 GUI smoke flaked
+twice on cold-start runs; passed cleanly on retry — known
+Accessibility-timing transient, unrelated to M4 changes).
+
+**Execution mode used:** subagent-driven (one implementer + spec
+review + code review per session, then a final milestone review).
+Per-session reviews caught: dense-storage vs tombstone-walk RT issue
+(S1 fix-up), `routeBuffers` const-correctness + RT-smoke flake risk
+(S2 fix-up), `audioDeviceAboutToStart` allocation in `vector::assign`
+(S3 fix-up). The final milestone review caught the
+`RT_SAFETY_CONTRACT.md §6` table missing rows for the new
+audio-thread classes — fixed in `d0aa45f` before declaring M4 done.
+
+### First moves for the M5 chat
+
+M5 ships the **OutputMixer expansion** — V3 Step 7 + decision #57:
+per-channel strips with gain/pan/EQ/dynamics, session-level effect
+buses, send/return architecture, master bus, real `OutputMixer::render_buffer`
+on the audio thread. **Plus** the input-side `AudioChain` becomes
+real (no longer no-op) — `ChannelStrip<SignalType::Audio>` is the
+shared implementation between input and output mixer channels.
+
+1. Read this file end-to-end.
+2. Open `docs/superpowers/plans/2026-05-17-v7-alignment.md` and read
+   **M5 in full** (starts at line 376). Sessions 1-3 break-out is at
+   the end of the M5 section (Session 1 = ChannelStrip template +
+   OutputMixer channel registration; Session 2 = Bus + sends; Session
+   3 = `render_buffer` audio-thread wiring + integration test).
+3. Read V3 transition guide §2.4 / §3.3 / §3.4 for the channel-strip
+   / bus / send topology.
+4. Brainstorm pass for M5 before code. The plan body is dense; key
+   open questions worth surfacing to the operator:
+   - **ChannelStrip inheritance vs composition** — plan amendment §3
+     in `docs/superpowers/specs/2026-05-18-m3-design.md` says either
+     `ChannelStrip<Audio>` inherits `ProcessingChain` (rename — preferred)
+     or `AudioChain` delegates to a held `ChannelStrip<Audio>`
+     (composition — fallback). Pick one before Session 1.
+   - **`OutputChannelId` promotion** — M4 ships it as a strong-typed
+     int wrapper in `engine/include/sirius/Channel.h`. M5 needs to
+     decide whether the promotion adds methods to the wrapper in-place
+     or whether `OutputMixer::add_channel` returns a NEW richer type
+     (`OutputChannel` value object?) that holds the id plus the strip
+     reference. The V7 plan acceptance criterion ("`add_channel(...)`
+     returns `OutputChannelId`") suggests the wrapper stays, methods
+     get added.
+   - **OutputMixer slot in AudioCallback** — Session 3 of M4 wired the
+     callback's 5-step body (zero → InputMixer → DirectLayer → LMC →
+     elapsed). OutputMixer is currently a held-but-not-invoked
+     `(void) outputMixer_;` marker at line ~160 of
+     `audio/src/AudioCallback.cpp`. M5 Session 3 turns that marker
+     into the real `render_buffer` call — additive into the same
+     output buffers DirectLayer also writes to. Operator should know
+     the M5 callback grows from 5 steps to 6 (or DirectLayer + OutputMixer
+     get fused as one step).
+5. Adopt the same subagent-driven execution mode that worked for M3+M4.
+   Plan-write → spec-review → code-review per session; final-milestone
+   review at the end. **The execution mode in the V7 plan is
+   `orchestrator+subagents` with Performance Benchmarker for the
+   32-channel/8-bus RT-budget test and Backend Architect for the
+   channel→bus→master DAG audit.** Worth using those specialists
+   instead of generic-purpose for the matching sessions.
+
+### M4-era decisions that constrain M5 (DO NOT "fix" without operator approval)
+
+1. **`OutputChannelId` lives in `engine/include/sirius/Channel.h`**
+   alongside `ChannelId` / `InputId`. M5 promotes by adding methods
+   in-place — do NOT move it to a new header.
+2. **AudioCallback orchestrates the audio path; InputMixer / OutputMixer
+   / DirectLayer do not call each other.** AudioCallback owns the
+   sequence "for each input → InputMixer per channel → DirectLayer
+   routeBuffers → OutputMixer render_buffer (when M5 makes it real) →
+   LMC → elapsed publish." M5 must NOT add `setOutputMixer(...)` to
+   InputMixer or `setOutputMixer(...)` to DirectLayer.
+3. **MainComponent owns mixers + DirectLayer via `std::unique_ptr`,
+   injects raw pointers into AudioCallback set-once on the message
+   thread.** Matches the M1 Session 3 ASRC pattern. M5's Bus
+   instances should follow the same shape (MainComponent owns; raw
+   pointer injection if they need to be visible across components).
+4. **DirectLayer is `const DirectLayer*` because `routeBuffers` is
+   `const`.** If `OutputMixer::render_buffer` can be `const` (which
+   it should — render is a function of state, not a state mutator),
+   do the same: `const OutputMixer*` in AudioCallback. If not, document
+   why not.
+5. **Scratch vectors in AudioCallback are pre-sized to
+   `kMaxScratchChannels = 32` in the constructor; `audioDeviceAboutToStart`
+   only records active counts.** Zero allocation in the
+   message-thread-on-audio-boundary path. If M5 OutputMixer needs its
+   own per-buffer scratch (e.g. send-bus intermediate buffers), use
+   the same pattern — pre-allocate in constructor, record active
+   sizes in `audioDeviceAboutToStart`, only index in the callback.
+6. **Threading contract: configure-before-audio-starts.** Documented
+   in `DirectLayer.h` and inherited by AudioCallback. No atomic-snapshot
+   publish on route mutation. M5 inherits the same — bus/strip
+   configuration happens before the audio thread reads them, period.
+   When the operator-facing mutation UI lands (post-M5), AudioCallback
+   will need a temporary stop-callback-mutate-restart guard or a real
+   lock-free publish; defer the decision until the UI is real.
+7. **ProcessedRoute is wired but not exercised in M4** — the
+   `processedChannels` span in `DirectLayer::routeBuffers` is passed
+   empty from AudioCallback (`audio/src/AudioCallback.cpp` line ~103).
+   Reason: M3's `InputMixer::processBuffer` writes byte-serialized
+   output to a TapeWriter queue and does NOT expose a post-processing
+   float buffer. **M5 unblocks this**: once `ChannelStrip<Audio>` is
+   the concrete `Channel::processing` body, InputMixer can publish
+   a per-channel post-processing float buffer that AudioCallback
+   populates into the `ProcessedChannelBufferView` scratch and passes
+   to DirectLayer. Add this as M5 Session 3 work — it's a natural fit
+   alongside `render_buffer` wiring. Without it, ProcessedRoute
+   registration is allowed but routes nothing.
+
+### Known M4 deviations + minors deferred to later milestones
+
+These are real but intentionally not fixed in M4. Don't pick them up
+opportunistically in M5 unless they overlap with M5 scope.
+
+- **`AudioCallback.h` lacks a threading-contract note** matching
+  `DirectLayer.h`'s. The configure-before-start assumption is in the
+  setters' doc comments but not the class-level block. Add the
+  paragraph during M5 Session 3 when `setOutputMixer` joins
+  `setDirectLayer` in the same neighborhood.
+- **No regression test for the InputMixer-no-registered-channels
+  no-op path** on the audio thread. M4 default config exercises it
+  (MainComponent doesn't register any InputMixer channels) but
+  nothing asserts it stays a no-op if the early-return in
+  `InputMixer::processBuffer` is ever changed. M5 will register
+  channels for real (gain/pan input-side processing) — when it does,
+  add an assertion that unregistered channels still no-op gracefully.
+- **No test for `DirectLayer::removeRoute` mid-audio.** Currently
+  illegal per the threading contract, so untestable. When mutation-
+  during-audio becomes a real surface (post-M5), add the test.
+- **DirectLayer's `[.rt-smoke]` test is hidden by default** (Catch2
+  hidden-tag convention) — runs only on explicit filter via the
+  test binary, not `ctest`. Acceptable for a performance smoke;
+  document if M5 adds a similar smoke for `render_buffer`.
+
+### RT-safety invariants M5 OutputMixer must preserve
+
+- Zero allocation, zero locks, zero I/O, zero logging on the audio
+  thread. `noexcept` on every hot-path function.
+- `render_buffer` should be `const` and audio-thread-only.
+- Channel → bus → master DAG traversal must be bounded. The V3
+  decision caps buses at 64; channels are typically <32. Worst case
+  ~2048 send operations per buffer — well within budget at modern
+  CPU.
+- Bus effect chains (`EffectChain` is reused from core/) — verify
+  each effect's audio-thread call is allocation-free. M5 only ships
+  identity-EQ + identity-dynamics stubs; real DSP is a deferred
+  sub-milestone.
+- Per `docs/RT_SAFETY_CONTRACT.md §6`, every new audio-thread class
+  gets a row in the table BEFORE the milestone closes. M4 missed
+  this and had to backfill — don't repeat the mistake.
+
+### Operator-side TODOs for M5
+
+1. **CI signing secrets** (still operator-pending — does NOT block
+   any V7 alignment work, but the auto-testing milestone won't go
+   fully green on CI until done). See the "CI signing handoff" section
+   further down. Three secrets remain.
+2. **Decide ChannelStrip inheritance vs composition** (see brainstorm
+   open question above).
+3. **Optional:** Use Performance Benchmarker subagent for the
+   32-channel/8-bus RT-budget test in M5 Session 3 (per the V7 plan's
+   recommended execution mode).
+
+---
+
+## HISTORICAL — M3 close-out + M4 handoff (superseded 2026-05-18 — M4 now complete)
+
+**M3 shipped on `origin/master` HEAD `b395f2e`.** Six commits, test count 279 → 293.
 
 | SHA | Subject |
 |---|---|
@@ -22,122 +200,20 @@
 | `94aed46` | M3 Session 3 — finalizeChannel + NonDestructive params + setInputDefaults end-to-end |
 | `b395f2e` | M3 follow-up — TapeWriter flushChannel prompt wake on empty queue + simplify predicate to fail loud in NDEBUG |
 
-Test count: **293/293** green (was 279 at M2 close; +14 across M3).
-Full 4-phase `bash bash/autotest.sh` green.
+M3-era decisions still load-bearing in M5:
+- `TapeWriter` takes `std::chrono::milliseconds`, NOT `CapabilityTier&` (engine can't depend on app layer).
+- `TapeMode` lives in `core/` (because `ChannelDefaults` needs it).
+- InputMixer collaborator setters are set-once on the message thread; never null-checked at every audio-thread call.
+- Engine public API is JUCE-free via PIMPL where filesystem types are needed.
+- `flushChannel` has a single-caller precondition (asserted in debug, blocks-loud in NDEBUG).
+- `TapeWriteMessage::payloadByteCount` (not `sampleCount`); `lmcTime` is `Rational(0)` until per-channel sample-rate context exists.
 
-**Execution mode used:** subagent-driven (one implementer + spec
-review + code review per session, then a final milestone review).
-Caught 2 spec deviations (juce_core PUBLIC leak; sampleCount misnomer)
-that the per-session reviews surfaced and the milestone review caught
-2 more real bugs (1000ms flush latency on Survival tier; NDEBUG
-silent-corruption hazard) that the per-session reviews missed. All
-fixed before closing the milestone.
-
-### First moves for the M4 chat
-
-M4 ships the **Direct Layer subsystem** — V3 §2.3 / Step 6: parallel
-signal path from input mixer to output mixer that bypasses the tape.
-Manual routing only; automatic inference is deferred to M14.
-
-1. Read this file end-to-end.
-2. Open `docs/superpowers/plans/2026-05-17-v7-alignment.md` and read
-   **M4 in full** (starts at line ~325). Sessions 1-3 break-out is at
-   the end of the M4 section.
-3. Read V3 transition guide §2.3 (`docs/sirius-looper-v2-to-v7-transition.md`
-   lines ~188-215) for the DirectLayer interface sketch.
-4. Brainstorm pass for M4 before code. The plan body covers most of
-   what's needed but a few design questions are unresolved:
-   - `OutputChannelId` is described as an opaque int in M4 and a real
-     type in M5. What's the bridge — does M4 ship a placeholder strong-
-     typed wrapper that M5 promotes, or does M4 use raw `int`?
-   - Direct Layer needs to be wired into `AudioCallback`'s callback
-     flow (input mixer → direct layer → output mixer skeleton). The
-     M3 work didn't touch AudioCallback yet — `processBuffer` is
-     called by tests directly. M4 has to bridge `AudioCallback` →
-     `InputMixer::processBuffer` AND insert the DirectLayer hop. This
-     is a meaningful audio-thread wiring change worth surfacing to the
-     operator before code.
-5. Adopt the same subagent-driven execution mode that worked for M3.
-   Plan-write → spec-review → code-review per session; final-milestone
-   review at the end. Two-stage reviews caught real bugs in M3 —
-   especially the engine-JUCE-free leak and the flush-latency issue.
-
-### M3-era decisions that constrain M4 (DO NOT "fix" without operator approval)
-
-1. **`TapeWriter` takes `std::chrono::milliseconds`, not `CapabilityTier&`.**
-   Plan body called for `CapabilityTier&` but engine cannot depend on
-   the app layer where CapabilityTier lives. The tier→interval
-   conversion happens at the call site (currently tests; the real app
-   wiring lands in M4 or M5). The `tapeWriterFlushInterval(CapabilityTier)`
-   helper belongs in `app/CapabilityTier.h` when wired.
-2. **TapeMode lives in `core/`, not `engine/`.** M3 Session 1 moved
-   it because `ChannelDefaults` (also in core/) needs it. Don't move
-   it back.
-3. **InputMixer collaborator setters are set-once on the message
-   thread, never null-checked at every audio-thread call.**
-   `processBuffer` checks `tapeWriter_ != nullptr` once; the
-   `overload_` and `tapeStore_` pointers follow the same pattern. M4
-   Direct Layer must use the same pattern — do not introduce
-   thread-safe rebinding of collaborators.
-4. **Engine public API is JUCE-free** via PIMPL where filesystem
-   types are needed. `TapeWriter.h` uses `std::filesystem::path` and
-   forward-declares `struct OpenFile`; `juce::FileOutputStream` lives
-   only in `TapeWriter.cpp`. If M4 needs file I/O, use the same PIMPL
-   pattern. **Never add `juce::` types to any header in
-   `engine/include/sirius/`.**
-5. **`flushChannel` has a single-caller precondition.** Documented in
-   header. Asserted in debug; blocks-loud in NDEBUG. Do not introduce
-   concurrent callers.
-6. **`TapeWriteMessage::payloadByteCount`** is the field name (not
-   `sampleCount`). It holds byte counts. M4 wires per-channel LMC
-   time on `TapeWriteMessage::lmcTime` — currently hardcoded to
-   `Rational(0)` because M3 had no per-channel sample-rate context.
-
-### Known M3 deviations + minors deferred to later milestones
-
-These are real but intentionally not fixed in M3. Don't pick them up
-opportunistically in M4 — they belong to their named milestones.
-
-- `touchParamsPartial` silent-fail if `setChannelTapeMode(ch, NonDestructive)`
-  is called before `setTapeWriter(...)`. Today's tests always wire
-  the writer first. Flagged for M11 SAF orchestration where set-up
-  ordering becomes formal.
-- `touchParamsPartial` holds `stateMutex_` across an `std::ofstream`
-  open. Negligible — one-shot per mode transition. Defer.
-- `finalizeChannel` doesn't `removeChannel` — channel stays in
-  `channels_` after finalize. M4 will iterate channels per buffer for
-  Direct Layer routing; revisit then if it matters.
-- `[finalize]` test doesn't cover the no-messages-enqueued path. The
-  body handles it (existence check), but cheap insurance is missing.
-- No mechanical RT-safety counter on `processBuffer` (no allocator
-  instrumentation). Audit-by-inspection per `docs/RT_SAFETY_CONTRACT.md`.
-  M11+ may add an `RtSafetyHarness`.
-
-### RT-safety invariants M4 Direct Layer must preserve
-
-- Zero allocation, zero locks, zero I/O, zero logging on the audio
-  thread. `noexcept` on every hot-path function.
-- For any API that could throw, follow the `OverloadProtection`
-  pattern: atomic-publish on the audio thread, message-thread
-  consumes / reacts.
-- Direct Layer per `docs/RT_SAFETY_CONTRACT.md §6` is stricter than
-  InputMixer — "stateless, audio-thread-exclusive" — so no snapshot
-  pointer load beyond a couple of gain atomics.
-- The M3 `processBuffer` body is the reference shape: one
-  `unordered_map::find`, one `std::memcpy`, one wait-free `queue.push`,
-  one `noexcept` atomic-store overload report. Model M4's
-  `route_buffers` on the same shape.
-
-### Operator-side TODOs for M4
-
-1. **CI signing secrets** (still operator-pending from way back —
-   does NOT block any V7 alignment work, but the auto-testing
-   milestone won't go fully green on CI until done). See the historical
-   "CI signing handoff" section below. Three secrets remain.
-2. **Decide M4 break-out granularity.** The plan has Sessions 1-3.
-   The subagent-driven execution worked well; brainstorm pass +
-   per-session implementer + reviews is probably the right shape
-   again. The brainstorm is where Q1/Q2 in step 4 above get resolved.
+Deferred from M3 to specific later milestones:
+- `touchParamsPartial` silent-fail if `setChannelTapeMode(NonDestructive)` before `setTapeWriter` — flagged for M11.
+- `touchParamsPartial` holds `stateMutex_` across `std::ofstream` open — negligible, defer.
+- `finalizeChannel` doesn't `removeChannel` — revisit when iterating channels per buffer (M5+ may hit this).
+- `[finalize]` test doesn't cover no-messages-enqueued path — cheap insurance missing.
+- No mechanical RT-safety counter on `processBuffer` — M11+ may add `RtSafetyHarness`.
 
 ---
 
