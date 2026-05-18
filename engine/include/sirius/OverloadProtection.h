@@ -33,9 +33,9 @@ public:
 
     /// Feeds in the latest audio-callback load, as a fraction of the callback's
     /// time budget. Values above 1.0 are meaningful — they signal the callback
-    /// is overrunning — and are not clamped. Throws std::invalid_argument if
-    /// `audioCallbackLoad` is negative.
-    void reportLoad (double audioCallbackLoad);
+    /// is overrunning — and are not clamped. A negative value is a programming
+    /// error enforced via assert (debug) / undefined behavior (release).
+    void reportLoad (double audioCallbackLoad) noexcept;
 
     /// Whether `workload` is currently shed. Always false for Workload::Audio.
     bool isShed (Workload workload) const;

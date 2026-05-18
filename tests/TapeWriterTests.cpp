@@ -40,13 +40,13 @@ namespace
         return std::filesystem::path (dir.getFullPathName().toStdString());
     }
 
-    TapeWriteMessage makeMessage (ChannelId id, std::size_t sampleCount, std::byte fill)
+    TapeWriteMessage makeMessage (ChannelId id, std::size_t byteCount, std::byte fill)
     {
         TapeWriteMessage m;
         m.id = id;
         m.lmcTime = Rational (0);
-        m.sampleCount = sampleCount;
-        for (std::size_t i = 0; i < sampleCount; ++i)
+        m.payloadByteCount = byteCount;
+        for (std::size_t i = 0; i < byteCount; ++i)
             m.samples[i] = fill;
         return m;
     }

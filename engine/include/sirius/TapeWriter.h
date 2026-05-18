@@ -30,14 +30,17 @@ struct OpenFile;
 inline constexpr std::size_t kMaxTapeWriteMessageBytes = 32 * 1024;
 
 /// Audio-thread → writer-thread handoff. Self-contained: the audio thread
-/// memcpys processed bytes into `samples[0..sampleCount]` and enqueues. No
-/// pointers into shared memory; ownership is trivial. Default values are
+/// memcpys processed bytes into `samples[0..payloadByteCount]` and enqueues.
+/// No pointers into shared memory; ownership is trivial. Default values are
 /// chosen so a zeroed message is harmless if a consumer races a producer.
+///
+/// NOTE: `payloadByteCount` is bytes, not samples — M3 has no per-channel
+/// sample-rate context yet; M4 wires it.
 struct TapeWriteMessage
 {
     ChannelId id { 0 };
     Rational lmcTime { 0 };
-    std::size_t sampleCount { 0 };
+    std::size_t payloadByteCount { 0 };
     std::array<std::byte, kMaxTapeWriteMessageBytes> samples {};
 };
 
@@ -87,8 +90,20 @@ public:
     /// `InputMixer::finalizeChannel` before the channel's partial file
     /// is finalized. Blocks the caller until the worker has flushed
     /// every pending message for `channelId` and closed the file handle.
-    /// Returns the absolute path of the closed partial file (caller
-    /// hashes it + hands to TapeStore::store + deletes).
+    ///
+    /// PRECONDITION: caller serializes calls — concurrent flushChannel
+    /// invocations from multiple threads have undefined behavior (the
+    /// completion-tracking is single-slot). In practice the only caller is
+    /// InputMixer::finalizeChannel on the message thread, and the operator
+    /// finalizes channels one at a time. If concurrent finalization
+    /// becomes a requirement (e.g. M22 batch-disarm), upgrade the slot
+    /// to a per-channel completion map.
+    ///
+    /// RETURNS: the partial-file path. NOTE: the file may not exist on
+    /// disk if no messages were ever enqueued for this channel. Caller
+    /// must check existence (std::filesystem::exists or equivalent)
+    /// before reading. M3 Session 3's InputMixer::finalizeChannel will
+    /// add the existence check.
     std::filesystem::path flushChannel (ChannelId channelId);
 
     /// Per-channel error counter (incremented on I/O failure). Read

@@ -2,6 +2,7 @@
 
 #include <juce_core/juce_core.h>
 
+#include <cassert>
 #include <stdexcept>
 
 namespace sirius
@@ -55,6 +56,8 @@ std::filesystem::path TapeWriter::flushChannel (ChannelId channelId)
 {
     {
         std::scoped_lock lk (stateMutex_);
+        assert (flushRequestForChannel_ == -1
+                && "TapeWriter::flushChannel called concurrently — see header doc");
         flushRequestForChannel_ = channelId.value();
     }
     wakeCv_.notify_all();
@@ -147,7 +150,7 @@ void TapeWriter::writePendingMessages()
 
         if (stream == nullptr) continue;
 
-        const bool ok = stream->write (msg.samples.data(), msg.sampleCount);
+        const bool ok = stream->write (msg.samples.data(), msg.payloadByteCount);
         if (! ok)
         {
             juce::Logger::writeToLog ("TapeWriter: write failed for channel "

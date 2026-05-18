@@ -82,7 +82,7 @@ void InputMixer::processBuffer (ChannelId id,
     TapeWriteMessage msg;
     msg.id = id;
     msg.lmcTime = Rational (0); // M3 has no per-channel LMC time wiring yet; M4 adds it
-    msg.sampleCount = byteCount;
+    msg.payloadByteCount = byteCount;
     std::memcpy (msg.samples.data(), bytes, byteCount);
 
     if (! tapeWriter_->tryEnqueue (msg) && overload_ != nullptr)

@@ -7,8 +7,6 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <stdexcept>
-
 using sirius::OverloadProtection;
 using sirius::Workload;
 
@@ -100,13 +98,9 @@ TEST_CASE ("a load that stays inside a hysteresis band does not flap",
     CHECK_FALSE (op.isShed (Workload::Video));
 }
 
-TEST_CASE ("a negative load is rejected as invalid input", "[overload]")
-{
-    // The load is a measurement; "no load" is 0.0. A negative value is a bug
-    // in the caller, not a quieter form of zero — fail loud (CLAUDE.md).
-    OverloadProtection op;
-    CHECK_THROWS_AS (op.reportLoad (-0.01), std::invalid_argument);
-}
+// NOTE: negative load is now rejected via assert() in debug builds.
+// The throw-based test was removed when reportLoad became noexcept (M3 Session 2).
+// The contract remains: a negative value is a programming error.
 
 TEST_CASE ("an overrunning callback (load > 1.0) is accepted, not clamped",
            "[overload]")

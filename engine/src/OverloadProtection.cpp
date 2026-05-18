@@ -1,6 +1,6 @@
 #include "sirius/OverloadProtection.h"
 
-#include <stdexcept>
+#include <cassert>
 
 namespace sirius
 {
@@ -34,11 +34,10 @@ namespace
     }
 }
 
-void OverloadProtection::reportLoad (double audioCallbackLoad)
+void OverloadProtection::reportLoad (double audioCallbackLoad) noexcept
 {
-    if (audioCallbackLoad < 0.0)
-        throw std::invalid_argument (
-            "sirius::OverloadProtection: audio-callback load must not be negative");
+    assert (audioCallbackLoad >= 0.0
+            && "OverloadProtection::reportLoad: negative load is a programming error");
 
     lastLoad_ = audioCallbackLoad;
 
