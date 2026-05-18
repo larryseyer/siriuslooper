@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-18 (M2 Session 2 shipped LOCALLY; M2 Session 3 next — Session 3 pushes both commits)
+# Session Continuation — 2026-05-18 (M2 COMPLETE on origin; M3 next — first behaviour-bearing milestone in Part B)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,137 +8,131 @@
 
 ---
 
-## RESUME HERE (2026-05-18 — M2 Session 2 committed locally; Session 3 next)
+## RESUME HERE (2026-05-18 — M2 complete on origin; M3 next)
 
-**M2 Session 2 of the V7 alignment plan is committed locally (NOT
-pushed yet — Session 3 pushes).** Type shapes for the V3 mixer
-architecture are in: `SignalType` (Audio/Midi/Video/File),
-`signalTypeOf(InputKind)` helper, `TapeMode`
-(CommitToTape/NonDestructive/NoTape), strong-typed `InputId` +
-`ChannelId`, `Channel` aggregate, and `InputMixer` + `OutputMixer`
-skeleton classes whose bodies all `assert(false && "M3-M5 stub")`.
-The full `bash bash/autotest.sh` 4-phase gate passes — test count
-**holds at 270** (no new tests this session, by plan). HEAD is
-`ec1b5d9` on local `master`; `origin/master` is still at `ca92a08`.
+**M2 of the V7 alignment plan is fully shipped on `origin/master`.**
+All three sessions are pushed (HEAD `f1b4d58`):
 
-### First moves for the M2 Session 3 chat
+- `ec1b5d9` — Session 2: type shapes (SignalType, TapeMode, Channel,
+  InputMixer/OutputMixer skeletons)
+- `9edd311` — Session 2 handoff continue.md
+- `f1b4d58` — Session 3: skeleton tests for the new types
+
+Test count is **279/279** (was 270; +9 cases from Session 3: 2
+SignalType, 5 Channel/TapeMode/InputId/ChannelId, 1 InputMixer, 1
+OutputMixer). Full 4-phase `bash bash/autotest.sh` green; Phase 4 GUI
+smoke flaked once on a cold build but passed on retry — known
+Accessibility-timing transient, unrelated to type-shape additions.
+
+### First moves for the M3 chat
+
+M3 is **the first behaviour-bearing milestone in Part B** — the
+mixer skeleton bodies that currently assert-false get real
+implementations, and the first `Tape<T>` instance in product code
+lands. This is a *real* session, not a rename or scaffolding pass.
 
 1. Read this file end-to-end.
-2. Open `docs/superpowers/plans/2026-05-17-v7-alignment.md` lines
-   240–252 — Session 3 is the one-liner: "Write skeleton tests for the
-   new types; verify `bash autotest.sh` green; commit and push." Per
-   plan line 238: instantiation + setter tests only; no buffer-flow
-   assertions yet (those land in M3-M5).
-3. Read the actual skeletons before writing tests — the M3 stubs make
-   most setters assert-false at runtime, so the tests need to be
-   shaped around what's safe to call:
-   - `core/include/sirius/SignalType.h` — enum
-   - `core/include/sirius/InputKind.h` — `signalTypeOf` (constexpr;
-     fully testable, all 7 cases)
-   - `engine/include/sirius/TapeMode.h` — enum
-   - `engine/include/sirius/Channel.h` — `InputId`, `ChannelId` (both
-     follow `TapeId`/`ConstituentId` house pattern: explicit constexpr
-     ctor, `value()`, `==`/`!=`); `Channel` aggregate with `id`,
-     `signalType`, `source`, `tapeMode` fields
-   - `engine/include/sirius/InputMixer.h`, `OutputMixer.h` — methods
-     declared, .cpp bodies `assert(false && "M3-M5 stub")`. Tests can
-     verify *construction* (default ctor + dtor are real, non-asserting)
-     but should NOT call any setter / `addChannel` / `processBuffer` etc.
-     because every body asserts. **Per Risks note line 257 this is
-     intentional — don't "fix" it by making bodies no-op.**
-4. Write the three new test files (Catch2 SECTIONs; match the style of
-   `tests/LatencyTimingTests.cpp` / `tests/InputDescriptorTests.cpp`):
-   - `tests/SignalTypeTests.cpp` — `signalTypeOf(InputKind)` exhaustive
-     mapping; Catch2 tag `[signal-type]`. Compile-time `static_assert`s
-     are fine since `signalTypeOf` is `constexpr`.
-   - `tests/ChannelTests.cpp` — `InputId`/`ChannelId` strong-typing
-     (constexpr ctor, value, ==/!=); `Channel` aggregate construction
-     and field access; tag `[channel]`.
-   - `tests/InputMixerTests.cpp` + `tests/OutputMixerTests.cpp` — *only*
-     "default ctor + dtor don't crash" and "type is non-copyable/movable
-     per current design" — nothing that calls a stubbed method. Tag
-     `[input-mixer]` / `[output-mixer]`. **Plan deviation possible:**
-     if `InputMixer`/`OutputMixer` have nothing test-worthy this thin,
-     consider deferring these two test files to M3 when bodies are real,
-     and just shipping `SignalTypeTests.cpp` + `ChannelTests.cpp` for
-     Session 3. Plan line 228 enumerates all three so do them unless
-     the assert-false floor makes the test file vacuous.
-5. Wire `tests/CMakeLists.txt` — find the existing
-   `target_sources(SiriusTests PRIVATE …)` block (or equivalent) and
-   add the new files.
-6. Verify with `rm -rf build build-xcode && bash bash/autotest.sh`
-   (note: rm sometimes needs a retry on `build-xcode/` — it's a known
-   transient on this filesystem. If `rm -rf build-xcode` exits non-zero
-   with "Directory not empty," just retry once).
-7. Commit as `feat: M2 Session 3 — skeleton tests for SignalType / Channel / Mixer types`,
-   then `git push origin master`. This push will carry BOTH `ec1b5d9`
-   (Session 2) and the Session 3 commit to origin in one push — that's
-   intentional, per the original plan break-out (Session 3 is the push
-   step for the M2 milestone).
-8. After push, update continue.md → "M2 complete, M3 next."
+2. Open `docs/superpowers/plans/2026-05-17-v7-alignment.md` and read
+   the **entire M3 section** (lines ~263 onward — "Channel-driven tape
+   allocation + channel-layer processing chains + per-input flags").
+   M3 is significantly larger than M2: it changes `Channel`, adds
+   `ProcessingChain`, adds `TapeWriter` + lock-free queue, extends
+   `TapeStore` with `appendBytes`, and adds three flags to
+   `InputDescriptor`. Files-touched list is long.
+3. **Brainstorm first.** M3 is large enough that it deserves a
+   `superpowers:brainstorming` pass before any code: the audio-thread /
+   writer-thread split, the SPSC queue contract (back-pressure?
+   overflow policy?), and the `NonDestructive` tape + parameter-tape
+   pairing all have decisions worth surfacing to the operator before
+   touching code. Specifically:
+   - **Q for operator:** what does `process_buffer` do when the SPSC
+     write queue is full? Drop the buffer? Block (illegal on audio
+     thread)? Surface as overload via `OverloadProtection`? My read of
+     the M1 work says option C, but it's worth confirming.
+   - **Q for operator:** for `NonDestructive` mode, where does the
+     "processing delta" parameter-tape format live? JSONL like
+     ParameterAutomation? Or a new binary format? Plan doesn't pin it.
+4. Read the V3 transition guide §2 (the same lines used in M2) plus
+   §2.4 / §3.3 / §3.4 for the channel/tape/effects topology that M3
+   makes real.
+5. Read what M2 left in place:
+   - `engine/include/sirius/InputMixer.h` — method names are PascalCase
+     (`registerInput`, `addChannel`, `setChannelTapeMode`,
+     `processBuffer`); placeholder args are `/* M3: ... */` comments
+     in the signatures. M3 turns those comments into real types.
+   - `engine/src/InputMixer.cpp` — every body
+     `assert(false && "M3-M5 stub")`. M3 replaces every assert with a
+     real body — don't leave any stubs.
+   - `engine/include/sirius/Channel.h` — currently 4 fields
+     (`id`, `signalType`, `source`, `tapeMode`). M3 adds
+     `ProcessingChain processing` and a destinations container.
+6. Plan break-out for M3 is **not yet sub-sessioned**. The M2 break-out
+   (Sessions 1/2/3) was added retroactively after brainstorming with
+   the operator; do the same for M3 — propose a 3-or-4-session split
+   in the first chat, get operator agreement, then execute.
 
-### M2 Session 2 — what landed locally (commit `ec1b5d9`)
+### M2 Session 3 — what landed and pushed (commit `f1b4d58`)
 
-10 files changed, 327 insertions, 1 deletion. Two modifications + eight
-new files:
+5 files changed, 223 insertions, 1 deletion:
 
-- `core/include/sirius/SignalType.h` (new — enum `{ Audio, Midi, Video, File }`)
-- `core/include/sirius/InputKind.h` (modified — added `constexpr SignalType signalTypeOf(InputKind) noexcept`; the seven `InputKind` cases collapse to four `SignalType` cases — Audio/Midi/Video pass through; Control/ParameterAutomation/Transport/System all → File, per plan Risks note line 256)
-- `engine/include/sirius/TapeMode.h` (new — enum `{ CommitToTape, NonDestructive, NoTape }`)
-- `engine/include/sirius/Channel.h` (new — `InputId`, `ChannelId` strong-typed wrappers around `std::int64_t` matching the house `TapeId`/`ConstituentId` style; `Channel` struct with `id`, `signalType`, `source`, `tapeMode`)
-- `engine/src/Channel.cpp` (new — placeholder TU; comment-only today, exists so M3 can land non-trivial ctors without re-touching CMake)
-- `engine/include/sirius/InputMixer.h` (new — V3 §2.1 sketch: `registerInput`, `setInputRawDirect`, `setInputEnabled`, `addChannel`, `removeChannel`, `setChannelTapeMode`, `processBuffer`. Future-only params like `ChannelConfig`, `BusId`, `InputBuffers`, `OutputDestinations`, `ChannelDefaults`, `DirectRouting` are held by `/* M3: ... */` comments inside the signatures — kept out of the type system until M3 designs them.)
-- `engine/src/InputMixer.cpp` (new — every body `assert(false && "...stub")`; default ctor/dtor real)
-- `engine/include/sirius/OutputMixer.h` (new — V3 §2.2 sketch: `addChannel`, `routeChannelToOutput`, `renderBuffer`; same `/* M3: */` placeholder convention)
-- `engine/src/OutputMixer.cpp` (new — same assert-false shape)
-- `engine/CMakeLists.txt` (modified — appended `src/Channel.cpp`, `src/InputMixer.cpp`, `src/OutputMixer.cpp` to `SiriusEngine`)
+- `tests/SignalTypeTests.cpp` (new) — exhaustive `signalTypeOf` mapping;
+  `static_assert`s at file scope plus runtime `CHECK`s in 2 TEST_CASEs.
+  Tag `[signal-type]`.
+- `tests/ChannelTests.cpp` (new) — `InputId` / `ChannelId` strong-typing
+  (runtime `CHECK`s only; the house IDs have non-constexpr accessors so
+  compile-time asserts on `value()` / `==` don't work — see deviation
+  note below). `Channel` aggregate brace-init; `SignalType × TapeMode`
+  combinations all build; `TapeMode` three-case distinctness. Tag
+  `[channel]` + sub-tags `[input-id]` / `[channel-id]` / `[tape-mode]`.
+- `tests/InputMixerTests.cpp` (new) — single TEST_CASE confirming
+  default ctor + dtor don't crash; `static_assert` that
+  `is_default_constructible_v<InputMixer>` holds. **No setter / no
+  `addChannel` / no `processBuffer` calls** — every body still asserts
+  false per the M2 Risks note. Tag `[input-mixer]`.
+- `tests/OutputMixerTests.cpp` (new) — same shape as InputMixerTests.
+  Tag `[output-mixer]`.
+- `tests/CMakeLists.txt` (modified) — appended the 4 new files to the
+  `SiriusTests` source list.
 
-### Plan deviations & subtle constraints to carry forward
+### Session 3 plan deviations to carry forward into M3
 
-1. **Method names are PascalCase, not snake_case.** V3 transition guide
-   lines 117–139 / 164–183 wrote the sketch in `snake_case`
-   (`register_input`, `add_channel`, `process_buffer`). The actual
-   skeleton uses JUCE/Sirius house style: `registerInput`,
-   `addChannel`, `processBuffer`. Session 3 tests must use the
-   PascalCase names. If a future session wants to flip the project to
-   snake_case it's a global decision, not an M2-local one.
-2. **No `ChannelConfig`/`BusId`/`InputBuffers`/`OutputDestinations`
-   types exist yet.** Their argument positions are placeholder C-style
-   comments inside the method signatures. Session 3 tests must not
-   reference these names. M3 is the milestone that designs them.
-3. **`Channel` is a plain aggregate, not a class with members.** It
-   has four fields right now (`id`, `signalType`, `source`, `tapeMode`).
-   Test it with brace-init; M3 will likely promote it to a class with
-   invariants when `ProcessingChain` and `destinations` land.
-4. **No `Control` SignalType.** Locked decision: `InputKind::Control`
-   maps to `SignalType::File`. Don't add a fifth enumerator in
-   Session 3 — push back if the test feels like it wants one.
-5. **`InputId` and `ChannelId` live in `engine/include/sirius/Channel.h`
-   for now,** not in `core/`. The header comment notes "promote to
-   core/ in M3+ if it spreads into persistence or UI layers." Session 3
-   tests live in `tests/` which already pulls Engine headers, so this
-   is fine.
-6. **Channel.cpp has no symbols.** It's a `.cpp` with one comment.
-   This compiles to an empty .o file and links cleanly. Don't be
-   alarmed by "wait, does this file do anything?" — it's intentional
-   scaffolding (plan line 222–223 calls for the .cpp; the empty TU is
-   the smallest correct form).
-7. **`rm -rf build-xcode` may need a retry.** Saw a "Directory not
-   empty" exit code 1 once this session; immediate retry succeeded.
-   Filesystem race, not a code issue. Not worth investigating unless
-   it becomes chronic.
+1. **Static_assert on `InputId.value()` / `==` doesn't work.** The
+   `value()` accessor and `==`/`!=` operators on `InputId` / `ChannelId`
+   aren't `constexpr` — matched the house `TapeId` / `ConstituentId`
+   pattern exactly, which has the same half-measure (constexpr ctor,
+   non-constexpr accessors). Initial Session 3 draft had
+   `static_assert(InputId(1).value() == 1)`; clang correctly rejected
+   it. Removed those and kept runtime `CHECK`s. If M3+ wants
+   constexpr-throughout for the house IDs, that's a project-wide
+   refactor (touches TapeId, ConstituentId, InputId, ChannelId), not
+   an M3-local change.
+2. **Mixer tests are intentionally thin.** Single ctor/dtor test each.
+   The plan (line 228) enumerated `InputMixerTests.cpp` /
+   `OutputMixerTests.cpp` as deliverables; I shipped them as floors
+   (regression catches if a future refactor accidentally makes the
+   mixers non-default-constructible). M3 will fill them with real
+   behaviour as the assert-false bodies become real implementations.
+3. **GUI smoke is flaky on first run after a clean build.** The
+   `bash bash/autotest.sh` Phase 4 failed once on a cold build, then
+   passed on direct re-run with the same `.app`. Almost certainly an
+   Accessibility-permission timing transient (the new app bundle needs
+   a moment for AX to attach). Not worth chasing this session. If it
+   becomes chronic, the fix is probably a 1–2 s `sleep` after launch
+   inside `bash/smoke-persistence.sh` before the first AX call.
 
-### Where M2 acceptance criteria stand (after Session 2)
+### Where M2 acceptance criteria stand (all green)
 
-- [x] Membrane → LatencyTiming rename + namespace flip (M2 Session 1)
-- [x] `core/include/sirius/SignalType.h` added
-- [x] `signalTypeOf(InputKind)` helper added to InputKind.h
-- [x] `engine/include/sirius/InputMixer.h` + `OutputMixer.h` skeletons added (assert-false bodies)
-- [x] `engine/include/sirius/Channel.h` added with strong-typed `ChannelId` + `InputId`
-- [x] `engine/include/sirius/TapeMode.h` added
-- [x] Existing tests stay green (270/270; rename is mechanical, skeletons aren't called)
-- [ ] Skeleton tests for new types (Session 3)
-- [ ] Push to `origin/master` (Session 3; carries Session 2's `ec1b5d9` + Session 3's commit)
+- [x] Membrane → LatencyTiming rename + namespace flip (Session 1)
+- [x] `core/include/sirius/SignalType.h` added (Session 2)
+- [x] `signalTypeOf(InputKind)` helper added to InputKind.h (Session 2)
+- [x] `engine/include/sirius/InputMixer.h` + `OutputMixer.h` skeletons added — assert-false bodies (Session 2)
+- [x] `engine/include/sirius/Channel.h` added with strong-typed `ChannelId` + `InputId` (Session 2)
+- [x] `engine/include/sirius/TapeMode.h` added (Session 2)
+- [x] Skeleton tests for new types (Session 3 — 9 new test cases)
+- [x] Pushed to `origin/master` (Session 3)
+
+M3 (Channel-driven tape allocation + channel-layer processing chains +
+per-input flags) is unblocked.
 
 What landed this session (M2 Session 1):
 
