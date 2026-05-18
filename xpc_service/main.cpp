@@ -22,9 +22,6 @@
 #include <xpc/xpc.h>
 #include <mach/mach.h>
 
-#include <atomic>
-#include <cstdint>
-#include <cstdio>
 #include <cstring>
 #include <dispatch/dispatch.h>
 
