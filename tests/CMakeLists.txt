@@ -51,7 +51,8 @@ add_executable(SiriusTests
     ProcessingChainTests.cpp
     TapeWriterTests.cpp
     NotificationBusTests.cpp
-    NotificationBusIntegrationTests.cpp)
+    NotificationBusIntegrationTests.cpp
+    OutOfProcessPluginTests.cpp)
 
 target_compile_features(SiriusTests PRIVATE cxx_std_20)
 
@@ -68,6 +69,17 @@ target_link_libraries(SiriusTests PRIVATE
     Sirius::Video
     Catch2::Catch2WithMain
     Threads::Threads)
+
+# M7 S1: OutOfProcessPluginTests needs the path of the sirius_plugin_host
+# binary. CMake's $<TARGET_FILE:...> generator expression resolves to the
+# binary's full path after the build configures it, so the test can find
+# the binary regardless of multi-config-generator output-dir variation.
+# The add_dependencies() ensures the host binary is built before the test
+# executable runs, removing the "the test was run before the binary was
+# built" race that would otherwise force every CI run to SKIP.
+target_compile_definitions(SiriusTests PRIVATE
+    SIRIUS_PLUGIN_HOST_PATH="$<TARGET_FILE:sirius_plugin_host>")
+add_dependencies(SiriusTests sirius_plugin_host)
 
 include(Catch)
 catch_discover_tests(SiriusTests)

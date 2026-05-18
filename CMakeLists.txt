@@ -44,6 +44,11 @@ add_subdirectory(video)
 # Standalone application shell.
 add_subdirectory(app)
 
+# Out-of-process plug-in host binary — spawned once per hosted plug-in
+# instance (V7 §9.1, plan M7). Separate process intentionally: a plug-in
+# crash must not take the always-running tape with it.
+add_subdirectory(host_process)
+
 if(SIRIUS_BUILD_TESTS)
     enable_testing()
     find_package(Threads REQUIRED)
