@@ -47,6 +47,7 @@ add_executable(SiriusTests
     DirectLayerTests.cpp
     InputMixerTests.cpp
     OutputMixerTests.cpp
+    BusTests.cpp
     ProcessingChainTests.cpp
     TapeWriterTests.cpp)
 

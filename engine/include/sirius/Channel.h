@@ -52,8 +52,10 @@ private:
 /// destination space. Strong-typed for the same reasons as `InputId` and
 /// `ChannelId`; M4 ships this as a thin opaque integer wrapper (per V7
 /// alignment plan M4 Risks line 368: "M4 defines it as an opaque ID with
-/// an `int` underlying"). M5 promotes it to a real `OutputChannel` when
-/// the OutputMixer grows per-channel strips and the registry takes shape.
+/// an `int` underlying"). M5 promotes it by having `OutputMixer::addChannel`
+/// return `OutputChannelId` directly (rather than the placeholder
+/// `ChannelId`) so call sites cannot accidentally swap an input-side
+/// channel id for an output-side one.
 class OutputChannelId
 {
 public:
@@ -63,6 +65,31 @@ public:
 
     bool operator== (const OutputChannelId& other) const noexcept { return value_ == other.value_; }
     bool operator!= (const OutputChannelId& other) const noexcept { return value_ != other.value_; }
+
+private:
+    std::int64_t value_;
+};
+
+/// Identifies a single bus within an OutputMixer's bus registry. Strong-typed
+/// for the same reasons as `OutputChannelId`. By convention `BusId{0}` is the
+/// master bus, auto-created in the OutputMixer constructor; `addBus` returns
+/// fresh BusIds starting at `BusId{1}`. M5 Session 2 lands this alongside
+/// the Bus data model + send/return architecture; M5 Session 3 wires the
+/// audio-thread traversal that walks channel → strip → sends → bus → master.
+///
+/// Lives in this header — not Bus.h — for consistency: every strong-typed ID
+/// in the engine (`InputId`, `ChannelId`, `OutputChannelId`, `BusId`) lives
+/// in one well-known place so callers and tests find them together. Bus.h
+/// includes Channel.h for the type; OutputMixer.h gets it transitively.
+class BusId
+{
+public:
+    explicit constexpr BusId (std::int64_t value) noexcept : value_ (value) {}
+
+    std::int64_t value() const noexcept { return value_; }
+
+    bool operator== (const BusId& other) const noexcept { return value_ == other.value_; }
+    bool operator!= (const BusId& other) const noexcept { return value_ != other.value_; }
 
 private:
     std::int64_t value_;
