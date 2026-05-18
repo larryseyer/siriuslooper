@@ -33,10 +33,20 @@ is `ca92a08` on `origin/master`.
    InputKind's Control / ParameterAutomation / Transport / System
    all map to `SignalType::File` for now (parameter tapes are JSONL
    files in SAF). No new operator question on that point.
-4. Skim the V3 transition guide for the InputMixer / OutputMixer /
-   Channel interface sketches — that's what the skeleton method
-   signatures need to honour:
-   `docs/sirius-looper-v2-to-v7-transition.md`.
+4. Read the V3 transition guide for the interface sketches the
+   skeletons need to honour:
+   `docs/sirius-looper-v2-to-v7-transition.md`:
+   - **lines 117-130:** `InputMixer` interface sketch
+     (`register_input`, `add_channel`, `set_channel_tape_mode`,
+     `process_buffer`, etc.)
+   - **lines 164-175:** `OutputMixer` interface sketch
+   - **lines 285-296:** Step-by-step Channel + SignalType narrative
+   - **line 229 (V4 note — load-bearing):** the MIDI tape event must
+     be **UMP-shaped from day one** (discriminated union over 32-bit /
+     64-bit / 128-bit / 32-bit utility messages). Session 2 doesn't
+     instantiate MIDI but the `Channel` / `SignalType` type design
+     must not preclude UMP — don't bake in 3-byte MIDI assumptions
+     anywhere in the skeleton signatures.
 5. Implement Session 2's file additions:
    - `core/include/sirius/SignalType.h` (new — enum)
    - `core/include/sirius/InputKind.h` (modified — add `signalTypeOf` helper)
