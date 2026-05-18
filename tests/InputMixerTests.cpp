@@ -7,6 +7,7 @@
 // the caller converts from CapabilityTier before constructing.
 #include "sirius/InputMixer.h"
 #include "sirius/OverloadProtection.h"
+#include "sirius/TapeStore.h"
 #include "sirius/TapeWriter.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -112,4 +113,138 @@ TEST_CASE ("InputMixer::processBuffer reports overload when the writer queue is 
     CHECK (overload.lastReportedLoad() == 1.0);
 
     juce::File (juce::String (tempDir.string())).deleteRecursively();
+}
+
+TEST_CASE ("InputMixer::finalizeChannel produces a content-addressed tape and clears the partial",
+           "[input-mixer][finalize]")
+{
+    using namespace sirius;
+    using sirius::persistence::TapeStore;
+
+    auto root = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                    .getChildFile ("sirius-finalize-"
+                                   + juce::String (juce::Time::getMillisecondCounterHiRes()));
+    root.createDirectory();
+    auto partials = root.getChildFile ("partials"); partials.createDirectory();
+    auto storeDir = root.getChildFile ("store");    storeDir.createDirectory();
+
+    TapeStore store (storeDir);
+    TapeWriter writer (std::filesystem::path (partials.getFullPathName().toStdString()),
+                       std::chrono::milliseconds (1), 64);
+    OverloadProtection overload;
+
+    InputMixer mixer;
+    mixer.setTapeWriter (&writer);
+    mixer.setOverloadProtection (&overload);
+    mixer.setTapeStore (&store);
+
+    const auto ch = mixer.addChannel (InputId (0), SignalType::Audio);
+    mixer.setChannelTapeMode (ch, TapeMode::CommitToTape);
+
+    std::array<std::byte, 32> buffer {};
+    for (auto& b : buffer) b = std::byte { 0x42 };
+    mixer.processBuffer (ch, buffer.data(), buffer.size());
+
+    mixer.finalizeChannel (ch);
+
+    // Partial must be gone.
+    const auto partial = partials.getChildFile (juce::String (ch.value()) + ".tape.partial");
+    CHECK_FALSE (partial.existsAsFile());
+
+    // Store must hold exactly one file whose bytes match.
+    juce::Array<juce::File> stored;
+    storeDir.findChildFiles (stored, juce::File::findFiles, false);
+    REQUIRE (stored.size() == 1);
+    juce::MemoryBlock bytes;
+    REQUIRE (stored[0].loadFileAsData (bytes));
+    CHECK (bytes.getSize() == 32);
+    for (std::size_t i = 0; i < 32; ++i)
+        CHECK (static_cast<unsigned char> (bytes[i]) == 0x42);
+
+    root.deleteRecursively();
+}
+
+TEST_CASE ("NonDestructive channel writes both audio partial and JSONL params partial",
+           "[input-mixer][non-destructive]")
+{
+    using namespace sirius;
+    using sirius::persistence::TapeStore;
+
+    auto root = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                    .getChildFile ("sirius-nondestructive-"
+                                   + juce::String (juce::Time::getMillisecondCounterHiRes()));
+    root.createDirectory();
+    auto partials = root.getChildFile ("partials"); partials.createDirectory();
+    auto storeDir = root.getChildFile ("store");    storeDir.createDirectory();
+
+    TapeStore store (storeDir);
+    TapeWriter writer (std::filesystem::path (partials.getFullPathName().toStdString()),
+                       std::chrono::milliseconds (1), 64);
+    OverloadProtection overload;
+
+    InputMixer mixer;
+    mixer.setTapeWriter (&writer);
+    mixer.setOverloadProtection (&overload);
+    mixer.setTapeStore (&store);
+
+    const auto ch = mixer.addChannel (InputId (0), SignalType::Audio);
+    mixer.setChannelTapeMode (ch, TapeMode::NonDestructive);
+
+    std::array<std::byte, 16> buffer {};
+    mixer.processBuffer (ch, buffer.data(), buffer.size());
+
+    // Drain so both files settle on disk.
+    (void) writer.flushChannel (ch);
+
+    const auto audioPartial  = partials.getChildFile (juce::String (ch.value()) + ".tape.partial");
+    const auto paramsPartial = partials.getChildFile (juce::String (ch.value()) + ".params.partial");
+
+    CHECK (audioPartial.existsAsFile());
+    CHECK (paramsPartial.existsAsFile());
+
+    // M3 ships an empty event stream for NonDestructive (Audio chains are
+    // no-op in M3 — see M3 spec §"What 'dry' means in M3"). M5's real Audio
+    // DSP earns the first events.
+    CHECK (paramsPartial.getSize() == 0);
+
+    root.deleteRecursively();
+}
+
+TEST_CASE ("addChannel honors the per-input default TapeMode set via setInputDefaults",
+           "[input-mixer][defaults]")
+{
+    using namespace sirius;
+
+    InputMixer mixer;
+
+    InputDescriptor desc {
+        TapeId (1), InputKind::Audio, std::string ("Guitar"), std::optional<int> (0)
+    };
+    mixer.registerInput (InputId (0), desc);
+    mixer.setInputDefaults (InputId (0),
+                            ChannelDefaults { TapeMode::CommitToTape, true });
+
+    const auto ch = mixer.addChannel (InputId (0), SignalType::Audio);
+    // No explicit setChannelTapeMode — should inherit CommitToTape.
+
+    // Observe via a TapeWriter: a buffer pushed through processBuffer
+    // must produce a partial file iff the channel inherited CommitToTape.
+    auto tempDir = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                       .getChildFile ("sirius-defaults-"
+                                      + juce::String (juce::Time::getMillisecondCounterHiRes()));
+    tempDir.createDirectory();
+
+    TapeWriter writer (std::filesystem::path (tempDir.getFullPathName().toStdString()),
+                       std::chrono::milliseconds (1), 16);
+    OverloadProtection overload;
+    mixer.setTapeWriter (&writer);
+    mixer.setOverloadProtection (&overload);
+
+    std::array<std::byte, 8> buffer {};
+    mixer.processBuffer (ch, buffer.data(), buffer.size());
+    const auto partialPath = writer.flushChannel (ch);
+    juce::File partial (juce::String (partialPath.string()));
+    CHECK (partial.existsAsFile());
+
+    tempDir.deleteRecursively();
 }

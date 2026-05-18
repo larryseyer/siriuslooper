@@ -1,7 +1,10 @@
 #include "sirius/InputMixer.h"
 
 #include "sirius/OverloadProtection.h"
+#include "sirius/TapeStore.h"
 #include "sirius/TapeWriter.h"
+
+#include <juce_core/juce_core.h>
 
 #include <cassert>
 #include <cstring>
@@ -14,6 +17,7 @@ InputMixer::~InputMixer() = default;
 
 void InputMixer::setTapeWriter (TapeWriter* writer) noexcept       { tapeWriter_ = writer; }
 void InputMixer::setOverloadProtection (OverloadProtection* o) noexcept { overload_ = o; }
+void InputMixer::setTapeStore (sirius::persistence::TapeStore* store) noexcept { tapeStore_ = store; }
 
 void InputMixer::registerInput (InputId id, const InputDescriptor& desc)
 {
@@ -58,7 +62,18 @@ void InputMixer::removeChannel (ChannelId id)
 void InputMixer::setChannelTapeMode (ChannelId id, TapeMode mode)
 {
     auto it = channels_.find (id.value());
-    if (it != channels_.end()) it->second.tapeMode = mode;
+    if (it == channels_.end()) return;
+
+    it->second.tapeMode = mode;
+
+    // For NonDestructive channels, ensure the params partial file exists as
+    // soon as the mode is set. Touching here (message thread, set-once) avoids
+    // any RT-safety deviation that would result from doing filesystem I/O on the
+    // audio thread inside processBuffer. M5's real DSP will append events to this
+    // file; for M3 it remains empty (Audio chains are no-op — M3 spec
+    // §"What 'dry' means in M3").
+    if (mode == TapeMode::NonDestructive && tapeWriter_ != nullptr)
+        tapeWriter_->touchParamsPartial (id);
 }
 
 void InputMixer::processBuffer (ChannelId id,
@@ -91,10 +106,24 @@ void InputMixer::processBuffer (ChannelId id,
 
 void InputMixer::finalizeChannel (ChannelId id)
 {
-    // Session 3 fills in the read-partial → sha256 → TapeStore::store flow.
-    // Session 2 provides the entry point so InputMixerTests can compile
-    // against the full API surface.
-    (void) id;
+    if (tapeWriter_ == nullptr || tapeStore_ == nullptr) return;
+
+    const std::filesystem::path partial = tapeWriter_->flushChannel (id);
+    if (! std::filesystem::exists (partial)) return;
+
+    juce::File partialFile (juce::String (partial.string()));
+    juce::MemoryBlock bytes;
+    if (! partialFile.loadFileAsData (bytes))
+    {
+        juce::Logger::writeToLog ("InputMixer::finalizeChannel: cannot read partial: "
+                                  + partialFile.getFullPathName());
+        return;
+    }
+
+    (void) tapeStore_->store (bytes);  // content-addressed hash returned;
+                                       // structure-layer mapping (TapeId → hash)
+                                       // lands in M11 SAF
+    partialFile.deleteFile();
 }
 
 } // namespace sirius

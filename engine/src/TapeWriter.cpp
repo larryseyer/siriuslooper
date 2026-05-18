@@ -3,6 +3,7 @@
 #include <juce_core/juce_core.h>
 
 #include <cassert>
+#include <fstream>
 #include <stdexcept>
 
 namespace sirius
@@ -70,6 +71,17 @@ std::filesystem::path TapeWriter::flushChannel (ChannelId channelId)
     });
 
     return partialPathFor (channelId);
+}
+
+void TapeWriter::touchParamsPartial (ChannelId channelId)
+{
+    std::scoped_lock lk (stateMutex_);
+    const std::filesystem::path path = partialDir_
+        / (std::to_string (channelId.value()) + ".params.partial");
+    if (! std::filesystem::exists (path))
+    {
+        std::ofstream ofs (path); // create empty file
+    }
 }
 
 std::uint32_t TapeWriter::errorCountForChannel (ChannelId channelId) const

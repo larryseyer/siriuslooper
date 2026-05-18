@@ -10,6 +10,8 @@
 #include <cstdint>
 #include <unordered_map>
 
+namespace sirius { namespace persistence { class TapeStore; } }
+
 namespace sirius
 {
 
@@ -33,6 +35,7 @@ public:
     // Injected non-owning collaborators (set-once on the message thread).
     void setTapeWriter (TapeWriter* writer) noexcept;
     void setOverloadProtection (OverloadProtection* overload) noexcept;
+    void setTapeStore (sirius::persistence::TapeStore* store) noexcept;
 
     // Input-layer registry --------------------------------------------------
     void registerInput (InputId, const InputDescriptor&);
@@ -71,6 +74,7 @@ private:
 
     TapeWriter* tapeWriter_ { nullptr };
     OverloadProtection* overload_ { nullptr };
+    sirius::persistence::TapeStore* tapeStore_ { nullptr };
 };
 
 } // namespace sirius

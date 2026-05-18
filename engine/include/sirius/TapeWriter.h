@@ -106,6 +106,13 @@ public:
     /// add the existence check.
     std::filesystem::path flushChannel (ChannelId channelId);
 
+    /// Ensure the JSONL params partial file exists for `channelId` — used by
+    /// NonDestructive mode to record the channel's "I have a params tape"
+    /// state even when no events have been emitted yet. Safe to call from
+    /// the message thread; the file is touched via the writer thread's
+    /// state mutex. NOT RT-safe — never call from the audio thread.
+    void touchParamsPartial (ChannelId channelId);
+
     /// Per-channel error counter (incremented on I/O failure). Read
     /// from the message thread for diagnostics.
     std::uint32_t errorCountForChannel (ChannelId channelId) const;

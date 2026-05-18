@@ -27,12 +27,14 @@ target_include_directories(SiriusEngine PUBLIC include)
 
 target_compile_features(SiriusEngine PUBLIC cxx_std_20)
 
-# Sirius::Core is public (its types appear in the engine's headers); soxr is
-# private (it is an implementation detail of Asrc.cpp — soxr.h never leaks into
-# a SiriusEngine public header).
+# Sirius::Core is public (its types appear in the engine's headers); soxr and
+# Sirius::Persistence are private (implementation details of .cpp files that
+# never leak into engine public headers — Persistence is used by
+# InputMixer.cpp for the finalizeChannel → TapeStore::store flow).
 target_link_libraries(SiriusEngine
     PUBLIC  Sirius::Core
     PRIVATE juce::juce_core
+            Sirius::Persistence
             soxr)
 
 add_library(Sirius::Engine ALIAS SiriusEngine)
