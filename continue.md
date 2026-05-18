@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-18 (M7 S5 SHIPPED locally; M7 S6 next — CARemoteLayer Mach-port handoff via XPC)
+# Session Continuation — 2026-05-18 (M7 S5 SHIPPED to origin/master; M7 S6 next — CARemoteLayer Mach-port handoff via XPC)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,15 +8,15 @@
 
 ---
 
-## RESUME HERE (2026-05-18 — M7 S5 committed locally; M7 S6 next)
+## RESUME HERE (2026-05-18 — M7 S5 on origin/master; M7 S6 next)
 
-**M7 S5 is committed locally at `52fcd7f`** (push pending — see end
-of this section). Single commit landing the macOS GUI embedding
-scaffolding:
+**M7 S5 is on `origin/master`.** S5 head is `7e5caff` (the SHA-fill
+doc commit); the feature commit is `52fcd7f`:
 
 | SHA       | Subject |
 |---|---|
 | `52fcd7f` | M7 S5 — macOS GUI embedding (PluginGuiState + clap_gui_cocoa lifecycle, CARemoteLayer Mach handoff deferred to S6) |
+| `7e5caff` | docs: continue.md — fill M7 S5 SHA (52fcd7f) |
 
 Test count: **378/378** green (was 375 at S4; +3 in S5 — three
 `[plugin-editor]` integration cases: Show round-trip, Hide release,
@@ -232,11 +232,6 @@ becomes `+[CALayer layerWithRemoteClientId:]`.
 
 ### Carryover NOT resolved (S6 doesn't touch unless flagged)
 
-- **Push of S5 to `origin/master` is pending operator go-ahead.**
-  Per standing rule (memory:
-  `feedback_claude_commits_and_pushes_master`) Claude is authorized
-  to push; if operator says go: `git push origin master` (no force,
-  no PR).
 - **Pre-existing audio-ring SPSC violation** (engine `tryWriteBytes`
   + `sendBytes` share the producer side). Track as a separate
   follow-on; S5 made it observable but does not fix it.
