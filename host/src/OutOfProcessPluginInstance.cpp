@@ -41,78 +41,110 @@ namespace
     }
 }
 
+namespace
+{
+    /// Shared spawn body for both constructors. Forks, rewires stdin/stdout
+    /// pipes, and execs `hostBinaryPath` with `--instance-id <id> --mode
+    /// <mode> [--plugin-path <path>]`. On success, populates
+    /// `(outStdinWriteFd, outStdoutReadFd, outPid)`; on any failure, leaves
+    /// them at -1 so `isRunning()` will report false.
+    void spawnHostChild (const std::string& binaryPath,
+                         const std::string& instanceId,
+                         const std::string& mode,
+                         const std::string& pluginPath,
+                         int& outStdinWriteFd,
+                         int& outStdoutReadFd,
+                         int& outPid)
+    {
+        outStdinWriteFd = outStdoutReadFd = outPid = -1;
+
+        int stdinPipe[2]  = { -1, -1 };
+        int stdoutPipe[2] = { -1, -1 };
+        if (::pipe (stdinPipe) != 0 || ::pipe (stdoutPipe) != 0)
+        {
+            for (int fd : { stdinPipe[0], stdinPipe[1], stdoutPipe[0], stdoutPipe[1] })
+                if (fd >= 0) ::close (fd);
+            return;
+        }
+
+        const pid_t pid = ::fork();
+        if (pid < 0)
+        {
+            for (int fd : { stdinPipe[0], stdinPipe[1], stdoutPipe[0], stdoutPipe[1] })
+                ::close (fd);
+            return;
+        }
+
+        if (pid == 0)
+        {
+            // Child: rewire stdin/stdout to the pipes the parent will speak
+            // over, close every other inherited fd we know about, exec the
+            // host binary. Anything that goes wrong below kills the child
+            // with _exit() — never propagate errors up via exceptions or
+            // atexit handlers from a fork()ed context.
+            if (::dup2 (stdinPipe[kReadEnd],   STDIN_FILENO)  < 0) ::_exit (127);
+            if (::dup2 (stdoutPipe[kWriteEnd], STDOUT_FILENO) < 0) ::_exit (127);
+
+            ::close (stdinPipe[kReadEnd]);
+            ::close (stdinPipe[kWriteEnd]);
+            ::close (stdoutPipe[kReadEnd]);
+            ::close (stdoutPipe[kWriteEnd]);
+
+            // execvp() wants a NUL-terminated argv. Strings live for the
+            // duration of the call only — execvp either replaces this
+            // process image or returns on failure.
+            std::vector<std::string> argvStorage;
+            argvStorage.reserve (7);
+            argvStorage.push_back (binaryPath);
+            argvStorage.emplace_back ("--instance-id");
+            argvStorage.push_back (instanceId);
+            argvStorage.emplace_back ("--mode");
+            argvStorage.push_back (mode);
+            if (! pluginPath.empty())
+            {
+                argvStorage.emplace_back ("--plugin-path");
+                argvStorage.push_back (pluginPath);
+            }
+
+            std::vector<char*> argv;
+            argv.reserve (argvStorage.size() + 1);
+            for (auto& s : argvStorage)
+                argv.push_back (s.data());
+            argv.push_back (nullptr);
+
+            ::execvp (binaryPath.c_str(), argv.data());
+            ::_exit (127); // exec failed
+        }
+
+        // Parent: keep the parent-side ends, close the child-side ends so
+        // the child sees a clean EOF when we eventually close our write end.
+        ::close (stdinPipe[kReadEnd]);
+        ::close (stdoutPipe[kWriteEnd]);
+
+        outStdinWriteFd = stdinPipe[kWriteEnd];
+        outStdoutReadFd = stdoutPipe[kReadEnd];
+        outPid          = static_cast<int> (pid);
+    }
+}
+
 OutOfProcessPluginInstance::OutOfProcessPluginInstance (const juce::File& hostBinaryPath,
                                                         std::string instanceId)
     : instanceId_ (std::move (instanceId))
 {
-    int stdinPipe[2]  = { -1, -1 };
-    int stdoutPipe[2] = { -1, -1 };
+    spawnHostChild (hostBinaryPath.getFullPathName().toStdString(),
+                    instanceId_, "identity", {},
+                    stdinWriteFd_, stdoutReadFd_, childPid_);
+}
 
-    if (::pipe (stdinPipe) != 0 || ::pipe (stdoutPipe) != 0)
-    {
-        closeIfOpen (stdinPipe[kReadEnd]);
-        closeIfOpen (stdinPipe[kWriteEnd]);
-        closeIfOpen (stdoutPipe[kReadEnd]);
-        closeIfOpen (stdoutPipe[kWriteEnd]);
-        return; // childPid_ stays -1; isRunning() will report false.
-    }
-
-    const auto binaryPath = hostBinaryPath.getFullPathName().toStdString();
-
-    const pid_t pid = ::fork();
-    if (pid < 0)
-    {
-        ::close (stdinPipe[kReadEnd]);
-        ::close (stdinPipe[kWriteEnd]);
-        ::close (stdoutPipe[kReadEnd]);
-        ::close (stdoutPipe[kWriteEnd]);
-        return;
-    }
-
-    if (pid == 0)
-    {
-        // Child: rewire stdin/stdout to the pipes the parent will speak
-        // over, close every other inherited fd we know about, exec the
-        // host binary. Anything that goes wrong below kills the child
-        // with _exit() — never propagate errors up via exceptions or
-        // atexit handlers from a fork()ed context.
-        if (::dup2 (stdinPipe[kReadEnd],   STDIN_FILENO)  < 0) ::_exit (127);
-        if (::dup2 (stdoutPipe[kWriteEnd], STDOUT_FILENO) < 0) ::_exit (127);
-
-        ::close (stdinPipe[kReadEnd]);
-        ::close (stdinPipe[kWriteEnd]);
-        ::close (stdoutPipe[kReadEnd]);
-        ::close (stdoutPipe[kWriteEnd]);
-
-        // execvp() wants a NUL-terminated argv. Strings live for the
-        // duration of the call only — execvp either replaces this
-        // process image or returns on failure.
-        std::vector<std::string> argvStorage;
-        argvStorage.reserve (5);
-        argvStorage.push_back (binaryPath);
-        argvStorage.emplace_back ("--instance-id");
-        argvStorage.push_back (instanceId_);
-        argvStorage.emplace_back ("--mode");
-        argvStorage.emplace_back ("identity");
-
-        std::vector<char*> argv;
-        argv.reserve (argvStorage.size() + 1);
-        for (auto& s : argvStorage)
-            argv.push_back (s.data());
-        argv.push_back (nullptr);
-
-        ::execvp (binaryPath.c_str(), argv.data());
-        ::_exit (127); // exec failed
-    }
-
-    // Parent: keep the parent-side ends, close the child-side ends so the
-    // child sees a clean EOF when we eventually close our write end.
-    ::close (stdinPipe[kReadEnd]);
-    ::close (stdoutPipe[kWriteEnd]);
-
-    stdinWriteFd_ = stdinPipe[kWriteEnd];
-    stdoutReadFd_ = stdoutPipe[kReadEnd];
-    childPid_     = static_cast<int> (pid);
+OutOfProcessPluginInstance::OutOfProcessPluginInstance (const juce::File& hostBinaryPath,
+                                                        std::string instanceId,
+                                                        const juce::File& clapPluginBundle)
+    : instanceId_ (std::move (instanceId))
+{
+    spawnHostChild (hostBinaryPath.getFullPathName().toStdString(),
+                    instanceId_, "clap",
+                    clapPluginBundle.getFullPathName().toStdString(),
+                    stdinWriteFd_, stdoutReadFd_, childPid_);
 }
 
 OutOfProcessPluginInstance::~OutOfProcessPluginInstance()

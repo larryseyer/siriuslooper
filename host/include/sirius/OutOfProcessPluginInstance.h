@@ -34,13 +34,26 @@ namespace sirius
 class OutOfProcessPluginInstance
 {
 public:
-    /// Spawns the host child process. `hostBinaryPath` must point at the
-    /// built `sirius_plugin_host` executable; `instanceId` is forwarded
-    /// via `--instance-id` (logged only in S1; will name the shared-mem
-    /// segment in S2). The constructor returns whether or not the spawn
-    /// succeeded — call `isRunning()` immediately after to find out.
+    /// Spawns the host child process in identity mode (byte-stream
+    /// pass-through over stdin/stdout). `hostBinaryPath` must point at
+    /// the built `sirius_plugin_host` executable; `instanceId` is
+    /// forwarded via `--instance-id` (logged only in S1; will name the
+    /// shared-mem segment in S2c). The constructor returns whether or
+    /// not the spawn succeeded — call `isRunning()` immediately after
+    /// to find out.
     OutOfProcessPluginInstance (const juce::File& hostBinaryPath,
                                 std::string instanceId);
+
+    /// Spawns the host child process in CLAP mode — the host dlopens
+    /// `clapPluginBundle` and pumps interleaved-stereo float buffers
+    /// through its CLAP `process()` callback. Wire format on stdin/stdout
+    /// (S2a transport, swapped for shared-mem in S2c):
+    ///   per buffer: uint32_t frameCount, then frameCount × 2 × float (L,R).
+    /// Otherwise identical behaviour to the identity-mode constructor —
+    /// same shutdown / reap / isRunning semantics.
+    OutOfProcessPluginInstance (const juce::File& hostBinaryPath,
+                                std::string instanceId,
+                                const juce::File& clapPluginBundle);
 
     /// Tears down the child cleanly via `shutdown()` if not already done.
     ~OutOfProcessPluginInstance();

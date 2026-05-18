@@ -23,6 +23,8 @@
 #include <chrono>
 #include <csignal>
 #include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <random>
 #include <sys/types.h>
 #include <thread>
@@ -34,6 +36,15 @@ namespace
     {
        #ifdef SIRIUS_PLUGIN_HOST_PATH
         return juce::File (SIRIUS_PLUGIN_HOST_PATH);
+       #else
+        return juce::File();
+       #endif
+    }
+
+    juce::File syntheticClapFile()
+    {
+       #ifdef SIRIUS_SYNTHETIC_CLAP_PATH
+        return juce::File (SIRIUS_SYNTHETIC_CLAP_PATH);
        #else
         return juce::File();
        #endif
@@ -160,6 +171,57 @@ TEST_CASE ("OutOfProcessPluginInstance destructor reaps the child (no zombie)",
         std::this_thread::sleep_for (std::chrono::milliseconds (10));
     }
     CHECK (reaped);
+}
+
+TEST_CASE ("OutOfProcessPluginInstance round-trips stereo audio through the synthetic CLAP identity plug-in",
+           "[out-of-process-plugin][clap]")
+{
+    const auto binary = hostBinaryFile();
+    if (! binary.existsAsFile())
+        SKIP ("sirius_plugin_host binary not present at SIRIUS_PLUGIN_HOST_PATH");
+
+    const auto clapBundle = syntheticClapFile();
+   #ifdef __APPLE__
+    if (! clapBundle.isDirectory())
+        SKIP ("SyntheticTestPlugin .clap bundle not present at SIRIUS_SYNTHETIC_CLAP_PATH");
+   #else
+    if (! clapBundle.existsAsFile())
+        SKIP ("SyntheticTestPlugin .clap shared library not present at SIRIUS_SYNTHETIC_CLAP_PATH");
+   #endif
+
+    sirius::OutOfProcessPluginInstance instance (binary, "clap-identity", clapBundle);
+    REQUIRE (instance.isRunning());
+
+    // Wire format the CLAP-mode pump expects: uint32 frameCount followed
+    // by frameCount × 2 × float (interleaved L,R). Pick 256 frames — far
+    // below the host's 1024-frame initial capacity, so no re-activation
+    // round trip is required.
+    constexpr std::uint32_t kFrameCount       = 256;
+    constexpr std::size_t   kInterleavedBytes = kFrameCount * 2 * sizeof (float);
+
+    std::vector<float> input (kFrameCount * 2);
+    std::mt19937 rng (0xDEADBEEF);
+    std::uniform_real_distribution<float> dist (-1.0f, 1.0f);
+    for (auto& s : input)
+        s = dist (rng);
+
+    REQUIRE (instance.sendBytes (reinterpret_cast<const std::byte*> (&kFrameCount),
+                                 sizeof (kFrameCount)));
+    REQUIRE (instance.sendBytes (reinterpret_cast<const std::byte*> (input.data()),
+                                 kInterleavedBytes));
+
+    const auto echoed = readExact (instance, kInterleavedBytes, 4000);
+    REQUIRE (echoed.size() == kInterleavedBytes);
+
+    // Identity plug-in copies input → output byte-for-byte (the float
+    // memcpy in SyntheticTestPlugin::pluginProcess is value-preserving
+    // regardless of NaN/denormal payload).
+    std::vector<float> echoedFloats (kFrameCount * 2);
+    std::memcpy (echoedFloats.data(), echoed.data(), kInterleavedBytes);
+    CHECK (echoedFloats == input);
+
+    instance.shutdown();
+    CHECK_FALSE (instance.isRunning());
 }
 
 TEST_CASE ("two OutOfProcessPluginInstances do not cross-talk on stdin/stdout",

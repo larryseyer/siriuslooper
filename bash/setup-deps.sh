@@ -13,6 +13,7 @@ DEPS=(
     "JUCE|https://github.com/juce-framework/JUCE.git|8.0.12"
     "Catch2|https://github.com/catchorg/Catch2.git|v3.15.0"
     "soxr|https://github.com/chirlu/soxr.git|master"  # libsoxr is effectively frozen at 0.1.3
+    "clap|https://github.com/free-audio/clap.git|1.2.6"  # CLAP plug-in SDK (header-only)
 )
 
 for entry in "${DEPS[@]}"; do

@@ -80,3 +80,22 @@ target_include_directories(soxr INTERFACE "${SOXR_PATH}/src")
 unset(CMAKE_POLICY_VERSION_MINIMUM)
 unset(CMAKE_POLICY_DEFAULT_CMP0115)
 message(STATUS "libsoxr configured from: ${SOXR_PATH}")
+
+# -----------------------------------------------------------------------------
+# CLAP — plug-in SDK (header-only). Hosted by sirius_plugin_host (M7 S2+)
+# and built into test fixtures (SyntheticTestPlugin) for round-trip coverage.
+# CLAP itself ships only headers, but its CMakeLists exposes a `clap`
+# INTERFACE target with the include dir — the cleanest way to consume it.
+# -----------------------------------------------------------------------------
+set(CLAP_PATH "${CMAKE_SOURCE_DIR}/external/clap")
+
+if(NOT EXISTS "${CLAP_PATH}/CMakeLists.txt")
+    message(FATAL_ERROR "CLAP not found at ${CLAP_PATH}. Run: bash/setup-deps.sh")
+endif()
+
+# CLAP_BUILD_TESTS spins up its own compile-test executables + a sample
+# plug-in target. None of that belongs in our build.
+set(CLAP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+
+add_subdirectory("${CLAP_PATH}" "${CMAKE_BINARY_DIR}/clap")
+message(STATUS "CLAP configured from: ${CLAP_PATH}")
