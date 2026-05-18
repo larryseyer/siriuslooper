@@ -10,10 +10,25 @@
 # format change rebases cleanly across both sites.
 # =============================================================================
 
-add_library(SyntheticTestPlugin MODULE
-    SyntheticTestPlugin.cpp)
-
-target_link_libraries(SyntheticTestPlugin PRIVATE clap)
+if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    add_library(SyntheticTestPlugin MODULE
+        SyntheticTestPlugin.cpp
+        SyntheticTestPluginGui.mm)
+    target_link_libraries(SyntheticTestPlugin PRIVATE
+        clap
+        "-framework AppKit"
+        "-framework QuartzCore")
+    # ARC disabled in the .mm because the synthetic plug-in uses manual
+    # retain/release for the editor NSView so its lifetime is bracketed by
+    # the CLAP create/destroy callbacks. AppKit objects allocated here are
+    # released in guiDestroy.
+    set_source_files_properties(SyntheticTestPluginGui.mm PROPERTIES
+        COMPILE_FLAGS "-fno-objc-arc")
+else()
+    add_library(SyntheticTestPlugin MODULE
+        SyntheticTestPlugin.cpp)
+    target_link_libraries(SyntheticTestPlugin PRIVATE clap)
+endif()
 
 target_compile_features(SyntheticTestPlugin PRIVATE cxx_std_20)
 

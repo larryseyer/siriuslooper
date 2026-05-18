@@ -297,6 +297,88 @@ bool OutOfProcessEffectChainHost::pumpSlot (std::int64_t        busId,
     return false;
 }
 
+// ---- Editor wire-through (M7 S5) -----------------------------------------
+
+bool OutOfProcessEffectChainHost::requestEditorShow (std::int64_t busId,
+                                                     std::size_t slotIndex,
+                                                     std::uint32_t width,
+                                                     std::uint32_t height) noexcept
+{
+    std::scoped_lock lk (instancesMutex_);
+    const auto it = instances_.find ({ busId, slotIndex });
+    if (it == instances_.end() || it->second == nullptr)
+        return false;
+    auto& state = *it->second;
+    if (state.permanentlyBypassed.load (std::memory_order_acquire))
+        return false;
+
+    state.editorWasShowing = true;
+    state.editorWidth      = width;
+    state.editorHeight     = height;
+
+    if (state.instance == nullptr)
+        return false; // mid-restart — supervisor will re-issue on respawn
+    return state.instance->requestEditorShow (width, height);
+}
+
+bool OutOfProcessEffectChainHost::requestEditorHide (std::int64_t busId,
+                                                     std::size_t slotIndex) noexcept
+{
+    std::scoped_lock lk (instancesMutex_);
+    const auto it = instances_.find ({ busId, slotIndex });
+    if (it == instances_.end() || it->second == nullptr)
+        return false;
+    auto& state = *it->second;
+
+    state.editorWasShowing = false;
+
+    if (state.instance == nullptr)
+        return false;
+    return state.instance->requestEditorHide();
+}
+
+bool OutOfProcessEffectChainHost::requestEditorResize (std::int64_t busId,
+                                                       std::size_t slotIndex,
+                                                       std::uint32_t width,
+                                                       std::uint32_t height) noexcept
+{
+    std::scoped_lock lk (instancesMutex_);
+    const auto it = instances_.find ({ busId, slotIndex });
+    if (it == instances_.end() || it->second == nullptr)
+        return false;
+    auto& state = *it->second;
+    if (state.permanentlyBypassed.load (std::memory_order_acquire))
+        return false;
+
+    state.editorWidth  = width;
+    state.editorHeight = height;
+
+    if (state.instance == nullptr)
+        return false;
+    return state.instance->requestEditorResize (width, height);
+}
+
+std::uint32_t OutOfProcessEffectChainHost::editorCaContextId (
+    std::int64_t busId, std::size_t slotIndex) const noexcept
+{
+    std::scoped_lock lk (instancesMutex_);
+    const auto it = instances_.find ({ busId, slotIndex });
+    if (it == instances_.end() || it->second == nullptr || it->second->instance == nullptr)
+        return 0;
+    return it->second->instance->editorCaContextId();
+}
+
+std::pair<std::uint32_t, std::uint32_t>
+OutOfProcessEffectChainHost::editorSize (std::int64_t busId,
+                                         std::size_t slotIndex) const noexcept
+{
+    std::scoped_lock lk (instancesMutex_);
+    const auto it = instances_.find ({ busId, slotIndex });
+    if (it == instances_.end() || it->second == nullptr || it->second->instance == nullptr)
+        return { 0, 0 };
+    return it->second->instance->editorSize();
+}
+
 std::uint32_t OutOfProcessEffectChainHost::restartCountForTesting (
     std::int64_t busId, std::size_t slotIndex) const noexcept
 {
@@ -491,6 +573,18 @@ void OutOfProcessEffectChainHost::attemptRestart (SlotState& state)
     // Reset the watchdog counter. The next pumpSlot will start fresh
     // against the new child.
     state.consecutiveMisses.store (0, std::memory_order_relaxed);
+
+    // M7 S5 — re-publish the editor against the freshly-spawned child
+    // BEFORE lowering the bypass flag. The new instance's GUI region
+    // starts with requestSeq=0 / responseSeq=0; if the operator had the
+    // editor open at the time of the restart, re-issue Show so the
+    // parent UI's polling loop picks up the new CAContextID. Safe under
+    // the bypass flag because pumpSlot is still short-circuiting.
+    if (state.editorWasShowing && state.instance != nullptr
+        && state.editorWidth > 0 && state.editorHeight > 0)
+    {
+        state.instance->requestEditorShow (state.editorWidth, state.editorHeight);
+    }
 
     // Lower the bypass flag. The next pumpSlot call sees the new instance
     // and resumes pumping.

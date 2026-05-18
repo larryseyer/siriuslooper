@@ -12,12 +12,26 @@
 #     on Linux (`dlopen` is in libc on macOS).
 # =============================================================================
 
-add_executable(sirius_plugin_host
-    main.cpp)
+if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    add_executable(sirius_plugin_host
+        main.cpp
+        gui_cocoa.mm)
+    target_link_libraries(sirius_plugin_host PRIVATE
+        Sirius::Core
+        clap
+        "-framework AppKit"
+        "-framework QuartzCore")
+    # Manual retain/release in the .mm — see header docblock for the
+    # editor-lifetime contract bracketed by sirius_gui_show / hide.
+    set_source_files_properties(gui_cocoa.mm PROPERTIES
+        COMPILE_FLAGS "-fno-objc-arc")
+else()
+    add_executable(sirius_plugin_host
+        main.cpp)
+    target_link_libraries(sirius_plugin_host PRIVATE Sirius::Core clap)
+endif()
 
 target_compile_features(sirius_plugin_host PRIVATE cxx_std_20)
-
-target_link_libraries(sirius_plugin_host PRIVATE Sirius::Core clap)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(sirius_plugin_host PRIVATE dl)

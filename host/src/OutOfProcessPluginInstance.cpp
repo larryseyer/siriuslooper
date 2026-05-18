@@ -1,5 +1,6 @@
 #include "sirius/OutOfProcessPluginInstance.h"
 
+#include "sirius/PluginGuiState.h"
 #include "sirius/PluginIpcMessage.h"
 #include "sirius/SharedMemoryRegion.h"
 #include "sirius/SharedMemorySpscQueue.h"
@@ -106,6 +107,16 @@ OutOfProcessPluginInstance::OutOfProcessPluginInstance (const juce::File& hostBi
         hostToEngineQueue_ = std::make_unique<SharedMemorySpscQueue<PluginIpcMessage>> (
             SharedMemorySpscQueue<PluginIpcMessage>::create (
                 hostToEngineRegion_->data(), kPluginIpcRingCapacity));
+
+        // M7 S5 — per-instance GUI state region. Engine creates + zero-
+        // initializes; host child OpenExistings on the same name. Region
+        // size is one page; PluginGuiState fits in a single cache line
+        // and the page rounding (16 KiB on Apple Silicon) gives us
+        // ample headroom for future expansion.
+        guiStateRegion_ = std::make_unique<SharedMemoryRegion> (
+            makeGuiStateRegionName (instanceId_), sizeof (PluginGuiState),
+            SharedMemoryRegion::Mode::CreateExclusive);
+        guiState_ = PluginGuiState::initInPlace (guiStateRegion_->data());
     }
     catch (const std::exception&)
     {
@@ -116,6 +127,8 @@ OutOfProcessPluginInstance::OutOfProcessPluginInstance (const juce::File& hostBi
         hostToEngineRegion_.reset();
         engineToHostQueue_.reset();
         hostToEngineQueue_.reset();
+        guiStateRegion_.reset();
+        guiState_ = nullptr;
         return;
     }
 
@@ -146,6 +159,11 @@ OutOfProcessPluginInstance::OutOfProcessPluginInstance (const juce::File& hostBi
         hostToEngineQueue_ = std::make_unique<SharedMemorySpscQueue<PluginIpcMessage>> (
             SharedMemorySpscQueue<PluginIpcMessage>::create (
                 hostToEngineRegion_->data(), kPluginIpcRingCapacity));
+
+        guiStateRegion_ = std::make_unique<SharedMemoryRegion> (
+            makeGuiStateRegionName (instanceId_), sizeof (PluginGuiState),
+            SharedMemoryRegion::Mode::CreateExclusive);
+        guiState_ = PluginGuiState::initInPlace (guiStateRegion_->data());
     }
     catch (const std::exception&)
     {
@@ -153,6 +171,8 @@ OutOfProcessPluginInstance::OutOfProcessPluginInstance (const juce::File& hostBi
         hostToEngineRegion_.reset();
         engineToHostQueue_.reset();
         hostToEngineQueue_.reset();
+        guiStateRegion_.reset();
+        guiState_ = nullptr;
         return;
     }
 
@@ -396,6 +416,84 @@ void OutOfProcessPluginInstance::shutdown()
     hostToEngineQueue_.reset();
     engineToHostRegion_.reset();
     hostToEngineRegion_.reset();
+    guiState_ = nullptr;
+    guiStateRegion_.reset();
+}
+
+// ---- Editor (M7 S5) -------------------------------------------------------
+//
+// Publish-and-poll API over PluginGuiState. Each request writes the new
+// fields with relaxed ordering (the host child won't observe them until
+// after the seq bump anyway), then bumps `requestSeq` with release. The
+// child's polling loop in host_process/main.cpp acquire-loads requestSeq
+// and dispatches.
+
+bool OutOfProcessPluginInstance::requestEditorShow (std::uint32_t width,
+                                                    std::uint32_t height) noexcept
+{
+    if (guiState_ == nullptr)
+        return false;
+    guiState_->requestKind  .store (PluginGuiState::Show,   std::memory_order_relaxed);
+    guiState_->requestWidth .store (width,                  std::memory_order_relaxed);
+    guiState_->requestHeight.store (height,                 std::memory_order_relaxed);
+    guiState_->requestSeq   .store (++lastRequestSeq_,      std::memory_order_release);
+    return true;
+}
+
+bool OutOfProcessPluginInstance::requestEditorHide() noexcept
+{
+    if (guiState_ == nullptr)
+        return false;
+    guiState_->requestKind  .store (PluginGuiState::Hide,   std::memory_order_relaxed);
+    guiState_->requestSeq   .store (++lastRequestSeq_,      std::memory_order_release);
+    return true;
+}
+
+bool OutOfProcessPluginInstance::requestEditorResize (std::uint32_t width,
+                                                      std::uint32_t height) noexcept
+{
+    if (guiState_ == nullptr)
+        return false;
+    guiState_->requestKind  .store (PluginGuiState::Resize, std::memory_order_relaxed);
+    guiState_->requestWidth .store (width,                  std::memory_order_relaxed);
+    guiState_->requestHeight.store (height,                 std::memory_order_relaxed);
+    guiState_->requestSeq   .store (++lastRequestSeq_,      std::memory_order_release);
+    return true;
+}
+
+std::uint32_t OutOfProcessPluginInstance::editorCaContextId() const noexcept
+{
+    if (guiState_ == nullptr)
+        return 0;
+    // Acquire-load establishes happens-before with the host's release
+    // store of responseSeq — guarantees the contextId we read is the one
+    // the host wrote alongside that seq bump.
+    const auto seq = guiState_->responseSeq.load (std::memory_order_acquire);
+    (void) seq;
+    return guiState_->responseContextId.load (std::memory_order_relaxed);
+}
+
+std::pair<std::uint32_t, std::uint32_t>
+OutOfProcessPluginInstance::editorSize() const noexcept
+{
+    if (guiState_ == nullptr)
+        return { 0, 0 };
+    const auto seq = guiState_->responseSeq.load (std::memory_order_acquire);
+    (void) seq;
+    return { guiState_->responseWidth .load (std::memory_order_relaxed),
+             guiState_->responseHeight.load (std::memory_order_relaxed) };
+}
+
+std::uint64_t OutOfProcessPluginInstance::editorRequestSeq() const noexcept
+{
+    if (guiState_ == nullptr) return 0;
+    return guiState_->requestSeq.load (std::memory_order_acquire);
+}
+
+std::uint64_t OutOfProcessPluginInstance::editorResponseSeq() const noexcept
+{
+    if (guiState_ == nullptr) return 0;
+    return guiState_->responseSeq.load (std::memory_order_acquire);
 }
 
 } // namespace sirius

@@ -160,6 +160,27 @@ public:
                    int                 numChannels,
                    int                 numSamples) noexcept override;
 
+    // ---- Editor wire-through (M7 S5) — message-thread only --------------
+    //
+    // Thin slot-keyed forwarders onto `OutOfProcessPluginInstance`'s editor
+    // API. Take `instancesMutex_` (message-thread, never contended on the
+    // audio side). Return false / 0 if the slot is unconfigured,
+    // bypassed, or permanently bypassed. The supervisor's `attemptRestart`
+    // observes the recorded editor intent (`editorWasShowing_` +
+    // `editorWidth_` / `editorHeight_` in SlotState) and re-issues the
+    // Show against the freshly-spawned instance.
+
+    bool requestEditorShow   (std::int64_t busId, std::size_t slotIndex,
+                              std::uint32_t width, std::uint32_t height) noexcept;
+    bool requestEditorHide   (std::int64_t busId, std::size_t slotIndex) noexcept;
+    bool requestEditorResize (std::int64_t busId, std::size_t slotIndex,
+                              std::uint32_t width, std::uint32_t height) noexcept;
+    std::uint32_t editorCaContextId (std::int64_t busId,
+                                     std::size_t slotIndex) const noexcept;
+    std::pair<std::uint32_t,std::uint32_t>
+                  editorSize        (std::int64_t busId,
+                                     std::size_t slotIndex) const noexcept;
+
     /// Test-only accessor — returns the supervisor restart count for the
     /// given slot, or 0 if no slot is registered. Used by the supervisor
     /// tests to verify that restart escalation actually happened without
@@ -231,6 +252,15 @@ private:
         juce::File                 hostBinary;
         juce::File                 clapBundle;
         std::string                instanceId;
+
+        // M7 S5 — editor intent persisted across supervisor restarts so
+        // the supervisor can re-issue the Show against the new child.
+        // Message-thread only (read/written from configureBus + the GUI
+        // forwarders + attemptRestart under instancesMutex_); no atomics
+        // needed.
+        bool          editorWasShowing { false };
+        std::uint32_t editorWidth      { 0 };
+        std::uint32_t editorHeight     { 0 };
     };
 
     /// Audio-thread scratch for the interleaved CLAP wire bytes. Sized

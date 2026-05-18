@@ -16,6 +16,7 @@
 // =============================================================================
 
 #include <clap/clap.h>
+#include <clap/ext/gui.h>
 
 #include <cstdint>
 #include <cstdio>
@@ -115,10 +116,21 @@ clap_process_status pluginProcess (const clap_plugin_t* /*plugin*/,
     return CLAP_PROCESS_CONTINUE;
 }
 
+#ifdef __APPLE__
+/// Bridge to SyntheticTestPluginGui.mm — defined there so the AppKit
+/// includes stay out of this otherwise-plain C++ TU. Declared `extern "C"`
+/// so its name is mangling-stable across the .cpp/.mm boundary.
+extern "C" const void* syntheticGetGuiExtension();
+#endif
+
 const void* pluginGetExtension (const clap_plugin_t*, const char* id)
 {
     if (std::strcmp (id, CLAP_EXT_AUDIO_PORTS) == 0)
         return &kAudioPorts;
+   #ifdef __APPLE__
+    if (std::strcmp (id, CLAP_EXT_GUI) == 0)
+        return syntheticGetGuiExtension();
+   #endif
     return nullptr;
 }
 

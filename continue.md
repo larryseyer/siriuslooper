@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-18 (M7 S4 SHIPPED locally; M7 S5 next — macOS GUI window embedding [NSView reparenting via clap_gui_cocoa])
+# Session Continuation — 2026-05-18 (M7 S5 SHIPPED locally; M7 S6 next — CARemoteLayer Mach-port handoff via XPC)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -7,6 +7,250 @@
 > *state*: what just shipped and what's queued next.
 
 ---
+
+## RESUME HERE (2026-05-18 — M7 S5 committed locally; M7 S6 next)
+
+**M7 S5 is committed locally** (push pending — see end of this
+section). Single commit landing the macOS GUI embedding scaffolding:
+
+| SHA   | Subject |
+|---|---|
+| *TBD* | M7 S5 — macOS GUI embedding (PluginGuiState + clap_gui_cocoa lifecycle, CARemoteLayer Mach handoff deferred) |
+
+Test count: **378/378** green (was 375 at S4; +3 in S5 — three
+`[plugin-editor]` integration cases: Show round-trip, Hide release,
+supervisor-restart re-publication).
+
+**S5 made the editor lifecycle survivable end-to-end.** The complete
+publish/poll IPC + JUCE component wrapper + supervisor restart re-show
+all ship; the only piece deferred to S6 is the actual cross-process
+GPU compositing (Apple's public path needs a Mach-port handoff that
+isn't trivial without launchd/XPC). Concretely:
+
+- **`PluginGuiState` shared region** (new `core/include/sirius/
+  PluginGuiState.h`). Per-instance shm region with atomic seq-based
+  request/response protocol: engine writes Kind/Width/Height then bumps
+  `requestSeq` (release); host services and bumps `responseSeq` with
+  `responseContextId` + size. Naturally MPMC-safe — sidesteps the
+  pre-existing SPSC-violation of audio + message thread sharing the
+  audio rings as producers. shm name `/sirius.<id>.gui` (30 chars,
+  fits the macOS cap).
+- **`clap_gui_cocoa` on the synthetic plug-in** (new
+  `tests/fixtures/SyntheticTestPluginGui.mm`). Minimal 200×100 pt
+  layer-backed NSView with a solid colour; `is_api_supported`,
+  `create`, `set_parent`, `get_size`, `set_size`, `show`, `hide`,
+  `destroy`. ARC off in this TU; manual retain/release brackets
+  bracketed by the CLAP `create`/`destroy` callbacks.
+- **GUI servicing in `host_process/main.cpp`**. The CLAP pump now
+  attaches the GUI region as a third shm at startup, hands a
+  `PluginGuiState*` to `runClapMode`, and services GUI requests both
+  per-audio-iteration AND in `RingByteStream::readExact`'s sleep gap
+  via an `OnIdle` callback. Bounds GUI latency to one audio buffer
+  (~few ms) when busy and ~50µs when idle. Cocoa specifics live in
+  the new `host_process/gui_cocoa.mm` (`-fno-objc-arc`) exposing
+  `sirius_gui_show / hide / resize` C-linkage shims. The child binary
+  stays JUCE-free; only adds `-framework AppKit -framework QuartzCore`
+  on Apple.
+- **Message-thread editor API on `OutOfProcessPluginInstance`**:
+  `requestEditorShow / Hide / Resize`, `editorCaContextId`,
+  `editorSize`, `editorRequestSeq`, `editorResponseSeq`. All are
+  non-blocking publishers onto the GUI region — caller polls
+  `editorCaContextId` to detect completion. Both ctors (identity +
+  CLAP) create the GUI region; shutdown tears it down after the
+  child reaps.
+- **Slot-keyed forwarding on `OutOfProcessEffectChainHost`**:
+  `requestEditorShow / Hide / Resize`, `editorCaContextId`,
+  `editorSize`. Take `instancesMutex_` (message-thread only); return
+  false/0 if slot is unconfigured or permanently bypassed.
+  `SlotState` gains `editorWasShowing` + `editorWidth` +
+  `editorHeight` so the supervisor's `attemptRestart` can re-issue
+  Show against the freshly-spawned child BEFORE lowering the bypass
+  fence. Restart re-publication is the third integration test.
+- **`OutOfProcessEditorView`** — new `host/include/sirius/
+  OutOfProcessEditorView.h` + `.cpp` + `.mm`. JUCE Component that
+  wraps a placeholder NSView inside a `juce::NSViewComponent`. Polls
+  the slot's CAContextID at 30 Hz; rebuilds the embedded view on
+  change (initial publish OR supervisor-restart re-publish). Lazy:
+  Show is issued on first paint when on-screen + sized.
+  `MainComponent` NOT wired (per S5 acceptance criteria; the
+  plug-in-adding UI session M20+ does production wiring).
+
+**Measured RT (Apple Silicon, 2026-05-18):** `[plugin-ipc][.rt-smoke]`
+holds at median 71 µs, p99 139 µs, max 141 µs. Well inside the 300 µs
+p99 ceiling. GUI work is message-thread only; no audio-thread surface
+added.
+
+**Scope deviations locked in S5** (carry forward to S6):
+
+1. **Atomic-seq shared region, not a third ring pair.** Reading the
+   existing M7 surface revealed the engine→host audio ring already
+   has two producers (audio-thread `tryWriteBytes` + message-thread
+   `sendBytes`) — a latent SPSC violation harmless today because the
+   two paths don't race in tests but would become a real bug as soon
+   as the operator opens an editor mid-playback. Adding GUI messages
+   to that ring would compound it. The professional fix is the
+   dedicated `PluginGuiState` region (atomics, MPMC-safe). The
+   pre-existing audio-ring SPSC violation IS NOT FIXED in S5 — it
+   needs its own session (split sendBytes onto a dedicated message-
+   thread ring, OR retire sendBytes once the audio path is the only
+   real producer). Track as the "audio-ring SPSC split" follow-on.
+2. **CARemoteLayer Mach-port handoff DEFERRED to S6.** Apple's public
+   cross-process layer-publish API is `CARemoteLayerServer` (engine)
+   + `CARemoteLayerClient` (child), which requires a Mach-port
+   transfer. The legacy `NSMachBootstrapServer` path was removed in
+   macOS 10.10; the modern path is XPC, which carries enough setup
+   overhead (XPC service manifest, endpoint registration, connection
+   lifecycle) to deserve its own session. **S5 ships the complete
+   IPC + lifecycle + supervisor-restart re-publication contracts**;
+   `gui_cocoa.mm` produces a process-unique non-zero placeholder
+   contextId so the integration tests prove the round-trip works
+   end-to-end. `OutOfProcessEditorView.mm` creates a coloured
+   placeholder NSView so the operator-launch eyes-on path still
+   shows SOMETHING (tint varies with contextId — a successful
+   supervisor restart re-publish is visually obvious). When S6 lands
+   the XPC + CARemoteLayer wiring, NO engine API changes — the
+   contextId just starts pointing at a real remote layer.
+3. **`CALayerHost` forward-decl pattern abandoned.** The earlier
+   draft forward-declared CALayerHost (Chromium pattern) but it's
+   SPI; the public path is CARemoteLayer*. S6 will use the public
+   API.
+4. **Editor lifecycle is lazy.** First on-screen + sized
+   `parentHierarchyChanged` / `visibilityChanged` issues Show; nothing
+   happens at host spawn or `configureBus`. Matches the V7 plan +
+   continue.md S5 lean.
+5. **macOS-only.** Windows + Linux GUI embedding land in their own
+   later sessions per the
+   `feedback_mac_first_linux_windows_last` rule. The .mm files +
+   `-framework AppKit -framework QuartzCore` linkage are gated on
+   `APPLE`.
+
+### First moves for the M7 S6 chat
+
+M7 S6's job is to land **real cross-process GPU compositing** via
+`CARemoteLayerServer` / `CARemoteLayerClient` + XPC-based Mach-port
+transfer. After S6, the placeholder contextId from
+`host_process/gui_cocoa.mm` becomes a real `CARemoteLayerClient.
+clientId`, and `OutOfProcessEditorView.mm`'s placeholder NSView
+becomes `+[CALayer layerWithRemoteClientId:]`.
+
+1. Read this file end-to-end.
+2. Open `docs/superpowers/plans/2026-05-17-v7-alignment.md` and
+   re-read **M7 lines 487-554**, focusing on the sandbox /
+   entitlement notes around line 550.
+3. Read the XCSDK headers
+   `/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.
+   platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks/
+   QuartzCore.framework/Headers/CARemoteLayerClient.h` +
+   `CARemoteLayerServer.h`. These define the public API.
+4. **Brainstorm before code.** S6 open questions:
+   - **XPC vs anonymous-Mach-port handshake**. Two options for
+     transferring the `CARemoteLayerServer.sharedServer.serverPort`
+     from engine to child:
+     - (a) XPC service per-instance (manifest under
+       `Contents/XPCServices/`, `xpc_connection_create_mach_service`
+       on engine, `xpc_main` in a tiny XPC binary, child
+       `xpc_connection_create` against the name). Cleaner. Plays
+       nicely with sandbox + future MAS submission. Adds a third
+       binary to the bundle.
+     - (b) Per-instance Mach-port pair created via `mach_port_
+       allocate` + sent over an anonymous UNIX-domain socket with
+       `SCM_RIGHTS`-equivalent (sendmsg with `mach_msg_type_
+       MACH_MSG_PORT_DESCRIPTOR`). No XPC binary. Less standard.
+     **Lean (a) XPC** — more idiomatic, survives the eventual
+     sandbox tightening.
+   - **XPC connection per instance vs shared XPC service**. One
+     shared XPC service that all child instances connect to is
+     simpler to set up but adds a serialization point. Per-instance
+     XPC connection is cleaner but adds a manifest entry per child
+     spawn. **Lean per-instance** — matches the existing per-
+     instance shm pattern, gives the supervisor a clean teardown
+     hook on restart.
+   - **Where does the XPC manifest live?** Currently the app bundle
+     has `MacOS/Sirius Looper` and the existing `sirius_plugin_host`
+     binary. Adding `XPCServices/com.sirius.gui-bridge.xpc/Contents/
+     MacOS/sirius_gui_bridge` is the conventional layout.
+5. **Brainstorm protocol**: same orchestrator + Backend Architect
+   subagents. Code Reviewer before commit. The S6 work is delicate
+   (Mach port lifetimes are unforgiving — the engine MUST release
+   the server-side port at the exact right time or the child's
+   layer-host gets a stale clientId that draws garbage).
+
+### S6 acceptance criteria
+
+- `CARemoteLayerServer.sharedServer.serverPort` accessible from the
+  engine; transferred to the host child via the chosen XPC path.
+- Host child's `gui_cocoa.mm` swaps the placeholder counter for a
+  real `CARemoteLayerClient` whose `clientId` becomes the
+  `responseContextId` written into `PluginGuiState`.
+- Engine's `OutOfProcessEditorView.mm` swaps the placeholder NSView
+  for `+[CALayer layerWithRemoteClientId:]` wrapped inside an NSView.
+- Existing 378 ctest cases still pass; new tests for the XPC
+  bootstrap (`[plugin-editor-xpc]` tag). Test count target ~381.
+- Operator-launch eyes-on: actually see the synthetic plug-in's
+  coloured NSView rendered inside the engine's window via
+  CARemoteLayer compositing.
+
+### S5-era decisions locked (S6 must preserve — superset of the S4 list)
+
+1. **POSIX-only scope** (macOS first; Linux + Windows GUI in later
+   sessions per platform-order rule).
+2. **Host binary stays JUCE-free.** S5 added Cocoa direct linkage
+   on macOS; S6 may add XPC linkage. NEVER add JUCE to host_process.
+3. **Dependency-inversion port pattern** (S3 `IEffectChainHost`, S4
+   `INotificationSink`). S5 didn't need a new port — editor work is
+   host-side only. If S6 surfaces a third engine→host port (e.g. an
+   XPC connection holder), follow the same pattern.
+4. **`OutOfProcessPluginInstance` API split**:
+   - Audio-thread (byte-oriented): `tryWriteBytes` / `tryReadBytes`
+   - Message-thread (byte-oriented): `sendBytes` / `readBytes`
+   - Message-thread (editor): `requestEditorShow` / `Hide` /
+     `Resize` + `editorCaContextId` + `editorSize` (NEW in S5)
+5. **Zero allocation / zero locks on the audio thread.** Unchanged.
+6. **`NotificationBus` / `INotificationSink`** is the engine→UI
+   truthfulness channel. S5 didn't add new posts (the existing
+   supervisor restart Info / Error posts already cover the editor
+   re-show case implicitly).
+7. **Drop-NEW overflow policy** for SPSC rings. Unchanged.
+8. **macOS shm_open name cap = 18 chars** for instance ids. S5's
+   new `/sirius.<id>.gui` suffix (4 chars) fits.
+9. **`IEffectChainHost` is the audio-thread port.** Unchanged.
+10. **`PluginGuiState` is the editor publish/poll channel.** NEW in
+    S5. Atomic seq-based; MPMC-safe. S6 keeps it unchanged — only
+    the `responseContextId` value's *meaning* changes from
+    placeholder to real CARemoteLayerClient.clientId.
+11. **Pipelined 1-buffer delay** for audio-thread sync. Unchanged.
+12. **Bypass-flag fence + 100ms grace** for restart protocol.
+    Unchanged.
+13. **`shared_ptr<SlotState>` ownership.** Unchanged.
+14. **`kConsecutiveMissThreshold = 16`, `kMaxRestartAttempts = 3`,
+    `kSupervisorPollMs = 50`, `kRestartGraceMs = 100`,
+    `kPollMs = 33`** (S5 new — `OutOfProcessEditorView`'s timer
+    cadence, 30 Hz GUI polling). Unchanged.
+15. **Lazy editor lifecycle.** First on-screen Show; no editor at
+    host spawn. Unchanged.
+
+### Carryover NOT resolved (S6 doesn't touch unless flagged)
+
+- **Push of S5 to `origin/master` is pending operator go-ahead.**
+  Per standing rule (memory:
+  `feedback_claude_commits_and_pushes_master`) Claude is authorized
+  to push; if operator says go: `git push origin master` (no force,
+  no PR).
+- **Pre-existing audio-ring SPSC violation** (engine `tryWriteBytes`
+  + `sendBytes` share the producer side). Track as a separate
+  follow-on; S5 made it observable but does not fix it.
+- **MainComponent has no production wiring** of
+  `OutOfProcessEffectChainHost` or `OutOfProcessEditorView`. The
+  plug-in-adding UI session (M20+) wires both.
+- **`PluginIpcMessage::monotonicNs` LMC reinterpret** still pending
+  the audio-thread LMC handle.
+- **Carryover from M6 + earlier still unresolved** (ProcessedRoute
+  empty span, manual operator-launch eyes-on of M6 surface, CI
+  signing handoff) — unchanged.
+
+---
+
+## HISTORICAL — M7 S4 close + M7 S5 handoff (superseded 2026-05-18 — M7 S5 now shipped)
 
 ## RESUME HERE (2026-05-18 — M7 S4 committed locally; M7 S5 next)
 

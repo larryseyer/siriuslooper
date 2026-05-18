@@ -27,6 +27,7 @@
 //     output stream back through RingByteStream::writeAll + flush.
 // =============================================================================
 
+#include "sirius/PluginGuiState.h"
 #include "sirius/PluginIpcMessage.h"
 #include "sirius/SharedMemoryRegion.h"
 #include "sirius/SharedMemorySpscQueue.h"
@@ -41,6 +42,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -96,10 +98,87 @@ namespace
 
     using IpcQueue = sirius::SharedMemorySpscQueue<sirius::PluginIpcMessage>;
 
-    /// Pops one PluginIpcMessage from `q`, honoring `shouldExit`. Returns
-    /// false only when the loop was asked to exit; callers should treat
-    /// that as "no more work, time to leave."
-    bool popMessageBlocking (IpcQueue& q, sirius::PluginIpcMessage& out)
+   #ifdef __APPLE__
+    extern "C" std::uint32_t sirius_gui_show   (const clap_plugin_t*,
+                                                std::uint32_t, std::uint32_t);
+    extern "C" bool          sirius_gui_hide   (const clap_plugin_t*);
+    extern "C" std::uint32_t sirius_gui_resize (const clap_plugin_t*,
+                                                std::uint32_t, std::uint32_t);
+   #endif
+
+    /// State the CLAP-mode pump carries for the M7 S5 GUI-control region.
+    /// The engine creates `/sirius.<id>.gui` before fork; the child
+    /// attaches in main() and threads this struct through the pump loop.
+    /// `lastServicedSeq` lives here (not in PluginGuiState) so it's a
+    /// child-private cursor, not shared state.
+    struct GuiServicingState
+    {
+        sirius::PluginGuiState* state           { nullptr };
+        std::uint64_t           lastServicedSeq { 0 };
+    };
+
+    /// Services any outstanding GUI request on `gui`. No-op on platforms
+    /// without GUI support OR when no request has advanced past
+    /// `lastServicedSeq`. Idempotent — safe to call from inside polling
+    /// loops AND from the per-buffer servicing point.
+    void serviceGuiRequests (GuiServicingState& gui, const clap_plugin_t* plugin)
+    {
+        if (gui.state == nullptr)
+            return;
+        const auto current = gui.state->requestSeq.load (std::memory_order_acquire);
+        if (current == gui.lastServicedSeq)
+            return;
+
+        const auto kind   = gui.state->requestKind  .load (std::memory_order_relaxed);
+        const auto width  = gui.state->requestWidth .load (std::memory_order_relaxed);
+        const auto height = gui.state->requestHeight.load (std::memory_order_relaxed);
+
+        std::uint32_t contextId = 0;
+        std::uint32_t outWidth  = width;
+        std::uint32_t outHeight = height;
+
+       #ifdef __APPLE__
+        switch (kind)
+        {
+            case sirius::PluginGuiState::Show:
+                contextId = sirius_gui_show (plugin, width, height);
+                break;
+            case sirius::PluginGuiState::Hide:
+                sirius_gui_hide (plugin);
+                contextId = 0;
+                outWidth  = 0;
+                outHeight = 0;
+                break;
+            case sirius::PluginGuiState::Resize:
+                contextId = sirius_gui_resize (plugin, width, height);
+                break;
+            case sirius::PluginGuiState::None:
+            default:
+                break;
+        }
+       #else
+        (void) plugin; (void) kind;
+        contextId = 0;
+        outWidth  = 0;
+        outHeight = 0;
+       #endif
+
+        gui.state->responseContextId.store (contextId, std::memory_order_relaxed);
+        gui.state->responseWidth    .store (outWidth,  std::memory_order_relaxed);
+        gui.state->responseHeight   .store (outHeight, std::memory_order_relaxed);
+        gui.state->responseSeq      .store (current,   std::memory_order_release);
+        gui.lastServicedSeq = current;
+    }
+
+    /// Pops one PluginIpcMessage from `q`, honoring `shouldExit`. If
+    /// `onSleep` is non-null it runs once per sleep iteration — used by
+    /// CLAP mode to service GUI requests while idle. Returns false only
+    /// when the loop was asked to exit; callers should treat that as
+    /// "no more work, time to leave."
+    template <typename OnSleep>
+    bool popMessageBlocking (IpcQueue& q,
+                             sirius::PluginIpcMessage& out,
+                             OnSleep&& onSleep)
     {
         while (shouldExit == 0)
         {
@@ -108,9 +187,16 @@ namespace
                 if (q.pop (out))
                     return true;
             }
+            onSleep();
             ::usleep (kRingPollMicroseconds);
         }
         return false;
+    }
+
+    /// No-op overload for the identity mode that has no GUI side work.
+    bool popMessageBlocking (IpcQueue& q, sirius::PluginIpcMessage& out)
+    {
+        return popMessageBlocking (q, out, [] {});
     }
 
     /// Pushes one PluginIpcMessage onto `q`, retrying briefly if the ring
@@ -138,8 +224,10 @@ namespace
     class RingByteStream
     {
     public:
-        RingByteStream (IpcQueue& inRing, IpcQueue& outRing)
-            : inRing_ (inRing), outRing_ (outRing) {}
+        using OnIdle = std::function<void()>;
+
+        RingByteStream (IpcQueue& inRing, IpcQueue& outRing, OnIdle onIdle = {})
+            : inRing_ (inRing), outRing_ (outRing), onIdle_ (std::move (onIdle)) {}
 
         /// Reads exactly `count` bytes into `data`. Returns false if the
         /// loop was asked to exit before the read completed; eof flag
@@ -159,7 +247,12 @@ namespace
                     got += take;
                     continue;
                 }
-                if (! popMessageBlocking (inRing_, pendingRead_))
+                bool ok;
+                if (onIdle_)
+                    ok = popMessageBlocking (inRing_, pendingRead_, onIdle_);
+                else
+                    ok = popMessageBlocking (inRing_, pendingRead_);
+                if (! ok)
                 {
                     eof = (got == 0);
                     return false;
@@ -209,6 +302,7 @@ namespace
     private:
         IpcQueue& inRing_;
         IpcQueue& outRing_;
+        OnIdle    onIdle_;
         sirius::PluginIpcMessage pendingRead_  {};
         std::size_t              readCursor_   { 0 };
         sirius::PluginIpcMessage pendingWrite_ {};
@@ -284,7 +378,9 @@ namespace
         return host;
     }
 
-    int runClapMode (const std::string& pluginPath, IpcQueue& inRing, IpcQueue& outRing)
+    int runClapMode (const std::string& pluginPath,
+                     IpcQueue& inRing, IpcQueue& outRing,
+                     sirius::PluginGuiState* guiState)
     {
         const auto binaryPath = resolveClapBinaryPath (pluginPath);
 
@@ -380,11 +476,17 @@ namespace
                                            const clap_event_header_t*) -> bool { return true; };
         const clap_output_events_t outEvents { nullptr, outEventsTry };
 
-        RingByteStream stream (inRing, outRing);
+        GuiServicingState gui { guiState, 0 };
+        const auto serviceGui = [&] { serviceGuiRequests (gui, plugin); };
+        RingByteStream stream (inRing, outRing, serviceGui);
         int exitCode = kExitOk;
 
         while (shouldExit == 0)
         {
+            // Service any GUI request that landed since the last buffer.
+            // Bounds GUI latency to one audio buffer when audio is
+            // flowing; the in-pop onIdle hook covers the idle case.
+            serviceGuiRequests (gui, plugin);
             uint32_t frameCount = 0;
             bool eof = false;
             if (! stream.readExact (reinterpret_cast<char*> (&frameCount),
@@ -498,8 +600,10 @@ int main (int argc, char** argv)
     // Attach to the rings the engine created before forking us.
     std::unique_ptr<sirius::SharedMemoryRegion> e2hRegion;
     std::unique_ptr<sirius::SharedMemoryRegion> h2eRegion;
+    std::unique_ptr<sirius::SharedMemoryRegion> guiRegion;
     std::unique_ptr<IpcQueue> e2hQueue;
     std::unique_ptr<IpcQueue> h2eQueue;
+    sirius::PluginGuiState*   guiState = nullptr;
     try
     {
         e2hRegion = std::make_unique<sirius::SharedMemoryRegion> (
@@ -512,6 +616,13 @@ int main (int argc, char** argv)
             IpcQueue::attach (e2hRegion->data(), sirius::kPluginIpcRingCapacity));
         h2eQueue = std::make_unique<IpcQueue> (
             IpcQueue::attach (h2eRegion->data(), sirius::kPluginIpcRingCapacity));
+
+        // M7 S5 — open the GUI state region. The engine created it
+        // alongside the audio rings before fork; this is OpenExisting.
+        guiRegion = std::make_unique<sirius::SharedMemoryRegion> (
+            sirius::makeGuiStateRegionName (instanceId), 0,
+            sirius::SharedMemoryRegion::Mode::OpenExisting);
+        guiState = sirius::PluginGuiState::view (guiRegion->data());
     }
     catch (const std::exception& e)
     {
@@ -530,7 +641,7 @@ int main (int argc, char** argv)
                           "sirius_plugin_host: --mode clap requires --plugin-path <bundle>\n");
             return kExitBadArgs;
         }
-        return runClapMode (pluginPath, *e2hQueue, *h2eQueue);
+        return runClapMode (pluginPath, *e2hQueue, *h2eQueue, guiState);
     }
 
     std::fprintf (stderr,

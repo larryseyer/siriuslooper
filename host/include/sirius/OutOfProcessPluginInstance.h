@@ -1,12 +1,15 @@
 #pragma once
 
+#include "sirius/PluginGuiState.h"
 #include "sirius/PluginIpcMessage.h"
 #include "sirius/SharedMemoryRegion.h"
 #include "sirius/SharedMemorySpscQueue.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
+#include <utility>
 
 namespace juce { class File; }
 
@@ -128,6 +131,48 @@ public:
     bool tryReadBytes (std::byte* buffer, std::size_t capacity,
                        std::size_t& bytesRead) noexcept;
 
+    // ---- Editor (M7 S5) — message-thread only --------------------------
+    //
+    // Non-blocking publish-and-poll API onto the shared `PluginGuiState`
+    // region. `request*` writes the new fields and bumps `requestSeq` with
+    // release ordering; the host child services asynchronously and writes
+    // back via `responseSeq`. Reads (`editorCaContextId`, `editorSize`)
+    // acquire-load the response fields, returning 0 / {0,0} until the host
+    // has serviced the latest request. The parent UI is expected to poll
+    // (e.g. via a JUCE Timer at GUI cadence). Bounded to a single shared
+    // region — no rings involved, naturally MPMC-safe.
+
+    /// Publishes a Show request at `(width, height)` points. Returns false
+    /// only if the GUI state region failed to map at construction time.
+    bool requestEditorShow (std::uint32_t width, std::uint32_t height) noexcept;
+
+    /// Publishes a Hide request. Returns false only on missing GUI region.
+    bool requestEditorHide() noexcept;
+
+    /// Publishes a Resize request. Caller may issue this any time after a
+    /// Show. Returns false only on missing GUI region.
+    bool requestEditorResize (std::uint32_t width, std::uint32_t height) noexcept;
+
+    /// Returns the most-recent CAContextID the host published, or 0 if no
+    /// editor is currently shown (or the latest Show request has not yet
+    /// been serviced). Acquire-load.
+    std::uint32_t editorCaContextId() const noexcept;
+
+    /// Returns `(width, height)` the host published with the last serviced
+    /// Show / Resize, or `{0, 0}` if nothing has been serviced yet.
+    /// Acquire-loaded under the same protocol as `editorCaContextId`.
+    std::pair<std::uint32_t, std::uint32_t> editorSize() const noexcept;
+
+    /// Returns the engine-side request seq counter — the value the host
+    /// must bump `responseSeq` to in order to mark the request serviced.
+    /// Exposed so callers (notably the supervisor's restart re-publish
+    /// path) can wait for completion without scraping internal state.
+    std::uint64_t editorRequestSeq() const noexcept;
+
+    /// Returns the response seq the host has bumped to. `requestSeq ==
+    /// responseSeq` means the latest request has been fully serviced.
+    std::uint64_t editorResponseSeq() const noexcept;
+
     /// Closes the child's stdin (signals EOF), waits up to
     /// `kShutdownGraceMs` for the child to exit on its own, then sends
     /// SIGKILL if it has not. Idempotent — safe to call multiple times.
@@ -154,6 +199,17 @@ private:
     std::unique_ptr<SharedMemorySpscQueue<PluginIpcMessage>> engineToHostQueue_;
     /// Host→engine SPSC queue placement-new'd into hostToEngineRegion_.
     std::unique_ptr<SharedMemorySpscQueue<PluginIpcMessage>> hostToEngineQueue_;
+
+    /// Editor control region (M7 S5). Engine owns + shm_unlinks; host
+    /// child opens by name. nullptr if shm_open failed at construction.
+    std::unique_ptr<SharedMemoryRegion> guiStateRegion_;
+    /// Typed view into `guiStateRegion_->data()`. Owned by the region.
+    /// nullptr if the region failed to map.
+    PluginGuiState*                     guiState_ { nullptr };
+    /// Last requestSeq the engine issued. Cached so request methods can
+    /// bump monotonically without re-reading the atomic. Message-thread
+    /// only (no atomic needed).
+    std::uint64_t                       lastRequestSeq_ { 0 };
 
     /// Leftover bytes from a partially-consumed message — preserves the
     /// "stop at first non-empty read" stream semantics across calls that

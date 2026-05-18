@@ -14,7 +14,18 @@ add_library(SiriusHost STATIC
     src/PluginScanner.cpp
     src/GenericParameterView.cpp
     src/OutOfProcessPluginInstance.cpp
-    src/OutOfProcessEffectChainHost.cpp)
+    src/OutOfProcessEffectChainHost.cpp
+    src/OutOfProcessEditorView.cpp)
+
+# M7 S5 — macOS GUI embedding bridge. AppKit / QuartzCore lives behind a
+# C-linkage shim in OutOfProcessEditorView.mm so the .cpp body stays plain
+# C++. Manual retain/release for the NSView + CALayerHost (-fno-objc-arc)
+# matches the editor-lifecycle bracketing in OutOfProcessEditorView.cpp.
+if(APPLE)
+    target_sources(SiriusHost PRIVATE src/OutOfProcessEditorView.mm)
+    set_source_files_properties(src/OutOfProcessEditorView.mm PROPERTIES
+        COMPILE_FLAGS "-fno-objc-arc")
+endif()
 
 target_include_directories(SiriusHost PUBLIC include)
 
@@ -30,15 +41,19 @@ target_link_libraries(SiriusHost
     PUBLIC  Sirius::Core
             juce::juce_audio_processors
             juce::juce_gui_basics
+            juce::juce_gui_extra
             juce::juce_recommended_config_flags
             juce::juce_recommended_warning_flags)
 
 # JUCE's AU hosting code (juce_audio_processors.mm) references AUGenericView,
 # which lives in CoreAudioKit. juce_add_gui_app would add this framework on
 # our behalf; a plain static library does not, so we add it explicitly when
-# linking against this lib on Apple platforms.
+# linking against this lib on Apple platforms. M7 S5 adds QuartzCore for
+# the CALayerHost-based cross-process editor embedding.
 if(APPLE)
-    target_link_libraries(SiriusHost PUBLIC "-framework CoreAudioKit")
+    target_link_libraries(SiriusHost PUBLIC
+        "-framework CoreAudioKit"
+        "-framework QuartzCore")
 endif()
 
 add_library(Sirius::Host ALIAS SiriusHost)

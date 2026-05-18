@@ -57,6 +57,7 @@ add_executable(SiriusTests
     OutOfProcessPluginInstanceAudioThreadTests.cpp
     OutOfProcessEffectChainHostSlotStateTests.cpp
     OutOfProcessEffectChainHostSupervisorTests.cpp
+    OutOfProcessEditorTests.cpp
     OutputMixerPluginHostIntegrationTests.cpp
     SharedMemorySpscQueueTests.cpp
     SharedMemoryRegionTests.cpp)
