@@ -55,6 +55,7 @@
   #include <mach/mach.h>
   #include <dispatch/dispatch.h>
   #include <atomic>
+  #include <mutex>
 #endif
 
 namespace
@@ -97,32 +98,58 @@ namespace
         // LOC; observed cold-start is well under 50 ms on Apple
         // Silicon, so this has plenty of headroom.
         dispatch_semaphore_t done = dispatch_semaphore_create (0);
-        __block mach_port_t fetched = MACH_PORT_NULL;
+        __block mach_port_t fetched   = MACH_PORT_NULL;
+        __block bool        consumed  = false;
+        // Atomic mutex around `consumed` to coordinate the wait-thread's
+        // claim with the reply-block's late-arrival path: whichever side
+        // sets `consumed=true` first owns the fetched send-right.
+        std::mutex* claimMutex = new std::mutex();
 
         xpc_connection_send_message_with_reply (conn, req, queue,
             ^(xpc_object_t reply) {
+                mach_port_t local = MACH_PORT_NULL;
                 if (xpc_get_type (reply) == XPC_TYPE_DICTIONARY)
-                    fetched = xpc_dictionary_copy_mach_send (reply, "port");
-                dispatch_semaphore_signal (done);
+                    local = xpc_dictionary_copy_mach_send (reply, "port");
+                std::lock_guard<std::mutex> lk (*claimMutex);
+                if (consumed)
+                {
+                    // Wait thread already gave up; we own the right and
+                    // must release it or it leaks for the child's life.
+                    if (local != MACH_PORT_NULL)
+                        mach_port_deallocate (mach_task_self(), local);
+                }
+                else
+                {
+                    fetched  = local;
+                    consumed = true;
+                    dispatch_semaphore_signal (done);
+                }
             });
 
         const dispatch_time_t timeout = dispatch_time (
             DISPATCH_TIME_NOW, 250 * NSEC_PER_MSEC);
         if (dispatch_semaphore_wait (done, timeout) == 0)
+        {
             g_engineServerPort.store (fetched, std::memory_order_release);
+        }
         else
+        {
+            std::lock_guard<std::mutex> lk (*claimMutex);
+            consumed = true; // tell the late reply to drop the right
             std::fprintf (stderr,
                 "sirius_plugin_host: XPC bridge timeout (250 ms); "
                 "falling back to S5 placeholder editor surface\n");
+        }
 
         xpc_release (req);
-        // Intentionally do NOT release `conn` or `queue`: keeping the
-        // connection alive for the child's lifetime prevents the kernel
-        // from reclaiming the fetched send-right (the XPC connection
-        // owns the right's lifetime in this process). Process exit
-        // reclaims everything. dispatch_release(done) is also skipped
-        // (semaphore is a local; on-modern-macOS it's automatically
-        // managed when no longer referenced).
+        // `conn` and `queue` are intentionally leaked for the child's
+        // lifetime: `xpc_dictionary_copy_mach_send` did give us an
+        // independently-owned send-right, so the connection isn't
+        // strictly required to keep the right alive — but holding it
+        // open also keeps the reply-block's `claimMutex` reachable
+        // until process exit, which is what makes the late-arrival
+        // path safe. `done` and `claimMutex` are deliberately not
+        // released either; process exit reclaims everything.
     }
    #endif
 
@@ -678,8 +705,12 @@ int main (int argc, char** argv)
     // M7 S6 — fetch the engine's CARemoteLayer serverPort via the bundled
     // XPC bridge. Runs BEFORE shm attach so launchd has maximum cold-start
     // headroom; degrades to MACH_PORT_NULL on failure (gui_cocoa.mm then
-    // uses the S5 placeholder editor surface).
-    bootstrapXpcBridge();
+    // uses the S5 placeholder editor surface). Skipped in identity mode
+    // because identity-mode children never instantiate CARemoteLayer, so
+    // paying the 250 ms timeout in tests that spawn many identity-mode
+    // children would be pure waste.
+    if (mode == "clap")
+        bootstrapXpcBridge();
    #endif
 
     // SIGTERM / SIGINT → request shutdown. SIGPIPE → ignore (legacy from
