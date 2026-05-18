@@ -34,6 +34,7 @@
 
 #import <AppKit/AppKit.h>
 #import <QuartzCore/QuartzCore.h>
+#import <QuartzCore/CARemoteLayerClient.h>
 
 #include <clap/clap.h>
 #include <clap/ext/gui.h>
@@ -42,15 +43,18 @@
 #include <cstdint>
 #include <cstring>
 
+extern "C" std::uint32_t sirius_engine_server_port();
+
 namespace
 {
     struct EditorState
     {
-        NSView*       placeholder { nil };
-        std::uint32_t contextId   { 0 };
-        std::uint32_t width       { 0 };
-        std::uint32_t height      { 0 };
-        bool          created     { false };
+        NSView*               placeholder  { nil };
+        CARemoteLayerClient*  remoteClient { nil };
+        std::uint32_t         contextId    { 0 };
+        std::uint32_t         width        { 0 };
+        std::uint32_t         height       { 0 };
+        bool                  created      { false };
     };
 
     EditorState g_editor {};
@@ -76,6 +80,13 @@ namespace
         const auto* gui = getGuiExt (plugin);
         if (gui != nullptr && gui->destroy != nullptr)
             gui->destroy (plugin);
+
+        if (g_editor.remoteClient != nil)
+        {
+            [g_editor.remoteClient invalidate];
+            [g_editor.remoteClient release];
+            g_editor.remoteClient = nil;
+        }
 
         if (g_editor.placeholder != nil)
         {
@@ -151,8 +162,33 @@ extern "C" std::uint32_t sirius_gui_show (const struct clap_plugin* plugin,
     if (gui->show != nullptr)
         gui->show (plugin);
 
-    // Placeholder contextId — see translation-unit docblock for the
-    // CARemoteLayer Mach-port deferral.
+    // CARemoteLayer-first path: ask main.cpp for the engine's
+    // CARemoteLayerServer.serverPort (resolved via XPC at startup); if
+    // available, construct a CARemoteLayerClient, point it at the
+    // plug-in's CALayer subtree, and publish the real clientId. Outside
+    // the .app bundle (e.g. unit tests) serverPort is 0 and we fall
+    // through to the S5 placeholder counter path.
+    const std::uint32_t serverPort = sirius_engine_server_port();
+    if (serverPort != 0)
+    {
+        CARemoteLayerClient* client = [[CARemoteLayerClient alloc]
+            initWithServerPort: (mach_port_t) serverPort];
+        if (client != nil && client.clientId != 0)
+        {
+            client.layer = placeholder.layer;
+            g_editor.remoteClient = client;
+            g_editor.placeholder  = placeholder;
+            g_editor.contextId    = client.clientId;
+            g_editor.width        = width;
+            g_editor.height       = height;
+            g_editor.created      = true;
+            return g_editor.contextId;
+        }
+        if (client != nil)
+            [client release];
+        // fall through to S5 placeholder counter path
+    }
+
     g_editor.placeholder = placeholder;
     g_editor.contextId   = g_nextContextId.fetch_add (1, std::memory_order_relaxed);
     g_editor.width       = width;
