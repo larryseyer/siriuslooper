@@ -11,6 +11,7 @@
 
 #include <juce_audio_utils/juce_audio_utils.h>
 
+#include <deque>
 #include <exception>
 #include <functional>
 #include <optional>
@@ -42,6 +43,71 @@ namespace
     /// If a Sirius device with a different default ever lands, change this in
     /// one place.
     constexpr int kDefaultStereoChannels = 2;
+
+    /// M6 Session 3 — vertical pixel budget for the rolling notifications
+    /// list inside the Preparation pane. The list sits above the
+    /// 84px diagnostics row (which already lives at the bottom). 100px holds
+    /// roughly six 12pt monospaced lines with scrollbars exposed for older
+    /// entries — sized so the operator sees the recent few at a glance
+    /// without dominating the timeline area. M22 redesigns this surface.
+    constexpr int kNotificationsRowHeightPx = 100;
+
+    /// Minimum vertical space reserved for the preparation tree (the
+    /// structural readout that sits ABOVE the timeline). The notifications +
+    /// diagnostics stack has already been removed from `area` by the time
+    /// this clamp executes, so this constant only governs the tree/timeline
+    /// split. Pre-M6 value (M4): 80px; unchanged by M6 — the notifications
+    /// row is independently reserved at the bottom via
+    /// `kNotificationsRowHeightPx` + `removeFromBottom`.
+    constexpr int kPreparationTreeMinHeightPx = 80;
+
+    /// Format a single Notification into a one-line operator-facing string:
+    /// `[level] category: message (Δt ago)`. Δt computed at render time
+    /// against `nowTicks` so the surface ages naturally on every refresh.
+    /// Per-line allocation lives on the message thread — drain cadence is
+    /// 30Hz and history is bounded at `kNotificationHistorySize = 20`.
+    const char* notificationLevelName (NotificationLevel level) noexcept
+    {
+        switch (level)
+        {
+            case NotificationLevel::Info:        return "Info";
+            case NotificationLevel::Degradation: return "Degradation";
+            case NotificationLevel::Warning:     return "Warning";
+            case NotificationLevel::Error:       return "Error";
+        }
+        return "?";
+    }
+
+    const char* notificationCategoryName (Category category) noexcept
+    {
+        switch (category)
+        {
+            case Category::DiskPressure: return "DiskPressure";
+            case Category::CpuPressure:  return "CpuPressure";
+            case Category::RamPressure:  return "RamPressure";
+            case Category::DeviceEvent:  return "DeviceEvent";
+            case Category::PluginEvent:  return "PluginEvent";
+            case Category::ClockEvent:   return "ClockEvent";
+            case Category::NetworkEvent: return "NetworkEvent";
+            case Category::StateRepair:  return "StateRepair";
+            case Category::TapeRotation: return "TapeRotation";
+        }
+        return "?";
+    }
+
+    juce::String formatNotificationLine (const Notification& n, std::int64_t nowTicks)
+    {
+        const double ageSeconds = juce::Time::highResolutionTicksToSeconds (
+            nowTicks - n.postedTicks);
+
+        juce::String line;
+        line.preallocateBytes (160);
+        line << "[" << notificationLevelName (n.level) << "] "
+             << notificationCategoryName (n.category) << ": "
+             << juce::String (n.message.data())
+             << " (" << juce::String (ageSeconds, 1) << "s ago)";
+        return line;
+    }
 
     Rational playheadValueToLmc (double sliderValue)
     {
@@ -194,6 +260,20 @@ public:
         diagnosticsLabel_.setJustificationType (juce::Justification::topLeft);
         diagnosticsLabel_.setMinimumHorizontalScale (1.0f);
         addAndMakeVisible (diagnosticsLabel_);
+
+        // M6 Session 3 — read-only multi-line monospaced editor for the rolling
+        // notification history. Mirrors the PluginsPane::descriptorsList_ shape
+        // (line 356-360 of pre-S3) so the operator's eye recognises the surface.
+        // Read-only because notifications are engine→UI output; the operator
+        // never types into them. Scrollbars exposed for older entries beyond
+        // what fits in `kNotificationsRowHeightPx`.
+        notificationsList_.setMultiLine (true);
+        notificationsList_.setReadOnly (true);
+        notificationsList_.setScrollbarsShown (true);
+        notificationsList_.setFont (juce::FontOptions (
+            juce::Font::getDefaultMonospacedFontName(), 12.0f, 0));
+        notificationsList_.setText ("(no notifications)", false);
+        addAndMakeVisible (notificationsList_);
     }
 
     void setState (PreparationViewState s)    { preparationView_.setState (std::move (s)); }
@@ -201,6 +281,33 @@ public:
     void setTimelinePlayhead (std::optional<Rational> t) { timelineView_.setPlayhead (t); }
     void setDiagnostics (const juce::String& text) { diagnosticsLabel_.setText (text, juce::dontSendNotification); }
     void setStatus (const juce::String& text)      { statusLabel_.setText (text, juce::dontSendNotification); }
+
+    /// M6 Session 3 — re-render the notification list from the message-thread
+    /// rolling history. Called on every 30Hz timer tick AFTER the drain has
+    /// trimmed the deque to `kNotificationHistorySize`. Per-line formatting
+    /// allocates juce::Strings on the message thread; that's fine for a
+    /// bounded 20-entry list at 30Hz.
+    void setNotifications (const std::deque<Notification>& history)
+    {
+        if (history.empty())
+        {
+            notificationsList_.setText ("(no notifications)", false);
+            return;
+        }
+
+        const std::int64_t nowTicks = juce::Time::getHighResolutionTicks();
+        juce::String text;
+        text.preallocateBytes (history.size() * 160);
+        // Newest-first order matches the operator's reading direction — the
+        // event that just landed is what they want at eye level, history
+        // scrolls beneath. Iterate in reverse over the chronological deque
+        // (drain appends back, so back() is most recent).
+        for (auto it = history.rbegin(); it != history.rend(); ++it)
+        {
+            text << formatNotificationLine (*it, nowTicks) << "\n";
+        }
+        notificationsList_.setText (text, false);
+    }
 
     juce::TextButton& saveButton()       { return saveButton_; }
     juce::TextButton& loadButton()       { return loadButton_; }
@@ -231,14 +338,21 @@ public:
 
         diagnosticsLabel_.setBounds (area.removeFromBottom (84));
         area.removeFromBottom (6);
+        // M6 Session 3 — notifications list above diagnostics, both
+        // bottom-anchored so the timeline keeps the dominant share.
+        notificationsList_.setBounds (area.removeFromBottom (kNotificationsRowHeightPx));
+        area.removeFromBottom (6);
 
         // The timeline gets the dominant share of vertical space — it's the
         // surface the performer reaches for. The tree readout sits above it
-        // as a structural reference. Minimum heights guard tiny windows.
+        // as a structural reference. Minimum heights guard tiny windows. The
+        // notifications + diagnostics stack was already `removeFromBottom`ed
+        // above, so this clamp only governs the tree/timeline split.
         const int timelineMin = timelineView_.totalHeight() + 8;
         const int timelineH   = std::max (timelineMin,
                                           juce::jmin (area.getHeight() * 6 / 10,
-                                                      area.getHeight() - 80));
+                                                      area.getHeight()
+                                                          - kPreparationTreeMinHeightPx));
         timelineView_.setBounds (area.removeFromBottom (timelineH));
         area.removeFromBottom (6);
         preparationView_.setBounds (area);
@@ -256,6 +370,7 @@ private:
     PreparationView  preparationView_;
     TimelineView     timelineView_;
     juce::Label      diagnosticsLabel_;
+    juce::TextEditor notificationsList_;
 };
 
 // =============================================================================
@@ -787,17 +902,26 @@ void MainComponent::timerCallback()
         overloadProtection_.reportLoad (elapsed / budget);
     }
 
-    // M6 Session 2 — drain the engine→UI truthfulness channel on the same
-    // 30 Hz cadence as the diagnostics refresh. Drained count is logged via
-    // DBG for the session; the UI surface (a scrollable notification list in
-    // the Preparation tab) is M6 Session 3's job. The buffer is pre-reserved
-    // in the ctor so `drain()` does not reallocate here.
+    // M6 Sessions 2+3 — drain the engine→UI truthfulness channel on the same
+    // 30 Hz cadence as the diagnostics refresh, append drained entries onto
+    // the rolling history deque, trim the front to `kNotificationHistorySize`
+    // so the surface holds the most-recent N, and push the deque into the
+    // Preparation pane for re-render. The drain buffer is pre-reserved in
+    // the ctor so `drain()` does not reallocate here; deque ops on the
+    // history are O(1) per entry. The pane re-renders every tick so the
+    // "(Δt ago)" timestamps age naturally even when no new notifications
+    // arrive (cheap — 20 entries × 30Hz on the message thread).
     if (notificationBus_ != nullptr)
     {
         notificationBus_->drain (notificationDrainBuffer_);
-        if (! notificationDrainBuffer_.empty())
-            DBG ("NotificationBus drained " << static_cast<int> (notificationDrainBuffer_.size())
-                 << " notifications");
+        for (const auto& n : notificationDrainBuffer_)
+        {
+            notificationHistory_.push_back (n);
+            if (notificationHistory_.size() > kNotificationHistorySize)
+                notificationHistory_.pop_front();
+        }
+        if (preparationPane_ != nullptr)
+            preparationPane_->setNotifications (notificationHistory_);
     }
 
     refreshDiagnostics();

@@ -50,7 +50,8 @@ add_executable(SiriusTests
     BusTests.cpp
     ProcessingChainTests.cpp
     TapeWriterTests.cpp
-    NotificationBusTests.cpp)
+    NotificationBusTests.cpp
+    NotificationBusIntegrationTests.cpp)
 
 target_compile_features(SiriusTests PRIVATE cxx_std_20)
 

@@ -27,6 +27,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <cstdint>
+#include <deque>
 #include <memory>
 #include <unordered_set>
 #include <vector>
@@ -164,6 +165,17 @@ private:
     // single-drain payload).
     std::unique_ptr<NotificationBus>      notificationBus_;
     std::vector<Notification>             notificationDrainBuffer_;
+
+    // M6 Session 3 — rolling window of the most-recent notifications surfaced
+    // in the Preparation tab. The drain on the 30 Hz timer appends new entries
+    // and trims the front so the deque never grows past `kNotificationHistorySize`.
+    // Deque (not vector) because append-back + pop-front are O(1) — vector
+    // would shift on every trim. Sized for "operator sees the recent few
+    // without scrolling; older history is reachable by scrolling the editor"
+    // per the M6 S3 spec; M22 redesigns this surface entirely so the size is
+    // not a long-term commitment.
+    static constexpr std::size_t kNotificationHistorySize = 20;
+    std::deque<Notification>              notificationHistory_;
 
     // --- top-level layout ---
     juce::TabbedComponent tabs_ { juce::TabbedButtonBar::TabsAtTop };
