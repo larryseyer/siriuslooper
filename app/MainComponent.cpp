@@ -37,6 +37,12 @@ namespace
     /// converts to an exact Rational — the engine still never sees a double.
     constexpr int ticksPerSecond = 16;
 
+    /// Default stereo-channel count — matches initialiseWithDefaultDevices(2, 2)
+    /// and the M4 default identity routes (input N → output N for N in [0, count)).
+    /// If a Sirius device with a different default ever lands, change this in
+    /// one place.
+    constexpr int kDefaultStereoChannels = 2;
+
     Rational playheadValueToLmc (double sliderValue)
     {
         return Rational (static_cast<std::int64_t> (sliderValue), ticksPerSecond);
@@ -497,8 +503,27 @@ MainComponent::MainComponent()
     // reconcile the two via §4.3 calibration tables.
     monotonicClock_  = std::make_shared<SteadyMonotonicClock>();
     lmc_             = std::make_unique<Lmc> (monotonicClock_);
+
+    // M4 Session 3 — the audio callback now drives engine-side mixers and
+    // a DirectLayer. Mixers are constructed before the callback so the
+    // raw pointers handed to setInputMixer/setOutputMixer/setDirectLayer
+    // are live for the callback's entire lifetime. Default identity routes
+    // 0→0 and 1→1 preserve M1 monitoring behaviour: when monitoring is
+    // armed, input N is mixed into output N, matching the prior pass-
+    // through semantics under the new DirectLayer plumbing. If the device
+    // exposes more than 2 channels, extras simply route nowhere — the
+    // operator wires additional routes through M4's manual-only API.
+    inputMixer_      = std::make_unique<InputMixer>();
+    outputMixer_     = std::make_unique<OutputMixer>();
+    directLayer_     = std::make_unique<DirectLayer>();
+    for (int ch = 0; ch < kDefaultStereoChannels; ++ch)
+        directLayer_->addRawRoute (InputId (ch), OutputChannelId (ch));
+
     audioCallback_   = std::make_unique<AudioCallback> (engineConfig_);
     audioCallback_->setLmc (lmc_.get());
+    audioCallback_->setInputMixer  (inputMixer_.get());
+    audioCallback_->setOutputMixer (outputMixer_.get());
+    audioCallback_->setDirectLayer (directLayer_.get());
 
     // M1 Session 3 — engine pieces handed to the audio callback as
     // scaffolding. ASRCs sized 2/2 to match the device request below; the
@@ -509,10 +534,10 @@ MainComponent::MainComponent()
     // audioDeviceLastError_ channel.
     try
     {
-        for (int ch = 0; ch < 2; ++ch)
+        for (int ch = 0; ch < kDefaultStereoChannels; ++ch)
             asrcInputs_.push_back (
                 std::make_unique<Asrc> (1.01, engineConfig_.asrcQuality));
-        for (int ch = 0; ch < 2; ++ch)
+        for (int ch = 0; ch < kDefaultStereoChannels; ++ch)
             asrcOutputs_.push_back (
                 std::make_unique<Asrc> (1.01, engineConfig_.asrcQuality));
 
@@ -534,8 +559,8 @@ MainComponent::MainComponent()
     audioCallback_->setCalibration (&calibration_);
 
     const auto deviceInitError = audioDeviceManager_.initialiseWithDefaultDevices (
-        /*numInputChannelsNeeded*/  2,
-        /*numOutputChannelsNeeded*/ 2);
+        /*numInputChannelsNeeded*/  kDefaultStereoChannels,
+        /*numOutputChannelsNeeded*/ kDefaultStereoChannels);
     if (deviceInitError.isNotEmpty())
         audioDeviceLastError_ = deviceInitError;
     audioDeviceManager_.addAudioCallback (audioCallback_.get());

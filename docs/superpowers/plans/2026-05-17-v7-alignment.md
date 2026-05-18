@@ -367,6 +367,7 @@ bash bash/autotest.sh
 
 - Output channel naming: in M4 the `OutputChannelId` is a manual integer; in M5 the OutputMixer will define `OutputChannel`s, at which point `OutputChannelId` becomes a real type. M4 defines it as an opaque ID with an `int` underlying.
 - Auto inference is **explicitly deferred to M14**; M4 only ships manual routing. The transition guide (§2.3) notes the inference function "deserves its own design pass."
+- **M4 Session 3 wires only the RawRoute path**; the `ProcessedChannelBufferView` span passed to `routeBuffers` is empty. Rationale: M3's `InputMixer::processBuffer` writes byte-serialized output to a TapeWriter queue and does not expose a post-processing float buffer for DirectLayer to consume. Exposing one would require either new InputMixer surface (out of M4 scope) or re-running ProcessingChain inside AudioCallback (bypasses the M3 design). M3's ProcessingChain is no-op anyway, so ProcessedRoute integration is moot until ProcessingChain has real DSP — that work lands with M5+.
 
 **Execution mode.** `orchestrator+subagents`.
 

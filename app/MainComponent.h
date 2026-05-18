@@ -6,11 +6,14 @@
 #include "sirius/AudioCallback.h"
 #include "sirius/AudioDeviceCalibration.h"
 #include "sirius/CaptureSession.h"
+#include "sirius/DirectLayer.h"
 #include "sirius/EngineConfig.h"
 #include "sirius/InputDescriptor.h"
+#include "sirius/InputMixer.h"
 #include "sirius/LatencyBudget.h"
 #include "sirius/Lmc.h"
 #include "sirius/MonotonicClock.h"
+#include "sirius/OutputMixer.h"
 #include "sirius/OverloadProtection.h"
 #include "sirius/PerformanceView.h"
 #include "sirius/PluginScanner.h"
@@ -119,6 +122,15 @@ private:
     std::unique_ptr<Lmc>                  lmc_;
     EngineConfig                          engineConfig_;
     juce::AudioDeviceManager              audioDeviceManager_;
+    // M4 Session 3 — engine-side mixers and DirectLayer the audio callback
+    // now drives. Declared before audioCallback_ so destruction unwinds the
+    // callback first (it's destroyed before the mixers it holds non-owning
+    // pointers into). The MainComponent destructor also explicitly removes
+    // the callback from the device manager before any teardown begins, so
+    // the audio thread can't see a half-destroyed mixer.
+    std::unique_ptr<InputMixer>           inputMixer_;
+    std::unique_ptr<OutputMixer>          outputMixer_;
+    std::unique_ptr<DirectLayer>          directLayer_;
     std::unique_ptr<AudioCallback>        audioCallback_;
     juce::String                          audioDeviceLastError_;
 

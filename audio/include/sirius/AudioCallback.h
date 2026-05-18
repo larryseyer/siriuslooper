@@ -1,5 +1,6 @@
 #pragma once
 
+#include "sirius/DirectLayer.h"
 #include "sirius/EngineConfig.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
@@ -13,6 +14,8 @@ namespace sirius
 
 class Lmc;
 class AudioDeviceCalibration;
+class InputMixer;
+class OutputMixer;
 
 /// The single audio-thread entry point for the standalone app — V7 white paper
 /// Part V plus Part 5.6's realtime-safety contract, lowered to JUCE's
@@ -82,6 +85,20 @@ public:
         calibration_ = calibration;
     }
 
+    /// M4 Session 3 — attach the engine-side mixers and DirectLayer the
+    /// audio thread now drives. Set-once on the message thread before
+    /// `audioDeviceAboutToStart`; non-owning. The mixers/layer must outlive
+    /// this callback (MainComponent guarantees this by declaring the
+    /// AudioCallback after the mixers, so destruction unwinds in reverse).
+    ///
+    /// `directLayer_` is `const` because Session 2's `routeBuffers` is const
+    /// and the audio thread never registers routes. `inputMixer_` and
+    /// `outputMixer_` are non-const because `InputMixer::processBuffer`
+    /// mutates internal state (TapeWriter queue push, overload reporting).
+    void setInputMixer  (InputMixer*  mixer) noexcept   { inputMixer_  = mixer;  }
+    void setOutputMixer (OutputMixer* mixer) noexcept   { outputMixer_ = mixer;  }
+    void setDirectLayer (const DirectLayer* layer) noexcept { directLayer_ = layer; }
+
     // -- juce::AudioIODeviceCallback ------------------------------------------------
     void audioDeviceIOCallbackWithContext (
         const float* const* inputChannelData,
@@ -148,6 +165,21 @@ private:
     std::vector<class Asrc*>             asrcInputs_;
     std::vector<class Asrc*>             asrcOutputs_;
     const AudioDeviceCalibration*        calibration_ { nullptr };
+
+    // M4 Session 3 — collaborator pointers and pre-allocated scratch for
+    // DirectLayer::routeBuffers. Per the DirectLayer caller contract, span
+    // storage must NOT allocate on the audio thread; these vectors are sized
+    // in `audioDeviceAboutToStart` (message thread) and only index-mutated
+    // (never resized) by the callback. ProcessedChannelBufferView scratch is
+    // intentionally absent — M4 wires only the RawRoute path; see the comment
+    // next to the empty processedChannels span in AudioCallback.cpp.
+    InputMixer*        inputMixer_  { nullptr };
+    OutputMixer*       outputMixer_ { nullptr };
+    const DirectLayer* directLayer_ { nullptr };
+    std::vector<RawInputBufferView> rawInputScratch_;
+    std::vector<OutputBufferView>   outputScratch_;
+    int activeRawScratchCount_    { 0 };
+    int activeOutputScratchCount_ { 0 };
 
     std::atomic<bool>   monitoringEnabled_       { false };
     std::atomic<double> currentSampleRate_       { 0.0 };
