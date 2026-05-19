@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-18 (M7 S5 SHIPPED to origin/master; M7 S6 next — CARemoteLayer Mach-port handoff via XPC)
+# Session Continuation — 2026-05-18 (M7 S6 SHIPPED locally; push + S7 selection next)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -7,6 +7,215 @@
 > *state*: what just shipped and what's queued next.
 
 ---
+
+## RESUME HERE (2026-05-18 — M7 S6 committed locally; push pending operator go-ahead; M7 S7 selection next)
+
+**M7 S6 is committed locally at `10560c9`** (19 per-step commits ahead
+of `origin/master`). The operator standing rule
+(`feedback_claude_commits_and_pushes_master`) authorises `git push
+origin master` without further prompt; the session deferred the push so
+the operator could eyes-on the diff first. Per-step SHAs:
+
+| SHA | Subject |
+|---|---|
+| `0b1d9b8` | feat: M7 S6 step 1 — IGuiBridge port + PluginGuiBridge null skeleton + unit tests |
+| `3455436` | docs: M7 S6 step 1 review — tighten PluginGuiBridge docstrings (reference lifetime + resetForTesting reality) |
+| `739e4ea` | feat: M7 S6 step 2 — sirius_gui_bridge XPC service binary + bundle |
+| `095cfec` | fix: M7 S6 step 2 — drop unused includes from xpc_service/main.cpp |
+| `9f37b8f` | fix: M7 S6 step 2 review — fail loud on missing op (reply with error instead of silent hang) |
+| `fcc83dc` | feat: M7 S6 step 3 — PluginGuiBridge real XPC connection + CARemoteLayerServer.sharedServer.serverPort registration |
+| `106e4e1` | fix: M7 S6 step 3 review — drain XPC handlers + release dispatch_queue in XpcGuiBridge dtor |
+| `fb870e9` | feat: M7 S6 step 4 — install sirius_gui_bridge.xpc + sirius_plugin_host into app bundle |
+| `aa64394` | refactor: M7 S6 step 4 review — collapse add_dependencies + note re-sign gap for distribution |
+| `5faa18f` | feat: M7 S6 step 5 — OutOfProcessEffectChainHost lazy-touches PluginGuiBridge on configureBus |
+| `7a20065` | feat: M7 S6 step 6 — child XPC bootstrap fetches engine serverPort with 250 ms timeout |
+| `bc4c706` | fix: M7 S6 step 6 review — gate XPC bootstrap on clap mode + plug late-reply send-right leak |
+| `2f20033` | feat: M7 S6 step 7 — gui_cocoa.mm publishes CARemoteLayerClient.clientId when serverPort available |
+| `33861a9` | docs: M7 S6 step 7 review — refresh gui_cocoa.mm docblock to lead with CARemoteLayer (placeholder is now fallback) |
+| `772cef0` | feat: M7 S6 step 8 — OutOfProcessEditorView.mm uses +layerWithRemoteClientId: when contextId is real |
+| `f191954` | fix: M7 S6 step 8 review — autorelease NSView, extract placeholder-tint helper, drop unused CARemoteLayerServer.h import |
+| `7ed65de` | test: M7 S6 step 9 — CARemoteLayer in-process server/client round-trip |
+| `8042018` | fix: M7 S6 step 9 review — drop dead non-Apple SKIP branch (CMake already gates on APPLE) |
+| `10560c9` | docs: M7 S6 step 11 — operator eyes-on procedure + future sandbox + signing-pipeline diff |
+
+(One per-task push by a subagent during step 2 leaked the early
+commits to origin out of plan — `739e4ea`, `095cfec`, `9f37b8f`,
+`fcc83dc`, `106e4e1` are already on origin. The remaining 14 are
+local-only. Subsequent task subagents were explicitly told
+"commit only, no push" and complied.)
+
+Test count: **384/384** green on clean rebuild (was 378 at S5; +6 in
+S6 — three `[plugin-editor-xpc][unit]` PluginGuiBridge cases + three
+`[plugin-editor-xpc][in-process]` CARemoteLayer round-trip cases).
+
+**S6 made cross-process GPU compositing real.** Engine's
+`CARemoteLayerServer.sharedServer.serverPort` is brokered to each
+`sirius_plugin_host` child via a bundled XPC service
+(`Contents/XPCServices/sirius_gui_bridge.xpc/` — `CFBundleIdentifier
+com.larryseyer.siriuslooper.gui-bridge`). Children construct
+`CARemoteLayerClient`, publish the `clientId` via the existing S5
+`PluginGuiState` shm, and the engine wraps `+[CALayer
+layerWithRemoteClientId:]` inside the same `OutOfProcessEditorView`
+shell from S5. Soft-fails to the S5 tinted placeholder when the bridge
+bundle is missing (ctest, no-bundle dev runs).
+
+**Measured RT (Apple Silicon, 2026-05-18):** `[plugin-ipc][.rt-smoke]`
+median 66 µs, p99 135 µs, max 155 µs (S5 was 71 / 139 / 141).
+Median + p99 improved slightly; max is +14 µs but well inside the
+300 µs p99 ceiling. Audio surface unchanged (XPC is message-thread
+only); drift is run-to-run noise.
+
+**Architectural shape (carried forward):**
+
+- **`xpc_service/sirius_gui_bridge`** — new tiny XPC service binary
+  (~110 LOC after cleanup). JUCE-free, AppKit-free; only libSystem
+  XPC + Mach + dispatch. Two ops: `set_server_port` (engine →
+  bridge) and `get_server_port` (child → bridge). Stateless Mach-
+  port broker; caches the most-recently-registered serverPort and
+  hands a fresh send-right to each requesting child.
+- **`IGuiBridge` port + `PluginGuiBridge` singleton** in `host/`.
+  Lazy first-use construction; XPC connection + serverPort
+  registration happen on the first `configureBus`. Per the S3/S4
+  port pattern (`IEffectChainHost`, `INotificationSink`),
+  `IGuiBridge` is the third dependency-inverted engine→host surface.
+- **`PluginGuiBridge.cpp` + `.mm`** split — Cocoa work is in the
+  .mm; the .cpp holds the XPC connection lifecycle. ARC default in
+  the .mm; .cpp uses `dispatch_release` directly (verified
+  available in plain C++ TUs on this SDK).
+- **Child XPC bootstrap** in `host_process/main.cpp` —
+  `bootstrapXpcBridge()` runs ONLY in `--mode clap` (skipped for
+  identity-mode tests to avoid the 250 ms timeout per spawn).
+  `dispatch_semaphore` + mutex-protected `consumed` flag handles
+  the late-reply race so a slow bridge doesn't leak the
+  send-right.
+- **Bundle layout** — both `sirius_plugin_host` and the .xpc are
+  copied into `SiriusLooper.app/Contents/` via POST_BUILD commands
+  in `app/CMakeLists.txt`. Dev-loop ad-hoc signing works; Developer-
+  ID distribution requires the re-sign step documented in
+  `docs/operator/macos-sandbox.md` (operator-pending CI signing
+  session).
+
+### Scope deviations locked in S6 (carry forward to S7)
+
+1. **XPC bundle OUTPUT_NAME deviates from plan-as-written.** Plan
+   said `OUTPUT_NAME = "com.larryseyer.siriuslooper.gui-bridge"`
+   which would have made the binary
+   `Contents/MacOS/com.larryseyer.siriuslooper.gui-bridge` —
+   contradicting `CFBundleExecutable = sirius_gui_bridge` in the
+   plist. Plan had a self-inconsistency. The actual binary is
+   `sirius_gui_bridge` and the .xpc directory is
+   `sirius_gui_bridge.xpc`. launchd lookups are by
+   CFBundleIdentifier so the directory name doesn't matter.
+2. **Bundle re-sign for distribution NOT implemented.** The Xcode
+   generator signs `SiriusLooper.app` BEFORE the POST_BUILD copies
+   run, so the embedded helpers are not in the parent's
+   CodeResources seal. Dev-loop ad-hoc signing works; Gatekeeper /
+   notarization will reject the bundle without a re-sign step. Full
+   diff is in `docs/operator/macos-sandbox.md`. Out of scope for
+   M7 — the operator-pending CI signing session lands it.
+3. **`sirius_plugin_host` is not a MACOSX_BUNDLE.** CMake's auto-ad-
+   hoc-sign only fires for bundle targets. Same docs file tracks the
+   fix.
+4. **Test #272 ("permanent bypass: kill every generation") is
+   timing-flaky under load.** S4 supervisor test, sensitive to
+   process scheduling. Passes in isolation; flaked once under full-
+   suite contention during step 3 verification and passed on retry.
+   Not S6-introduced; pre-existing.
+5. **Send-right ownership comment in `bootstrapXpcBridge` was
+   wrong (now fixed).** `xpc_dictionary_copy_mach_send` returns an
+   independently-owned send-right, NOT one whose lifetime is tied to
+   the XPC connection. The intentional connection-leak is now
+   documented as belt-and-suspenders that also keeps the
+   reply-block's `claimMutex` reachable for the late-arrival
+   protection path.
+6. **`createPlaceholderView` helper removed from
+   `OutOfProcessEditorView.mm`.** Logic inlined; then the review
+   surfaced duplication and a small `applyPlaceholderTint` helper
+   was re-extracted. The final shape is one helper, two callers.
+7. **`#else !__APPLE__` SKIP test in
+   `tests/CARemoteLayerRoundTripTests.mm` removed.** CMake gates the
+   .mm on `if(APPLE)`, so the non-Apple SKIP test was unreachable
+   dead code per the project's no-dead-code rule.
+
+### First moves for the M7 S7 chat
+
+S6 closes the V7 plan M7 line 487-554 acceptance criteria around GUI
+embedding. M7 has remaining work that could be S7:
+
+1. **Production-wire `MainComponent`** to consume
+   `OutOfProcessEffectChainHost` + `OutOfProcessEditorView` —
+   currently still deferred (continue.md decision #9 / S5 deviation
+   list). Operator-facing "Add plug-in" UI. Logical next step before
+   the M8 wet-capture work picks up `OutOfProcessPluginInstance`.
+2. **Audio-ring SPSC violation fix** (carryover from S5
+   deviation #1). Engine's `tryWriteBytes` (audio thread) +
+   `sendBytes` (message thread) share the producer side of the
+   engine→host ring. Latent today, becomes a real bug when an
+   operator opens an editor mid-playback.
+3. **Bundle re-sign for distribution** (S6 deviation #2 +
+   `docs/operator/macos-sandbox.md`). Requires the operator-pending
+   CI signing handoff.
+4. **Windows + Linux GUI embedding** — per platform-order rule
+   (`feedback_mac_first_linux_windows_last`), these are independent
+   later sessions.
+
+Suggested order: **MainComponent wiring first** (unblocks operator
+eyes-on of the synthetic plug-in editor and any real CLAP). Then the
+SPSC split. Re-sign + Linux/Windows wait on independent dependencies.
+
+### S6-era decisions locked (S7 must preserve — superset of the S5 list)
+
+(All S5-era items carry forward unchanged. New items:)
+
+16. **Bundled XPC service brokers the Mach port.** Not anonymous
+    Mach-port pair, not engine-as-MachService. The .xpc bundle ships
+    inside `Contents/XPCServices/`; launchd brings it up on demand
+    via the bundle's `CFBundleIdentifier`.
+17. **Bridge protocol is `set_server_port` + `get_server_port`
+    only.** Stateless broker; mach send-rights are reference-counted
+    by the kernel. Unknown op replies with `{"error": "unknown_op"}`;
+    missing op replies with `{"error": "missing_op"}` — "fail loud"
+    per CLAUDE.md.
+18. **Soft-fallback on missing bridge.** Children that can't reach
+    the bridge fall back to the S5 placeholder layer; supervisor-
+    restart logic unchanged. Engine-side
+    `+[CALayer layerWithRemoteClientId:]` returns nil for unknown
+    clientIds, falls back to the tinted placeholder.
+19. **`IGuiBridge` port pattern** — third instance of the S3/S4
+    dependency-inversion convention. Any future engine→host surface
+    follows the same shape: pure-virtual port in `core/` (or
+    `host/include/`), concrete impl in `host/src/`, test seam via
+    `setInstanceForTesting` / `resetForTesting`.
+20. **XPC bootstrap is `--mode clap` only.** Identity-mode tests
+    don't pay the 250 ms timeout. The bootstrap lives in
+    `host_process/main.cpp` and is `#ifdef __APPLE__`-gated.
+21. **`-fno-objc-arc` on `OutOfProcessEditorView.mm` AND
+    `gui_cocoa.mm`.** Both .mm files compile MRC-style; manual
+    `release`, `invalidate`, `CGColorRelease`. The .mm in
+    `PluginGuiBridge.mm` is ARC default (no manual release).
+
+### Carryover NOT resolved (S7 doesn't touch unless flagged)
+
+- **Bundle re-sign for distribution + `sirius_plugin_host`
+  MACOSX_BUNDLE conversion** — `docs/operator/macos-sandbox.md`.
+  Operator-pending CI signing session.
+- **MainComponent has no production wiring** of
+  `OutOfProcessEffectChainHost` or `OutOfProcessEditorView`. Most
+  likely S7 candidate.
+- **Pre-existing audio-ring SPSC violation** (engine
+  `tryWriteBytes` + `sendBytes` share the producer side).
+  Track as a separate follow-on.
+- **Test #272 timing flake** — pre-existing S4 supervisor test;
+  passes in isolation; rerun on flake.
+- **`PluginIpcMessage::monotonicNs` LMC reinterpret** still pending
+  the audio-thread LMC handle.
+- **Carryover from M6 + earlier still unresolved** (ProcessedRoute
+  empty span, manual operator-launch eyes-on of M6 surface, CI
+  signing handoff) — unchanged from S5/S6-era state.
+
+---
+
+## HISTORICAL — M7 S5 close + M7 S6 handoff (superseded 2026-05-18 — M7 S6 now shipped)
 
 ## RESUME HERE (2026-05-18 — M7 S5 on origin/master; M7 S6 next)
 
