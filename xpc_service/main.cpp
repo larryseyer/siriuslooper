@@ -21,12 +21,24 @@
 
 #include <xpc/xpc.h>
 #include <mach/mach.h>
+#include <os/log.h>
 
 #include <cstring>
 #include <dispatch/dispatch.h>
 
 namespace
 {
+    /// Shared os_log handle for the gui-bridge subsystem. Filter with
+    /// `log show --predicate 'subsystem == "com.larryseyer.siriuslooper"
+    /// AND category == "gui-bridge"'`. Silent XPC failures are exactly
+    /// what burned the M7 S7→S8 transition; this stays in place.
+    os_log_t bridgeLog()
+    {
+        static os_log_t h = os_log_create (
+            "com.larryseyer.siriuslooper", "gui-bridge");
+        return h;
+    }
+
     /// The cached engine serverPort. Accessed only from the serial queue.
     mach_port_t           g_cachedServerPort = MACH_PORT_NULL;
     dispatch_queue_t      g_serialQueue      = nullptr;
@@ -69,21 +81,39 @@ namespace
         // Wrong message type — libxpc has no request dictionary to reply
         // against; sender's connection error handler is what'll see this.
         if (xpc_get_type (req) != XPC_TYPE_DICTIONARY)
+        {
+            os_log_error (bridgeLog(), "handleMessage: non-dictionary request");
             return;
+        }
 
         xpc_object_t reply = xpc_dictionary_create_reply (req);
         if (reply == nullptr)
+        {
+            os_log_error (bridgeLog(), "handleMessage: no reply context");
             return;
+        }
 
         const char* op = xpc_dictionary_get_string (req, "op");
         if (op == nullptr)
+        {
+            os_log_error (bridgeLog(), "handleMessage: missing op");
             xpc_dictionary_set_string (reply, "error", "missing_op");
+        }
         else if (std::strcmp (op, "set_server_port") == 0)
+        {
+            os_log (bridgeLog(), "service: op=set_server_port");
             handleSetServerPort (req, reply);
+        }
         else if (std::strcmp (op, "get_server_port") == 0)
+        {
+            os_log (bridgeLog(), "service: op=get_server_port");
             handleGetServerPort (req, reply);
+        }
         else
+        {
+            os_log_error (bridgeLog(), "handleMessage: unknown op=%{public}s", op);
             xpc_dictionary_set_string (reply, "error", "unknown_op");
+        }
 
         xpc_connection_send_message (peer, reply);
         xpc_release (reply);
@@ -91,10 +121,16 @@ namespace
 
     void connectionHandler (xpc_connection_t peer)
     {
+        os_log (bridgeLog(), "service: new peer connection");
         xpc_connection_set_event_handler (peer, ^(xpc_object_t event) {
             const auto type = xpc_get_type (event);
             if (type == XPC_TYPE_ERROR)
+            {
+                const char* desc = xpc_dictionary_get_string (event, XPC_ERROR_KEY_DESCRIPTION);
+                os_log (bridgeLog(), "service: peer event error: %{public}s",
+                        desc != nullptr ? desc : "(no description)");
                 return; // peer went away; kernel reclaims any in-transit rights
+            }
             if (type == XPC_TYPE_DICTIONARY)
                 handleMessage (event, peer);
         });
@@ -104,6 +140,8 @@ namespace
 
 int main (int /*argc*/, const char* /*argv*/[])
 {
+    os_log (bridgeLog(), "sirius_gui_bridge: xpc_main starting");
+
     g_serialQueue = dispatch_queue_create (
         "com.larryseyer.siriuslooper.gui-bridge.serial",
         DISPATCH_QUEUE_SERIAL);

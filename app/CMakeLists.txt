@@ -118,15 +118,55 @@ if(APPLE)
             "$<TARGET_BUNDLE_DIR:SiriusLooper>/Contents/MacOS/$<TARGET_FILE_NAME:sirius_plugin_host>"
         VERBATIM
         COMMENT "Sirius: install sirius_plugin_host into app bundle")
+
+    # M7 S8 — Developer-ID re-sign the embedded sirius_plugin_host. It
+    # is NOT a MACOSX_BUNDLE target, so CMake's automatic linker-adhoc-
+    # sign covers only the binary on its own; once copied into the
+    # parent's Contents/MacOS/, the parent's re-sign below needs a
+    # coherent inner signature to seal cleanly. Ad-hoc is rejected by
+    # macOS 14+ AMFI for embedded executables loaded out-of-process —
+    # see the matching comment in xpc_service/CMakeLists.txt for the
+    # full rationale. The Xcode-generator path signs this via Xcode
+    # attributes (see set_target_properties above); this command targets
+    # the Unix-Makefiles / Ninja dev-loop default.
+    if(NOT CMAKE_GENERATOR STREQUAL "Xcode")
+        add_custom_command(TARGET SiriusLooper POST_BUILD
+            COMMAND codesign --force --sign "Developer ID Application: Larry Seyer (RR5DY39W4Q)"
+                    --identifier "com.larryseyer.siriuslooper.host"
+                    --options runtime
+                    --generate-entitlement-der
+                    "$<TARGET_BUNDLE_DIR:SiriusLooper>/Contents/MacOS/$<TARGET_FILE_NAME:sirius_plugin_host>"
+            VERBATIM
+            COMMENT "Sirius: Developer-ID re-sign embedded sirius_plugin_host")
+    endif()
+
+    # M7 S8 — final re-sign of the parent app AFTER the helper copies.
+    # The earlier CMake auto-sign of SiriusLooper.app runs BEFORE these
+    # POST_BUILD commands, so without this final step the parent's
+    # CodeResources seal does not cover Contents/XPCServices/ or the
+    # copied Contents/MacOS/sirius_plugin_host — which modern macOS
+    # treats as untrusted and refuses to register the in-app XPC
+    # service. Closes the M7 S6 deviation #2 re-sign gap.
+    #
+    # CRITICAL: do NOT pass --deep here. --deep walks down and re-signs
+    # every nested bundle with the parent's identifier, which would
+    # clobber the .xpc bundle's `com.larryseyer.siriuslooper.gui-bridge`
+    # codesign identifier — and that identifier MUST match the .xpc's
+    # CFBundleIdentifier for launchd to register the in-app XPC service.
+    # The nested .xpc + helper are independently re-signed above; this
+    # outer sign just rebuilds the parent's CodeResources to hash their
+    # existing signatures into the seal.
+    if(NOT CMAKE_GENERATOR STREQUAL "Xcode")
+        add_custom_command(TARGET SiriusLooper POST_BUILD
+            COMMAND codesign --force --sign "Developer ID Application: Larry Seyer (RR5DY39W4Q)"
+                    --identifier "com.larryseyer.siriuslooper"
+                    --options runtime
+                    --generate-entitlement-der
+                    "$<TARGET_BUNDLE_DIR:SiriusLooper>"
+            VERBATIM
+            COMMENT "Sirius: Developer-ID re-sign parent .app after helper copies (no --deep)")
+    endif()
 endif()
-# NOTE: the embedded helpers are copied AFTER SiriusLooper.app is signed,
-# so the outer bundle's CodeResources seal does not cover them. For
-# ad-hoc / dev-loop builds this is harmless (Gatekeeper is not enforced
-# on locally-built ad-hoc bundles); for Developer-ID distribution the
-# operator-pending CI signing handoff must re-sign the outer bundle
-# after these copies AND ad-hoc-sign sirius_plugin_host (which is not a
-# MACOSX_BUNDLE so CMake's auto-ad-hoc-sign doesn't fire). Tracked in
-# docs/operator/macos-sandbox.md (Task 11).
 
 # Notarization (opt-in, slow). Requires a Developer-ID-signed bundle, so it
 # only makes sense alongside the Xcode-generator signing block above. The

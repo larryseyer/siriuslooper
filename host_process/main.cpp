@@ -54,6 +54,7 @@
   #include <xpc/xpc.h>
   #include <mach/mach.h>
   #include <dispatch/dispatch.h>
+  #include <os/log.h>
   #include <atomic>
   #include <mutex>
 #endif
@@ -68,26 +69,49 @@ namespace
     /// gui_cocoa.mm falls back to the S5 placeholder editor surface.
     std::atomic<mach_port_t> g_engineServerPort { MACH_PORT_NULL };
 
+    /// Shared os_log handle for the gui-bridge subsystem; mirrors the
+    /// helpers in xpc_service/main.cpp and host/src/PluginGuiBridge.cpp.
+    os_log_t bridgeLog()
+    {
+        static os_log_t h = os_log_create (
+            "com.larryseyer.siriuslooper", "gui-bridge");
+        return h;
+    }
+
     void bootstrapXpcBridge()
     {
+        os_log (bridgeLog(), "child: bootstrapXpcBridge start");
+
         dispatch_queue_t queue = dispatch_queue_create (
             "com.larryseyer.siriuslooper.host.bridge-client",
             DISPATCH_QUEUE_SERIAL);
 
-        xpc_connection_t conn = xpc_connection_create_mach_service (
+        // See matching note in host/src/PluginGuiBridge.cpp: in-app XPC
+        // services are resolved via xpc_connection_create(), not via
+        // xpc_connection_create_mach_service() (which looks up in
+        // launchd's Mach service namespace where in-app services do
+        // not appear).
+        xpc_connection_t conn = xpc_connection_create (
             "com.larryseyer.siriuslooper.gui-bridge",
-            queue,
-            /* flags */ 0);
+            queue);
 
         if (conn == nullptr)
         {
+            os_log_error (bridgeLog(),
+                          "child: xpc_connection_create_mach_service returned nullptr");
             dispatch_release (queue);
             return;
         }
 
-        xpc_connection_set_event_handler (conn, ^(xpc_object_t /*event*/) {
-            // No-op; we only care about the get_server_port reply, which
-            // is delivered via send_message_with_reply below.
+        xpc_connection_set_event_handler (conn, ^(xpc_object_t event) {
+            if (xpc_get_type (event) == XPC_TYPE_ERROR)
+            {
+                const char* desc = xpc_dictionary_get_string (
+                    event, XPC_ERROR_KEY_DESCRIPTION);
+                os_log_error (bridgeLog(),
+                              "child: connection event error: %{public}s",
+                              desc != nullptr ? desc : "(no description)");
+            }
         });
         xpc_connection_resume (conn);
 
@@ -131,11 +155,16 @@ namespace
         if (dispatch_semaphore_wait (done, timeout) == 0)
         {
             g_engineServerPort.store (fetched, std::memory_order_release);
+            os_log (bridgeLog(),
+                    "child: bootstrapXpcBridge ok (serverPort=%u)", fetched);
         }
         else
         {
             std::lock_guard<std::mutex> lk (*claimMutex);
             consumed = true; // tell the late reply to drop the right
+            os_log_error (bridgeLog(),
+                          "child: bootstrapXpcBridge TIMEOUT (250 ms); "
+                          "falling back to placeholder editor surface");
             std::fprintf (stderr,
                 "sirius_plugin_host: XPC bridge timeout (250 ms); "
                 "falling back to S5 placeholder editor surface\n");
