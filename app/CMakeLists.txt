@@ -124,6 +124,7 @@ if(APPLE)
             COMMAND codesign --force --sign "Developer ID Application: Larry Seyer (RR5DY39W4Q)"
                     --identifier "com.larryseyer.siriuslooper.host"
                     --options runtime
+                    --entitlements "${CMAKE_SOURCE_DIR}/host_process/sirius_plugin_host.entitlements"
                     --generate-entitlement-der
                     "$<TARGET_BUNDLE_DIR:SiriusLooper>/Contents/MacOS/$<TARGET_FILE_NAME:sirius_plugin_host>"
             VERBATIM
