@@ -55,7 +55,9 @@ PluginScanResult ClapScanner::scan (const juce::File& path)
        #else
         if (candidate.isDirectory())
         {
-            // Non-macOS shouldn't see .clap directories — skip cleanly.
+            // Non-macOS shouldn't see .clap directories; record the
+            // anomaly rather than dropping it silently.
+            result.failedFiles.push_back (candidate.getFullPathName().toStdString());
             continue;
         }
        #endif
