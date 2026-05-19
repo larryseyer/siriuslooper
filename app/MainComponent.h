@@ -105,7 +105,13 @@ private:
     void refreshCaptureControls();
 
     // --- plugin scanning ---
+    void scanFolder (const juce::File& folder);
     void chooseFolderAndScan();
+   #if JUCE_MAC
+    void scanGlobalPluginFolder();
+    void scanUserPluginFolder();
+    void openSyntheticTestPlugin();
+   #endif
 
     // --- session save/load (round-trips the current undo-stack top) ---
     void chooseFileAndSave();

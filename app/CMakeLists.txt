@@ -49,7 +49,13 @@ target_compile_definitions(SiriusLooper PRIVATE
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
     JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:SiriusLooper,JUCE_PRODUCT_NAME>"
-    JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:SiriusLooper,JUCE_VERSION>")
+    JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:SiriusLooper,JUCE_VERSION>"
+    # M7 S7 debug — compile-time path to the synthetic CLAP fixture so
+    # the "Open synthetic test plug-in (debug)" button can bypass the
+    # scanner (which doesn't register CLAP). Resolves to the build-tree
+    # location; remove when production CLAP support lands in the
+    # scanner OR move to a relative-to-bundle resource.
+    SIRIUS_SYNTHETIC_CLAP_PATH="${CMAKE_BINARY_DIR}/tests/fixtures/SyntheticTestPlugin.clap")
 
 target_link_libraries(SiriusLooper PRIVATE
     Sirius::Engine

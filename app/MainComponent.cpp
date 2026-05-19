@@ -580,6 +580,23 @@ public:
         scanButton_.setButtonText ("Scan a plugin folder...");
         addAndMakeVisible (scanButton_);
 
+       #if JUCE_MAC
+        scanGlobalButton_.setButtonText ("Scan /Library/Audio/Plug-Ins");
+        addAndMakeVisible (scanGlobalButton_);
+
+        scanUserButton_.setButtonText ("Scan ~/Library/Audio/Plug-Ins");
+        addAndMakeVisible (scanUserButton_);
+
+        // Debug-only: bypasses PluginScanner (which doesn't register CLAP)
+        // and opens the M7 fixture .clap directly. Lets the operator
+        // eyes-on the CARemoteLayer pixel path without needing a real
+        // installed CLAP plug-in.
+        openSyntheticButton_.setButtonText ("Open synthetic test plug-in (debug)");
+        openSyntheticButton_.setColour (juce::TextButton::buttonColourId,
+                                        juce::Colour (0xff334455));
+        addAndMakeVisible (openSyntheticButton_);
+       #endif
+
         scanStatusLabel_.setMinimumHorizontalScale (1.0f);
         scanStatusLabel_.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
         addAndMakeVisible (scanStatusLabel_);
@@ -644,6 +661,11 @@ public:
         formatsLabel_.setBounds (area.removeFromTop (22));
         area.removeFromTop (8);
         scanButton_.setBounds (area.removeFromTop (28).reduced (0, 2));
+       #if JUCE_MAC
+        scanGlobalButton_.setBounds (area.removeFromTop (28).reduced (0, 2));
+        scanUserButton_.setBounds   (area.removeFromTop (28).reduced (0, 2));
+        openSyntheticButton_.setBounds (area.removeFromTop (28).reduced (0, 2));
+       #endif
         scanStatusLabel_.setBounds (area.removeFromTop (22));
         area.removeFromTop (4);
 
@@ -661,6 +683,11 @@ private:
     juce::Label      headerLabel_;
     juce::Label      formatsLabel_;
     juce::TextButton scanButton_;
+   #if JUCE_MAC
+    juce::TextButton scanGlobalButton_;
+    juce::TextButton scanUserButton_;
+    juce::TextButton openSyntheticButton_;
+   #endif
     juce::Label      scanStatusLabel_;
     friend class MainComponent;
 };
@@ -931,6 +958,11 @@ MainComponent::MainComponent()
     // --- Plugins tab ---
     pluginsPane_ = std::make_unique<PluginsPane>();
     pluginsPane_->scanButton_.onClick = [this] { chooseFolderAndScan(); };
+   #if JUCE_MAC
+    pluginsPane_->scanGlobalButton_.onClick    = [this] { scanGlobalPluginFolder(); };
+    pluginsPane_->scanUserButton_.onClick      = [this] { scanUserPluginFolder(); };
+    pluginsPane_->openSyntheticButton_.onClick = [this] { openSyntheticTestPlugin(); };
+   #endif
     pluginsPane_->listBoxModel_.onOpenEditor =
         [this] (const PluginDescriptor& d) { openPluginEditor (d); };
     pluginsPane_->listBoxModel_.setHostBinaryAvailable (
@@ -1623,32 +1655,80 @@ void MainComponent::reloadDemo()
     preparationPane_->setStatus ("Reloaded the built-in demo session");
 }
 
+void MainComponent::scanFolder (const juce::File& chosen)
+{
+    if (chosen == juce::File()) return;
+
+    pluginsPane_->setScanStatus ("Scanning " + chosen.getFullPathName() + " ...");
+    juce::FileSearchPath path;
+    path.add (chosen);
+    const auto result = pluginScanner_.scan (path);
+
+    pluginsPane_->setScanStatus (
+        "Scanned " + chosen.getFullPathName()
+        + "  -  " + juce::String ((int) result.descriptors.size()) + " loaded, "
+        + juce::String ((int) result.failedFiles.size()) + " failed");
+    pluginsPane_->setDescriptors (result.descriptors, result.failedFiles);
+}
+
 void MainComponent::chooseFolderAndScan()
 {
     pluginFolderChooser_ = std::make_unique<juce::FileChooser> (
         "Choose a folder to scan for plugins...",
-        juce::File::getSpecialLocation (juce::File::userHomeDirectory));
+       #if JUCE_MAC
+        juce::File ("/Library/Audio/Plug-Ins")
+       #else
+        juce::File::getSpecialLocation (juce::File::userHomeDirectory)
+       #endif
+        );
 
     auto flags = juce::FileBrowserComponent::openMode
                | juce::FileBrowserComponent::canSelectDirectories;
 
     pluginFolderChooser_->launchAsync (flags, [this] (const juce::FileChooser& fc)
     {
-        const auto chosen = fc.getResult();
-        if (chosen == juce::File()) return;
-
-        pluginsPane_->setScanStatus ("Scanning " + chosen.getFullPathName() + " ...");
-        juce::FileSearchPath path;
-        path.add (chosen);
-        const auto result = pluginScanner_.scan (path);
-
-        pluginsPane_->setScanStatus (
-            "Scanned " + chosen.getFullPathName()
-            + "  -  " + juce::String ((int) result.descriptors.size()) + " loaded, "
-            + juce::String ((int) result.failedFiles.size()) + " failed");
-        pluginsPane_->setDescriptors (result.descriptors, result.failedFiles);
+        scanFolder (fc.getResult());
     });
 }
+
+#if JUCE_MAC
+void MainComponent::scanGlobalPluginFolder()
+{
+    scanFolder (juce::File ("/Library/Audio/Plug-Ins"));
+}
+
+void MainComponent::scanUserPluginFolder()
+{
+    scanFolder (juce::File::getSpecialLocation (juce::File::userHomeDirectory)
+                .getChildFile ("Library/Audio/Plug-Ins"));
+}
+
+void MainComponent::openSyntheticTestPlugin()
+{
+   #ifdef SIRIUS_SYNTHETIC_CLAP_PATH
+    const juce::File bundle (SIRIUS_SYNTHETIC_CLAP_PATH);
+    if (! bundle.exists())
+    {
+        pluginsPane_->setScanStatus (
+            juce::String ("Synthetic test plug-in not found at ")
+            + SIRIUS_SYNTHETIC_CLAP_PATH);
+        return;
+    }
+
+    PluginDescriptor d;
+    d.format       = PluginFormat::Clap;
+    d.uniqueId     = "com.sirius.synthetic.test";
+    d.name         = "Synthetic Test Plug-in";
+    d.manufacturer = "Sirius";
+    d.filePath     = bundle.getFullPathName().toStdString();
+    openPluginEditor (d);
+   #else
+    pluginsPane_->setScanStatus (
+        "Synthetic test plug-in path not compiled in "
+        "(SIRIUS_SYNTHETIC_CLAP_PATH undefined).");
+   #endif
+}
+#endif
 
 void MainComponent::openPluginEditor (const PluginDescriptor& descriptor)
 {
