@@ -368,6 +368,46 @@ TEST_CASE ("populateVersionPinningRecords is copy-on-write — original tree unc
     CHECK (populated->effectChain()->at (0).persistedSnapshot.has_value());
 }
 
+// The COW promise has two halves: (1) the input is not mutated (covered
+// by the previous test), and (2) unchanged subtrees stay SHARED — same
+// shared_ptr identity, no allocation. A naive deep-copy implementation
+// would pass the mutate-check but waste memory by rebuilding every
+// untouched sibling. This test pins the sharing invariant by giving a
+// parent two children — one whose entry needs a snapshot and one whose
+// entry is DeterminismContract (skipped by the populator) — and
+// asserting the unchanged child's pointer survives the walk.
+TEST_CASE ("populateVersionPinningRecords shares unchanged sibling subtrees",
+           "[archival-mode][session-snapshot]")
+{
+    EffectChainEntry changingEntry;
+    changingEntry.descriptor   = descriptorFixture();
+    changingEntry.archivalMode = ArchivalMode::VersionPinning;
+
+    EffectChainEntry stableEntry;
+    stableEntry.descriptor   = descriptorFixture();
+    stableEntry.archivalMode = ArchivalMode::DeterminismContract;
+
+    auto changingChild = leafWithEntry (changingEntry);
+    auto stableChild   = leafWithEntry (stableEntry);
+
+    auto parent = std::make_shared<Constituent> (
+        ConstituentId (100),
+        Position (Rational (0)),
+        Position (Rational (2)));
+    *parent = parent->withChildAdded (changingChild)
+                     .withChildAdded (stableChild);
+
+    auto populated = populateVersionPinningRecords (parent);
+
+    REQUIRE (populated->children().size() == 2);
+    // The first child got a snapshot — its pointer must have changed
+    // (rebuilt).
+    CHECK (populated->children()[0].get() != changingChild.get());
+    // The second child was untouched — its pointer MUST be the same
+    // shared_ptr, proving the populator shared rather than deep-copied.
+    CHECK (populated->children()[1].get() == stableChild.get());
+}
+
 // When the snapshot matches the live record (same machine reopen of
 // an unchanged plug-in install), no drift notification fires. This
 // is the dominant case at runtime — operators reopen sessions far

@@ -5,6 +5,7 @@
 
 #include <array>
 #include <cstdio>
+#include <optional>
 #include <utility>
 
 namespace sirius
@@ -21,8 +22,12 @@ namespace
 std::shared_ptr<const Constituent> walkAndPopulate (
     std::shared_ptr<const Constituent> node)
 {
-    bool anyChange = false;
-    Constituent rebuilt = *node;
+    std::optional<Constituent> rebuilt;
+    auto materialize = [&]() -> Constituent& {
+        if (! rebuilt.has_value())
+            rebuilt.emplace (*node);
+        return *rebuilt;
+    };
 
     if (node->hasEffectChain())
     {
@@ -42,8 +47,8 @@ std::shared_ptr<const Constituent> walkAndPopulate (
         }
         if (chainChanged)
         {
-            rebuilt = rebuilt.withEffectChain (std::move (newChain));
-            anyChange = true;
+            auto& r = materialize();
+            r = r.withEffectChain (std::move (newChain));
         }
     }
 
@@ -53,14 +58,14 @@ std::shared_ptr<const Constituent> walkAndPopulate (
         auto populated = walkAndPopulate (original);
         if (populated.get() != original.get())
         {
-            rebuilt = rebuilt.withChildReplaced (i, populated);
-            anyChange = true;
+            auto& r = materialize();
+            r = r.withChildReplaced (i, populated);
         }
     }
 
-    if (! anyChange)
+    if (! rebuilt.has_value())
         return node;
-    return std::make_shared<const Constituent> (std::move (rebuilt));
+    return std::make_shared<const Constituent> (std::move (*rebuilt));
 }
 
 void walkAndVerify (const Constituent& node, INotificationSink& sink)
