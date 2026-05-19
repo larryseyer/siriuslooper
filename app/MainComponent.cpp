@@ -566,6 +566,30 @@ private:
     juce::Label  statusLabel_;
 };
 
+// Task 1 stub: minimal definition so unique_ptr<PluginEditorWindow> is
+// destructible. Task 4 replaces this with the real juce::DocumentWindow
+// subclass body.
+class MainComponent::PluginEditorWindow
+{
+public:
+    PluginEditorWindow() = default;
+};
+
+// =============================================================================
+// MainComponent helpers
+// =============================================================================
+
+juce::File MainComponent::hostBinaryPath() const
+{
+    // Inside a .app bundle this is Contents/MacOS/Sirius Looper; the helper
+    // sits in the same MacOS directory. Outside a bundle (dev-loop test
+    // runs from build/...), the sibling doesn't exist and the returned
+    // juce::File reports existsAsFile() == false — callers must check.
+    const auto self = juce::File::getSpecialLocation (juce::File::currentExecutableFile);
+    const auto sibling = self.getParentDirectory().getChildFile ("sirius_plugin_host");
+    return sibling;
+}
+
 // =============================================================================
 // MainComponent
 // =============================================================================

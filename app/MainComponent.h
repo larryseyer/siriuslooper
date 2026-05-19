@@ -17,6 +17,7 @@
 #include "sirius/OutputMixer.h"
 #include "sirius/OverloadProtection.h"
 #include "sirius/PerformanceView.h"
+#include "sirius/OutOfProcessEffectChainHost.h"
 #include "sirius/PluginScanner.h"
 #include "sirius/Promotion.h"
 #include "sirius/RetroactiveRing.h"
@@ -193,6 +194,34 @@ private:
     PluginScanner pluginScanner_;
     std::unique_ptr<juce::FileChooser> pluginFolderChooser_;
     std::unique_ptr<juce::FileChooser> sessionFileChooser_;
+
+    // --- M7 S7: out-of-process plug-in editor hosting -----------------------
+    // Scratch busIds for editor-only plug-in loads. The OutputMixer is NOT
+    // wired to know about these buses, so no audio routes through them. The
+    // operator gets a GUI surface; engine audio output is unaffected. Real
+    // per-bus chain integration is a later session.
+    static constexpr std::int64_t kScratchBusIdBase = 1000;
+
+    sirius::OutOfProcessEffectChainHost effectChainHost_;
+    std::int64_t                        nextScratchBusId_ { kScratchBusIdBase };
+
+    class PluginEditorWindow;
+    std::vector<std::unique_ptr<PluginEditorWindow>> editorWindows_;
+
+    /// Resolves Contents/MacOS/sirius_plugin_host alongside the running app
+    /// binary. Returns an invalid juce::File outside a .app bundle (dev-loop
+    /// runs from build/...); callers must check `existsAsFile()` before use.
+    juce::File hostBinaryPath() const;
+
+    /// Spawns a sirius_plugin_host child via configureBus on a fresh scratch
+    /// busId, and floats a PluginEditorWindow showing the editor.
+    /// Message-thread only.
+    void openPluginEditor (const PluginDescriptor& descriptor);
+
+    /// Tears down the slot at `busId` and removes the matching window.
+    /// Message-thread only. Safe to call from a window's close-button callback
+    /// via juce::MessageManager::callAsync.
+    void closePluginEditor (std::int64_t busId);
 
     // --- Video tab ---
     class VideoPane;
