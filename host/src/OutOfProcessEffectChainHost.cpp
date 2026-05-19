@@ -606,4 +606,65 @@ void OutOfProcessEffectChainHost::attemptRestart (SlotState& state)
     postNotification (NotificationLevel::Info, msg);
 }
 
+std::optional<PluginDescriptor>
+OutOfProcessEffectChainHost::descriptorForSlot (
+    std::int64_t busId, std::size_t slotIndex) const noexcept
+{
+    std::scoped_lock lk (instancesMutex_);
+    const SlotKey key { busId, slotIndex };
+    const auto it = instances_.find (key);
+    if (it == instances_.end() || it->second == nullptr)
+        return std::nullopt;
+    const auto& state = *it->second;
+    if (state.permanentlyBypassed.load (std::memory_order_acquire))
+        return std::nullopt;
+    return state.descriptor;
+}
+
+std::optional<std::vector<std::byte>>
+OutOfProcessEffectChainHost::stateBlobForSlot (
+    std::int64_t busId, std::size_t slotIndex) const noexcept
+{
+    // Matches OutOfProcessPluginInstance::requestStateSave's default; the
+    // engine save path tolerates a per-slot stall of up to this long
+    // before falling back to an empty pinning blob.
+    constexpr std::chrono::milliseconds kStateSaveTimeout { 250 };
+
+    std::shared_ptr<SlotState> snapshot;
+    {
+        std::scoped_lock lk (instancesMutex_);
+        const SlotKey key { busId, slotIndex };
+        const auto it = instances_.find (key);
+        if (it == instances_.end() || it->second == nullptr)
+            return std::nullopt;
+        snapshot = it->second;
+    }
+
+    if (snapshot->permanentlyBypassed.load (std::memory_order_acquire))
+        return std::nullopt;
+    if (snapshot->instance == nullptr)
+        return std::nullopt;
+
+    std::vector<std::byte> out;
+    const bool ok = snapshot->instance->requestStateSave (out, kStateSaveTimeout);
+    if (! ok)
+    {
+        auto* const sink = notificationSink_.load (std::memory_order_acquire);
+        if (sink != nullptr)
+        {
+            // Enough for "state save timed out for slot <int64>/<size_t>";
+            // worst-case decimal widths fit comfortably under 96 bytes.
+            constexpr std::size_t kTimeoutMsgBytes = 96;
+            char msg[kTimeoutMsgBytes];
+            std::snprintf (msg, sizeof (msg),
+                           "state save timed out for slot %lld/%zu",
+                           static_cast<long long> (busId), slotIndex);
+            sink->post (NotificationLevel::Warning,
+                        Category::PluginEvent, msg);
+        }
+        return std::nullopt;
+    }
+    return out;
+}
+
 } // namespace sirius

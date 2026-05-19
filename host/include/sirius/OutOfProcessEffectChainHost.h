@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -180,6 +181,27 @@ public:
     std::pair<std::uint32_t,std::uint32_t>
                   editorSize        (std::int64_t busId,
                                      std::size_t slotIndex) const noexcept;
+
+    // ---- State + descriptor query (M8 S2) — message-thread only --------
+    //
+    // Used by the engine save / load path (SessionSnapshot) to populate
+    // VersionPinningRecords against the live plug-in's actual identity
+    // and state, not just the cached entry.descriptor + empty blob.
+
+    /// Returns the live descriptor for the slot, or nullopt if the slot
+    /// is unconfigured, bypassed, or permanently bypassed. Takes
+    /// `instancesMutex_`.
+    std::optional<PluginDescriptor> descriptorForSlot (
+        std::int64_t busId, std::size_t slotIndex) const noexcept;
+
+    /// Asks the slot's plug-in to save its state through the state shm
+    /// region. Returns the bytes on success, nullopt on timeout, plug-in
+    /// error, or absent slot. Posts a Warning / PluginEvent notification
+    /// on timeout (so the operator sees the pinning fall-back). Takes
+    /// `instancesMutex_`; 250 ms timeout matches the
+    /// `OutOfProcessPluginInstance::requestStateSave` default.
+    std::optional<std::vector<std::byte>> stateBlobForSlot (
+        std::int64_t busId, std::size_t slotIndex) const noexcept;
 
     /// Test-only accessor — returns the supervisor restart count for the
     /// given slot, or 0 if no slot is registered. Used by the supervisor
