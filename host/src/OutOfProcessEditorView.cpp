@@ -57,6 +57,13 @@ void OutOfProcessEditorView::resized()
         if (auto* v = embed_->getView())
             sirius_resize_layerhost_nsview (v, getWidth(), getHeight());
     }
+    else
+    {
+        // First non-zero bounds after the view was added to a parent.
+        // parentHierarchyChanged often fires with bounds == 0; once
+        // the DocumentWindow lays us out, retry the Show.
+        issueShowIfSized();
+    }
    #endif
 }
 
@@ -138,11 +145,13 @@ void OutOfProcessEditorView::issueShowIfSized()
         return;
     const auto w = static_cast<std::uint32_t> (getWidth());
     const auto h = static_cast<std::uint32_t> (getHeight());
-    if (host_.requestEditorShow (busId_, slotIndex_, w, h))
-    {
-        shownOnce_       = true;
-        showRequestedAt_ = std::chrono::steady_clock::now();
-    }
+    // Stamp the request time BEFORE the call so the failed-to-load
+    // timeout fires even if the host returns false (slot already gone /
+    // permanently bypassed). Without this, a false return left the view
+    // in a permanent black state with no operator feedback.
+    showRequestedAt_ = std::chrono::steady_clock::now();
+    shownOnce_       = true;
+    host_.requestEditorShow (busId_, slotIndex_, w, h);
 }
 
 void OutOfProcessEditorView::refreshFromHost()
