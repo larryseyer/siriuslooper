@@ -447,6 +447,119 @@ private:
 };
 
 // =============================================================================
+// PluginListBox — one row per scanned descriptor + an "Open editor" button.
+// Replaces the S5-era read-only TextEditor descriptor dump (M7 S7).
+// Declared at MainComponent scope (sibling to PluginsPane) so the nested-
+// nested forward-declaration complexity is avoided.
+// =============================================================================
+class MainComponent::PluginListBox final : public juce::ListBoxModel
+{
+public:
+    /// Callback fired when a row's "Open editor" button is clicked.
+    /// Message-thread only; wired by MainComponent::PluginsPane.
+    std::function<void(const PluginDescriptor&)> onOpenEditor;
+
+    /// Called by PluginsPane when hostBinaryPath() availability is known.
+    /// When unavailable, all "Open editor" buttons are disabled with a tooltip.
+    void setHostBinaryAvailable (bool available)
+    {
+        hostBinaryAvailable_ = available;
+    }
+
+    void setDescriptors (const std::vector<PluginDescriptor>& descriptors)
+    {
+        descriptors_ = descriptors;
+    }
+
+    const std::vector<PluginDescriptor>& descriptors() const noexcept
+    {
+        return descriptors_;
+    }
+
+    bool hostBinaryAvailable() const noexcept { return hostBinaryAvailable_; }
+
+    // ---- juce::ListBoxModel ------------------------------------------------
+    int getNumRows() override { return (int) descriptors_.size(); }
+
+    void paintListBoxItem (int rowNumber, juce::Graphics& g,
+                           int width, int height, bool /*rowIsSelected*/) override
+    {
+        if (rowNumber < 0 || rowNumber >= (int) descriptors_.size())
+            return;
+        const auto& d = descriptors_[(std::size_t) rowNumber];
+        g.fillAll (rowNumber % 2 ? juce::Colour (0xff1a1a1a)
+                                 : juce::Colour (0xff222222));
+        g.setColour (juce::Colours::white);
+        g.setFont (juce::FontOptions (13.0f, juce::Font::bold));
+        g.drawText (juce::String (d.name) + "   (" + juce::String (d.manufacturer) + ")",
+                    8, 4, width - 110, 18, juce::Justification::topLeft);
+        g.setColour (juce::Colours::lightgrey);
+        g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 11.0f, 0));
+        g.drawText (juce::String (d.uniqueId),
+                    8, 22, width - 110, 14, juce::Justification::topLeft);
+        g.setColour (juce::Colour (0xff808080));
+        g.drawText (juce::String (d.filePath),
+                    8, 36, width - 110, 14, juce::Justification::topLeft);
+    }
+
+    juce::Component* refreshComponentForRow (int rowNumber, bool /*rowIsSelected*/,
+                                             juce::Component* existing) override
+    {
+        if (rowNumber < 0 || rowNumber >= (int) descriptors_.size())
+        {
+            delete existing;
+            return nullptr;
+        }
+
+        auto* button = dynamic_cast<RowButton*> (existing);
+        if (button == nullptr)
+        {
+            delete existing;
+            button = new RowButton();
+        }
+        button->setRowAndDescriptor (rowNumber, descriptors_[(std::size_t) rowNumber]);
+        button->setEnabled (hostBinaryAvailable_);
+        button->setTooltip (hostBinaryAvailable_
+            ? juce::String()
+            : juce::String ("Open editor unavailable — launch the .app for plug-in hosting"));
+        button->onClick = [this, rowNumber]
+        {
+            if (rowNumber >= 0 && rowNumber < (int) descriptors_.size() && onOpenEditor)
+                onOpenEditor (descriptors_[(std::size_t) rowNumber]);
+        };
+        return button;
+    }
+
+    static constexpr int kRowHeight = 56;
+
+private:
+    class RowButton final : public juce::TextButton
+    {
+    public:
+        RowButton() : juce::TextButton ("Open editor") {}
+        void setRowAndDescriptor (int row, const PluginDescriptor&)
+        {
+            rowNumber_ = row;
+        }
+        void resized() override
+        {
+            // Right-aligned inside the row; ~88 px wide, vertically centred.
+            const auto bounds = getParentComponent() != nullptr
+                ? juce::Rectangle<int> (getParentWidth() - 96,
+                                        (kRowHeight - 24) / 2,
+                                        88, 24)
+                : juce::Rectangle<int> (0, 0, 88, 24);
+            setBounds (bounds);
+        }
+    private:
+        int rowNumber_ { -1 };
+    };
+
+    std::vector<PluginDescriptor> descriptors_;
+    bool                          hostBinaryAvailable_ { false };
+};
+
+// =============================================================================
 // PluginsPane — registered formats, folder-scan button, descriptor list
 // =============================================================================
 class MainComponent::PluginsPane final : public juce::Component
@@ -468,11 +581,16 @@ public:
         scanStatusLabel_.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
         addAndMakeVisible (scanStatusLabel_);
 
-        descriptorsList_.setMultiLine (true);
-        descriptorsList_.setReadOnly (true);
-        descriptorsList_.setScrollbarsShown (true);
-        descriptorsList_.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 12.0f, 0));
-        addAndMakeVisible (descriptorsList_);
+        descriptorsListBox_.setRowHeight (PluginListBox::kRowHeight);
+        descriptorsListBox_.setColour (juce::ListBox::backgroundColourId,
+                                       juce::Colour (0xff1a1a1a));
+        addAndMakeVisible (descriptorsListBox_);
+
+        failedFilesLabel_.setMinimumHorizontalScale (1.0f);
+        failedFilesLabel_.setColour (juce::Label::textColourId,
+                                     juce::Colour (0xffff8888));
+        failedFilesLabel_.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 11.0f, 0));
+        addAndMakeVisible (failedFilesLabel_);
     }
 
     void setRegisteredFormats (const std::vector<std::string>& formats)
@@ -494,22 +612,20 @@ public:
     void setDescriptors (const std::vector<PluginDescriptor>& descriptors,
                          const std::vector<std::string>&      failed)
     {
-        juce::String text;
-        for (const auto& d : descriptors)
-        {
-            text << juce::String (d.name) << "   (" << juce::String (d.manufacturer) << ")\n"
-                 << "   " << juce::String (d.uniqueId) << "\n"
-                 << "   " << juce::String (d.filePath) << "\n\n";
-        }
-        if (! failed.empty())
-        {
-            text << "\nFailed to load:\n";
-            for (const auto& f : failed) text << "  " << juce::String (f) << "\n";
-        }
-        if (descriptors.empty() && failed.empty())
-            text = "(no descriptors yet — pick a folder above to scan)";
+        listBoxModel_.setDescriptors (descriptors);
+        descriptorsListBox_.updateContent();
 
-        descriptorsList_.setText (text, false);
+        if (failed.empty())
+        {
+            failedFilesLabel_.setText (juce::String(), juce::dontSendNotification);
+        }
+        else
+        {
+            juce::String text = "Failed to load:\n";
+            for (const auto& f : failed)
+                text << "  " << juce::String (f) << "\n";
+            failedFilesLabel_.setText (text, juce::dontSendNotification);
+        }
     }
 
     void resized() override
@@ -521,15 +637,22 @@ public:
         scanButton_.setBounds (area.removeFromTop (28).reduced (0, 2));
         scanStatusLabel_.setBounds (area.removeFromTop (22));
         area.removeFromTop (4);
-        descriptorsList_.setBounds (area);
+
+        // Failed-files label takes the bottom strip; list box fills the rest.
+        auto failedArea = area.removeFromBottom (
+            failedFilesLabel_.getText().isEmpty() ? 0 : 60);
+        failedFilesLabel_.setBounds (failedArea);
+        descriptorsListBox_.setBounds (area);
     }
 
 private:
+    PluginListBox    listBoxModel_;
+    juce::ListBox    descriptorsListBox_ { juce::String(), &listBoxModel_ };
+    juce::Label      failedFilesLabel_;
     juce::Label      headerLabel_;
     juce::Label      formatsLabel_;
     juce::TextButton scanButton_;
     juce::Label      scanStatusLabel_;
-    juce::TextEditor descriptorsList_;
     friend class MainComponent;
 };
 

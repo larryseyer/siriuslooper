@@ -189,6 +189,7 @@ private:
     std::unique_ptr<PreparationPane> preparationPane_;
 
     // --- Plugins tab ---
+    class PluginListBox;
     class PluginsPane;
     std::unique_ptr<PluginsPane> pluginsPane_;
     PluginScanner pluginScanner_;
