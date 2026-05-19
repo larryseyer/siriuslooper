@@ -85,10 +85,12 @@ TEST_CASE ("openPluginEditor on synthetic descriptor spawns a child + window",
     component.openPluginEditorForTesting (descriptor);
     CHECK (component.editorWindowCountForTesting() == 1);
 
-    const auto childPid = component.childPidForTestingAtBusId (1000);
+    const auto busId = component.firstOpenBusIdForTesting();
+    REQUIRE (busId >= 0);
+    const auto childPid = component.childPidForTestingAtBusId (busId);
     CHECK (childPid > 0);
 
-    component.closePluginEditorForTesting (1000);
+    component.closePluginEditorForTesting (busId);
     CHECK (component.editorWindowCountForTesting() == 0);
 }
 
