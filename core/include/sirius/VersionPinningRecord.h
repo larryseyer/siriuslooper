@@ -27,14 +27,11 @@ struct VersionPinningRecord
     /// until oversampling is tracked — comparing it would trigger noise).
     bool matches (const VersionPinningRecord& other) const noexcept;
 
-    bool operator== (const VersionPinningRecord& other) const noexcept
-    {
-        return uniqueId == other.uniqueId
-            && version == other.version
-            && stateBlobSha256 == other.stateBlobSha256
-            && oversamplingRate == other.oversamplingRate
-            && declaredInternalStateHash == other.declaredInternalStateHash;
-    }
+    /// Byte-exact identity comparison — includes `oversamplingRate`.
+    /// Distinct from `matches()` because round-trip tests need bit-equal
+    /// equality while drift detection needs semantic equality. Maintain
+    /// both bodies in lockstep when adding fields (see .cpp).
+    bool operator== (const VersionPinningRecord& other) const noexcept;
     bool operator!= (const VersionPinningRecord& other) const noexcept { return ! (*this == other); }
 };
 

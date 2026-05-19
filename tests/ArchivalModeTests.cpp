@@ -12,6 +12,7 @@
 #include "sirius/Rational.h"
 #include "sirius/SessionFormat.h"
 #include "sirius/Sha256.h"
+#include "sirius/VersionPinningRecord.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -26,11 +27,13 @@ using sirius::Constituent;
 using sirius::ConstituentId;
 using sirius::EffectChain;
 using sirius::EffectChainEntry;
+using sirius::makeVersionPinningRecord;
 using sirius::PluginDescriptor;
 using sirius::PluginFormat;
 using sirius::Position;
 using sirius::Rational;
 using sirius::sha256Hex;
+using sirius::VersionPinningRecord;
 
 TEST_CASE ("sha256Hex of zero bytes returns the canonical empty-input digest",
            "[sha256]")
@@ -115,11 +118,9 @@ TEST_CASE ("ArchivalMode switch reaches every case", "[archival-mode]")
     CHECK (reached == 3);
 }
 
-#include "sirius/VersionPinningRecord.h"
-
-using sirius::makeVersionPinningRecord;
-using sirius::VersionPinningRecord;
-
+// Fixtures used by multiple later cases; kept at the bottom of the file
+// because Tasks 5/6 of M8 S1 append more cases and want their fixtures
+// adjacent. Don't relocate to the top.
 namespace
 {
     PluginDescriptor descriptorFixture()
@@ -190,5 +191,21 @@ TEST_CASE ("VersionPinningRecord::matches detects state-blob hash drift",
     auto a = makeVersionPinningRecord (descriptorFixture(), {});
     auto b = a;
     b.stateBlobSha256 = std::string (64, '0');
+    CHECK_FALSE (a.matches (b));
+}
+
+// declaredInternalStateHash is part of the matches() contract today
+// even though M8 S1 leaves it empty in makeVersionPinningRecord(). When
+// M8 S2 wires up the CLAP self-reported state hash (white paper §15.6),
+// callers will start populating this field — pinning the drift check
+// now prevents a future refactor from quietly dropping it out of the
+// comparator, which would let a real plug-in-internal-state change slip
+// past the verifier silently.
+TEST_CASE ("VersionPinningRecord::matches detects declaredInternalStateHash drift",
+           "[archival-mode][version-pinning]")
+{
+    auto a = makeVersionPinningRecord (descriptorFixture(), {});
+    auto b = a;
+    b.declaredInternalStateHash = "vendor-self-report-hash-1";
     CHECK_FALSE (a.matches (b));
 }
