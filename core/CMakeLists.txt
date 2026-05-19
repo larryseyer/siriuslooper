@@ -21,7 +21,8 @@ add_library(SiriusCore STATIC
     src/Promotion.cpp
     src/EffectChain.cpp
     src/SharedMemoryRegion.cpp
-    src/Sha256.cpp)
+    src/Sha256.cpp
+    src/VersionPinningRecord.cpp)
 
 target_include_directories(SiriusCore PUBLIC include)
 

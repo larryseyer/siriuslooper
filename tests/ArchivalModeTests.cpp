@@ -114,3 +114,81 @@ TEST_CASE ("ArchivalMode switch reaches every case", "[archival-mode]")
     }
     CHECK (reached == 3);
 }
+
+#include "sirius/VersionPinningRecord.h"
+
+using sirius::makeVersionPinningRecord;
+using sirius::VersionPinningRecord;
+
+namespace
+{
+    PluginDescriptor descriptorFixture()
+    {
+        PluginDescriptor d;
+        d.format       = PluginFormat::Clap;
+        d.uniqueId     = "com.sirius.synthetic.test";
+        d.version      = "1.0.0";
+        d.name         = "Synthetic Test Plug-in";
+        d.manufacturer = "Sirius";
+        d.filePath     = "/fixtures/SyntheticTestPlugin.clap";
+        return d;
+    }
+}
+
+// Anchors the empty-state-blob baseline. M8 S1's state blob is always
+// the empty byte sequence (no CLAP state integration until M8 S2); a
+// regression that hashed "the descriptor" instead of "the state blob"
+// would silently flip every snapshot's fingerprint and produce phantom
+// drift events on every reopen. Pin the canonical RFC 6234 empty-input
+// digest so any such regression fails this test loudly.
+TEST_CASE ("makeVersionPinningRecord with empty state has the canonical empty hash",
+           "[archival-mode][version-pinning]")
+{
+    const auto record = makeVersionPinningRecord (descriptorFixture(), {});
+    CHECK (record.uniqueId == "com.sirius.synthetic.test");
+    CHECK (record.version  == "1.0.0");
+    CHECK (record.stateBlobSha256
+           == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    CHECK (record.oversamplingRate == 1u);
+    CHECK (record.declaredInternalStateHash.empty());
+}
+
+// The placeholder oversamplingRate must NOT trigger drift events until
+// the engine actually tracks oversampling per-slot. Spec
+// "Risks and open decisions" calls this out as the S1-local decision:
+// persist the field for future use, but exclude it from matches() so
+// the placeholder value doesn't generate noise on every reopen.
+TEST_CASE ("VersionPinningRecord::matches excludes oversamplingRate",
+           "[archival-mode][version-pinning]")
+{
+    auto a = makeVersionPinningRecord (descriptorFixture(), {});
+    auto b = a;
+    b.oversamplingRate = 4u;
+    CHECK (a.matches (b));
+}
+
+// The motivating drift scenario from the white paper §15.6: an operator
+// saves on machine A with plug-in v1.0.0, reopens on machine B where
+// the installed plug-in is v1.0.1. matches() must return false so the
+// verifier raises PluginVersionDrift and the performer is warned.
+TEST_CASE ("VersionPinningRecord::matches detects version drift",
+           "[archival-mode][version-pinning]")
+{
+    auto a = makeVersionPinningRecord (descriptorFixture(), {});
+    auto b = a;
+    b.version = "1.0.1";
+    CHECK_FALSE (a.matches (b));
+}
+
+// State-blob hash drift is the other half of the drift surface — same
+// plug-in version but different internal state (e.g., the plug-in vendor
+// changed its preset format mid-version-string). Pin that matches() is
+// sensitive to the hash too, not just the version string.
+TEST_CASE ("VersionPinningRecord::matches detects state-blob hash drift",
+           "[archival-mode][version-pinning]")
+{
+    auto a = makeVersionPinningRecord (descriptorFixture(), {});
+    auto b = a;
+    b.stateBlobSha256 = std::string (64, '0');
+    CHECK_FALSE (a.matches (b));
+}
