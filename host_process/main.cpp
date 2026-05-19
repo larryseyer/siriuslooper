@@ -30,10 +30,12 @@
 #include "sirius/ClapBundleLoader.h"
 #include "sirius/PluginGuiState.h"
 #include "sirius/PluginIpcMessage.h"
+#include "sirius/PluginStateRegion.h"
 #include "sirius/SharedMemoryRegion.h"
 #include "sirius/SharedMemorySpscQueue.h"
 
 #include <clap/clap.h>
+#include <clap/ext/state.h>
 
 #include <algorithm>
 #include <cerrno>
@@ -177,6 +179,130 @@ namespace
         gui.state->responseHeight   .store (outHeight, std::memory_order_relaxed);
         gui.state->responseSeq      .store (current,   std::memory_order_release);
         gui.lastServicedSeq = current;
+    }
+
+    /// State the CLAP-mode pump carries for the M8 S2 plug-in-state
+    /// region. The engine creates `/sirius.<id>.state` before fork (once
+    /// Task 7 lands); the child attaches in main() and threads this struct
+    /// through the pump loop. `lastServicedSeq` is a child-private cursor,
+    /// not shared state — mirrors GuiServicingState.
+    struct StateServicingState
+    {
+        sirius::PluginStateState* state           { nullptr };
+        std::uint64_t             lastServicedSeq { 0 };
+    };
+
+    /// `clap_ostream_t` shim backed by a fixed-size char buffer. `write`
+    /// appends bytes up to the buffer cap; over-cap writes return -1 so
+    /// the plug-in's save callback knows to fail.
+    struct OstreamBuf
+    {
+        char*       data;
+        std::size_t cap;
+        std::size_t used { 0 };
+    };
+    std::int64_t ostreamWrite (const clap_ostream_t* s, const void* in, std::uint64_t n)
+    {
+        auto* buf = static_cast<OstreamBuf*> (s->ctx);
+        if (buf->used + n > buf->cap) return -1;
+        std::memcpy (buf->data + buf->used, in, n);
+        buf->used += static_cast<std::size_t> (n);
+        return static_cast<std::int64_t> (n);
+    }
+
+    /// `clap_istream_t` shim backed by a fixed-size char buffer. `read`
+    /// hands out up to the remaining bytes; the plug-in's load callback
+    /// drains until it returns 0.
+    struct IstreamBuf
+    {
+        const char* data;
+        std::size_t cap;
+        std::size_t pos { 0 };
+    };
+    std::int64_t istreamRead (const clap_istream_t* s, void* out, std::uint64_t n)
+    {
+        auto* buf = static_cast<IstreamBuf*> (s->ctx);
+        const auto avail = buf->cap - buf->pos;
+        const auto take  = static_cast<std::size_t> (
+            n < avail ? n : avail);
+        std::memcpy (out, buf->data + buf->pos, take);
+        buf->pos += take;
+        return static_cast<std::int64_t> (take);
+    }
+
+    /// Services any outstanding state request on `state`. No-op when the
+    /// region is absent (engine versions before M8 S2 don't create it) OR
+    /// when no request has advanced past `lastServicedSeq`. Publishes the
+    /// response fields then bumps `responseSeq` with release ordering so
+    /// the engine's acquire-load sees a consistent response. Idempotent.
+    void serviceStateRequests (StateServicingState& state, const clap_plugin_t* plugin)
+    {
+        if (state.state == nullptr) return;
+        const auto current = state.state->requestSeq.load (std::memory_order_acquire);
+        if (current == state.lastServicedSeq) return;
+
+        const auto kind = state.state->requestKind.load (std::memory_order_relaxed);
+
+        state.state->responseBytes.store (0, std::memory_order_relaxed);
+        state.state->responseStatus.store (sirius::PluginStateState::Ok,
+                                           std::memory_order_relaxed);
+
+        const auto* ext = static_cast<const clap_plugin_state_t*> (
+            plugin->get_extension (plugin, CLAP_EXT_STATE));
+        if (ext == nullptr)
+        {
+            state.state->responseStatus.store (
+                sirius::PluginStateState::ErrorNotSupported,
+                std::memory_order_relaxed);
+            state.state->responseSeq.store (current, std::memory_order_release);
+            state.lastServicedSeq = current;
+            return;
+        }
+
+        if (kind == sirius::PluginStateState::Save)
+        {
+            OstreamBuf out { state.state->responsePayload,
+                             sirius::PluginStateState::kMaxStateBytes,
+                             0 };
+            clap_ostream_t stream { &out, ostreamWrite };
+            const bool ok = ext->save (plugin, &stream);
+            if (! ok)
+            {
+                state.state->responseStatus.store (
+                    sirius::PluginStateState::ErrorGeneric,
+                    std::memory_order_relaxed);
+                state.state->responseBytes.store (0, std::memory_order_relaxed);
+            }
+            else
+            {
+                state.state->responseBytes.store (
+                    static_cast<std::uint32_t> (out.used),
+                    std::memory_order_relaxed);
+            }
+        }
+        else if (kind == sirius::PluginStateState::Load)
+        {
+            const auto n = state.state->requestBytes.load (std::memory_order_relaxed);
+            if (n > sirius::PluginStateState::kMaxStateBytes)
+            {
+                state.state->responseStatus.store (
+                    sirius::PluginStateState::ErrorTooLarge,
+                    std::memory_order_relaxed);
+            }
+            else
+            {
+                IstreamBuf in { state.state->requestPayload, n, 0 };
+                clap_istream_t stream { &in, istreamRead };
+                const bool ok = ext->load (plugin, &stream);
+                state.state->responseStatus.store (
+                    ok ? sirius::PluginStateState::Ok
+                       : sirius::PluginStateState::ErrorGeneric,
+                    std::memory_order_relaxed);
+            }
+        }
+
+        state.state->responseSeq.store (current, std::memory_order_release);
+        state.lastServicedSeq = current;
     }
 
     /// Pops one PluginIpcMessage from `q`, honoring `shouldExit`. If
@@ -369,7 +495,8 @@ namespace
 
     int runClapMode (const std::string& pluginPath,
                      IpcQueue& inRing, IpcQueue& outRing,
-                     sirius::PluginGuiState* guiState)
+                     sirius::PluginGuiState* guiState,
+                     sirius::PluginStateState* stateState)
     {
         std::string loadErr;
         auto loader = sirius::ClapBundleLoader::load (pluginPath, loadErr);
@@ -437,7 +564,8 @@ namespace
                                            const clap_event_header_t*) -> bool { return true; };
         const clap_output_events_t outEvents { nullptr, outEventsTry };
 
-        GuiServicingState gui { guiState, 0 };
+        GuiServicingState   gui      { guiState, 0 };
+        StateServicingState stateSrv { stateState, 0 };
        #ifdef __APPLE__
         // M7 S9 — hand the shm pointer to gui_cocoa.mm so the
         // NSWindowDelegate's windowWillClose: can publish
@@ -455,7 +583,9 @@ namespace
            #endif
             serviceGuiRequests (gui, plugin);
         };
-        RingByteStream stream (inRing, outRing, serviceGui);
+        const auto serviceState = [&] { serviceStateRequests (stateSrv, plugin); };
+        const auto serviceBoth  = [&] { serviceGui(); serviceState(); };
+        RingByteStream stream (inRing, outRing, serviceBoth);
         int exitCode = kExitOk;
 
         while (shouldExit == 0)
@@ -467,6 +597,7 @@ namespace
             sirius_appkit_drain_events();
            #endif
             serviceGuiRequests (gui, plugin);
+            serviceStateRequests (stateSrv, plugin);
             uint32_t frameCount = 0;
             bool eof = false;
             if (! stream.readExact (reinterpret_cast<char*> (&frameCount),
@@ -620,6 +751,25 @@ int main (int argc, char** argv)
         return kExitShmErr;
     }
 
+    // M8 S2 — open the plug-in-state region. The engine creates it
+    // alongside the audio rings before fork (Task 7); engine versions
+    // before that don't create it, so tolerate absence — state IPC is
+    // opt-in for forward compat. Every current spawn hits this branch.
+    std::unique_ptr<sirius::SharedMemoryRegion> stateRegion;
+    sirius::PluginStateState* stateState = nullptr;
+    try
+    {
+        stateRegion = std::make_unique<sirius::SharedMemoryRegion> (
+            sirius::makeStateRegionName (instanceId), 0,
+            sirius::SharedMemoryRegion::Mode::OpenExisting);
+        stateState = sirius::PluginStateState::view (stateRegion->data());
+    }
+    catch (const std::exception&)
+    {
+        stateRegion.reset();
+        stateState = nullptr;
+    }
+
     if (mode == "identity")
         return runIdentityMode (*e2hQueue, *h2eQueue);
 
@@ -631,7 +781,7 @@ int main (int argc, char** argv)
                           "sirius_plugin_host: --mode clap requires --plugin-path <bundle>\n");
             return kExitBadArgs;
         }
-        return runClapMode (pluginPath, *e2hQueue, *h2eQueue, guiState);
+        return runClapMode (pluginPath, *e2hQueue, *h2eQueue, guiState, stateState);
     }
 
     std::fprintf (stderr,
