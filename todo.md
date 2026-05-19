@@ -1481,3 +1481,14 @@ assets before public launch:
   #2) is now closed by Step 5 above. Leave that doc updated to
   reflect that the dev-loop Ninja generator now produces a
   Developer-ID-signed `.app` with sealed CodeResources.
+
+### 2026-05-19 — M8 S2 followup: live CLAP state hashing
+- Files: `engine/include/sirius/SessionSnapshot.h`, `engine/src/SessionSnapshot.cpp`, `host/include/sirius/OutOfProcessEffectChainHost.h`, `host/src/OutOfProcessEffectChainHost.cpp`
+- What was deferred: M8 S1's `populateVersionPinningRecords` / `verifyVersionPinningOnLoad` build the snapshot from the entry's own descriptor with an empty state blob. The "live state blob" hashing (real `clap_plugin_state` bytes) and the live-descriptor query against `OutOfProcessEffectChainHost` are placeholders.
+- Why deferred: V7 plan lines 597-598 — M8 S2 is the CLAP loader hardening + `clap_plugin_state` integration session. Wiring the helpers to the host before the host has state-blob accessors would be guess-coding.
+- What's needed to finish:
+  1. Add `OutOfProcessEffectChainHost::descriptorForSlot(busId, slotIndex)` returning the live descriptor (reading SlotState::descriptor under instancesMutex_).
+  2. Add `OutOfProcessEffectChainHost::stateBlobForSlot(busId, slotIndex)` returning the bytes from a new CLAP `state.save` extension wrapper.
+  3. Establish the Constituent → (busId, slotIndex) mapping in the engine save-orchestrator (currently implicit in `openPluginEditor`'s `nextScratchBusId_++`).
+  4. Re-add `const OutOfProcessEffectChainHost&` to `populateVersionPinningRecords` and `verifyVersionPinningOnLoad` signatures (dropped in M8 S1) and consult it inside `makeVersionPinningRecord` calls. Update the two call sites in `app/MainComponent.cpp` atomically.
+  5. Update the M8 S1 ArchivalModeTests where the M8 S2 path replaces the empty-state assertion with a real-state assertion.

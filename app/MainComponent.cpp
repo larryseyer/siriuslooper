@@ -4,6 +4,7 @@
 #include "sirius/PreparationView.h"
 #include "sirius/PreparationViewState.h"
 #include "sirius/SessionFormat.h"
+#include "sirius/SessionSnapshot.h"
 #include "sirius/TapeId.h"
 #include "sirius/TimelineView.h"
 #include "sirius/TimelineViewState.h"
@@ -1545,7 +1546,14 @@ void MainComponent::chooseFileAndSave()
             const auto target = fc.getResult();
             if (target == juce::File()) return;
 
-            const auto json = persistence::serializeSession (*undoStack_.current());
+            // M8 S1: populate persistedSnapshot on every VersionPinning
+            // entry before serializing so the saved JSON carries the
+            // frozen plug-in identity needed for reopen-time drift
+            // detection. Copy-on-write — unchanged subtrees stay shared
+            // with the undo-stack version.
+            const auto populated = sirius::populateVersionPinningRecords (
+                undoStack_.current());
+            const auto json = persistence::serializeSession (*populated);
             if (target.replaceWithText (json))
                 preparationPane_->setStatus ("Saved to " + target.getFullPathName());
             else
@@ -1571,6 +1579,12 @@ void MainComponent::chooseFileAndLoad()
             try
             {
                 auto loaded = persistence::deserializeSession (json);
+                // M8 S1: warn-on-drift via the existing NotificationBus.
+                // The Preparation pane's notification-history line picks
+                // up the message without any new UI code. Per white paper
+                // line 1500: warn, do not refuse — the session still loads.
+                if (notificationBus_ != nullptr)
+                    sirius::verifyVersionPinningOnLoad (*loaded, *notificationBus_);
                 // The white paper Part 14.7 rule: load is an edit; preserve
                 // the existing undo history rather than wiping it. The
                 // operator can undo back to whatever was on screen before.
