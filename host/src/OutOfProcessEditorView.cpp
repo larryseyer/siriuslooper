@@ -87,6 +87,13 @@ void OutOfProcessEditorView::timerCallback()
         if (elapsedMs >= kFailedToLoadTimeoutMs)
         {
             failedToLoad_ = true;
+           #if JUCE_MAC
+            // juce::NSViewComponent is opaque even with no NSView set —
+            // it would render black over our paint(). Hide it so the
+            // explanatory overlay actually reaches the screen.
+            if (embed_ != nullptr)
+                embed_->setVisible (false);
+           #endif
             repaint();
         }
     }
@@ -96,6 +103,10 @@ void OutOfProcessEditorView::timerCallback()
         // finally came up). Clear the overlay so the embedded NSView
         // gets the spotlight.
         failedToLoad_ = false;
+       #if JUCE_MAC
+        if (embed_ != nullptr)
+            embed_->setVisible (true);
+       #endif
         repaint();
     }
 }
