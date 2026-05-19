@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-18 (M7 S7 SHIPPED to origin/master; M7 S8 selection next)
+# Session Continuation — 2026-05-18 (M7 S7 SHIPPED + eyes-on found XPC-bridge-unreachable; M7 S8 = XPC bridge debug)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,11 +8,18 @@
 
 ---
 
-## RESUME HERE (2026-05-18 — M7 S7 on origin/master; M7 S8 selection next)
+## RESUME HERE (2026-05-18 — M7 S7 + eyes-on follow-ups on origin/master; M7 S8 = XPC bridge debug)
 
-**M7 S7 is on `origin/master`.** S7 head is `1c52a36` (the close-out
-docs commit); the last per-step / per-review commit is `c753488`. 11
-per-step commits + 1 close-out, all pushed. Per-step SHAs:
+**M7 S7 is on `origin/master`** + 9 eyes-on follow-up commits also
+pushed. Current `origin/master` HEAD is `5f384a9`. S7 feature-set
+close-out was at `1c52a36`; everything `1c52a36..5f384a9` is
+**post-S7 eyes-on session work** (UX bug fixes + diagnostic tooling
++ operator-facing buttons + the XPC-bridge-unreachable discovery
+that S8 must address).
+
+### Original S7 feature commits (1c6301e..1c52a36)
+
+11 per-step commits + 1 close-out, all pushed. Per-step SHAs:
 
 | SHA | Subject |
 |---|---|
@@ -112,29 +119,141 @@ audio surface untouched (no S7 code reaches the audio thread).
    suite contention during S7 verification. Both pass in isolation.
    Not S7-introduced.
 
+### Post-S7 eyes-on session (1c52a36..5f384a9 — 9 commits, all pushed)
+
+The eyes-on session that followed S7 close-out uncovered FOUR things,
+in this order. All four are on `origin/master`.
+
+| SHA | Subject |
+|---|---|
+| `13f7b01` | fix: M7 S7 final review — wire setNotificationSink + explicit editorWindows_.clear() in dtor |
+| `f916e37` | fix: M7 S7 — PluginScanner testing-only FabFilter filter to skip per-file instantiation on 1000+ plug-in installs |
+| `4734fb7` | chore: M7 S7 — bash/test-s7.sh wraps the lifecycle tests against synthetic CLAP fixture |
+| `98f93db` | feat: M7 S7 — OutOfProcessEditorView paints failed-to-load overlay after 2s timeout (was blank black for VST3/AU) |
+| `909ed74` | feat: M7 S7 — Plugins-tab quick-scan buttons (global + user) + synthetic CLAP debug button |
+| `9319977` | fix: M7 S7 — hide opaque NSViewComponent in failed-to-load state so paint() overlay actually reaches the screen |
+| `7321c85` | fix: M7 S7 — issueShowIfSized retry on first resize + always-stamp showRequestedAt so failed-to-load fires (was deadlocked on bounds<=0 at parentHierarchyChanged) |
+| `d034e79` | fix: M7 S7 — failed-to-load deadline runs from ctor, not from Show success (decoupled from shownOnce_ lifecycle uncertainty) |
+| `5f384a9` | fix: M7 S7 — OutOfProcessEditorView detects bogus placeholder-counter contextId via PluginGuiBridge::isReady (overlay was flashing + never fired before) |
+
+**Four discoveries:**
+
+1. **`sirius_plugin_host` only loads `.clap` bundles.** VST3/AU are
+   silently rejected (the child can't dlopen them). Operator's 1000+
+   installed plug-ins are mostly VST3 + AU; they can't be hosted as-
+   is. **This is an architectural gap, not a bug** — a separate later
+   session adds VST3/AU support to the child via JUCE's
+   `AudioPluginFormatManager`.
+2. **`PluginScanner` doesn't register CLAP** (header comment at
+   `host/include/sirius/PluginScanner.h:29-32` is explicit). So even
+   if you DO have a CLAP installed, it's invisible to the scan UI.
+   The synthetic test plug-in is reachable only via the new debug
+   button (commit `909ed74`).
+3. **The "blank black window on failure" UX hole.** S7 left the
+   embedded NSView opaque even when nothing was published. Fixed
+   across commits `98f93db` + `9319977` + `7321c85` + `d034e79` +
+   `5f384a9` — operator now gets a "Plug-in failed to load" overlay
+   after 2 s when contextId is either missing OR bogus (see #4).
+4. **THE BIG ONE: the XPC bridge is unreachable from the .app
+   context.** When the engine constructs `PluginGuiBridge::instance()`,
+   the XPC connection to the bundled
+   `com.larryseyer.siriuslooper.gui-bridge` service NEVER receives
+   the `{"ok": true}` reply. `isReady()` returns false forever. The
+   child's `bootstrapXpcBridge` also times out (250 ms). Result:
+   even the synthetic CLAP plug-in renders the failed-to-load
+   overlay because the engine correctly treats the child's
+   placeholder-counter contextId as bogus. **This is the root cause
+   blocking real cross-process pixels via CARemoteLayer. It must be
+   S8.** Tracked in `todo.md` (last entry).
+
+**Other operator-facing changes from the eyes-on session:**
+
+- **`PluginScanner` hardcoded "FabFilter" name filter** (commit
+  `f916e37`). The operator has 1000+ plug-ins; a full scan was
+  taking minutes. Skips files whose path doesn't contain "FabFilter"
+  before per-file instantiation. **REMOVE THIS BEFORE SHIPPING** —
+  tracked in `todo.md`.
+- **`bash/test-s7.sh`** — wraps the headless lifecycle tests
+  against the synthetic CLAP fixture. Run any time to verify the
+  S7 chain works without a GUI.
+- **Plugins tab additions** (commit `909ed74`): two quick-scan
+  buttons (`/Library/Audio/Plug-Ins` global, `~/Library/Audio/Plug-Ins`
+  user) + an "Open synthetic test plug-in (debug)" button that
+  bypasses the scanner.
+- **Desktop alias** at `/Users/larryseyer/Desktop/Sirius Looper`
+  → `build/app/SiriusLooper_artefacts/Release/Sirius Looper.app`
+  (symlink). Operator double-clicks to launch.
+
 ### First moves for the M7 S8 chat
 
-S7 closes the M7 line item "MainComponent has no production wiring"
-that carried through M5–S6 deviation lists. Remaining M7 candidates
-for S8:
+**S8 = XPC bridge debug.** This is the single most important
+remaining M7 work — without it, none of S6's CARemoteLayer pixel
+compositing actually paints in the .app eyes-on. The plumbing
+through every other layer (S3 audio path, S4 supervisor, S5
+PluginGuiState IPC, S7 MainComponent UI) is proven working; only
+the cross-process CARemoteLayer handshake is broken.
 
-1. **Audio-ring SPSC violation fix** (carryover from S5 deviation
-   #1). Engine's `tryWriteBytes` (audio thread) + `sendBytes`
-   (message thread) share the producer side of the engine→host ring.
-   Latent today, becomes a real bug AS SOON AS the operator opens an
-   editor mid-playback — which is exactly what S7 made possible. This
-   should be S8.
-2. **`PluginEditorWindow` resize-to-preferred-size** — small UX
-   polish; reads the editor view's published size and propagates up
-   to the DocumentWindow. ~10 LOC.
-3. **Bundle re-sign for distribution** (S6 deviation #2 +
-   `docs/operator/macos-sandbox.md`). Operator-pending CI signing
-   handoff.
-4. **Windows + Linux GUI embedding** — independent later sessions.
+**Where to start the investigation:**
 
-**Suggested order: SPSC split first.** S7 just made the SPSC race
-genuinely reachable; fixing it is now load-bearing for any operator
-who clicks "Open editor" during playback.
+1. **Read `todo.md`'s last entry** — it lists the likely candidates
+   (signature mismatch / `XPCService.ServiceType` value / launchd
+   not registering the service at all). Use that as the working
+   hypothesis list.
+2. **Confirm whether launchd sees the bundled .xpc** —
+   `launchctl print user/$UID | grep gui-bridge` after the .app is
+   launched. If nothing returned, launchd never registered the
+   service.
+3. **Capture the bridge binary's stderr** — modify
+   `xpc_service/main.cpp` to write a marker to a known file at
+   startup. Run the .app and check if the marker file appears. If
+   not, the bridge binary was never executed.
+4. **Verify ad-hoc signing parity** — `codesign -dvv` on
+   `Contents/MacOS/Sirius Looper` AND
+   `Contents/XPCServices/sirius_gui_bridge.xpc/Contents/MacOS/sirius_gui_bridge`.
+   Same team ID? Same signing identity? Modern macOS requires
+   embedded helpers to have the same signing team as the parent or
+   launchd refuses to launch them.
+5. **Check `XPCService.ServiceType`** — currently `Application`
+   (per `xpc_service/Info.plist.in:23`). The "right" value for an
+   in-app XPC service is debated; Apple's modern recommendation is
+   often unset (use `Standard` semantics). Try removing the key
+   entirely.
+6. **Cross-check with the bundle re-sign gap** —
+   `docs/operator/macos-sandbox.md` documents that the parent .app
+   isn't re-signed after the helper copies. That gap may itself be
+   the reason launchd refuses to trust the helper.
+
+**If S8 unblocks the bridge:** the failed-to-load overlay will stop
+firing, and the operator will see the synthetic plug-in's actual
+blue NSView rendered cross-process inside the engine's window. Real
+end-to-end proof of S6's CARemoteLayer work.
+
+**If S8 can't unblock the bridge in a reasonable session:** fall
+back to a non-XPC Mach-port handoff (the spec's alternative path —
+anonymous Mach-port pair via UNIX socketpair with port descriptor,
+documented in `docs/superpowers/specs/2026-05-18-m7-s6-design.md`
+under "operator decisions locked").
+
+### Other M7 candidates that did NOT make S8
+
+S8 is XPC-bridge-debug; everything below is queued behind it. The
+order changed materially because the eyes-on found a hard blocker.
+
+1. **Audio-ring SPSC violation fix** (S5 deviation #1) — was the
+   pre-eyes-on S8 candidate. Still important; demoted because
+   nobody can open an editor mid-playback until the bridge works.
+   Promote back to S9 unless S8 grows in scope.
+2. **VST3/AU hosting in `sirius_plugin_host`** — newly important
+   given the operator's installed library is mostly VST3/AU. Needs
+   JUCE's `AudioPluginFormatManager` in the child binary.
+3. **Re-enable full PluginScanner scan** — remove the hardcoded
+   "FabFilter" filter once S8 + VST3 hosting both land.
+4. **`PluginEditorWindow` resize-to-preferred-size** — small UX
+   polish (~10 LOC). S7 deviation #5.
+5. **Bundle re-sign for distribution** (S6 deviation #2 +
+   `docs/operator/macos-sandbox.md`) — may merge into S8 if it
+   turns out to be the root cause.
+6. **Windows + Linux GUI embedding** — independent later sessions.
 
 ### S7-era decisions locked (S8 must preserve — superset of S6 list)
 
@@ -159,13 +278,43 @@ who clicks "Open editor" during playback.
     executable** because `app/MainComponent.cpp` isn't in any
     library. The exe re-compiles MainComponent.cpp with SiriusLooper's
     link set.
+27. **`OutOfProcessEditorView` failed-to-load UX** (added during
+    eyes-on session). After 2 s with no `currentContextId_`
+    publish OR with a placeholder-counter contextId (detected via
+    `! PluginGuiBridge::instance().isReady()`), paint a "Plug-in
+    failed to load" overlay over a dark grey background. Hide
+    `embed_` NSViewComponent at the same time (it's opaque even
+    with no NSView set — would render black over our paint).
+    Restore `embed_` visibility on a real late publish (not on the
+    placeholder counter — that would flash the overlay on/off).
+    The deadline runs from view ctor time, not from a Show success,
+    so the timeout always fires regardless of upstream lifecycle
+    uncertainty.
+28. **Bridge-availability check is engine-side, not in the IPC
+    contract.** The `PluginGuiBridge::instance().isReady()` query
+    is local to the engine — it tells us if the engine's own XPC
+    connection got `{"ok": true}` back. If yes, real CARemoteLayer
+    pixels expected; if no, the child's contextId (if any) is the
+    placeholder counter and `+[CALayer layerWithRemoteClientId:]`
+    would render black. We did NOT add a "bridge available" bool to
+    the `PluginGuiState` shm IPC; that would change the wire format.
+    S8 may revisit this if it helps debug.
 
 ### Carryover NOT resolved (S8 doesn't touch unless flagged)
 
-- **Audio-ring SPSC violation** (S5 deviation #1) — most likely S8.
+- **XPC bridge unreachable from .app context** — the new top
+  blocker; IS S8. See "First moves" above + `todo.md` last entry.
+- **`sirius_plugin_host` only handles CLAP** — operator's library
+  is mostly VST3/AU; child can't dlopen them. Tracked above.
+- **`PluginScanner` doesn't register CLAP** + currently hardcoded
+  "FabFilter" filter for testing (commit `f916e37`). Both noted in
+  `todo.md`. Remove the filter before any real shipping; add CLAP
+  scanner registration when a `juce_clap` wrapper lands.
+- **Audio-ring SPSC violation** (S5 deviation #1) — was S8, now
+  S9 behind the bridge fix.
 - **Bundle re-sign for distribution + `sirius_plugin_host`
   MACOSX_BUNDLE conversion** — `docs/operator/macos-sandbox.md`.
-  Operator-pending CI signing session.
+  May merge into S8 (might be the bridge-unreachable root cause).
 - **`PluginEditorWindow` doesn't resize-to-preferred-size** (S7
   deviation #5).
 - **`(#N)` suffix for duplicate-descriptor window titles** (S7
@@ -176,6 +325,20 @@ who clicks "Open editor" during playback.
 - **Carryover from M6 + earlier still unresolved** (ProcessedRoute
   empty span, manual operator-launch eyes-on of M6 surface, CI
   signing handoff) — unchanged from S5/S6/S7-era state.
+
+### Quick reference for the next chat
+
+- **Run the headless lifecycle test:** `bash bash/test-s7.sh`
+  (auto-builds anything missing; passes 3/3 against synthetic CLAP).
+- **Launch the .app:** double-click
+  `/Users/larryseyer/Desktop/Sirius Looper` (symlink) OR `open
+  "build/app/SiriusLooper_artefacts/Release/Sirius Looper.app"`.
+- **Capture stderr from the .app:** `"build/app/SiriusLooper_artefacts/Release/Sirius Looper.app/Contents/MacOS/Sirius Looper" 2> /tmp/sirius-stderr.log &`
+- **Read sirius_plugin_host logs:** `/usr/bin/log show
+  --predicate 'process == "sirius_plugin_host"' --last 5m`
+- **Read sirius_gui_bridge logs (S8 will need these):**
+  `/usr/bin/log show --predicate 'process == "sirius_gui_bridge"'
+  --last 5m`
 
 ---
 
