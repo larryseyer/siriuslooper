@@ -1308,8 +1308,131 @@ assets before public launch:
 - Why deferred: the operator asked for the filter for the S7 eyes-on session only; replacing PluginDirectoryScanner with a manual loop also lost the failed-files reporting surface.
 - What's needed to finish: (1) remove the hardcoded "FabFilter" substring or replace it with an opt-in mechanism (env var, UI text field, scan-on-demand-per-vendor); (2) restore failed-file reporting (either re-add PluginDirectoryScanner alongside the filter, or wrap scanAndAddFile's bool return value to surface failures).
 
-### 2026-05-18 - M7 S7 eyes-on found: XPC bridge unreachable from .app context
-- Files: host/src/PluginGuiBridge.cpp (engine) + host_process/main.cpp bootstrapXpcBridge (child)
-- What was deferred: real cross-process CARemoteLayer compositing. From the bundled .app, the engine's `PluginGuiBridge::instance().isReady()` returns false → it never received the `{"ok": true}` reply from the bundled `sirius_gui_bridge.xpc` service. The child's `bootstrapXpcBridge` also times out (250 ms). Net effect: every editor opens with the "Plug-in failed to load" overlay even for the synthetic CLAP fixture, because the engine correctly treats the child's placeholder-counter contextId as bogus.
-- Why deferred: investigating launchd / XPC service registration in the bundled context needs its own session. Likely candidates: (1) `Contents/XPCServices/sirius_gui_bridge.xpc/Contents/MacOS/sirius_gui_bridge` not getting executed by launchd (signature mismatch?); (2) Info.plist `XPCService.ServiceType = Application` not the right type for an in-app service; (3) bundle re-sign gap (S6 deviation #2 + docs/operator/macos-sandbox.md) blocking launchd from trusting the helper.
-- What's needed to finish: (1) add OS_LOG output to the XPC service binary so we can see if it's launched at all; (2) inspect `launchctl print` for the service name to see registration state; (3) try invoking the service via `xpc_connection_create_mach_service` from a standalone test binary signed identically; (4) ultimately fix the bundle re-sign gap. Tracks alongside the existing macos-sandbox.md follow-on.
+### 2026-05-18 - M7 S7 eyes-on found: XPC bridge unreachable from .app context — SUPERSEDED 2026-05-18 by M7 S8 (next entry)
+
+(See next entry. M7 S8 fully diagnosed this; the engine path now succeeds and the child path is blocked by an architectural design flaw deferred to a separate session.)
+
+### 2026-05-18 — M7 S8 partial-win: engine→bridge handshake landed; child→bridge needs new architecture
+
+- **Files (already updated this session, on `origin/master` once committed):**
+  - `xpc_service/main.cpp` (os_log instrumentation throughout)
+  - `host/src/PluginGuiBridge.cpp` (os_log + switched to `xpc_connection_create`)
+  - `host_process/main.cpp` (os_log + switched to `xpc_connection_create`)
+  - `xpc_service/CMakeLists.txt` (Developer-ID POST_BUILD re-sign of .xpc)
+  - `app/CMakeLists.txt` (Developer-ID POST_BUILD re-sign of sirius_plugin_host + final outer .app re-sign)
+
+- **What landed (engine side is GREEN end-to-end):**
+  1. **Diagnostic instrumentation** — full `os_log` trace via subsystem
+     `com.larryseyer.siriuslooper`, category `gui-bridge`. Filter with
+     `log show --predicate 'subsystem == "com.larryseyer.siriuslooper"' --last 5m`.
+     Silent XPC failures are the failure mode this session burned a
+     full chat diagnosing; the logging stays permanently.
+  2. **Codesign identifier matching** — the .xpc bundle now has
+     codesign `Identifier=com.larryseyer.siriuslooper.gui-bridge` to
+     match the plist's `CFBundleIdentifier`. Was `sirius_gui_bridge`
+     (the binary name) because `--sign -` (ad-hoc) defaults to that.
+     launchd refuses to register in-app XPC services when the two
+     differ.
+  3. **Developer-ID re-sign of embedded helpers** — macOS 14+ AMFI
+     rejects ad-hoc-signed embedded XPC services with
+     `Code=-423 "The file is adhoc signed or signed by an unknown
+     certificate chain"`. POST_BUILD now re-signs the .xpc, the
+     `sirius_plugin_host` helper, and the outer .app with
+     `Developer ID Application: Larry Seyer (RR5DY39W4Q)` plus
+     `--options runtime`. `codesign --verify --deep --strict` passes.
+  4. **Engine uses `xpc_connection_create`, not
+     `xpc_connection_create_mach_service`** — the latter looks up in
+     launchd's Mach service namespace (gui/$UID domain), where in-app
+     XPC services in `Contents/XPCServices/` are NOT visible. The
+     former resolves the bundle id against the calling process's own
+     bundle. Symptom of the wrong API: launchd logs `failed lookup:
+     name=... error=3: No such process`.
+  5. **Final outer .app re-sign closes M7 S6 deviation #2** — the
+     parent's CodeResources seal now covers `Contents/XPCServices/`
+     and the embedded `sirius_plugin_host`. (Note: NOT `--deep`, which
+     would clobber the .xpc's identifier with the parent's.)
+
+  Verified by os_log trace at 21:59:32 (2026-05-18):
+  ```
+  engine: XpcGuiBridge ctor
+  engine: serverPort=100639
+  engine: sending set_server_port
+  sirius_gui_bridge: xpc_main starting
+  service: new peer connection
+  service: op=set_server_port
+  engine: set_server_port ok; ready_=true
+  ```
+
+- **What's still broken (architectural, deferred to its own session):**
+  The child (`sirius_plugin_host`) calls
+  `xpc_connection_create("com.larryseyer.siriuslooper.gui-bridge", ...)`
+  and gets routed to a **DIFFERENT bridge process** with empty state.
+  launchd spawns one bridge per requester:
+  ```
+  [pid/<engine_pid>/com.larryseyer.siriuslooper.gui-bridge [37633]: Successfully spawned
+  [pid/<child_pid>/com.larryseyer.siriuslooper.gui-bridge [37635]: Successfully spawned
+  ```
+  The cached `g_cachedServerPort` is process-local to each bridge
+  instance. The child's `get_server_port` against its own (fresh)
+  bridge returns no port.
+
+  Per Apple's design, **in-app XPC services in `Contents/XPCServices/`
+  are PRIVATE to each calling process's bundle scope.** They cannot
+  serve as a shared broker across unrelated processes. The S6 design
+  (one .xpc, both engine and child connect, broker holds the cached
+  port) is fundamentally incompatible with this. This was NOT
+  discoverable before instrumentation — the silent
+  `Connection invalid` from `launchctl_print user/$UID/...` masked
+  both the API misuse AND this design flaw.
+
+- **Why deferred (per `feedback_defer_big_design_to_own_session`):**
+  Fixing this needs a real architecture choice between four options,
+  each non-trivial. Listing for the next session to pick from:
+  1. **LaunchAgent install.** Bridge becomes a launchd-managed user-
+     session-scope service via a `.plist` in `~/Library/LaunchAgents/`.
+     Both engine and child connect via `xpc_connection_create_mach_service`
+     (the ORIGINAL API!) in the `gui/$UID` domain. Pro: minimal code
+     change. Con: requires one-time operator install step
+     (`launchctl bootstrap`); .plist needs a stable binary path.
+  2. **Engine acts as the XPC server.** Eliminates the bridge process
+     entirely. Engine creates a Mach service listener (anonymous or
+     well-known); child connects to it via name. Engine vends the
+     serverPort directly. Pro: no separate broker process. Con:
+     engine has to host an XPC listener — more code on the engine
+     side; needs careful lifecycle to not interfere with the audio
+     thread.
+  3. **Anonymous endpoint handoff.** Engine creates the bridge
+     connection in-process, gets an `xpc_endpoint_t`, serializes it,
+     passes to the child via spawn-time env var or arg. Child
+     reconstructs the endpoint with `xpc_connection_create_from_endpoint`.
+     Pro: keeps the bridge process; no launchd .plist. Con: serializing
+     XPC endpoints across `posix_spawn` is fiddly.
+  4. **socketpair + SCM_RIGHTS port descriptor.** Skip XPC entirely.
+     Engine and child share a UNIX socketpair from spawn time; engine
+     sends the Mach send-right via Mach port descriptor in a
+     `cmsghdr(SCM_RIGHTS)` ancillary message. Pro: no launchd
+     dependency. Con: rewrites the bridge as a Mach-layer primitive,
+     significant code change. Documented in
+     `docs/superpowers/specs/2026-05-18-m7-s6-design.md` as the
+     spec's fallback.
+  Most-professional-and-elegant pick per the operator's standing
+  preference is **Option 2 (engine as XPC server)** — eliminates the
+  bridge process, no install step, single source of truth. Confirm
+  before picking.
+
+- **What's needed to finish:**
+  1. Pick one of the four architecture options above (or a fifth I
+     haven't enumerated). Write a brief design doc in
+     `docs/superpowers/specs/2026-05-18-m7-s9-design.md`.
+  2. Implement the chosen path.
+  3. Verify via the existing os_log trace plus the manual eyes-on of
+     the synthetic CLAP debug button.
+  4. ctest stays green; add a new `[plugin-editor-xpc][in-app]`
+     integration case if the chosen design has a testable seam.
+  5. Update `continue.md` with the M7 S9 close.
+
+- **What is NOT a follow-on:** the
+  `docs/operator/macos-sandbox.md` Task 11 re-sign gap (S6 deviation
+  #2) is now closed by Step 5 above. Leave that doc updated to
+  reflect that the dev-loop Ninja generator now produces a
+  Developer-ID-signed `.app` with sealed CodeResources.

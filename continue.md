@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-18 (M7 S7 SHIPPED + eyes-on found XPC-bridge-unreachable; M7 S8 = XPC bridge debug)
+# Session Continuation — 2026-05-18 (M7 S8 partial-win: engine→bridge handshake landed; child→bridge needs new architecture for S9)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,28 +8,129 @@
 
 ---
 
-## RESUME HERE (2026-05-18 — M7 S7 + eyes-on follow-ups on origin/master; M7 S8 = XPC bridge debug)
+## RESUME HERE (2026-05-18 — M7 S8 partial-win on origin/master; M7 S9 = bridge architecture rework)
 
-> ## 🛑 PRIORITY-1 BUG (S8 must fix this first)
+> ## ✅ M7 S8 ENGINE PATH GREEN / 🛑 CHILD PATH BLOCKED (S9 = pick a new bridge architecture)
 >
-> **The XPC bridge is unreachable from inside the bundled .app.** The
-> engine's `PluginGuiBridge::instance().isReady()` returns false
-> forever; the child's `bootstrapXpcBridge` times out at 250 ms. No
-> cross-process CARemoteLayer pixels ever render — every editor open
-> hits the failed-to-load overlay even for the synthetic CLAP fixture
-> that passes the headless test. **All of S6's CARemoteLayer work is
-> blocked behind this until S8 fixes it.** Diagnosis hypotheses,
-> `launchctl` / `codesign` / `XPCService.ServiceType` debug steps,
-> and a non-XPC fallback path are documented below under "First
-> moves for the M7 S8 chat" + `todo.md` last entry. **Do not start
-> ANY other M7 work in S8 until this is resolved.**
+> S8 unblocked the **engine→bridge handshake**: signing fix (Developer
+> ID + identifier match + Info.plist binding + parent re-seal) plus
+> the correct XPC API (`xpc_connection_create`, not
+> `xpc_connection_create_mach_service`). os_log trace at 21:59:32:
+> ```
+> engine: sending set_server_port
+> sirius_gui_bridge: xpc_main starting
+> service: op=set_server_port
+> engine: set_server_port ok; ready_=true
+> ```
+> But the **child→bridge handshake hits an architectural wall**: in-app
+> XPC services in `Contents/XPCServices/` are PRIVATE per-process.
+> launchd spawns a SEPARATE bridge instance for the child, with empty
+> state. The "shared broker" pattern doesn't work via in-app XPC. The
+> operator-visible failed-to-load overlay still shows because the child
+> can't fetch the engine's serverPort. **S9 picks a new bridge
+> architecture** — LaunchAgent install / engine-as-XPC-server /
+> anonymous-endpoint handoff / socketpair-with-SCM_RIGHTS. Each option
+> + tradeoffs is enumerated in `todo.md` (the new M7 S8 partial-win
+> entry near the top). Recommended pick per "professional and elegant":
+> **engine-as-XPC-server** (eliminates the bridge process entirely).
+> Confirm before implementing.
+
+### What M7 S8 actually changed (files + behaviour)
+
+Five concrete edits, plus 5 commits (instrumentation, codesign,
+docs). Test count: **387/387** ctest still green (no regressions);
+`codesign --verify --deep --strict` on the dev `.app` now passes.
+
+| File | Change |
+|---|---|
+| `xpc_service/main.cpp` | `os_log` instrumentation throughout (`subsystem="com.larryseyer.siriuslooper"`, `category="gui-bridge"`); error-path logging with `XPC_ERROR_KEY_DESCRIPTION`. |
+| `host/src/PluginGuiBridge.cpp` | `os_log` instrumentation + switched `xpc_connection_create_mach_service` → `xpc_connection_create` (correct API for in-app XPC services). |
+| `host_process/main.cpp` | `os_log` instrumentation + same API switch. Note: child path still doesn't deliver — see "still broken" below. |
+| `xpc_service/CMakeLists.txt` | POST_BUILD `codesign --force --sign "Developer ID Application: Larry Seyer (RR5DY39W4Q)" --identifier "com.larryseyer.siriuslooper.gui-bridge" --options runtime --generate-entitlement-der`. Ad-hoc was AMFI-rejected (Code=-423). The `--identifier` flag is critical — without it, codesign defaults to the binary name, mismatching CFBundleIdentifier and breaking launchd registration. |
+| `app/CMakeLists.txt` | Two new POST_BUILDs: (a) Developer-ID re-sign of `sirius_plugin_host` after copy into `Contents/MacOS/`, (b) final Developer-ID re-sign of the parent `.app` AFTER all helper copies — NO `--deep` (that would clobber inner identifiers). Closes M7 S6 deviation #2 (re-sign gap). |
+
+**What works now (engine side):**
+
+- Engine's `XpcGuiBridge` ctor opens a connection to
+  `com.larryseyer.siriuslooper.gui-bridge` via `xpc_connection_create`.
+- launchd resolves the in-app bundle scope, spawns the .xpc binary
+  with a Developer-ID-trusted signature (AMFI accepts).
+- Bridge receives `set_server_port`, caches the port, replies `{"ok": true}`.
+- Engine's `ready_` atomic flips to true; `PluginGuiBridge::instance().isReady()` returns true.
+- `OutOfProcessEditorView`'s "bogus contextId" check now correctly
+  distinguishes real-vs-placeholder publish from the child.
+
+**What's still broken (child side, ARCHITECTURAL):**
+
+- Child's `bootstrapXpcBridge()` opens its OWN connection to
+  `com.larryseyer.siriuslooper.gui-bridge`. launchd spawns a **separate**
+  bridge process in the child's pid domain, with empty cached state.
+- Child's `get_server_port` returns no port. `g_engineServerPort` stays
+  `MACH_PORT_NULL`. `gui_cocoa.mm` falls back to the placeholder
+  counter contextId. Operator-visible failed-to-load overlay still
+  fires.
+- **Root cause**: in-app XPC services in `Contents/XPCServices/` are
+  PRIVATE per-calling-process. The S6 design assumed they could
+  function as a shared broker across unrelated processes (engine +
+  child); they can't. This is an Apple-API constraint, not a code bug.
+
+### First moves for the M7 S9 chat
+
+S9 = pick a new bridge architecture. Four options enumerated in
+`todo.md` (the 2026-05-18 M7 S8 partial-win entry):
+
+1. **LaunchAgent install** — bridge becomes a launchd-managed user-
+   session service; `.plist` in `~/Library/LaunchAgents/`; switch
+   back to `xpc_connection_create_mach_service`. Minimal code; needs
+   one-time operator install.
+2. **Engine as XPC server (RECOMMENDED)** — eliminates the bridge
+   process. Engine vends a Mach service listener; child connects by
+   name. No separate broker, no .plist, no install. Slightly more
+   engine-side code.
+3. **Anonymous endpoint handoff** — engine creates the bridge
+   connection in-process, serializes an `xpc_endpoint_t`, passes to
+   child via spawn-time env var; child reconstructs via
+   `xpc_connection_create_from_endpoint`. Keeps the bridge process.
+4. **socketpair + SCM_RIGHTS** — skip XPC entirely. Engine and child
+   share a UNIX socketpair; engine sends the Mach send-right via
+   `cmsghdr(SCM_RIGHTS)`. Largest code change. Documented in
+   `docs/superpowers/specs/2026-05-18-m7-s6-design.md` as the
+   fallback.
+
+**Recommended pick: Option 2 (engine as XPC server)** per the
+operator's "default to most professional and elegant" rule —
+eliminates an entire process from the deployment surface; no install
+step; one source of truth. Confirm with the operator before
+implementing.
+
+**Reproduce the partial-win:**
+
+```
+# Clean build + launch
+rm -rf build && cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build --target SiriusLooper
+
+# Watch the os_log live during operator click
+log stream --predicate 'subsystem == "com.larryseyer.siriuslooper"' &
+open "build/app/SiriusLooper_artefacts/Release/Sirius Looper.app"
+# Operator: click "Plugins" tab → "Open synthetic test plug-in (debug)"
+
+# Expected log: engine handshake succeeds (`set_server_port ok`), child
+# spawns its own bridge (`pid/<child_pid>/...gui-bridge`), child's
+# get_server_port returns no port, child logs `bootstrapXpcBridge ok
+# (serverPort=0)`, editor window shows failed-to-load overlay.
+```
+
+---
+
+**HISTORICAL — M7 S7 close + M7 S8 handoff (superseded 2026-05-18 — M7 S8 now partially shipped)**
 
 **M7 S7 is on `origin/master`** + 9 eyes-on follow-up commits also
-pushed. Current `origin/master` HEAD is `77b8012`. S7 feature-set
-close-out was at `1c52a36`; everything `1c52a36..5f384a9` is
-**post-S7 eyes-on session work** (UX bug fixes + diagnostic tooling
-+ operator-facing buttons + the XPC-bridge-unreachable discovery
-that S8 must address).
+pushed. Current `origin/master` HEAD before S8 was `77b8012`. S7
+feature-set close-out was at `1c52a36`; everything `1c52a36..5f384a9`
+is **post-S7 eyes-on session work** (UX bug fixes + diagnostic
+tooling + operator-facing buttons + the XPC-bridge-unreachable
+discovery that S8 partially fixed).
 
 ### Original S7 feature commits (1c6301e..1c52a36)
 
