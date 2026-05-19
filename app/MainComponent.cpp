@@ -1545,14 +1545,22 @@ void MainComponent::chooseFileAndSave()
         {
             const auto target = fc.getResult();
             if (target == juce::File()) return;
+            if (notificationBus_ == nullptr) return;
 
             // M8 S1: populate persistedSnapshot on every VersionPinning
             // entry before serializing so the saved JSON carries the
             // frozen plug-in identity needed for reopen-time drift
             // detection. Copy-on-write — unchanged subtrees stay shared
             // with the undo-stack version.
+            // M8 S2: the populator now consults the live host through a
+            // slot lookup. The real openEditorBusIds_-based lookup lands
+            // in Task 11; until then a nullopt lookup drives the
+            // descriptor-only fallback, reproducing M8 S1 behaviour
+            // (empty-state hash) so save still freezes plug-in identity.
+            const auto noSlot = [] (const sirius::Constituent&, std::size_t)
+                -> std::optional<sirius::SlotLocation> { return std::nullopt; };
             const auto populated = sirius::populateVersionPinningRecords (
-                undoStack_.current());
+                undoStack_.current(), effectChainHost_, noSlot, *notificationBus_);
             const auto json = persistence::serializeSession (*populated);
             if (target.replaceWithText (json))
                 preparationPane_->setStatus ("Saved to " + target.getFullPathName());
@@ -1583,8 +1591,18 @@ void MainComponent::chooseFileAndLoad()
                 // The Preparation pane's notification-history line picks
                 // up the message without any new UI code. Per white paper
                 // line 1500: warn, do not refuse — the session still loads.
+                // M8 S2: the verifier now consults the live host through a
+                // slot lookup. The real openEditorBusIds_-based lookup
+                // lands in Task 11; until then a nullopt lookup drives the
+                // descriptor-only fallback, reproducing M8 S1 drift
+                // detection against the saved snapshot.
                 if (notificationBus_ != nullptr)
-                    sirius::verifyVersionPinningOnLoad (*loaded, *notificationBus_);
+                {
+                    const auto noSlot = [] (const sirius::Constituent&, std::size_t)
+                        -> std::optional<sirius::SlotLocation> { return std::nullopt; };
+                    sirius::verifyVersionPinningOnLoad (
+                        *loaded, effectChainHost_, noSlot, *notificationBus_);
+                }
                 // The white paper Part 14.7 rule: load is an edit; preserve
                 // the existing undo history rather than wiping it. The
                 // operator can undo back to whatever was on screen before.

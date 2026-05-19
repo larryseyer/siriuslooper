@@ -63,6 +63,7 @@ add_executable(SiriusTests
     SharedMemorySpscQueueTests.cpp
     SharedMemoryRegionTests.cpp
     ArchivalModeTests.cpp
+    SessionSnapshotLiveStateTests.cpp
     ClapBundleLoaderTests.cpp
     ClapScannerTests.cpp
     PluginStateRegionTests.cpp

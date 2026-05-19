@@ -8,6 +8,7 @@
 #include "sirius/Constituent.h"
 #include "sirius/EffectChain.h"
 #include "sirius/INotificationSink.h"
+#include "sirius/OutOfProcessEffectChainHost.h"
 #include "sirius/PluginDescriptor.h"
 #include "sirius/Position.h"
 #include "sirius/Rational.h"
@@ -165,6 +166,23 @@ namespace
             Position (Rational (1)));
         *leaf = leaf->withEffectChain (EffectChain().withAppended (entry));
         return leaf;
+    }
+
+    // M8 S2 migration: the populator/verifier now consult a live host via a
+    // slot lookup. These M8 S1 tests have no live host wired, so a stub host
+    // plus a nullopt-returning lookup drives the descriptor-only fallback —
+    // which reproduces the M8 S1 behaviour (empty-state hash e3b0c4...b855)
+    // and keeps every existing assertion below valid.
+    sirius::OutOfProcessEffectChainHost& stubHost()
+    {
+        static sirius::OutOfProcessEffectChainHost host;
+        return host;
+    }
+
+    sirius::SlotLookup noSlotLookup()
+    {
+        return [] (const Constituent&, std::size_t)
+            -> std::optional<sirius::SlotLocation> { return std::nullopt; };
     }
 }
 
@@ -326,7 +344,9 @@ TEST_CASE ("populateVersionPinningRecords sets persistedSnapshot on VersionPinni
     REQUIRE_FALSE (entry.persistedSnapshot.has_value());
 
     auto root = leafWithEntry (entry);
-    auto populated = populateVersionPinningRecords (root);
+    RecordingSink populateSink;
+    auto populated = populateVersionPinningRecords (
+        root, stubHost(), noSlotLookup(), populateSink);
     REQUIRE (populated->effectChain()->size() == 1);
     const auto& populatedEntry = populated->effectChain()->at (0);
     REQUIRE (populatedEntry.persistedSnapshot.has_value());
@@ -347,7 +367,9 @@ TEST_CASE ("populateVersionPinningRecords leaves non-VersionPinning entries alon
     entry.descriptor   = descriptorFixture();
     entry.archivalMode = ArchivalMode::DeterminismContract;
     auto root = leafWithEntry (entry);
-    auto populated = populateVersionPinningRecords (root);
+    RecordingSink populateSink;
+    auto populated = populateVersionPinningRecords (
+        root, stubHost(), noSlotLookup(), populateSink);
     CHECK_FALSE (populated->effectChain()->at (0).persistedSnapshot.has_value());
 }
 
@@ -363,7 +385,9 @@ TEST_CASE ("populateVersionPinningRecords leaves WetCapture entries alone",
     entry.descriptor   = descriptorFixture();
     entry.archivalMode = ArchivalMode::WetCapture;
     auto root = leafWithEntry (entry);
-    auto populated = populateVersionPinningRecords (root);
+    RecordingSink populateSink;
+    auto populated = populateVersionPinningRecords (
+        root, stubHost(), noSlotLookup(), populateSink);
     CHECK_FALSE (populated->effectChain()->at (0).persistedSnapshot.has_value());
 }
 
@@ -378,7 +402,9 @@ TEST_CASE ("populateVersionPinningRecords is copy-on-write — original tree unc
     EffectChainEntry entry;
     entry.descriptor = descriptorFixture();
     auto root = leafWithEntry (entry);
-    auto populated = populateVersionPinningRecords (root);
+    RecordingSink populateSink;
+    auto populated = populateVersionPinningRecords (
+        root, stubHost(), noSlotLookup(), populateSink);
     CHECK_FALSE (root->effectChain()->at (0).persistedSnapshot.has_value());
     CHECK (populated->effectChain()->at (0).persistedSnapshot.has_value());
 }
@@ -412,7 +438,9 @@ TEST_CASE ("populateVersionPinningRecords shares unchanged sibling subtrees",
     *parent = parent->withChildAdded (changingChild)
                      .withChildAdded (stableChild);
 
-    auto populated = populateVersionPinningRecords (parent);
+    RecordingSink populateSink;
+    auto populated = populateVersionPinningRecords (
+        parent, stubHost(), noSlotLookup(), populateSink);
 
     REQUIRE (populated->children().size() == 2);
     // The first child got a snapshot — its pointer must have changed
@@ -436,7 +464,7 @@ TEST_CASE ("verifyVersionPinningOnLoad emits nothing when persistedSnapshot matc
 
     auto root = leafWithEntry (entry);
     RecordingSink sink;
-    verifyVersionPinningOnLoad (*root, sink);
+    verifyVersionPinningOnLoad (*root, stubHost(), noSlotLookup(), sink);
     CHECK (sink.records.empty());
 }
 
@@ -455,7 +483,7 @@ TEST_CASE ("verifyVersionPinningOnLoad emits Warning/PluginEvent on version drif
 
     auto root = leafWithEntry (entry);
     RecordingSink sink;
-    verifyVersionPinningOnLoad (*root, sink);
+    verifyVersionPinningOnLoad (*root, stubHost(), noSlotLookup(), sink);
     REQUIRE (sink.records.size() == 1);
     CHECK (sink.records[0].level    == NotificationLevel::Warning);
     CHECK (sink.records[0].category == Category::PluginEvent);
@@ -476,6 +504,6 @@ TEST_CASE ("verifyVersionPinningOnLoad skips entries without a persistedSnapshot
     // No persistedSnapshot.
     auto root = leafWithEntry (entry);
     RecordingSink sink;
-    verifyVersionPinningOnLoad (*root, sink);
+    verifyVersionPinningOnLoad (*root, stubHost(), noSlotLookup(), sink);
     CHECK (sink.records.empty());
 }

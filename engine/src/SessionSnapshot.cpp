@@ -1,11 +1,13 @@
 #include "sirius/SessionSnapshot.h"
 
 #include "sirius/EffectChain.h"
+#include "sirius/OutOfProcessEffectChainHost.h"
 #include "sirius/VersionPinningRecord.h"
 
 #include <array>
 #include <cstdio>
-#include <optional>
+#include <span>
+#include <string>
 #include <utility>
 
 namespace sirius
@@ -13,14 +15,88 @@ namespace sirius
 namespace
 {
 
-/// Walks the input tree depth-first. For each Constituent that carries
-/// an EffectChain, rebuilds the chain with persistedSnapshot populated
-/// on any VersionPinning entry that doesn't already have one.
-/// Returns a new Constituent (shared_ptr<const Constituent>) reflecting
-/// the populated tree; subtrees with no VersionPinning changes are
-/// shared with the input.
+/// Resolves the live VersionPinningRecord for one entry. Consults the
+/// host via `lookup` for the slot's actual descriptor + state bytes.
+/// Falls back to a descriptor-only record with an empty state blob when
+/// the slot isn't configured (nested chain ahead of host wiring) OR when
+/// the host can't produce a state blob (timeout / unsupported).
+VersionPinningRecord computeLiveRecord (
+    const EffectChainEntry&            entry,
+    const OutOfProcessEffectChainHost& host,
+    const SlotLookup&                  lookup,
+    const Constituent&                 owning,
+    std::size_t                        entryIndex)
+{
+    const auto fallback = [&] {
+        return makeVersionPinningRecord (entry.descriptor, {});
+    };
+
+    const auto loc = lookup (owning, entryIndex);
+    if (! loc.has_value())
+        return fallback();
+
+    const auto desc = host.descriptorForSlot (loc->busId, loc->slotIndex);
+    if (! desc.has_value())
+        return fallback();
+
+    const auto blob = host.stateBlobForSlot (loc->busId, loc->slotIndex);
+    if (! blob.has_value())
+    {
+        // The host already posted a Warning notification on timeout.
+        // Fall back to a descriptor-only record so the save completes.
+        return makeVersionPinningRecord (*desc, {});
+    }
+    return makeVersionPinningRecord (
+        *desc, std::span<const std::byte> (blob->data(), blob->size()));
+}
+
+void postRepinNotification (INotificationSink& sink,
+                            const std::string& uniqueId,
+                            const std::string& oldVersion,
+                            const std::string& newVersion)
+{
+    std::array<char, 128> msg {};
+    std::snprintf (msg.data(), msg.size(),
+                   "plug-in version repinned: %s old=%s new=%s",
+                   uniqueId.c_str(), oldVersion.c_str(), newVersion.c_str());
+    sink.post (NotificationLevel::Info, Category::PluginEvent, msg.data());
+}
+
+void postDriftNotification (INotificationSink&          sink,
+                            const VersionPinningRecord& expected,
+                            const VersionPinningRecord& found)
+{
+    // Reordered format (M8 S2): hashes first so the fixed 128-byte
+    // NotificationBus truncation eats the uniqueId tail (least
+    // diagnostic) rather than the hashes (most diagnostic). An 8-char
+    // hash prefix fingerprints the state blob without bloating the
+    // notification budget.
+    const auto hashPrefix = [] (const std::string& full) {
+        return full.size() >= 8 ? full.substr (0, 8) : full;
+    };
+    std::array<char, 128> msg {};
+    std::snprintf (msg.data(), msg.size(),
+                   "version drift eh=%s fh=%s ev=%s fv=%s id=%s",
+                   hashPrefix (expected.stateBlobSha256).c_str(),
+                   hashPrefix (found.stateBlobSha256).c_str(),
+                   expected.version.c_str(),
+                   found.version.c_str(),
+                   expected.uniqueId.c_str());
+    sink.post (NotificationLevel::Warning, Category::PluginEvent, msg.data());
+}
+
+/// Walks the input tree depth-first. For each Constituent that carries an
+/// EffectChain, recomputes the live record on every VersionPinning entry
+/// (always-refresh — no `!has_value()` guard; an upgrade between save-A
+/// and save-B must re-pin to the new version). Posts a repin notification
+/// when the prior snapshot differed. Returns a new Constituent reflecting
+/// the populated tree; subtrees with no VersionPinning changes are shared
+/// with the input.
 std::shared_ptr<const Constituent> walkAndPopulate (
-    std::shared_ptr<const Constituent> node)
+    std::shared_ptr<const Constituent> node,
+    const OutOfProcessEffectChainHost& host,
+    const SlotLookup&                  lookup,
+    INotificationSink&                 sink)
 {
     std::optional<Constituent> rebuilt;
     auto materialize = [&]() -> Constituent& {
@@ -37,20 +113,28 @@ std::shared_ptr<const Constituent> walkAndPopulate (
         for (std::size_t i = 0; i < chain.size(); ++i)
         {
             EffectChainEntry entry = chain.at (i);
-            // M8 S1: only fill an empty optional. Re-save never refreshes
-            // a stale snapshot because the descriptor IS the source of
-            // truth in S1 (no live host query yet) — repinning would be
-            // a no-op. M8 S2 must drop the `! has_value()` guard once
-            // `OutOfProcessEffectChainHost::descriptorForSlot` /
-            // `stateBlobForSlot` are wired; otherwise a v1.0.0→v1.0.1
-            // upgrade between save-A and save-B silently re-pins to the
-            // old version.
-            if (entry.archivalMode == ArchivalMode::VersionPinning
-                && ! entry.persistedSnapshot.has_value())
+
+            if (entry.archivalMode == ArchivalMode::VersionPinning)
             {
-                entry.persistedSnapshot = makeVersionPinningRecord (entry.descriptor, {});
-                chainChanged = true;
+                const auto fresh = computeLiveRecord (entry, host, lookup, *node, i);
+
+                if (entry.persistedSnapshot.has_value()
+                    && ! entry.persistedSnapshot->matches (fresh))
+                {
+                    postRepinNotification (sink,
+                                           entry.descriptor.uniqueId,
+                                           entry.persistedSnapshot->version,
+                                           fresh.version);
+                }
+
+                if (! entry.persistedSnapshot.has_value()
+                    || ! entry.persistedSnapshot->matches (fresh))
+                {
+                    entry.persistedSnapshot = fresh;
+                    chainChanged = true;
+                }
             }
+
             newChain = newChain.withAppended (std::move (entry));
         }
         if (chainChanged)
@@ -63,7 +147,7 @@ std::shared_ptr<const Constituent> walkAndPopulate (
     for (std::size_t i = 0; i < node->children().size(); ++i)
     {
         const auto& original = node->children()[i];
-        auto populated = walkAndPopulate (original);
+        auto populated = walkAndPopulate (original, host, lookup, sink);
         if (populated.get() != original.get())
         {
             auto& r = materialize();
@@ -76,7 +160,10 @@ std::shared_ptr<const Constituent> walkAndPopulate (
     return std::make_shared<const Constituent> (std::move (*rebuilt));
 }
 
-void walkAndVerify (const Constituent& node, INotificationSink& sink)
+void walkAndVerify (const Constituent&                 node,
+                    const OutOfProcessEffectChainHost& host,
+                    const SlotLookup&                  lookup,
+                    INotificationSink&                 sink)
 {
     if (node.hasEffectChain())
     {
@@ -87,41 +174,36 @@ void walkAndVerify (const Constituent& node, INotificationSink& sink)
             if (! entry.persistedSnapshot.has_value())
                 continue;
 
-            const auto live = makeVersionPinningRecord (entry.descriptor, {});
+            const auto live = computeLiveRecord (entry, host, lookup, node, i);
             if (entry.persistedSnapshot->matches (live))
                 continue;
 
-            // Format a compact drift message. The fixed 128-byte
-            // NotificationBus buffer truncates; keep the message well
-            // under the limit by naming only the unique id + expected/
-            // found versions (the two most-actionable fields for an
-            // operator triaging the drift line item).
-            std::array<char, 128> msg {};
-            std::snprintf (msg.data(), msg.size(),
-                           "plug-in version drift: %s expected=%s found=%s",
-                           entry.descriptor.uniqueId.c_str(),
-                           entry.persistedSnapshot->version.c_str(),
-                           live.version.c_str());
-            sink.post (NotificationLevel::Warning, Category::PluginEvent, msg.data());
+            postDriftNotification (sink, *entry.persistedSnapshot, live);
         }
     }
 
     for (const auto& child : node.children())
-        walkAndVerify (*child, sink);
+        walkAndVerify (*child, host, lookup, sink);
 }
 
 } // namespace
 
 std::shared_ptr<const Constituent> populateVersionPinningRecords (
-    std::shared_ptr<const Constituent> root)
+    std::shared_ptr<const Constituent> root,
+    const OutOfProcessEffectChainHost& host,
+    SlotLookup                         lookup,
+    INotificationSink&                 sink)
 {
-    return walkAndPopulate (std::move (root));
+    return walkAndPopulate (std::move (root), host, lookup, sink);
 }
 
-void verifyVersionPinningOnLoad (const Constituent& loadedRoot,
-                                 INotificationSink& sink)
+void verifyVersionPinningOnLoad (
+    const Constituent&                 loadedRoot,
+    const OutOfProcessEffectChainHost& host,
+    SlotLookup                         lookup,
+    INotificationSink&                 sink)
 {
-    walkAndVerify (loadedRoot, sink);
+    walkAndVerify (loadedRoot, host, lookup, sink);
 }
 
 } // namespace sirius

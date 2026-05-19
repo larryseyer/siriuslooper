@@ -39,6 +39,7 @@ target_link_libraries(SiriusEngine
     PUBLIC  Sirius::Core
     PRIVATE juce::juce_core
             Sirius::Persistence
+            Sirius::Host
             soxr)
 
 add_library(Sirius::Engine ALIAS SiriusEngine)
