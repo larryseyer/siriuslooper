@@ -251,6 +251,11 @@ private:
 
     /// Reaps the child non-blockingly. Returns true if the child is gone.
     bool reapIfExited() noexcept;
+
+    /// Creates the M8 S2 state shm region (CreateExclusive) and inits the
+    /// PluginStateState in place. Tolerates shm_open failure by leaving
+    /// `stateRegion_`/`stateState_` null — both constructors call this.
+    void createStateRegion();
 };
 
 } // namespace sirius

@@ -41,6 +41,11 @@ namespace
     /// deadlock as a `sendBytes` failure rather than a hang.
     constexpr int kRingPushTimeoutMs = 100;
 
+    /// Poll-sleep interval while the message thread waits on a state
+    /// save/load response from the child. Shared by requestStateSave and
+    /// requestStateLoad.
+    constexpr auto kStatePollInterval = std::chrono::microseconds (100);
+
     /// Spawn the host child. `instanceId` is forwarded via `--instance-id`
     /// (also used by the child as the shm segment name root). On success
     /// `outPid` holds the live pid; on failure it stays -1.
@@ -137,18 +142,7 @@ OutOfProcessPluginInstance::OutOfProcessPluginInstance (const juce::File& hostBi
     // M8 S2 — per-instance state region for clap_plugin_state save/load
     // IPC. Independent of the rings/GUI region: a failure here leaves the
     // instance otherwise functional, so it has its own try/catch.
-    try
-    {
-        stateRegion_ = std::make_unique<SharedMemoryRegion> (
-            makeStateRegionName (instanceId_), sizeof (PluginStateState),
-            SharedMemoryRegion::Mode::CreateExclusive);
-        stateState_ = PluginStateState::initInPlace (stateRegion_->data());
-    }
-    catch (const std::exception&)
-    {
-        stateRegion_.reset();
-        stateState_ = nullptr;
-    }
+    createStateRegion();
 
     spawnHostChild (hostBinaryPath.getFullPathName().toStdString(),
                     instanceId_, "identity", {}, childPid_);
@@ -195,6 +189,16 @@ OutOfProcessPluginInstance::OutOfProcessPluginInstance (const juce::File& hostBi
     }
 
     // M8 S2 — per-instance state region (see identity-mode ctor above).
+    createStateRegion();
+
+    spawnHostChild (hostBinaryPath.getFullPathName().toStdString(),
+                    instanceId_, "clap",
+                    clapPluginBundle.getFullPathName().toStdString(),
+                    childPid_);
+}
+
+void OutOfProcessPluginInstance::createStateRegion()
+{
     try
     {
         stateRegion_ = std::make_unique<SharedMemoryRegion> (
@@ -207,11 +211,6 @@ OutOfProcessPluginInstance::OutOfProcessPluginInstance (const juce::File& hostBi
         stateRegion_.reset();
         stateState_ = nullptr;
     }
-
-    spawnHostChild (hostBinaryPath.getFullPathName().toStdString(),
-                    instanceId_, "clap",
-                    clapPluginBundle.getFullPathName().toStdString(),
-                    childPid_);
 }
 
 OutOfProcessPluginInstance::~OutOfProcessPluginInstance()
@@ -557,7 +556,7 @@ bool OutOfProcessPluginInstance::requestStateSave (
     {
         if (stateState_->responseSeq.load (std::memory_order_acquire) >= seq)
             break;
-        std::this_thread::sleep_for (std::chrono::microseconds (100));
+        std::this_thread::sleep_for (kStatePollInterval);
     }
 
     if (stateState_->responseSeq.load (std::memory_order_acquire) < seq)
@@ -568,6 +567,13 @@ bool OutOfProcessPluginInstance::requestStateSave (
         return false;
 
     const auto n = stateState_->responseBytes.load (std::memory_order_relaxed);
+    // Cross-process trust boundary: the child reports its own payload size,
+    // but responsePayload is exactly kMaxStateBytes — anything larger is a
+    // protocol violation. Clamping here also keeps `noexcept` honest by
+    // bounding the resize allocation (and the memcpy read) to 64 KiB, so a
+    // buggy/malicious child can't trigger an over-read or std::bad_alloc.
+    if (n > PluginStateState::kMaxStateBytes)
+        return false;
     outBytes.resize (n);
     std::memcpy (outBytes.data(), stateState_->responsePayload, n);
     return true;
@@ -593,7 +599,7 @@ bool OutOfProcessPluginInstance::requestStateLoad (
     {
         if (stateState_->responseSeq.load (std::memory_order_acquire) >= seq)
             break;
-        std::this_thread::sleep_for (std::chrono::microseconds (100));
+        std::this_thread::sleep_for (kStatePollInterval);
     }
 
     if (stateState_->responseSeq.load (std::memory_order_acquire) < seq)
