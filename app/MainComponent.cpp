@@ -718,9 +718,10 @@ public:
         setUsingNativeTitleBar (true);
         setResizable (true, /*useBottomRightCornerResizer*/ false);
 
-        // Initial size — replaced by the plug-in's preferred size once the
-        // editor view's polling timer detects the child's first contextId
-        // publish (typically <100 ms after spawn).
+        // Initial size — the DocumentWindow keeps this for S7. The
+        // embedded OutOfProcessEditorView rebinds its own bounds to the
+        // child's published CARemoteLayer contextId, but doesn't (yet)
+        // resize the parent window. Operator can resize manually.
         auto* view = new sirius::OutOfProcessEditorView (host, busId, /*slot*/ 0);
         view->setSize (600, 400);
         setContentOwned (view, /*resizeToFitContent*/ true);
