@@ -12,6 +12,7 @@
 
 add_library(SiriusHost STATIC
     src/ClapBundleLoader.cpp
+    src/ClapScanner.cpp
     src/PluginScanner.cpp
     src/GenericParameterView.cpp
     src/OutOfProcessPluginInstance.cpp
