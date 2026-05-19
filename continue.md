@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-18 (M7 S9 shipped: Reaper-style separate plug-in windows; cross-process compositing scaffolding deleted)
+# Session Continuation — 2026-05-19 (M7 S9 fully shipped: eyes-on verified; library-validation entitlement landed)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,78 +8,73 @@
 
 ---
 
-## RESUME HERE (2026-05-18 — M7 S9 on origin/master; eyes-on click of the synthetic-CLAP debug button is the only remaining S9 verify step)
+## RESUME HERE (2026-05-19 — M7 S9 FULLY SHIPPED, eyes-on verified; pick the next M7 followup)
 
-> ## ✅ M7 S9 SHIPPED (architecture pivot to Reaper-style separate plug-in windows; -1252 LOC net)
+> ## ✅ M7 S9 FULLY SHIPPED (Reaper-style separate plug-in windows; eyes-on confirmed end-to-end)
 >
-> S9 had a dramatic execution: the **original socketpair + SCM_RIGHTS
-> plan was empirically refuted** within the first hour. Four
-> cross-process mach-port-transfer paths were tried with PoC code,
-> each failing with documented evidence (errno=EBADF, runtime
-> exceptions, missing API surfaces). Operator then surfaced the right
-> question — *"why don't we follow Reaper's method?"* — and the
-> architecture pivoted: **let the child process own its own top-level
-> NSWindow per plug-in editor** instead of trying to embed pixels
-> inside the engine's window via CARemoteLayer.
+> S9 went through three phases:
 >
-> This is how every other professional DAW on macOS handles it (Logic,
-> Live, Reaper, Studio One, FL Studio). The whole M7 S6-S8 cross-
-> process pixel-transport pipeline (XPC bridge, CARemoteLayer*,
-> PluginGuiBridge, OutOfProcessEditorView, IGuiBridge, the entire
-> `xpc_service/` directory) is **deleted**. The M7 S5 PluginGuiState
-> shm IPC contract survives unchanged; only the semantics of
-> `responseContextId` shift from "real CALayer client id" to
-> "boolean-ish editor-open marker."
->
-> **HEAD: `6119334`** (pushed to origin/master).
-> Test count: **381/381 ctest green** (was 387 at S7; net change: -3
-> PluginGuiBridge cases deleted, -3 CARemoteLayer cases deleted, +0
-> new — the surviving 379 + 2 MainComponentPluginEditorTests cases
-> cover the new path through the existing request/response IPC).
-> Bundle: `Contents/XPCServices/` absent; `Contents/MacOS/` contains
-> only `Sirius Looper` + `sirius_plugin_host`. `codesign --verify
-> --deep --strict` passes. The .app launched cleanly during the
-> session-end smoke test.
+> 1. **Architecture pivot** (2026-05-18). The original socketpair +
+>    `SCM_RIGHTS` plan was empirically refuted within the first hour
+>    after four cross-process mach-port-transfer paths each failed with
+>    documented evidence (`errno=EBADF`, runtime exceptions, missing
+>    API surfaces). Operator surfaced the right question — *"why don't
+>    we follow Reaper's method?"* — and the architecture pivoted:
+>    **the child process owns its own top-level NSWindow per plug-in
+>    editor.** Every other professional DAW on macOS ships plug-ins
+>    this way (Logic, Live, Reaper, Studio One, FL Studio).
+> 2. **Implementation + deletion** (2026-05-18). The whole M7 S6-S8
+>    cross-process pixel-transport pipeline (XPC bridge,
+>    CARemoteLayer*, PluginGuiBridge, OutOfProcessEditorView,
+>    IGuiBridge, the entire `xpc_service/` directory) was **deleted**
+>    (-1252 LOC net). The M7 S5 PluginGuiState shm IPC contract
+>    survives unchanged; only the semantics of `responseContextId`
+>    shift from "real CALayer client id" to "boolean-ish editor-open
+>    marker" (`1` = open, `0` = closed).
+> 3. **Eyes-on verification + library-validation fix** (2026-05-19,
+>    this session). Operator launched the .app and clicked the
+>    synthetic-CLAP debug button. First click loaded nothing — stderr
+>    showed `dlopen(.../SyntheticTestPlugin.clap/...) failed: code
+>    signature ... not valid for use in process: mapping process and
+>    mapped file (non-platform) have different Team IDs`. Root cause:
+>    the M7 S8 Developer-ID re-sign of `sirius_plugin_host` added
+>    `--options runtime` (hardened runtime) but no
+>    `--entitlements`, so the hardened child refused to dlopen any
+>    plug-in not signed by the same Team ID. Fix: a new
+>    `host_process/sirius_plugin_host.entitlements` declaring
+>    `com.apple.security.cs.disable-library-validation = true`, wired
+>    into `app/CMakeLists.txt`'s child-codesign step via
+>    `--entitlements`. This is the textbook pro-audio plug-in-host
+>    entitlement — exactly what Logic / Live / Reaper ship. After the
+>    fix, operator confirmed end-to-end: child-owned NSWindow appears,
+>    synthetic plug-in's blue NSView renders inside (the entire
+>    content area is the plug-in's color), close-X works, can be
+>    reopened, no orphan processes after .app exit, stderr clean
+>    throughout.
 
-### The ONE thing left before S9 is fully verified
+### What landed today (2026-05-19, the eyes-on session)
 
-**Eyes-on click of the synthetic-CLAP debug button.** Build is on
-origin/master. The headless lifecycle tests pass; the .app launches
-without crashing; but I (Claude) cannot synthesize a click on the
-"Open synthetic test plug-in (debug)" button. **Operator must do this
-once** before S9 is closed:
+| File | Change |
+|---|---|
+| `host_process/sirius_plugin_host.entitlements` | **New.** Single key: `com.apple.security.cs.disable-library-validation = true`. Required for the hardened child to dlopen any third-party plug-in not signed by the Sirius Team ID. |
+| `app/CMakeLists.txt` | Added `--entitlements "${CMAKE_SOURCE_DIR}/host_process/sirius_plugin_host.entitlements"` to the Developer-ID re-sign of the embedded `sirius_plugin_host` (Ninja/Make path). The Xcode-generator path uses the JUCE-driven entitlements and is unaffected by this change. |
+| `continue.md` | This RESUME HERE block flipped to "fully shipped." |
 
-```
-# 1. (Optional) live os_log capture
-log stream --predicate 'subsystem == "com.larryseyer.siriuslooper"' &
+### S9 acceptance check (final, post-eyes-on)
 
-# 2. Launch the .app (clean build is already on origin/master)
-open "build/app/SiriusLooper_artefacts/Release/Sirius Looper.app"
-
-# 3. In the .app: Plugins tab → "Open synthetic test plug-in (debug)"
-# Expected: a NEW top-level window appears (owned by sirius_plugin_host),
-# titled "Plug-in editor", containing the synthetic plug-in's blue NSView.
-# NO failed-to-load overlay (that whole code path is gone).
-# Close the window via the X button — the engine sees responseContextId=0
-# on the next 30 Hz poll cycle.
-
-# 4. After close, no orphan processes:
-ps -ax | grep -E "sirius_plugin_host|sirius_gui_bridge" | grep -v grep
-# Expected: nothing.
-```
-
-If the editor window appears + the plug-in's NSView is visible + the
-close button works: **M7 S9 is done.** Update this RESUME HERE block
-to mark S9 fully shipped and move on to M7 followups (VST3/AU hosting,
-out-of-process scanner, FabFilter filter removal).
-
-If anything is broken — e.g. the NSWindow never appears, or events
-don't dispatch into the plug-in NSView — it's almost certainly the
-AppKit event-drain pattern in the child's pump loop
-(`sirius_appkit_drain_events()` in `host_process/gui_cocoa.mm` +
-`host_process/main.cpp`). Fallback: move the audio pump to a
-background thread and call `[NSApp run]` on main (documented in the
-S9 design doc Risk Register).
+- ✅ Clean rebuild from `rm -rf build`.
+- ✅ `codesign --verify --deep --strict` on the .app: clean.
+- ✅ Child binary `sirius_plugin_host` carries the
+  `disable-library-validation` entitlement (verified via
+  `codesign -dv --entitlements -`).
+- ✅ Headless `bash bash/test-s7.sh`: all assertions pass.
+- ✅ Operator click → blue editor window appears (child-owned NSWindow
+  with the synthetic plug-in's NSView rendering).
+- ✅ Operator close-X → window dies, engine state cleans up, can be
+  reopened cleanly.
+- ✅ After .app quit: zero orphan `sirius_plugin_host` or
+  `sirius_gui_bridge` processes.
+- ✅ Stderr empty (no XPC errors — the whole XPC path is gone).
 
 ### What M7 S9 actually changed (files + behaviour)
 
@@ -139,28 +134,34 @@ to lock SMAppService — then asked "why don't we follow Reaper?" The
 Reaper-style pivot dodged the whole class of problems by letting the
 child own its NSWindow directly.
 
-### Followups queued (not in S9)
+### Followups queued (next milestone pick — operator chooses)
 
-1. **Out-of-process plug-in scanner.** Current `PluginScanner.cpp`
+1. **VST3 + AU hosting in `sirius_plugin_host`** — operator's library
+   is mostly VST3/AU; child currently only handles CLAP. Biggest
+   operator-facing capability gap. Likely M7 S10 if "most professional
+   and elegant" path is taken.
+2. **Audio-ring SPSC violation** (S5 deviation #1) — RT-path
+   discipline fix; was the S8 candidate, promoted to S10 candidate
+   behind the bridge fix. Now that bridge work is done (via
+   deletion), genuinely next on the RT side.
+3. **Out-of-process plug-in scanner.** Current `PluginScanner.cpp`
    uses JUCE's `PluginDirectoryScanner` which instantiates each
    plug-in IN-PROCESS. One bad plug-in = engine crash mid-scan.
-   Tracked in `todo.md` (2026-05-18 entry). Reaper does
-   spawn-per-scan via a sidecar binary; that pattern would close the
-   only remaining "bad plug-in kills the engine" attack surface.
-   Wait until VST3/AU hosting lands.
-2. **VST3 + AU hosting in `sirius_plugin_host`** — operator's library
-   is mostly VST3/AU; child currently only handles CLAP.
-3. **`PluginScanner` "FabFilter" testing-filter removal** — separate
-   cleanup; tracked in `todo.md`.
-4. **Audio-ring SPSC violation** (S5 deviation #1) — was the
-   S8 candidate; promoted to S10 candidate behind the bridge fix.
-   Now that bridge work is done (via deletion), this is genuinely
-   next.
-5. **`PluginEditorWindow` resize-to-preferred-size** — moot, the
-   class is gone. The child's NSWindow already resizes from the
-   plug-in's preferred size at show time.
-6. **Notarization / CI signing** — `get-task-allow=true` todo entry
-   remains open and is independent.
+   Reaper spawns a sidecar per scan. Wait until VST3/AU hosting
+   lands so the scanner doesn't have to re-architect twice.
+4. **`PluginScanner` "FabFilter" testing-filter removal** — separate
+   cleanup; the hardcoded name filter was added during M7 S7 to
+   shrink scan time on the operator's 1000+ plug-in install. Must be
+   removed before any real shipping. Tracked in `todo.md`.
+5. **Notarization / CI signing** — `get-task-allow=true` `todo.md`
+   entry remains open and is independent of all of the above. The
+   `disable-library-validation` entitlement landed today is
+   notarization-compatible (Apple accepts it for plug-in-host
+   processes; many shipping DAWs use it).
+6. **`PluginGuiBridge` removal in the V7 plan** — the plan file
+   `docs/superpowers/plans/2026-05-17-v7-alignment.md` may still
+   reference the bridge in M7's per-session block. Worth a sweep at
+   the next M7 session to keep the plan honest.
 
 ### Quick reference for the next chat
 
@@ -168,17 +169,28 @@ child own its NSWindow directly.
   (auto-builds anything missing).
 - **Launch the .app:** double-click
   `/Users/larryseyer/Desktop/Sirius Looper` (symlink) OR `open
-  "build/app/SiriusLooper_artefacts/Release/Sirius Looper.app"`.
-- **Live os_log capture (Apple-only, useful for debugging the
-  child):** `log stream --predicate 'subsystem ==
-  "com.larryseyer.siriuslooper"'`.
+  "build/app/SiriusLooper_artefacts/Release/Sirius Looper.app"`. For
+  child-stderr capture during debugging, launch the binary directly:
+  `"build/app/SiriusLooper_artefacts/Release/Sirius Looper.app/Contents/MacOS/Sirius Looper" 2>/tmp/sirius-app.log &`.
+- **No `os_log` instrumentation exists in the host process after
+  S9** — the S8-era `os_log` calls were deleted along with the XPC
+  bridge. The child writes diagnostics to `stderr` via
+  `std::fprintf`. The `log stream` predicate
+  `subsystem == "com.larryseyer.siriuslooper"` will return nothing;
+  use direct-binary launch + stderr redirect instead.
 - **Bundle path inside the .app:** `/Contents/MacOS/` has only
   `Sirius Looper` + `sirius_plugin_host`. No `Contents/XPCServices/`,
   no `Contents/Library/LaunchAgents/`.
+- **`sirius_plugin_host` entitlements:**
+  `host_process/sirius_plugin_host.entitlements` →
+  `com.apple.security.cs.disable-library-validation = true`. Without
+  this, the hardened child cannot dlopen any plug-in not signed by
+  Team `RR5DY39W4Q`. Verify via
+  `codesign -dv --entitlements - "$BUNDLE/Contents/MacOS/sirius_plugin_host"`.
 
 ---
 
-## HISTORICAL — M7 S8 partial-win + M7 S9 plan (superseded 2026-05-18 — M7 S9 now shipped with a different architecture)
+## HISTORICAL — M7 S8 partial-win + M7 S9 plan + S9 initial commit (superseded 2026-05-19 — M7 S9 now fully shipped after eyes-on + entitlement fix)
 
 > Original S8 close + S9 plan below: S8 unblocked the engine→bridge handshake but child→bridge was architecturally blocked. The S9 plan picked "engine-as-XPC-server" but every elegant variant failed empirically; the final shipped architecture (Reaper-style separate windows) is documented above.
 
