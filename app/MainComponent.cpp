@@ -1671,6 +1671,18 @@ void MainComponent::openPluginEditor (const PluginDescriptor& descriptor)
     editorWindows_.push_back (std::move (window));
 }
 
+std::int64_t MainComponent::firstOpenBusIdForTesting() const noexcept
+{
+    if (editorWindows_.empty())
+        return -1;
+    return editorWindows_.front()->busId();
+}
+
+std::int64_t MainComponent::childPidForTestingAtBusId (std::int64_t busId) const noexcept
+{
+    return effectChainHost_.childPidForTestingAtSlot (busId, 0);
+}
+
 void MainComponent::closePluginEditor (std::int64_t busId)
 {
     // Empty chain → host's stale-slot eraser removes the slot in

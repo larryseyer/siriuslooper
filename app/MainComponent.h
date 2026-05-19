@@ -61,6 +61,16 @@ public:
     void resized() override;
     void paint (juce::Graphics& g) override;
 
+    // Test-only accessors (M7 S7). Exposed because MainComponentPluginEditorTests
+    // exercises the openPluginEditor / closePluginEditor lifecycle from a
+    // headless harness; these are not part of the operator surface.
+    juce::File   hostBinaryPathForTesting()         const { return hostBinaryPath(); }
+    std::size_t  editorWindowCountForTesting()      const noexcept { return editorWindows_.size(); }
+    std::int64_t firstOpenBusIdForTesting()         const noexcept;
+    std::int64_t childPidForTestingAtBusId (std::int64_t busId) const noexcept;
+    void         openPluginEditorForTesting  (const PluginDescriptor& d) { openPluginEditor  (d); }
+    void         closePluginEditorForTesting (std::int64_t busId)        { closePluginEditor (busId); }
+
     void mouseDown (const juce::MouseEvent& e) override;
     void mouseUp   (const juce::MouseEvent& e) override;
 

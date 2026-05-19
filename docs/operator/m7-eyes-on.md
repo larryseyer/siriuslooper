@@ -1,6 +1,6 @@
 # M7 — Out-of-process plug-in hosting — Operator Eyes-on Procedure
 
-**Last updated:** 2026-05-18 (M7 S6)
+**Last updated:** 2026-05-18 (M7 S7)
 
 ## Why this exists
 
@@ -40,12 +40,14 @@ ctest runs the engine headless from `build/`. CARemoteLayer's cross-process GPU 
    open "build/app/SiriusLooper_artefacts/Release/Sirius Looper.app"
    ```
 
-4. M20+ adds a "Add plug-in" UI. Until then, the eyes-on flow uses an instrumented developer build that calls `OutOfProcessEditorView` directly from a debug menu (TODO: that menu still needs to be added — track in the M20+ session). When the editor surface renders, the colour the operator sees tells the story:
+4. Open the app's **Plugins** tab. If no descriptors are listed, click **"Scan a plugin folder..."** and pick a folder containing a CLAP plug-in (the synthetic test plug-in builds at `build/tests/fixtures/SyntheticTestPlugin.clap` — use the `build/tests/fixtures/` folder for the smoke).
+
+5. Click the **Open editor** button on a descriptor row. A floating window appears with the plug-in's editor. The colour the operator sees tells the story:
 
    - **A flat coloured rectangle (purple-ish, hue shifts per restart)** — bridge is missing, child fell back to the S5 placeholder. Open Console.app and filter for `sirius_plugin_host` — the line `XPC bridge timeout (250 ms); falling back to S5 placeholder editor surface` should be visible.
    - **The synthetic plug-in's actual NSView contents** — success. CARemoteLayer is composing the child's CALayer tree into the engine's window via the window-server.
 
-5. To prove the supervisor-restart re-publication path:
+6. Verify the supervisor-restart re-publication path (optional):
 
    - Open the synthetic plug-in's editor (you should see real content).
    - In another terminal: `killall sirius_plugin_host`.
@@ -69,4 +71,4 @@ If a real CLAP plug-in isn't handy, the synthetic test plug-in built by `tests/f
 build/tests/fixtures/SyntheticTestPlugin.clap
 ```
 
-The integration tests (`tests/OutOfProcessEditorTests.cpp`) load it via `SIRIUS_SYNTHETIC_CLAP_PATH`. When the production "Add plug-in" UI lands (M20+), point it at this `.clap` for the smoke. Until then, the integration tests are the only programmatic exercise of the editor surface — they pass on the placeholder fallback path; pixels-on-screen requires the eyes-on procedure above.
+The integration tests (`tests/OutOfProcessEditorTests.cpp`) load it via `SIRIUS_SYNTHETIC_CLAP_PATH`. Point the Plugins tab's **"Scan a plugin folder..."** at `build/tests/fixtures/` to use it in the eyes-on flow above. Pixels-on-screen compositing requires the operator launch procedure; the headless tests cover the IPC + lifecycle contracts only.

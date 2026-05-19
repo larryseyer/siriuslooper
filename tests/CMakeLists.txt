@@ -112,3 +112,46 @@ add_dependencies(SiriusTests sirius_plugin_host SyntheticTestPlugin)
 
 include(Catch)
 catch_discover_tests(SiriusTests)
+
+# =============================================================================
+# MainComponentPluginEditorTests — separate executable (M7 S7)
+# =============================================================================
+# MainComponent.cpp is only compiled into the SiriusLooper GUI app target.
+# Testing the MainComponent ↔ OutOfProcessEffectChainHost lifecycle requires
+# compiling MainComponent.cpp again in a dedicated headless test binary so
+# the test can construct a MainComponent without linking against SiriusLooper.
+if(APPLE)
+    add_executable(MainComponentPluginEditorTests
+        MainComponentPluginEditorTests.cpp
+        ${CMAKE_SOURCE_DIR}/app/MainComponent.cpp)
+
+    target_compile_features(MainComponentPluginEditorTests PRIVATE cxx_std_20)
+
+    target_compile_definitions(MainComponentPluginEditorTests PRIVATE
+        JUCE_WEB_BROWSER=0
+        JUCE_USE_CURL=0
+        SIRIUS_PLUGIN_HOST_PATH="$<TARGET_FILE:sirius_plugin_host>"
+        SIRIUS_SYNTHETIC_CLAP_PATH="$<TARGET_BUNDLE_DIR:SyntheticTestPlugin>")
+
+    target_include_directories(MainComponentPluginEditorTests PRIVATE
+        ${CMAKE_SOURCE_DIR}/app)
+
+    target_link_libraries(MainComponentPluginEditorTests PRIVATE
+        Sirius::Engine
+        Sirius::Audio
+        Sirius::AppCore
+        Sirius::Persistence
+        Sirius::Host
+        Sirius::Ui
+        Sirius::Net
+        Sirius::Video
+        juce::juce_audio_utils
+        juce::juce_gui_extra
+        Catch2::Catch2WithMain
+        Threads::Threads)
+
+    add_dependencies(MainComponentPluginEditorTests
+        sirius_plugin_host SyntheticTestPlugin)
+
+    catch_discover_tests(MainComponentPluginEditorTests)
+endif()
