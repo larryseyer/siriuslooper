@@ -23,7 +23,6 @@
 #include <clap/ext/state.h>
 
 #include <algorithm>
-#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -105,8 +104,8 @@ bool paramsGetInfo (const clap_plugin_t*, uint32_t index,
         info->id          = kParamCutoff;
         info->flags       = CLAP_PARAM_IS_AUTOMATABLE;
         info->cookie      = nullptr;
-        std::snprintf (info->name,   sizeof (info->name),   "Cutoff");
-        std::snprintf (info->module, sizeof (info->module), "Filter");
+        std::snprintf (info->name,   sizeof (info->name),   "%s", "Cutoff");
+        std::snprintf (info->module, sizeof (info->module), "%s", "Filter");
         info->min_value     = 20.0;
         info->max_value     = 20000.0;
         info->default_value = kDefaultCutoff;
@@ -117,8 +116,8 @@ bool paramsGetInfo (const clap_plugin_t*, uint32_t index,
         info->id          = kParamResonance;
         info->flags       = CLAP_PARAM_IS_AUTOMATABLE;
         info->cookie      = nullptr;
-        std::snprintf (info->name,   sizeof (info->name),   "Resonance");
-        std::snprintf (info->module, sizeof (info->module), "Filter");
+        std::snprintf (info->name,   sizeof (info->name),   "%s", "Resonance");
+        std::snprintf (info->module, sizeof (info->module), "%s", "Filter");
         info->min_value     = 0.5;
         info->max_value     = 10.0;
         info->default_value = kDefaultReso;
