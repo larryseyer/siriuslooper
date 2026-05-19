@@ -1481,16 +1481,3 @@ assets before public launch:
   #2) is now closed by Step 5 above. Leave that doc updated to
   reflect that the dev-loop Ninja generator now produces a
   Developer-ID-signed `.app` with sealed CodeResources.
-
-### 2026-05-19 — M8 S2 followup: live CLAP state hashing
-- Files: `engine/include/sirius/SessionSnapshot.h`, `engine/src/SessionSnapshot.cpp`, `host/include/sirius/OutOfProcessEffectChainHost.h`, `host/src/OutOfProcessEffectChainHost.cpp`
-- What was deferred: M8 S1's `populateVersionPinningRecords` / `verifyVersionPinningOnLoad` build the snapshot from the entry's own descriptor with an empty state blob. The "live state blob" hashing (real `clap_plugin_state` bytes) and the live-descriptor query against `OutOfProcessEffectChainHost` are placeholders.
-- Why deferred: V7 plan lines 597-598 — M8 S2 is the CLAP loader hardening + `clap_plugin_state` integration session. Wiring the helpers to the host before the host has state-blob accessors would be guess-coding.
-- What's needed to finish:
-  1. Add `OutOfProcessEffectChainHost::descriptorForSlot(busId, slotIndex)` returning the live descriptor (reading SlotState::descriptor under instancesMutex_).
-  2. Add `OutOfProcessEffectChainHost::stateBlobForSlot(busId, slotIndex)` returning the bytes from a new CLAP `state.save` extension wrapper.
-  3. Establish the Constituent → (busId, slotIndex) mapping in the engine save-orchestrator (currently implicit in `openPluginEditor`'s `nextScratchBusId_++`).
-  4. Re-add `const OutOfProcessEffectChainHost&` to `populateVersionPinningRecords` and `verifyVersionPinningOnLoad` signatures (dropped in M8 S1) and consult it inside `makeVersionPinningRecord` calls. Update the two call sites in `app/MainComponent.cpp` atomically.
-  5. Update the M8 S1 ArchivalModeTests where the M8 S2 path replaces the empty-state assertion with a real-state assertion.
-  6. **Drop the `! entry.persistedSnapshot.has_value()` guard in `walkAndPopulate`** (`engine/src/SessionSnapshot.cpp:40-41`). S1 only fills empty optionals because the descriptor IS the source of truth (no host query yet); once S2 wires `descriptorForSlot` + `stateBlobForSlot`, the populator must REFRESH the snapshot on every save so a v1.0.0→v1.0.1 plug-in upgrade between save-A and save-B doesn't silently re-pin to the old version. Decide the re-pinning policy explicitly (always-refresh vs warn-then-refresh) before writing code.
-  7. **Mind the 128-byte drift-message truncation budget** (`engine/src/SessionSnapshot.cpp:91`). The current format `"plug-in version drift: %s expected=%s found=%s"` has ~75 bytes of headroom after the prefix; adding a state-blob hash or any new field requires counting bytes or reordering so the most-actionable info survives truncation.

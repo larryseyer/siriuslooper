@@ -21,6 +21,7 @@
 #include "sirius/PluginScanner.h"
 #include "sirius/Promotion.h"
 #include "sirius/RetroactiveRing.h"
+#include "sirius/SessionSnapshot.h"
 #include "sirius/TapeId.h"
 #include "sirius/UndoStack.h"
 
@@ -238,6 +239,11 @@ private:
     /// busId, then sends requestEditorShow so the child opens its OWN
     /// top-level NSWindow (Reaper-style; M7 S9). Message-thread only.
     void openPluginEditor (const PluginDescriptor& descriptor);
+
+    /// Builds the save/load slot lookup over openEditorBusIds_: entry index
+    /// N → bus openEditorBusIds_[N], slot 0 (M7 S9 one-editor-per-bus model).
+    /// Message-thread only — reads openEditorBusIds_ without locking.
+    sirius::SlotLookup slotLookup() const;
 
     /// Tears down the slot at `busId`. The child window dies with the
     /// child process. Message-thread only.

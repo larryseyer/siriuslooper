@@ -828,6 +828,10 @@ MainComponent::MainComponent()
     // editor, the child silently dies, and nothing surfaces in the
     // Preparation tab's notifications.
     effectChainHost_.setNotificationSink (notificationBus_.get());
+    // M8 S2 — scan-progress + state-save-timeout notifications surface in
+    // the Preparation tab's notification history. Bound once here, before
+    // any scan call; the scanner posts only when a sink is present.
+    pluginScanner_.setNotificationSink (notificationBus_.get());
     // TapeWriter::setNotificationBus deferred — MainComponent doesn't
     // currently construct a TapeWriter (per M6 S2 audit). When TapeWriter
     // joins the owned app graph (M11 SAF wiring, likely), add a parallel
@@ -1552,15 +1556,11 @@ void MainComponent::chooseFileAndSave()
             // frozen plug-in identity needed for reopen-time drift
             // detection. Copy-on-write — unchanged subtrees stay shared
             // with the undo-stack version.
-            // M8 S2: the populator now consults the live host through a
-            // slot lookup. The real openEditorBusIds_-based lookup lands
-            // in Task 11; until then a nullopt lookup drives the
-            // descriptor-only fallback, reproducing M8 S1 behaviour
-            // (empty-state hash) so save still freezes plug-in identity.
-            const auto noSlot = [] (const sirius::Constituent&, std::size_t)
-                -> std::optional<sirius::SlotLocation> { return std::nullopt; };
+            // M8 S2: the populator consults the live host through
+            // slotLookup() so each VersionPinning entry freezes the
+            // descriptor + live state blob of the bus its instance runs on.
             const auto populated = sirius::populateVersionPinningRecords (
-                undoStack_.current(), effectChainHost_, noSlot, *notificationBus_);
+                undoStack_.current(), effectChainHost_, slotLookup(), *notificationBus_);
             const auto json = persistence::serializeSession (*populated);
             if (target.replaceWithText (json))
                 preparationPane_->setStatus ("Saved to " + target.getFullPathName());
@@ -1591,18 +1591,12 @@ void MainComponent::chooseFileAndLoad()
                 // The Preparation pane's notification-history line picks
                 // up the message without any new UI code. Per white paper
                 // line 1500: warn, do not refuse — the session still loads.
-                // M8 S2: the verifier now consults the live host through a
-                // slot lookup. The real openEditorBusIds_-based lookup
-                // lands in Task 11; until then a nullopt lookup drives the
-                // descriptor-only fallback, reproducing M8 S1 drift
-                // detection against the saved snapshot.
+                // M8 S2: the verifier consults the live host through
+                // slotLookup(), comparing the saved snapshot against the
+                // current bus state and warning on drift.
                 if (notificationBus_ != nullptr)
-                {
-                    const auto noSlot = [] (const sirius::Constituent&, std::size_t)
-                        -> std::optional<sirius::SlotLocation> { return std::nullopt; };
                     sirius::verifyVersionPinningOnLoad (
-                        *loaded, effectChainHost_, noSlot, *notificationBus_);
-                }
+                        *loaded, effectChainHost_, slotLookup(), *notificationBus_);
                 // The white paper Part 14.7 rule: load is an edit; preserve
                 // the existing undo history rather than wiping it. The
                 // operator can undo back to whatever was on screen before.
@@ -1709,6 +1703,25 @@ void MainComponent::openSyntheticTestPlugin()
    #endif
 }
 #endif
+
+sirius::SlotLookup MainComponent::slotLookup() const
+{
+    // M7 S9 "one editor per bus" model: openPluginEditor allocates a fresh
+    // bus per editor and pushes its busId onto openEditorBusIds_, with the
+    // plug-in living at slot 0 of that bus's single-entry chain. The save
+    // tree's walk visits each chain-bearing Constituent in the same order
+    // editors were opened, so the entry index collapses to the bus index.
+    // Message-thread only (save/load callbacks + open/close all run there),
+    // so reading openEditorBusIds_ needs no lock. When the engine grows
+    // nested chains (M11+), this resolves through the save orchestrator.
+    return [this] (const sirius::Constituent&, std::size_t entryIndex)
+        -> std::optional<sirius::SlotLocation>
+    {
+        if (entryIndex >= openEditorBusIds_.size())
+            return std::nullopt;
+        return sirius::SlotLocation { openEditorBusIds_[entryIndex], 0 };
+    };
+}
 
 void MainComponent::openPluginEditor (const PluginDescriptor& descriptor)
 {
