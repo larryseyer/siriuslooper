@@ -17,6 +17,7 @@
 
 #include <clap/clap.h>
 #include <clap/ext/gui.h>
+#include <clap/ext/state.h>
 
 #include <cstdint>
 #include <cstdio>
@@ -123,10 +124,41 @@ clap_process_status pluginProcess (const clap_plugin_t* /*plugin*/,
 extern "C" const void* syntheticGetGuiExtension();
 #endif
 
+/// Synthetic state extension — emits 4 fixed bytes on save so the
+/// M8 S2 state-IPC round-trip can assert against a known value.
+/// Load is strict: only the same 4 bytes are accepted.
+constexpr std::uint8_t kSyntheticStateBytes[4] = { 0xCA, 0xFE, 0xBA, 0xBE };
+
+bool pluginStateSave (const clap_plugin_t* /*plugin*/, const clap_ostream_t* stream)
+{
+    if (stream == nullptr) return false;
+    const auto n = stream->write (stream, kSyntheticStateBytes,
+                                  sizeof (kSyntheticStateBytes));
+    return n == static_cast<std::int64_t> (sizeof (kSyntheticStateBytes));
+}
+
+bool pluginStateLoad (const clap_plugin_t* /*plugin*/, const clap_istream_t* stream)
+{
+    if (stream == nullptr) return false;
+    std::uint8_t buf[sizeof (kSyntheticStateBytes)] {};
+    const auto n = stream->read (stream, buf, sizeof (buf));
+    if (n != static_cast<std::int64_t> (sizeof (buf)))
+        return false;
+    return std::memcmp (buf, kSyntheticStateBytes,
+                        sizeof (kSyntheticStateBytes)) == 0;
+}
+
+constexpr clap_plugin_state_t kPluginState = {
+    pluginStateSave,
+    pluginStateLoad
+};
+
 const void* pluginGetExtension (const clap_plugin_t*, const char* id)
 {
     if (std::strcmp (id, CLAP_EXT_AUDIO_PORTS) == 0)
         return &kAudioPorts;
+    if (std::strcmp (id, CLAP_EXT_STATE) == 0)
+        return &kPluginState;
    #ifdef __APPLE__
     if (std::strcmp (id, CLAP_EXT_GUI) == 0)
         return syntheticGetGuiExtension();
