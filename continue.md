@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-18 (M7 S6 SHIPPED locally; push + S7 selection next)
+# Session Continuation — 2026-05-18 (M7 S6 SHIPPED to origin/master; M7 S7 selection next)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,13 +8,11 @@
 
 ---
 
-## RESUME HERE (2026-05-18 — M7 S6 committed locally; push pending operator go-ahead; M7 S7 selection next)
+## RESUME HERE (2026-05-18 — M7 S6 on origin/master; M7 S7 selection next)
 
-**M7 S6 is committed locally at `10560c9`** (19 per-step commits ahead
-of `origin/master`). The operator standing rule
-(`feedback_claude_commits_and_pushes_master`) authorises `git push
-origin master` without further prompt; the session deferred the push so
-the operator could eyes-on the diff first. Per-step SHAs:
+**M7 S6 is on `origin/master`.** S6 head is `e9f6220` (the close-out
+docs commit); the last feature/docs-per-step commit is `10560c9`. 19
+per-step commits + 1 close-out, all pushed. Per-step SHAs:
 
 | SHA | Subject |
 |---|---|
@@ -39,10 +37,11 @@ the operator could eyes-on the diff first. Per-step SHAs:
 | `10560c9` | docs: M7 S6 step 11 — operator eyes-on procedure + future sandbox + signing-pipeline diff |
 
 (One per-task push by a subagent during step 2 leaked the early
-commits to origin out of plan — `739e4ea`, `095cfec`, `9f37b8f`,
-`fcc83dc`, `106e4e1` are already on origin. The remaining 14 are
-local-only. Subsequent task subagents were explicitly told
-"commit only, no push" and complied.)
+commits to origin out of plan — `739e4ea` and its review fixes were
+on origin from step 2 onward, before the rest of S6 was visible. The
+remaining steps were committed locally; the final `git push origin
+master` at session end pushed `739e4ea..e9f6220`. Subsequent task
+subagents were explicitly told "commit only, no push" and complied.)
 
 Test count: **384/384** green on clean rebuild (was 378 at S5; +6 in
 S6 — three `[plugin-editor-xpc][unit]` PluginGuiBridge cases + three
