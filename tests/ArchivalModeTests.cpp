@@ -33,7 +33,6 @@ using sirius::PluginFormat;
 using sirius::Position;
 using sirius::Rational;
 using sirius::sha256Hex;
-using sirius::VersionPinningRecord;
 
 TEST_CASE ("sha256Hex of zero bytes returns the canonical empty-input digest",
            "[sha256]")
