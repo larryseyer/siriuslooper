@@ -34,6 +34,10 @@ OutOfProcessEditorView::OutOfProcessEditorView (OutOfProcessEffectChainHost& hos
     addAndMakeVisible (*embed_);
    #endif
     setSize (200, 100);
+    // Stamp now so the failed-to-load deadline runs from construction
+    // time, not from a Show that may or may not get issued. Operator
+    // gets feedback in 2 s regardless of upstream wiring state.
+    showRequestedAt_ = std::chrono::steady_clock::now();
     startTimer (kPollMs);
 }
 
@@ -87,7 +91,7 @@ void OutOfProcessEditorView::timerCallback()
     // explanatory overlay. Common cause today: operator pointed at a
     // VST3 (sirius_plugin_host only dlopens CLAP bundles — VST3/AU
     // need their own dlopen paths in a later session).
-    if (shownOnce_ && currentContextId_ == 0 && ! failedToLoad_)
+    if (currentContextId_ == 0 && ! failedToLoad_)
     {
         const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds> (
             std::chrono::steady_clock::now() - showRequestedAt_).count();
