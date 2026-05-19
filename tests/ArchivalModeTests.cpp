@@ -19,6 +19,7 @@
 #include <array>
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 
@@ -207,4 +208,74 @@ TEST_CASE ("VersionPinningRecord::matches detects declaredInternalStateHash drif
     auto b = a;
     b.declaredInternalStateHash = "vendor-self-report-hash-1";
     CHECK_FALSE (a.matches (b));
+}
+
+// Spec "Defaults for new sessions" — VersionPinning is the prescribed
+// default per V7 plan line 563. This test pins that default so a
+// refactor of the EffectChainEntry initializer cannot silently change
+// the global disposition for every new chain slot in the codebase.
+TEST_CASE ("ArchivalMode default for a new EffectChainEntry is VersionPinning",
+           "[archival-mode]")
+{
+    EffectChainEntry e;
+    CHECK (e.archivalMode == ArchivalMode::VersionPinning);
+    CHECK_FALSE (e.persistedSnapshot.has_value());
+}
+
+// The save→serialize→deserialize→compare path pins that both new fields
+// survive the JSON boundary intact. Without this, a serializer that
+// silently dropped `persistedSnapshot` would make every reopen a
+// "no drift detected" false negative — see the descriptor-version
+// round-trip case for the parallel failure-mode argument.
+TEST_CASE ("EffectChainEntry with persistedSnapshot round-trips through SessionFormat",
+           "[archival-mode][session-format]")
+{
+    EffectChainEntry entry;
+    entry.descriptor   = descriptorFixture();
+    entry.displayName  = "Synthetic";
+    entry.bypassed     = false;
+    entry.archivalMode = ArchivalMode::VersionPinning;
+    entry.persistedSnapshot = makeVersionPinningRecord (entry.descriptor, {});
+
+    auto leaf = std::make_shared<Constituent> (
+        ConstituentId (1),
+        Position (Rational (0)),
+        Position (Rational (1)));
+    *leaf = leaf->withEffectChain (EffectChain().withAppended (entry));
+
+    const auto json  = sirius::persistence::serializeSession (*leaf);
+    const auto round = sirius::persistence::deserializeSession (json);
+    REQUIRE (round->effectChain().has_value());
+    REQUIRE (round->effectChain()->size() == 1);
+
+    const auto& loadedEntry = round->effectChain()->at (0);
+    CHECK (loadedEntry.archivalMode == ArchivalMode::VersionPinning);
+    REQUIRE (loadedEntry.persistedSnapshot.has_value());
+    CHECK (*loadedEntry.persistedSnapshot == *entry.persistedSnapshot);
+}
+
+// The DeterminismContract path doesn't populate a snapshot in M8 S1
+// (snapshot is exclusive to VersionPinning entries). Pin that an
+// unset optional round-trips back unset — i.e., that the serializer
+// distinguishes "no snapshot" from "default-constructed snapshot".
+TEST_CASE ("EffectChainEntry without persistedSnapshot round-trips with no snapshot",
+           "[archival-mode][session-format]")
+{
+    EffectChainEntry entry;
+    entry.descriptor   = descriptorFixture();
+    entry.displayName  = "Synthetic";
+    entry.archivalMode = ArchivalMode::DeterminismContract;
+    // Deliberately no persistedSnapshot.
+
+    auto leaf = std::make_shared<Constituent> (
+        ConstituentId (1),
+        Position (Rational (0)),
+        Position (Rational (1)));
+    *leaf = leaf->withEffectChain (EffectChain().withAppended (entry));
+
+    const auto json  = sirius::persistence::serializeSession (*leaf);
+    const auto round = sirius::persistence::deserializeSession (json);
+    REQUIRE (round->effectChain()->size() == 1);
+    CHECK (round->effectChain()->at (0).archivalMode == ArchivalMode::DeterminismContract);
+    CHECK_FALSE (round->effectChain()->at (0).persistedSnapshot.has_value());
 }

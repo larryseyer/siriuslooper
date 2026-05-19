@@ -478,6 +478,48 @@ namespace
         return out;
     }
 
+    const char* archivalModeToString (ArchivalMode m) noexcept
+    {
+        switch (m)
+        {
+            case ArchivalMode::DeterminismContract: return "DeterminismContract";
+            case ArchivalMode::WetCapture:          return "WetCapture";
+            case ArchivalMode::VersionPinning:      return "VersionPinning";
+        }
+        return "VersionPinning"; // unreachable; spec-default fallback
+    }
+
+    ArchivalMode archivalModeFromString (const juce::String& s)
+    {
+        if (s == "DeterminismContract") return ArchivalMode::DeterminismContract;
+        if (s == "WetCapture")          return ArchivalMode::WetCapture;
+        if (s == "VersionPinning")      return ArchivalMode::VersionPinning;
+        fail (("Unknown archivalMode: " + s).toStdString());
+        return ArchivalMode::VersionPinning; // unreachable; fail() throws
+    }
+
+    juce::var versionPinningRecordToVar (const VersionPinningRecord& r)
+    {
+        auto obj = makeObject();
+        obj->setProperty ("uniqueId",                  juce::String (r.uniqueId));
+        obj->setProperty ("version",                   juce::String (r.version));
+        obj->setProperty ("stateBlobSha256",           juce::String (r.stateBlobSha256));
+        obj->setProperty ("oversamplingRate",          int (r.oversamplingRate));
+        obj->setProperty ("declaredInternalStateHash", juce::String (r.declaredInternalStateHash));
+        return objectVar (obj);
+    }
+
+    VersionPinningRecord versionPinningRecordFromVar (const juce::var& v)
+    {
+        VersionPinningRecord r;
+        r.uniqueId                  = requireProperty (v, "uniqueId").toString().toStdString();
+        r.version                   = requireProperty (v, "version").toString().toStdString();
+        r.stateBlobSha256           = requireProperty (v, "stateBlobSha256").toString().toStdString();
+        r.oversamplingRate          = std::uint32_t (int (requireProperty (v, "oversamplingRate")));
+        r.declaredInternalStateHash = requireProperty (v, "declaredInternalStateHash").toString().toStdString();
+        return r;
+    }
+
     juce::var pluginDescriptorToVar (const PluginDescriptor& d)
     {
         auto obj = makeObject();
@@ -505,10 +547,13 @@ namespace
     juce::var effectChainEntryToVar (const EffectChainEntry& e)
     {
         auto obj = makeObject();
-        obj->setProperty ("plugin",      pluginDescriptorToVar (e.descriptor));
-        obj->setProperty ("displayName", juce::String (e.displayName));
-        obj->setProperty ("state",       juce::String (e.stateBase64));
-        obj->setProperty ("bypassed",    e.bypassed);
+        obj->setProperty ("plugin",       pluginDescriptorToVar (e.descriptor));
+        obj->setProperty ("displayName",  juce::String (e.displayName));
+        obj->setProperty ("state",        juce::String (e.stateBase64));
+        obj->setProperty ("bypassed",     e.bypassed);
+        obj->setProperty ("archivalMode", juce::String (archivalModeToString (e.archivalMode)));
+        if (e.persistedSnapshot.has_value())
+            obj->setProperty ("persistedSnapshot", versionPinningRecordToVar (*e.persistedSnapshot));
         return objectVar (obj);
     }
 
@@ -519,6 +564,21 @@ namespace
         e.displayName = requireProperty (v, "displayName").toString().toStdString();
         e.stateBase64 = requireProperty (v, "state").toString().toStdString();
         e.bypassed    = bool (requireProperty (v, "bypassed"));
+
+        // archivalMode + persistedSnapshot are M8 additions. Sessions
+        // serialized before this lands do not carry them — default
+        // archivalMode to VersionPinning (the new-session default) and
+        // leave the optional snapshot empty. Per plan "Defaults for new
+        // sessions": no migration needed because the field is constructed
+        // in-place from the default initializer when a session loads from
+        // a JSON document that pre-dates the field.
+        if (auto* obj = v.getDynamicObject())
+        {
+            if (obj->hasProperty ("archivalMode"))
+                e.archivalMode = archivalModeFromString (obj->getProperty ("archivalMode").toString());
+            if (obj->hasProperty ("persistedSnapshot"))
+                e.persistedSnapshot = versionPinningRecordFromVar (obj->getProperty ("persistedSnapshot"));
+        }
         return e;
     }
 

@@ -1,8 +1,11 @@
 #pragma once
 
+#include "sirius/ArchivalMode.h"
 #include "sirius/PluginDescriptor.h"
+#include "sirius/VersionPinningRecord.h"
 
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -13,19 +16,29 @@ namespace sirius
 /// state it should be restored to and the bypass flag. The state blob is an
 /// opaque byte string (base64-encoded for JSON safety) produced by the host
 /// runtime when it serializes a plugin; the data model does not interpret it.
+///
+/// `archivalMode` selects the per-instance strategy for handling plug-in
+/// non-determinism (white paper §15.6). Default is `VersionPinning` per V7
+/// plan line 563. `persistedSnapshot` is the frozen identity at the moment
+/// of the last `serializeSession`; populated by `populateVersionPinningRecords`
+/// on save and compared by `verifyVersionPinningOnLoad` on load.
 struct EffectChainEntry
 {
     PluginDescriptor descriptor;
     std::string      displayName; ///< chain-local name, defaults to descriptor.name
     std::string      stateBase64; ///< plugin state as base64; empty when not yet captured
     bool             bypassed { false };
+    ArchivalMode     archivalMode { ArchivalMode::VersionPinning };
+    std::optional<VersionPinningRecord> persistedSnapshot;
 
     bool operator== (const EffectChainEntry& other) const noexcept
     {
         return descriptor == other.descriptor
             && displayName == other.displayName
             && stateBase64 == other.stateBase64
-            && bypassed == other.bypassed;
+            && bypassed == other.bypassed
+            && archivalMode == other.archivalMode
+            && persistedSnapshot == other.persistedSnapshot;
     }
     bool operator!= (const EffectChainEntry& other) const noexcept { return ! (*this == other); }
 };
