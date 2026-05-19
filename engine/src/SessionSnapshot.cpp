@@ -15,6 +15,10 @@ namespace sirius
 namespace
 {
 
+/// Matches the NotificationBus per-message buffer budget; both repin and
+/// drift messages snprintf into a buffer this size (truncation is safe).
+constexpr std::size_t kNotificationMessageBytes = 128;
+
 /// Resolves the live VersionPinningRecord for one entry. Consults the
 /// host via `lookup` for the slot's actual descriptor + state bytes.
 /// Falls back to a descriptor-only record with an empty state blob when
@@ -50,15 +54,29 @@ VersionPinningRecord computeLiveRecord (
         *desc, std::span<const std::byte> (blob->data(), blob->size()));
 }
 
-void postRepinNotification (INotificationSink& sink,
-                            const std::string& uniqueId,
-                            const std::string& oldVersion,
-                            const std::string& newVersion)
+/// Returns the leading 8 chars of a SHA-256 hex string (or the whole
+/// string when shorter), enough to fingerprint a state blob without
+/// bloating the notification budget.
+std::string hashPrefix8 (const std::string& full)
 {
-    std::array<char, 128> msg {};
+    return full.size() >= 8 ? full.substr (0, 8) : full;
+}
+
+void postRepinNotification (INotificationSink&          sink,
+                            const std::string&          uniqueId,
+                            const VersionPinningRecord& oldRecord,
+                            const VersionPinningRecord& newRecord)
+{
+    // A repin fires on either a version bump OR a same-version state-blob
+    // change; surfacing both side hash prefixes (mirroring the drift
+    // format) keeps a same-version repin from reading like a no-op.
+    std::array<char, kNotificationMessageBytes> msg {};
     std::snprintf (msg.data(), msg.size(),
-                   "plug-in version repinned: %s old=%s new=%s",
-                   uniqueId.c_str(), oldVersion.c_str(), newVersion.c_str());
+                   "plug-in version repinned: %s v=%s old-state=%s new-state=%s",
+                   uniqueId.c_str(),
+                   newRecord.version.c_str(),
+                   hashPrefix8 (oldRecord.stateBlobSha256).c_str(),
+                   hashPrefix8 (newRecord.stateBlobSha256).c_str());
     sink.post (NotificationLevel::Info, Category::PluginEvent, msg.data());
 }
 
@@ -66,19 +84,16 @@ void postDriftNotification (INotificationSink&          sink,
                             const VersionPinningRecord& expected,
                             const VersionPinningRecord& found)
 {
-    // Reordered format (M8 S2): hashes first so the fixed 128-byte
+    // Reordered format (M8 S2): hashes first so the fixed
     // NotificationBus truncation eats the uniqueId tail (least
     // diagnostic) rather than the hashes (most diagnostic). An 8-char
     // hash prefix fingerprints the state blob without bloating the
     // notification budget.
-    const auto hashPrefix = [] (const std::string& full) {
-        return full.size() >= 8 ? full.substr (0, 8) : full;
-    };
-    std::array<char, 128> msg {};
+    std::array<char, kNotificationMessageBytes> msg {};
     std::snprintf (msg.data(), msg.size(),
                    "version drift eh=%s fh=%s ev=%s fv=%s id=%s",
-                   hashPrefix (expected.stateBlobSha256).c_str(),
-                   hashPrefix (found.stateBlobSha256).c_str(),
+                   hashPrefix8 (expected.stateBlobSha256).c_str(),
+                   hashPrefix8 (found.stateBlobSha256).c_str(),
                    expected.version.c_str(),
                    found.version.c_str(),
                    expected.uniqueId.c_str());
@@ -123,8 +138,8 @@ std::shared_ptr<const Constituent> walkAndPopulate (
                 {
                     postRepinNotification (sink,
                                            entry.descriptor.uniqueId,
-                                           entry.persistedSnapshot->version,
-                                           fresh.version);
+                                           *entry.persistedSnapshot,
+                                           fresh);
                 }
 
                 if (! entry.persistedSnapshot.has_value()
