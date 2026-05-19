@@ -10,7 +10,7 @@
 
 ## RESUME HERE (2026-05-18 — M7 S7 on origin/master; M7 S8 selection next)
 
-**M7 S7 is on `origin/master`.** S7 head is `<FILL>` (the close-out
+**M7 S7 is on `origin/master`.** S7 head is `1c52a36` (the close-out
 docs commit); the last per-step / per-review commit is `c753488`. 11
 per-step commits + 1 close-out, all pushed. Per-step SHAs:
 
