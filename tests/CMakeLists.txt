@@ -64,7 +64,8 @@ add_executable(SiriusTests
     ArchivalModeTests.cpp
     ClapBundleLoaderTests.cpp
     ClapScannerTests.cpp
-    PluginStateRegionTests.cpp)
+    PluginStateRegionTests.cpp
+    PluginStateExtensionTests.cpp)
 
 target_compile_features(SiriusTests PRIVATE cxx_std_20)
 

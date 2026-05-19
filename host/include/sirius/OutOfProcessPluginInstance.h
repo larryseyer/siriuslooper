@@ -2,14 +2,18 @@
 
 #include "sirius/PluginGuiState.h"
 #include "sirius/PluginIpcMessage.h"
+#include "sirius/PluginStateRegion.h"
 #include "sirius/SharedMemoryRegion.h"
 #include "sirius/SharedMemorySpscQueue.h"
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace juce { class File; }
 
@@ -173,6 +177,26 @@ public:
     /// responseSeq` means the latest request has been fully serviced.
     std::uint64_t editorResponseSeq() const noexcept;
 
+    // ---- State IPC (M8 S2) — message-thread only -----------------------
+    //
+    // Round-trips plug-in state bytes through the dedicated state shm
+    // region. The child services on its idle / per-buffer cadence (see
+    // host_process/main.cpp::serviceStateRequests).
+
+    /// Asks the child to invoke `clap_plugin_state.save`. On success
+    /// `outBytes` receives the plug-in's state; returns true. On
+    /// timeout, plug-in error, or absent state region: returns false
+    /// and leaves `outBytes` empty.
+    bool requestStateSave (std::vector<std::byte>& outBytes,
+                           std::chrono::milliseconds timeout) noexcept;
+
+    /// Asks the child to invoke `clap_plugin_state.load`. Returns true
+    /// only if the plug-in's load callback returned true. Bytes longer
+    /// than `PluginStateState::kMaxStateBytes` return false immediately
+    /// without IPC.
+    bool requestStateLoad (std::span<const std::byte> bytes,
+                           std::chrono::milliseconds timeout) noexcept;
+
     /// Closes the child's stdin (signals EOF), waits up to
     /// `kShutdownGraceMs` for the child to exit on its own, then sends
     /// SIGKILL if it has not. Idempotent — safe to call multiple times.
@@ -210,6 +234,14 @@ private:
     /// bump monotonically without re-reading the atomic. Message-thread
     /// only (no atomic needed).
     std::uint64_t                       lastRequestSeq_ { 0 };
+
+    /// State IPC region (M8 S2). Engine owns + shm_unlinks; host child
+    /// opens by name. nullptr if shm_open failed at construction.
+    std::unique_ptr<SharedMemoryRegion> stateRegion_;
+    /// Typed view into `stateRegion_->data()`. nullptr if it failed to map.
+    PluginStateState*                   stateState_ { nullptr };
+    /// Last state requestSeq the engine issued. Message-thread only.
+    std::uint64_t                       lastStateRequestSeq_ { 0 };
 
     /// Leftover bytes from a partially-consumed message — preserves the
     /// "stop at first non-empty read" stream semantics across calls that

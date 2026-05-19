@@ -2,6 +2,7 @@
 
 #include "sirius/PluginGuiState.h"
 #include "sirius/PluginIpcMessage.h"
+#include "sirius/PluginStateRegion.h"
 #include "sirius/SharedMemoryRegion.h"
 #include "sirius/SharedMemorySpscQueue.h"
 
@@ -12,6 +13,7 @@
 #include <csignal>
 #include <cstring>
 #include <sys/wait.h>
+#include <thread>
 #include <unistd.h>
 #include <utility>
 #include <vector>
@@ -132,6 +134,22 @@ OutOfProcessPluginInstance::OutOfProcessPluginInstance (const juce::File& hostBi
         return;
     }
 
+    // M8 S2 — per-instance state region for clap_plugin_state save/load
+    // IPC. Independent of the rings/GUI region: a failure here leaves the
+    // instance otherwise functional, so it has its own try/catch.
+    try
+    {
+        stateRegion_ = std::make_unique<SharedMemoryRegion> (
+            makeStateRegionName (instanceId_), sizeof (PluginStateState),
+            SharedMemoryRegion::Mode::CreateExclusive);
+        stateState_ = PluginStateState::initInPlace (stateRegion_->data());
+    }
+    catch (const std::exception&)
+    {
+        stateRegion_.reset();
+        stateState_ = nullptr;
+    }
+
     spawnHostChild (hostBinaryPath.getFullPathName().toStdString(),
                     instanceId_, "identity", {}, childPid_);
 }
@@ -174,6 +192,20 @@ OutOfProcessPluginInstance::OutOfProcessPluginInstance (const juce::File& hostBi
         guiStateRegion_.reset();
         guiState_ = nullptr;
         return;
+    }
+
+    // M8 S2 — per-instance state region (see identity-mode ctor above).
+    try
+    {
+        stateRegion_ = std::make_unique<SharedMemoryRegion> (
+            makeStateRegionName (instanceId_), sizeof (PluginStateState),
+            SharedMemoryRegion::Mode::CreateExclusive);
+        stateState_ = PluginStateState::initInPlace (stateRegion_->data());
+    }
+    catch (const std::exception&)
+    {
+        stateRegion_.reset();
+        stateState_ = nullptr;
     }
 
     spawnHostChild (hostBinaryPath.getFullPathName().toStdString(),
@@ -418,6 +450,8 @@ void OutOfProcessPluginInstance::shutdown()
     hostToEngineRegion_.reset();
     guiState_ = nullptr;
     guiStateRegion_.reset();
+    stateState_ = nullptr;
+    stateRegion_.reset();
 }
 
 // ---- Editor (M7 S5) -------------------------------------------------------
@@ -494,6 +528,79 @@ std::uint64_t OutOfProcessPluginInstance::editorResponseSeq() const noexcept
 {
     if (guiState_ == nullptr) return 0;
     return guiState_->responseSeq.load (std::memory_order_acquire);
+}
+
+// ---- State IPC (M8 S2) ----------------------------------------------------
+//
+// Same publish-and-poll contract as the editor surface, but synchronous:
+// the caller is the message thread at an operator-initiated save/load
+// boundary, so we bump requestSeq (release) then spin-with-sleep on
+// responseSeq (acquire) until the child matches the seq or the deadline
+// passes. A SIGSTOPed / wedged child never bumps responseSeq, so the
+// deadline check is what bounds the wait.
+
+bool OutOfProcessPluginInstance::requestStateSave (
+    std::vector<std::byte>& outBytes,
+    std::chrono::milliseconds timeout) noexcept
+{
+    outBytes.clear();
+    if (stateState_ == nullptr) return false;
+
+    const auto seq = ++lastStateRequestSeq_;
+    stateState_->requestKind .store (PluginStateState::Save,
+                                     std::memory_order_relaxed);
+    stateState_->requestBytes.store (0, std::memory_order_relaxed);
+    stateState_->requestSeq  .store (seq, std::memory_order_release);
+
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (std::chrono::steady_clock::now() < deadline)
+    {
+        if (stateState_->responseSeq.load (std::memory_order_acquire) >= seq)
+            break;
+        std::this_thread::sleep_for (std::chrono::microseconds (100));
+    }
+
+    if (stateState_->responseSeq.load (std::memory_order_acquire) < seq)
+        return false; // timeout
+
+    if (stateState_->responseStatus.load (std::memory_order_relaxed)
+        != PluginStateState::Ok)
+        return false;
+
+    const auto n = stateState_->responseBytes.load (std::memory_order_relaxed);
+    outBytes.resize (n);
+    std::memcpy (outBytes.data(), stateState_->responsePayload, n);
+    return true;
+}
+
+bool OutOfProcessPluginInstance::requestStateLoad (
+    std::span<const std::byte> bytes,
+    std::chrono::milliseconds timeout) noexcept
+{
+    if (stateState_ == nullptr) return false;
+    if (bytes.size() > PluginStateState::kMaxStateBytes) return false;
+
+    std::memcpy (stateState_->requestPayload, bytes.data(), bytes.size());
+    const auto seq = ++lastStateRequestSeq_;
+    stateState_->requestKind .store (PluginStateState::Load,
+                                     std::memory_order_relaxed);
+    stateState_->requestBytes.store (static_cast<std::uint32_t> (bytes.size()),
+                                     std::memory_order_relaxed);
+    stateState_->requestSeq  .store (seq, std::memory_order_release);
+
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (std::chrono::steady_clock::now() < deadline)
+    {
+        if (stateState_->responseSeq.load (std::memory_order_acquire) >= seq)
+            break;
+        std::this_thread::sleep_for (std::chrono::microseconds (100));
+    }
+
+    if (stateState_->responseSeq.load (std::memory_order_acquire) < seq)
+        return false; // timeout
+
+    return stateState_->responseStatus.load (std::memory_order_relaxed)
+           == PluginStateState::Ok;
 }
 
 } // namespace sirius
