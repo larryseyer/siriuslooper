@@ -7,10 +7,12 @@
 #include "sirius/ArchivalMode.h"
 #include "sirius/Constituent.h"
 #include "sirius/EffectChain.h"
+#include "sirius/INotificationSink.h"
 #include "sirius/PluginDescriptor.h"
 #include "sirius/Position.h"
 #include "sirius/Rational.h"
 #include "sirius/SessionFormat.h"
+#include "sirius/SessionSnapshot.h"
 #include "sirius/Sha256.h"
 #include "sirius/VersionPinningRecord.h"
 
@@ -22,18 +24,24 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <vector>
 
 using sirius::ArchivalMode;
+using sirius::Category;
 using sirius::Constituent;
 using sirius::ConstituentId;
 using sirius::EffectChain;
 using sirius::EffectChainEntry;
+using sirius::INotificationSink;
 using sirius::makeVersionPinningRecord;
+using sirius::NotificationLevel;
 using sirius::PluginDescriptor;
 using sirius::PluginFormat;
+using sirius::populateVersionPinningRecords;
 using sirius::Position;
 using sirius::Rational;
 using sirius::sha256Hex;
+using sirius::verifyVersionPinningOnLoad;
 
 TEST_CASE ("sha256Hex of zero bytes returns the canonical empty-input digest",
            "[sha256]")
@@ -133,6 +141,31 @@ namespace
         d.manufacturer = "Sirius";
         d.filePath     = "/fixtures/SyntheticTestPlugin.clap";
         return d;
+    }
+
+    /// Recording sink — captures every post for later inspection by the
+    /// verifier tests. Pattern matches the existing test helpers used in
+    /// tests/OutOfProcessEffectChainHostSupervisorTests.cpp.
+    struct RecordingSink : sirius::INotificationSink
+    {
+        struct Record { NotificationLevel level; Category category; std::string message; };
+        std::vector<Record> records;
+
+        bool post (NotificationLevel level, Category category, const char* message) noexcept override
+        {
+            records.push_back ({ level, category, message != nullptr ? std::string (message) : std::string {} });
+            return true;
+        }
+    };
+
+    std::shared_ptr<const Constituent> leafWithEntry (const EffectChainEntry& entry)
+    {
+        auto leaf = std::make_shared<Constituent> (
+            ConstituentId (1),
+            Position (Rational (0)),
+            Position (Rational (1)));
+        *leaf = leaf->withEffectChain (EffectChain().withAppended (entry));
+        return leaf;
     }
 }
 
@@ -278,4 +311,116 @@ TEST_CASE ("EffectChainEntry without persistedSnapshot round-trips with no snaps
     REQUIRE (round->effectChain()->size() == 1);
     CHECK (round->effectChain()->at (0).archivalMode == ArchivalMode::DeterminismContract);
     CHECK_FALSE (round->effectChain()->at (0).persistedSnapshot.has_value());
+}
+
+// The populator's whole job is to freeze the live identity of each
+// VersionPinning slot at save time. If this test breaks, the saved
+// JSON will lack a persistedSnapshot for the slot, and reopen-time
+// drift detection becomes impossible — the verifier has nothing to
+// compare against.
+TEST_CASE ("populateVersionPinningRecords sets persistedSnapshot on VersionPinning entries",
+           "[archival-mode][session-snapshot]")
+{
+    EffectChainEntry entry;
+    entry.descriptor   = descriptorFixture();
+    entry.archivalMode = ArchivalMode::VersionPinning;
+    REQUIRE_FALSE (entry.persistedSnapshot.has_value());
+
+    auto root = leafWithEntry (entry);
+    auto populated = populateVersionPinningRecords (root);
+    REQUIRE (populated->effectChain()->size() == 1);
+    const auto& populatedEntry = populated->effectChain()->at (0);
+    REQUIRE (populatedEntry.persistedSnapshot.has_value());
+    CHECK (populatedEntry.persistedSnapshot->uniqueId == "com.sirius.synthetic.test");
+    CHECK (populatedEntry.persistedSnapshot->version  == "1.0.0");
+    CHECK (populatedEntry.persistedSnapshot->stateBlobSha256
+           == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+}
+
+// DeterminismContract and WetCapture entries are out of scope for
+// VersionPinning snapshotting — their identity is captured by other
+// mechanisms (render-twice verification / wet-tape writes) that land
+// in later M8 sessions. The populator must leave them alone.
+TEST_CASE ("populateVersionPinningRecords leaves non-VersionPinning entries alone",
+           "[archival-mode][session-snapshot]")
+{
+    EffectChainEntry entry;
+    entry.descriptor   = descriptorFixture();
+    entry.archivalMode = ArchivalMode::DeterminismContract;
+    auto root = leafWithEntry (entry);
+    auto populated = populateVersionPinningRecords (root);
+    CHECK_FALSE (populated->effectChain()->at (0).persistedSnapshot.has_value());
+}
+
+// Constituent::ChildPtr is shared_ptr<const Constituent> — the
+// immutability contract is load-bearing across the entire structure
+// layer. A populator that mutated the input would violate every
+// copy-on-write invariant and break unrelated code (undo stack,
+// session merge, etc.).
+TEST_CASE ("populateVersionPinningRecords is copy-on-write — original tree unchanged",
+           "[archival-mode][session-snapshot]")
+{
+    EffectChainEntry entry;
+    entry.descriptor = descriptorFixture();
+    auto root = leafWithEntry (entry);
+    auto populated = populateVersionPinningRecords (root);
+    CHECK_FALSE (root->effectChain()->at (0).persistedSnapshot.has_value());
+    CHECK (populated->effectChain()->at (0).persistedSnapshot.has_value());
+}
+
+// When the snapshot matches the live record (same machine reopen of
+// an unchanged plug-in install), no drift notification fires. This
+// is the dominant case at runtime — operators reopen sessions far
+// more often than they upgrade plug-ins.
+TEST_CASE ("verifyVersionPinningOnLoad emits nothing when persistedSnapshot matches live",
+           "[archival-mode][session-snapshot]")
+{
+    EffectChainEntry entry;
+    entry.descriptor        = descriptorFixture();
+    entry.persistedSnapshot = makeVersionPinningRecord (entry.descriptor, {});
+
+    auto root = leafWithEntry (entry);
+    RecordingSink sink;
+    verifyVersionPinningOnLoad (*root, sink);
+    CHECK (sink.records.empty());
+}
+
+// The motivating reopen-drift scenario: an operator saves on machine
+// A with plug-in v1.0.0, reopens on machine B where the installed
+// plug-in is v0.9.0 (older). The verifier must post one Warning /
+// PluginEvent naming the unique id + both versions so the performer
+// sees what drifted in the notification-history pane.
+TEST_CASE ("verifyVersionPinningOnLoad emits Warning/PluginEvent on version drift",
+           "[archival-mode][session-snapshot]")
+{
+    EffectChainEntry entry;
+    entry.descriptor        = descriptorFixture();
+    entry.persistedSnapshot = makeVersionPinningRecord (entry.descriptor, {});
+    entry.persistedSnapshot->version = "0.9.0"; // simulate snapshot from an older plug-in install
+
+    auto root = leafWithEntry (entry);
+    RecordingSink sink;
+    verifyVersionPinningOnLoad (*root, sink);
+    REQUIRE (sink.records.size() == 1);
+    CHECK (sink.records[0].level    == NotificationLevel::Warning);
+    CHECK (sink.records[0].category == Category::PluginEvent);
+    CHECK (sink.records[0].message.find ("com.sirius.synthetic.test") != std::string::npos);
+    CHECK (sink.records[0].message.find ("0.9.0") != std::string::npos);
+    CHECK (sink.records[0].message.find ("1.0.0") != std::string::npos);
+}
+
+// Entries without a persistedSnapshot are either (a) DeterminismContract /
+// WetCapture entries that the populator deliberately skipped, or (b) old
+// pre-M8 session entries loaded with the default-empty optional. Neither
+// is drift — the verifier must simply skip them, not emit phantom events.
+TEST_CASE ("verifyVersionPinningOnLoad skips entries without a persistedSnapshot",
+           "[archival-mode][session-snapshot]")
+{
+    EffectChainEntry entry;
+    entry.descriptor = descriptorFixture();
+    // No persistedSnapshot.
+    auto root = leafWithEntry (entry);
+    RecordingSink sink;
+    verifyVersionPinningOnLoad (*root, sink);
+    CHECK (sink.records.empty());
 }

@@ -24,7 +24,8 @@ add_library(SiriusEngine STATIC
     src/OutputMixer.cpp
     src/ProcessingChain.cpp
     src/TapeWriter.cpp
-    src/NotificationBus.cpp)
+    src/NotificationBus.cpp
+    src/SessionSnapshot.cpp)
 
 target_include_directories(SiriusEngine PUBLIC include)
 
