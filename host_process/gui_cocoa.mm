@@ -1,69 +1,74 @@
 // =============================================================================
-// gui_cocoa.mm — Cocoa shim for sirius_plugin_host (M7 S5 + S6)
+// gui_cocoa.mm — Cocoa shim for sirius_plugin_host (M7 S9 Reaper-style)
 // =============================================================================
-// Companion translation unit to host_process/main.cpp. Pulled into a .mm so
-// AppKit includes don't leak into the plain C++ pump loop. The pump calls
-// `sirius_gui_*` entry points declared at the bottom; AppKit-shaped editor
-// lifetime is owned here.
+// Each `sirius_plugin_host` child owns its own top-level NSWindow per hosted
+// plug-in editor. The plug-in's NSView is hosted as the window's contentView.
+// Cross-process pixel transport (S6 CARemoteLayer) is gone — every other
+// professional DAW on macOS ships plug-ins this way (Logic, Live, Reaper,
+// Studio One, FL Studio), and the cross-process composite path requires
+// either an entitlement we don't have or a launchd-registered helper we
+// don't want.
 //
-// **Out-of-process embedding model.** The CLAP `clap_plugin_gui` spec
-// targets in-process embedding (host passes plug-in a parent NSView via
-// `set_parent`; plug-in adds its content as a subview). That host NSView
-// pointer is invalid in the engine process, so this child creates its OWN
-// placeholder NSView, calls the plug-in's `set_parent` with that
-// placeholder, and binds a `CARemoteLayerClient` to placeholder.layer.
-// The client's `clientId` is published as the contextId that the engine
-// passes to `+[CALayer layerWithRemoteClientId:]`, which composites the
-// child's layer tree cross-process via the window-server.
+// **IPC contract preservation.** The M7 S5 PluginGuiState shm wire format
+// (requestKind / requestSeq / responseKind / responseSeq / responseContextId)
+// is unchanged. The SEMANTICS of `responseContextId` shift: it was a real
+// CALayer client id (S6) or a placeholder counter (S5). Now it's just a
+// boolean-ish "editor is open" signal — non-zero means "child has a window
+// up", 0 means "no window". The engine's 30 Hz polling cycle observes this
+// directly via `OutOfProcessEffectChainHost::editorIsOpenForBus`.
 //
-// **CARemoteLayer-first; counter-based placeholder as fallback.** When
-// `sirius_engine_server_port()` returns the engine's
-// `CARemoteLayerServer.sharedServer.serverPort` (Task 6 XPC bootstrap),
-// the child constructs a `CARemoteLayerClient` and uses its `clientId`
-// as the contextId — real GPU compositing. When that port is unavailable
-// (binary run outside a signed .app bundle, e.g. ctest from build/), the
-// child falls back to the S5 process-unique counter so the editor
-// surface still publishes a non-zero contextId; the engine then renders
-// a tinted placeholder NSView. Both paths exercise the same publish/poll
-// IPC contract; only the visible pixels differ.
+// **AppKit run-loop integration.** The child process is single-threaded.
+// `sirius_appkit_init()` (called once from main()) brings AppKit online
+// with `NSApplicationActivationPolicyAccessory` (no Dock icon, no Cmd-Tab
+// entry, windows still receive events). `sirius_appkit_drain_events()`
+// (called per pump iteration AND inside the popMessageBlocking onIdle
+// hook) services NSWindow input events without blocking. Empirically
+// sub-microsecond when the event queue is empty.
 //
 // **Single-instance assumption.** Each `sirius_plugin_host` child hosts
 // exactly one plug-in instance, so a single static editor slot suffices.
 // =============================================================================
 
 #import <AppKit/AppKit.h>
-#import <QuartzCore/QuartzCore.h>
-#import <QuartzCore/CARemoteLayerClient.h>
+
+#include "sirius/PluginGuiState.h"
 
 #include <clap/clap.h>
 #include <clap/ext/gui.h>
 
 #include <atomic>
 #include <cstdint>
-#include <cstring>
 
-extern "C" std::uint32_t sirius_engine_server_port();
+@interface SiriusPluginWindowDelegate : NSObject<NSWindowDelegate>
+@end
 
 namespace
 {
     struct EditorState
     {
-        NSView*               placeholder  { nil };
-        CARemoteLayerClient*  remoteClient { nil };
-        std::uint32_t         contextId    { 0 };
-        std::uint32_t         width        { 0 };
-        std::uint32_t         height       { 0 };
-        bool                  created      { false };
+        NSWindow*                       window   { nil };
+        SiriusPluginWindowDelegate*     delegate { nil };
+        const clap_plugin_t*            plugin   { nullptr };
+        std::uint32_t                   width    { 0 };
+        std::uint32_t                   height   { 0 };
+        bool                            created  { false };
     };
 
     EditorState g_editor {};
 
-    /// Process-unique non-zero placeholder until the CARemoteLayer Mach-
-    /// port path lands. Atomic so concurrent show requests from a future
-    /// multi-instance host don't collide.
-    std::atomic<std::uint32_t> g_nextContextId { 1 };
+    /// The engine's shm region for state echo. Set once by
+    /// `sirius_gui_set_state` (called from main.cpp once the region is
+    /// attached). The NSWindowDelegate uses it to publish editor-closed
+    /// when the user clicks the X button — without that path, the
+    /// engine's PluginsPane button would stay "Close editor" forever.
+    sirius::PluginGuiState* g_guiState { nullptr };
 
-    const clap_plugin_gui_t* getGuiExt (const clap_plugin_t* plugin)
+    /// Non-zero value published as `responseContextId` when the editor
+    /// is up. The engine treats any non-zero value as "open"; the
+    /// specific number is just a stable marker (1 = "open").
+    constexpr std::uint32_t kEditorOpenMarker = 1u;
+
+    const clap_plugin_gui_t* getGuiExt (const clap_plugin_t* plugin) noexcept
     {
         if (plugin == nullptr || plugin->get_extension == nullptr)
             return nullptr;
@@ -71,7 +76,16 @@ namespace
             plugin->get_extension (plugin, CLAP_EXT_GUI));
     }
 
-    void teardownEditor (const clap_plugin_t* plugin)
+    void publishEditorClosed() noexcept
+    {
+        if (g_guiState == nullptr)
+            return;
+        g_guiState->responseContextId.store (0, std::memory_order_relaxed);
+        g_guiState->responseWidth    .store (0, std::memory_order_relaxed);
+        g_guiState->responseHeight   .store (0, std::memory_order_relaxed);
+    }
+
+    void teardownEditor (const clap_plugin_t* plugin) noexcept
     {
         if (! g_editor.created)
             return;
@@ -80,22 +94,82 @@ namespace
         if (gui != nullptr && gui->destroy != nullptr)
             gui->destroy (plugin);
 
-        if (g_editor.remoteClient != nil)
+        if (g_editor.window != nil)
         {
-            [g_editor.remoteClient invalidate];
-            [g_editor.remoteClient release];
-            g_editor.remoteClient = nil;
+            g_editor.window.delegate = nil;
+            [g_editor.window orderOut: nil];
+            [g_editor.window release];
+            g_editor.window = nil;
         }
+        if (g_editor.delegate != nil)
+        {
+            [g_editor.delegate release];
+            g_editor.delegate = nil;
+        }
+        g_editor.plugin  = nullptr;
+        g_editor.width   = 0;
+        g_editor.height  = 0;
+        g_editor.created = false;
 
-        if (g_editor.placeholder != nil)
+        publishEditorClosed();
+    }
+}
+
+@implementation SiriusPluginWindowDelegate
+
+- (BOOL)windowShouldClose: (NSWindow*) sender
+{
+    (void) sender;
+    return YES;
+}
+
+- (void)windowWillClose: (NSNotification*) note
+{
+    (void) note;
+    // User clicked the close box. Tear down the plug-in's editor in this
+    // same run-loop iteration so the engine's next poll sees a closed
+    // state. The pump loop calls sirius_appkit_drain_events from the
+    // same thread, so the synchronous teardown is safe here.
+    if (g_editor.created && g_editor.plugin != nullptr)
+        teardownEditor (g_editor.plugin);
+    else
+        publishEditorClosed();
+}
+
+@end
+
+// =============================================================================
+// C-linkage entry points consumed by host_process/main.cpp
+// =============================================================================
+
+extern "C" void sirius_gui_set_state (sirius::PluginGuiState* state) noexcept
+{
+    g_guiState = state;
+}
+
+extern "C" void sirius_appkit_init (void) noexcept
+{
+    static bool inited = false;
+    if (inited) return;
+    inited = true;
+    @autoreleasepool {
+        [NSApplication sharedApplication];
+        [NSApp setActivationPolicy: NSApplicationActivationPolicyAccessory];
+        [NSApp finishLaunching];
+    }
+}
+
+extern "C" void sirius_appkit_drain_events (void) noexcept
+{
+    @autoreleasepool {
+        NSEvent* event;
+        while ((event = [NSApp nextEventMatchingMask: NSEventMaskAny
+                                           untilDate: [NSDate distantPast]
+                                              inMode: NSDefaultRunLoopMode
+                                             dequeue: YES]) != nil)
         {
-            [g_editor.placeholder release];
-            g_editor.placeholder = nil;
+            [NSApp sendEvent: event];
         }
-        g_editor.contextId = 0;
-        g_editor.width     = 0;
-        g_editor.height    = 0;
-        g_editor.created   = false;
     }
 }
 
@@ -112,11 +186,20 @@ extern "C" std::uint32_t sirius_gui_show (const struct clap_plugin* plugin,
 
     if (g_editor.created)
     {
-        if (gui->set_size != nullptr && (width != g_editor.width || height != g_editor.height))
+        // Already open — just resize (and refocus).
+        if (gui->set_size != nullptr
+            && (width != g_editor.width || height != g_editor.height))
+        {
             gui->set_size (plugin, width, height);
+        }
+        if (g_editor.window != nil)
+        {
+            [g_editor.window setContentSize: NSMakeSize (width, height)];
+            [g_editor.window makeKeyAndOrderFront: nil];
+        }
         g_editor.width  = width;
         g_editor.height = height;
-        return g_editor.contextId;
+        return kEditorOpenMarker;
     }
 
     if (gui->is_api_supported != nullptr
@@ -141,18 +224,38 @@ extern "C" std::uint32_t sirius_gui_show (const struct clap_plugin* plugin,
     if (gui->set_size != nullptr)
         gui->set_size (plugin, width, height);
 
-    NSView* placeholder = [[NSView alloc] initWithFrame:
-        NSMakeRect (0, 0, width, height)];
-    placeholder.wantsLayer = YES;
+    // Top-level window owned by THIS process. macOS's window-server
+    // composites it like any other application's window; no cross-
+    // process pixel handoff needed.
+    const NSRect contentRect = NSMakeRect (120, 120, width, height);
+    const NSUInteger style   = NSWindowStyleMaskTitled
+                             | NSWindowStyleMaskClosable
+                             | NSWindowStyleMaskResizable;
+
+    NSWindow* window = [[NSWindow alloc]
+        initWithContentRect: contentRect
+                  styleMask: style
+                    backing: NSBackingStoreBuffered
+                      defer: NO];
+    window.title              = @"Plug-in editor";
+    window.releasedWhenClosed = NO;       // we manage releases via teardownEditor
+
+    SiriusPluginWindowDelegate* delegate = [[SiriusPluginWindowDelegate alloc] init];
+    window.delegate = delegate;
+
+    NSView* content = window.contentView;
+    content.wantsLayer = YES;
 
     if (gui->set_parent != nullptr)
     {
-        clap_window_t window {};
-        window.api   = CLAP_WINDOW_API_COCOA;
-        window.cocoa = placeholder;
-        if (! gui->set_parent (plugin, &window))
+        clap_window_t cw {};
+        cw.api   = CLAP_WINDOW_API_COCOA;
+        cw.cocoa = content;
+        if (! gui->set_parent (plugin, &cw))
         {
-            [placeholder release];
+            window.delegate = nil;
+            [window release];
+            [delegate release];
             if (gui->destroy != nullptr)
                 gui->destroy (plugin);
             return 0;
@@ -161,39 +264,16 @@ extern "C" std::uint32_t sirius_gui_show (const struct clap_plugin* plugin,
     if (gui->show != nullptr)
         gui->show (plugin);
 
-    // CARemoteLayer-first path: ask main.cpp for the engine's
-    // CARemoteLayerServer.serverPort (resolved via XPC at startup); if
-    // available, construct a CARemoteLayerClient, point it at the
-    // plug-in's CALayer subtree, and publish the real clientId. Outside
-    // the .app bundle (e.g. unit tests) serverPort is 0 and we fall
-    // through to the S5 placeholder counter path.
-    const std::uint32_t serverPort = sirius_engine_server_port();
-    if (serverPort != 0)
-    {
-        CARemoteLayerClient* client = [[CARemoteLayerClient alloc]
-            initWithServerPort: (mach_port_t) serverPort];
-        if (client != nil && client.clientId != 0)
-        {
-            client.layer = placeholder.layer;
-            g_editor.remoteClient = client;
-            g_editor.placeholder  = placeholder;
-            g_editor.contextId    = client.clientId;
-            g_editor.width        = width;
-            g_editor.height       = height;
-            g_editor.created      = true;
-            return g_editor.contextId;
-        }
-        if (client != nil)
-            [client release];
-        // fall through to S5 placeholder counter path
-    }
+    [window makeKeyAndOrderFront: nil];
+    [NSApp activateIgnoringOtherApps: YES];
 
-    g_editor.placeholder = placeholder;
-    g_editor.contextId   = g_nextContextId.fetch_add (1, std::memory_order_relaxed);
-    g_editor.width       = width;
-    g_editor.height      = height;
-    g_editor.created     = true;
-    return g_editor.contextId;
+    g_editor.window   = window;
+    g_editor.delegate = delegate;
+    g_editor.plugin   = plugin;
+    g_editor.width    = width;
+    g_editor.height   = height;
+    g_editor.created  = true;
+    return kEditorOpenMarker;
 }
 
 extern "C" bool sirius_gui_hide (const struct clap_plugin* plugin)
@@ -213,10 +293,10 @@ extern "C" std::uint32_t sirius_gui_resize (const struct clap_plugin* plugin,
     if (gui != nullptr && gui->set_size != nullptr)
         gui->set_size (plugin, width, height);
 
-    if (g_editor.placeholder != nil)
-        g_editor.placeholder.frame = NSMakeRect (0, 0, width, height);
+    if (g_editor.window != nil)
+        [g_editor.window setContentSize: NSMakeSize (width, height)];
 
     g_editor.width  = width;
     g_editor.height = height;
-    return g_editor.contextId;
+    return kEditorOpenMarker;
 }

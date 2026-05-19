@@ -14,27 +14,14 @@ add_library(SiriusHost STATIC
     src/PluginScanner.cpp
     src/GenericParameterView.cpp
     src/OutOfProcessPluginInstance.cpp
-    src/OutOfProcessEffectChainHost.cpp
-    src/OutOfProcessEditorView.cpp
-    src/PluginGuiBridge.cpp)
+    src/OutOfProcessEffectChainHost.cpp)
 
-# M7 S5 — macOS GUI embedding bridge. AppKit / QuartzCore lives behind a
-# C-linkage shim in OutOfProcessEditorView.mm so the .cpp body stays plain
-# C++. Manual retain/release for the NSView + CALayerHost (-fno-objc-arc)
-# matches the editor-lifecycle bracketing in OutOfProcessEditorView.cpp.
-#
-# M7 S6 — engine-side XPC bridge to the sirius_gui_bridge.xpc service.
-# PluginGuiBridge.mm is the Cocoa half exposing CARemoteLayerServer.sharedServer
-# .serverPort via a C-linkage shim. It only reads an AppKit property, so it
-# uses default ARC (no -fno-objc-arc) — unlike the manual retain/release
-# NSView lifecycle in OutOfProcessEditorView.mm.
-if(APPLE)
-    target_sources(SiriusHost PRIVATE
-        src/OutOfProcessEditorView.mm
-        src/PluginGuiBridge.mm)
-    set_source_files_properties(src/OutOfProcessEditorView.mm PROPERTIES
-        COMPILE_FLAGS "-fno-objc-arc")
-endif()
+# M7 S9 (Reaper-style separate plug-in windows): the engine no longer
+# embeds the child's editor pixels via CARemoteLayer; each
+# sirius_plugin_host child opens its own top-level NSWindow. No
+# engine-side AppKit shim is needed — the entire cross-process editor
+# view scaffolding from M7 S5-S8 (OutOfProcessEditorView, PluginGuiBridge,
+# IGuiBridge, xpc_service/) is gone.
 
 target_include_directories(SiriusHost PUBLIC include)
 
@@ -57,12 +44,10 @@ target_link_libraries(SiriusHost
 # JUCE's AU hosting code (juce_audio_processors.mm) references AUGenericView,
 # which lives in CoreAudioKit. juce_add_gui_app would add this framework on
 # our behalf; a plain static library does not, so we add it explicitly when
-# linking against this lib on Apple platforms. M7 S5 adds QuartzCore for
-# the CALayerHost-based cross-process editor embedding.
+# linking against this lib on Apple platforms.
 if(APPLE)
     target_link_libraries(SiriusHost PUBLIC
-        "-framework CoreAudioKit"
-        "-framework QuartzCore")
+        "-framework CoreAudioKit")
 endif()
 
 add_library(Sirius::Host ALIAS SiriusHost)

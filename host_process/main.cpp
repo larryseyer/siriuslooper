@@ -50,138 +50,8 @@
 #include <dlfcn.h>
 #include <unistd.h>
 
-#ifdef __APPLE__
-  #include <xpc/xpc.h>
-  #include <mach/mach.h>
-  #include <dispatch/dispatch.h>
-  #include <os/log.h>
-  #include <atomic>
-  #include <mutex>
-#endif
-
 namespace
 {
-   #ifdef __APPLE__
-    /// M7 S6 — child-side XPC bootstrap. Populated by bootstrapXpcBridge()
-    /// at startup; consumed by gui_cocoa.mm (Task 7) to address the
-    /// engine's CARemoteLayer server. Stays at MACH_PORT_NULL on any
-    /// failure (no bundle context, bridge timeout, etc.), in which case
-    /// gui_cocoa.mm falls back to the S5 placeholder editor surface.
-    std::atomic<mach_port_t> g_engineServerPort { MACH_PORT_NULL };
-
-    /// Shared os_log handle for the gui-bridge subsystem; mirrors the
-    /// helpers in xpc_service/main.cpp and host/src/PluginGuiBridge.cpp.
-    os_log_t bridgeLog()
-    {
-        static os_log_t h = os_log_create (
-            "com.larryseyer.siriuslooper", "gui-bridge");
-        return h;
-    }
-
-    void bootstrapXpcBridge()
-    {
-        os_log (bridgeLog(), "child: bootstrapXpcBridge start");
-
-        dispatch_queue_t queue = dispatch_queue_create (
-            "com.larryseyer.siriuslooper.host.bridge-client",
-            DISPATCH_QUEUE_SERIAL);
-
-        // See matching note in host/src/PluginGuiBridge.cpp: in-app XPC
-        // services are resolved via xpc_connection_create(), not via
-        // xpc_connection_create_mach_service() (which looks up in
-        // launchd's Mach service namespace where in-app services do
-        // not appear).
-        xpc_connection_t conn = xpc_connection_create (
-            "com.larryseyer.siriuslooper.gui-bridge",
-            queue);
-
-        if (conn == nullptr)
-        {
-            os_log_error (bridgeLog(),
-                          "child: xpc_connection_create_mach_service returned nullptr");
-            dispatch_release (queue);
-            return;
-        }
-
-        xpc_connection_set_event_handler (conn, ^(xpc_object_t event) {
-            if (xpc_get_type (event) == XPC_TYPE_ERROR)
-            {
-                const char* desc = xpc_dictionary_get_string (
-                    event, XPC_ERROR_KEY_DESCRIPTION);
-                os_log_error (bridgeLog(),
-                              "child: connection event error: %{public}s",
-                              desc != nullptr ? desc : "(no description)");
-            }
-        });
-        xpc_connection_resume (conn);
-
-        xpc_object_t req = xpc_dictionary_create (nullptr, nullptr, 0);
-        xpc_dictionary_set_string (req, "op", "get_server_port");
-
-        // 250 ms cap on the bridge cold-start path. Bridge is ~150
-        // LOC; observed cold-start is well under 50 ms on Apple
-        // Silicon, so this has plenty of headroom.
-        dispatch_semaphore_t done = dispatch_semaphore_create (0);
-        __block mach_port_t fetched   = MACH_PORT_NULL;
-        __block bool        consumed  = false;
-        // Atomic mutex around `consumed` to coordinate the wait-thread's
-        // claim with the reply-block's late-arrival path: whichever side
-        // sets `consumed=true` first owns the fetched send-right.
-        std::mutex* claimMutex = new std::mutex();
-
-        xpc_connection_send_message_with_reply (conn, req, queue,
-            ^(xpc_object_t reply) {
-                mach_port_t local = MACH_PORT_NULL;
-                if (xpc_get_type (reply) == XPC_TYPE_DICTIONARY)
-                    local = xpc_dictionary_copy_mach_send (reply, "port");
-                std::lock_guard<std::mutex> lk (*claimMutex);
-                if (consumed)
-                {
-                    // Wait thread already gave up; we own the right and
-                    // must release it or it leaks for the child's life.
-                    if (local != MACH_PORT_NULL)
-                        mach_port_deallocate (mach_task_self(), local);
-                }
-                else
-                {
-                    fetched  = local;
-                    consumed = true;
-                    dispatch_semaphore_signal (done);
-                }
-            });
-
-        const dispatch_time_t timeout = dispatch_time (
-            DISPATCH_TIME_NOW, 250 * NSEC_PER_MSEC);
-        if (dispatch_semaphore_wait (done, timeout) == 0)
-        {
-            g_engineServerPort.store (fetched, std::memory_order_release);
-            os_log (bridgeLog(),
-                    "child: bootstrapXpcBridge ok (serverPort=%u)", fetched);
-        }
-        else
-        {
-            std::lock_guard<std::mutex> lk (*claimMutex);
-            consumed = true; // tell the late reply to drop the right
-            os_log_error (bridgeLog(),
-                          "child: bootstrapXpcBridge TIMEOUT (250 ms); "
-                          "falling back to placeholder editor surface");
-            std::fprintf (stderr,
-                "sirius_plugin_host: XPC bridge timeout (250 ms); "
-                "falling back to S5 placeholder editor surface\n");
-        }
-
-        xpc_release (req);
-        // `conn` and `queue` are intentionally leaked for the child's
-        // lifetime: `xpc_dictionary_copy_mach_send` did give us an
-        // independently-owned send-right, so the connection isn't
-        // strictly required to keep the right alive — but holding it
-        // open also keeps the reply-block's `claimMutex` reachable
-        // until process exit, which is what makes the late-arrival
-        // path safe. `done` and `claimMutex` are deliberately not
-        // released either; process exit reclaims everything.
-    }
-   #endif
-
     /// Process exit codes. main() returns these — kept named so test
     /// assertions don't have to traffic in magic integers.
     constexpr int kExitOk            = 0;
@@ -234,6 +104,15 @@ namespace
     extern "C" bool          sirius_gui_hide   (const clap_plugin_t*);
     extern "C" std::uint32_t sirius_gui_resize (const clap_plugin_t*,
                                                 std::uint32_t, std::uint32_t);
+    /// M7 S9 — wired in gui_cocoa.mm. `init` brings AppKit online
+    /// (accessory activation policy, finishLaunching); `drain_events`
+    /// non-blocking-pumps pending NSWindow input events; `set_state`
+    /// hands the PluginGuiState shm pointer to the NSWindowDelegate so
+    /// user-driven close can publish responseContextId=0 back to the
+    /// engine without going through the request/response IPC path.
+    extern "C" void sirius_appkit_init         (void);
+    extern "C" void sirius_appkit_drain_events (void);
+    extern "C" void sirius_gui_set_state       (sirius::PluginGuiState* state);
    #endif
 
     /// State the CLAP-mode pump carries for the M7 S5 GUI-control region.
@@ -607,7 +486,23 @@ namespace
         const clap_output_events_t outEvents { nullptr, outEventsTry };
 
         GuiServicingState gui { guiState, 0 };
-        const auto serviceGui = [&] { serviceGuiRequests (gui, plugin); };
+       #ifdef __APPLE__
+        // M7 S9 — hand the shm pointer to gui_cocoa.mm so the
+        // NSWindowDelegate's windowWillClose: can publish
+        // responseContextId=0 directly (user clicking the X on the
+        // plug-in window isn't a request/response IPC event — the
+        // engine learns about it via the next response-field poll).
+        sirius_gui_set_state (guiState);
+       #endif
+        const auto serviceGui = [&] {
+           #ifdef __APPLE__
+            // Drain AppKit events FIRST so a pending close from the
+            // previous tick gets picked up before we service any
+            // engine-initiated request. Non-blocking; sub-µs when idle.
+            sirius_appkit_drain_events();
+           #endif
+            serviceGuiRequests (gui, plugin);
+        };
         RingByteStream stream (inRing, outRing, serviceGui);
         int exitCode = kExitOk;
 
@@ -616,6 +511,9 @@ namespace
             // Service any GUI request that landed since the last buffer.
             // Bounds GUI latency to one audio buffer when audio is
             // flowing; the in-pop onIdle hook covers the idle case.
+           #ifdef __APPLE__
+            sirius_appkit_drain_events();
+           #endif
             serviceGuiRequests (gui, plugin);
             uint32_t frameCount = 0;
             bool eof = false;
@@ -706,15 +604,6 @@ namespace
     }
 }
 
-#ifdef __APPLE__
-extern "C" std::uint32_t sirius_engine_server_port()
-{
-    return (std::uint32_t) g_engineServerPort.load (std::memory_order_acquire);
-}
-#else
-extern "C" std::uint32_t sirius_engine_server_port() { return 0; }
-#endif
-
 int main (int argc, char** argv)
 {
     std::string instanceId;
@@ -731,15 +620,15 @@ int main (int argc, char** argv)
     }
 
    #ifdef __APPLE__
-    // M7 S6 — fetch the engine's CARemoteLayer serverPort via the bundled
-    // XPC bridge. Runs BEFORE shm attach so launchd has maximum cold-start
-    // headroom; degrades to MACH_PORT_NULL on failure (gui_cocoa.mm then
-    // uses the S5 placeholder editor surface). Skipped in identity mode
-    // because identity-mode children never instantiate CARemoteLayer, so
-    // paying the 250 ms timeout in tests that spawn many identity-mode
-    // children would be pure waste.
+    // M7 S9 — bring AppKit online so the CLAP plug-in's editor (when
+    // shown) can create + dispatch into its own top-level NSWindow.
+    // Activation policy = Accessory: no Dock icon, no Cmd-Tab entry, but
+    // windows can still receive key focus + mouse / keyboard events.
+    // Idempotent + main-thread safe. Identity-mode children never touch
+    // AppKit but the init is cheap enough to run unconditionally; keeps
+    // both modes on a single code path.
     if (mode == "clap")
-        bootstrapXpcBridge();
+        sirius_appkit_init();
    #endif
 
     // SIGTERM / SIGINT → request shutdown. SIGPIPE → ignore (legacy from

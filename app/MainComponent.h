@@ -65,7 +65,7 @@ public:
     // exercises the openPluginEditor / closePluginEditor lifecycle from a
     // headless harness; these are not part of the operator surface.
     juce::File   hostBinaryPathForTesting()         const { return hostBinaryPath(); }
-    std::size_t  editorWindowCountForTesting()      const noexcept { return editorWindows_.size(); }
+    std::size_t  editorWindowCountForTesting()      const noexcept { return openEditorBusIds_.size(); }
     std::int64_t firstOpenBusIdForTesting()         const noexcept;
     std::int64_t childPidForTestingAtBusId (std::int64_t busId) const noexcept;
     void         openPluginEditorForTesting  (const PluginDescriptor& d) { openPluginEditor  (d); }
@@ -222,8 +222,12 @@ private:
     sirius::OutOfProcessEffectChainHost effectChainHost_;
     std::int64_t                        nextScratchBusId_ { kScratchBusIdBase };
 
-    class PluginEditorWindow;
-    std::vector<std::unique_ptr<PluginEditorWindow>> editorWindows_;
+    /// Bus IDs of currently-open editors (M7 S9). Each entry corresponds
+    /// to one sirius_plugin_host child that has been asked to show its
+    /// editor; the child owns the actual NSWindow. The engine just tracks
+    /// which children currently have an editor visible so the PluginsPane
+    /// can toggle its button label.
+    std::vector<std::int64_t> openEditorBusIds_;
 
     /// Resolves Contents/MacOS/sirius_plugin_host alongside the running app
     /// binary. Returns an invalid juce::File outside a .app bundle (dev-loop
@@ -231,13 +235,12 @@ private:
     juce::File hostBinaryPath() const;
 
     /// Spawns a sirius_plugin_host child via configureBus on a fresh scratch
-    /// busId, and floats a PluginEditorWindow showing the editor.
-    /// Message-thread only.
+    /// busId, then sends requestEditorShow so the child opens its OWN
+    /// top-level NSWindow (Reaper-style; M7 S9). Message-thread only.
     void openPluginEditor (const PluginDescriptor& descriptor);
 
-    /// Tears down the slot at `busId` and removes the matching window.
-    /// Message-thread only. Safe to call from a window's close-button callback
-    /// via juce::MessageManager::callAsync.
+    /// Tears down the slot at `busId`. The child window dies with the
+    /// child process. Message-thread only.
     void closePluginEditor (std::int64_t busId);
 
     // --- Video tab ---

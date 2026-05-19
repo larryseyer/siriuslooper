@@ -20,10 +20,10 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
         Sirius::Core
         clap
         "-framework AppKit"
-        "-framework QuartzCore"
         "-framework Foundation")
-    # Manual retain/release in the .mm — see header docblock for the
-    # editor-lifetime contract bracketed by sirius_gui_show / hide.
+    # M7 S9 — child owns its own top-level NSWindow; manual retain/release
+    # in the .mm for the window + delegate lifetimes (no ARC, see the
+    # docblock in gui_cocoa.mm).
     set_source_files_properties(gui_cocoa.mm PROPERTIES
         COMPILE_FLAGS "-fno-objc-arc")
 else()

@@ -58,19 +58,9 @@ add_executable(SiriusTests
     OutOfProcessEffectChainHostSlotStateTests.cpp
     OutOfProcessEffectChainHostSupervisorTests.cpp
     OutOfProcessEditorTests.cpp
-    PluginGuiBridgeTests.cpp
     OutputMixerPluginHostIntegrationTests.cpp
     SharedMemorySpscQueueTests.cpp
     SharedMemoryRegionTests.cpp)
-
-# M7 S6 — in-process CARemoteLayer round-trip sanity tests. Apple-only;
-# uses explicit [client release] (non-ARC ownership pattern documented
-# by Apple for CARemoteLayerClient), so -fno-objc-arc is required.
-if(APPLE)
-    target_sources(SiriusTests PRIVATE CARemoteLayerRoundTripTests.mm)
-    set_source_files_properties(CARemoteLayerRoundTripTests.mm PROPERTIES
-        COMPILE_FLAGS "-fno-objc-arc")
-endif()
 
 target_compile_features(SiriusTests PRIVATE cxx_std_20)
 

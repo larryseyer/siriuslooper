@@ -1302,6 +1302,51 @@ assets before public launch:
   `gh-pages` branch, custom domain = `siriuslooper.com`, Enforce HTTPS
   on. Verify with `dig siriuslooper.com +short`.
 
+### 2026-05-18 — Out-of-process plug-in scanner (Reaper-style crash isolation)
+
+- **Files:** `host/src/PluginScanner.cpp` (currently in-process JUCE
+  `PluginDirectoryScanner`), `host_process/main.cpp` (would gain a new
+  `--mode scan` path), new IPC contract for scan results.
+- **What was deferred:** the current scanner instantiates each plug-in
+  **in the engine process**. A crashy plug-in (segfault during ctor,
+  buggy initialize, etc.) takes the entire Sirius Looper engine down
+  with it. The operator has 1000+ installed plug-ins; in a real-world
+  scan this is genuinely likely. The "FabFilter" testing filter (next
+  entry below) only masks this problem.
+- **Why deferred:** raised during M7 S9 (editor architecture), but it's
+  a separate workstream. S9 is about how the editor's PIXELS get to
+  the screen (resolved: child owns its own NSWindow); scanner crash
+  isolation is about how the engine SURVIVES a bad plug-in's load
+  attempt during the scan phase. Different code, different lifecycle,
+  different failure mode.
+- **What's needed to finish (Reaper-style):**
+  1. New `sirius_plugin_host` mode: `--mode scan --plugin-path <bundle>`.
+     Child loads the plug-in via dlopen, instantiates it, calls
+     `clap_entry.init` (or VST3/AU equivalent when those land),
+     queries name + descriptor + parameter count, writes a small
+     JSON-like report to stdout, exits 0.
+  2. Crash semantics: if the child exits with non-zero OR is killed by
+     a signal (SIGSEGV / SIGBUS / SIGABRT) OR fails to exit within a
+     bounded wall-clock timeout, the engine marks that plug-in as
+     "skip — failed to scan" and the file is added to the failed-list
+     surface (PluginsPane already has the slot for this).
+  3. Engine-side: replace `PluginDirectoryScanner` usage with a loop
+     that spawns `sirius_plugin_host --mode scan` per candidate file,
+     reads the report on stdout, captures exit status, accumulates
+     results into a `juce::KnownPluginList`-shaped collection.
+  4. Parallelism budget: scan N children in parallel (N = hardware
+     concurrency / 2, capped at 8) for throughput. Each child is
+     short-lived (< 1 s typical, bounded by per-scan timeout).
+  5. Persistence: cache scan results to disk so re-scans are O(new
+     plug-ins). Invalidate cache entry on file mtime change.
+- **Surfaced by:** operator's M7 S9 review (2026-05-18). Reaper does
+  exactly this; Logic and Live similar (each via their own helper
+  process). Critical for shipping — without it, one bad VST = no scan.
+- **Sequencing:** wait until M7 S9 lands (editor) + the VST3 / AU
+  hosting in `sirius_plugin_host` lands (separate todo). Then this
+  scanner rework picks the same `sirius_plugin_host` binary up and
+  just adds a new mode.
+
 ### 2026-05-18 - M7 S7 testing-only PluginScanner hardcoded "FabFilter" filter
 - Files: host/src/PluginScanner.cpp (kTestingScanFilter constant + scanOneFormat body)
 - What was deferred: the scanner currently skips every plug-in file whose path does not contain "FabFilter". This was a temporary measure so the operator (1000+ installed plug-ins) could eyes-on the M7 S7 "Open editor" workflow without waiting minutes for a full scan.

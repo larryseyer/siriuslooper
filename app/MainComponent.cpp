@@ -1,6 +1,5 @@
 #include "MainComponent.h"
 
-#include "sirius/OutOfProcessEditorView.h"
 #include "sirius/PerformanceViewState.h"
 #include "sirius/PreparationView.h"
 #include "sirius/PreparationViewState.h"
@@ -726,58 +725,6 @@ private:
 };
 
 // =============================================================================
-// PluginEditorWindow — floating juce::DocumentWindow that owns one
-// OutOfProcessEditorView bound to a scratch busId (M7 S7).
-// =============================================================================
-class MainComponent::PluginEditorWindow final : public juce::DocumentWindow
-{
-public:
-    PluginEditorWindow (const juce::String&                  title,
-                        std::int64_t                          busId,
-                        sirius::OutOfProcessEffectChainHost&  host,
-                        std::function<void(std::int64_t)>     onClose)
-        : juce::DocumentWindow (title,
-                                juce::Colours::black,
-                                juce::DocumentWindow::allButtons),
-          busId_   (busId),
-          onClose_ (std::move (onClose))
-    {
-        setUsingNativeTitleBar (true);
-        setResizable (true, /*useBottomRightCornerResizer*/ false);
-
-        // Initial size — the DocumentWindow keeps this for S7. The
-        // embedded OutOfProcessEditorView rebinds its own bounds to the
-        // child's published CARemoteLayer contextId, but doesn't (yet)
-        // resize the parent window. Operator can resize manually.
-        auto* view = new sirius::OutOfProcessEditorView (host, busId, /*slot*/ 0);
-        view->setSize (600, 400);
-        setContentOwned (view, /*resizeToFitContent*/ true);
-        centreWithSize (getWidth(), getHeight());
-        setVisible (true);
-    }
-
-    std::int64_t busId() const noexcept { return busId_; }
-
-    void closeButtonPressed() override
-    {
-        // Defer the actual teardown so we don't destroy ourselves from
-        // inside JUCE's event dispatcher.
-        if (onClose_)
-        {
-            const auto busId = busId_;
-            auto cb = onClose_;
-            juce::MessageManager::callAsync ([cb, busId] { cb (busId); });
-        }
-    }
-
-private:
-    std::int64_t                       busId_;
-    std::function<void(std::int64_t)>  onClose_;
-
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginEditorWindow)
-};
-
-// =============================================================================
 // MainComponent helpers
 // =============================================================================
 
@@ -1030,14 +977,14 @@ MainComponent::MainComponent()
 
 MainComponent::~MainComponent()
 {
-    // M7 S7 — close any open plug-in editor windows BEFORE the chain
-    // host destructs. Reverse member-declaration order already does
-    // this (editorWindows_ is declared after effectChainHost_), but
-    // the explicit clear here is a safety belt against a future
-    // member-reorder regression that would otherwise compile, link,
-    // pass per-task tests, and segfault on quit while the supervisor
-    // thread polls a torn-down slot map.
-    editorWindows_.clear();
+    // M7 S9 — close all open plug-in editors BEFORE the chain host
+    // destructs. The child processes own their NSWindows; tearing down
+    // each slot via configureBus(empty) makes the supervisor reap them
+    // cleanly and the OS reclaims the windows.
+    for (const auto busId : openEditorBusIds_)
+        effectChainHost_.configureBus (
+            busId, sirius::EffectChain{}, hostBinaryPath(), juce::File{});
+    openEditorBusIds_.clear();
 
     // Explicit teardown order: detach the callback from the device manager
     // *before* the callback is destroyed, so the audio thread cannot deliver
@@ -1757,19 +1704,23 @@ void MainComponent::openPluginEditor (const PluginDescriptor& descriptor)
 
     effectChainHost_.configureBus (busId, chain, hostBinary, clapBundle);
 
-    auto window = std::make_unique<PluginEditorWindow> (
-        juce::String (descriptor.name),
-        busId,
-        effectChainHost_,
-        [this] (std::int64_t b) { closePluginEditor (b); });
-    editorWindows_.push_back (std::move (window));
+    // M7 S9 — Reaper-style: the child process owns the NSWindow. Ask
+    // it to show its editor; the child's gui_cocoa.mm creates a
+    // top-level NSWindow + delegates close events back to the engine
+    // via PluginGuiState.responseContextId on the next poll cycle.
+    constexpr std::uint32_t kDefaultEditorWidth  = 600;
+    constexpr std::uint32_t kDefaultEditorHeight = 400;
+    effectChainHost_.requestEditorShow (
+        busId, /*slot*/ 0, kDefaultEditorWidth, kDefaultEditorHeight);
+
+    openEditorBusIds_.push_back (busId);
 }
 
 std::int64_t MainComponent::firstOpenBusIdForTesting() const noexcept
 {
-    if (editorWindows_.empty())
+    if (openEditorBusIds_.empty())
         return -1;
-    return editorWindows_.front()->busId();
+    return openEditorBusIds_.front();
 }
 
 std::int64_t MainComponent::childPidForTestingAtBusId (std::int64_t busId) const noexcept
@@ -1780,17 +1731,14 @@ std::int64_t MainComponent::childPidForTestingAtBusId (std::int64_t busId) const
 void MainComponent::closePluginEditor (std::int64_t busId)
 {
     // Empty chain → host's stale-slot eraser removes the slot in
-    // configureBus, supervisor reaps the child.
+    // configureBus, supervisor reaps the child. The child's NSWindow
+    // dies with the process; no engine-side window to dispose of.
     const auto hostBinary = hostBinaryPath();
     effectChainHost_.configureBus (busId, sirius::EffectChain{}, hostBinary, juce::File{});
 
-    editorWindows_.erase (
-        std::remove_if (editorWindows_.begin(), editorWindows_.end(),
-            [busId] (const std::unique_ptr<PluginEditorWindow>& w)
-            {
-                return w != nullptr && w->busId() == busId;
-            }),
-        editorWindows_.end());
+    openEditorBusIds_.erase (
+        std::remove (openEditorBusIds_.begin(), openEditorBusIds_.end(), busId),
+        openEditorBusIds_.end());
 }
 
 } // namespace sirius

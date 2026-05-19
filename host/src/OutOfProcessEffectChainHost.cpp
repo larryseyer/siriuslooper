@@ -1,6 +1,5 @@
 #include "sirius/OutOfProcessEffectChainHost.h"
 
-#include "sirius/PluginGuiBridge.h"
 #include "sirius/PluginInstanceId.h"
 #include "sirius/PluginIpcMessage.h"
 
@@ -83,13 +82,12 @@ void OutOfProcessEffectChainHost::configureBus (std::int64_t       busId,
                                                 const juce::File&  hostBinary,
                                                 const juce::File&  clapBundle)
 {
-    // Touch the bridge so the engine's CARemoteLayerServer.serverPort
-    // is registered with the XPC broker. First call constructs the
-    // real XpcGuiBridge; later calls are no-ops. Children spawned for
-    // any slot in this bus will then succeed in their get_server_port
-    // lookup.
-    (void) PluginGuiBridge::instance();
-
+    // M7 S9 — Reaper-style separate plug-in windows. The child process
+    // owns its own top-level NSWindow; no cross-process pixel handoff,
+    // no PluginGuiBridge touch needed here. The S5 PluginGuiState shm
+    // contract (requestKind / responseContextId) still carries editor
+    // show/hide signals; the child publishes responseContextId=1 when
+    // its window is up, 0 when closed.
     std::scoped_lock lk (instancesMutex_);
 
     // Tear down any pre-existing instances for this bus that no longer

@@ -95,22 +95,12 @@ if(APPLE AND CMAKE_GENERATOR STREQUAL "Xcode")
         XCODE_ATTRIBUTE_ENABLE_HARDENED_RUNTIME "YES")
 endif()
 
-# Copy the XPC service and the plug-in host helper into the app bundle.
-# launchd dispatches the XPC service by CFBundleIdentifier
-# (com.larryseyer.siriuslooper.gui-bridge); the on-disk directory name
-# sirius_gui_bridge.xpc (OUTPUT_NAME set in xpc_service/CMakeLists.txt)
-# does not affect service lookup.
+# Copy the plug-in host helper into the app bundle. M7 S9 deleted the
+# bundled XPC service entirely; each sirius_plugin_host child owns its
+# own NSWindow (Reaper-style separate plug-in windows), no cross-process
+# pixel transport needed.
 if(APPLE)
-    add_dependencies(SiriusLooper sirius_gui_bridge sirius_plugin_host)
-
-    add_custom_command(TARGET SiriusLooper POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory
-            "$<TARGET_BUNDLE_DIR:SiriusLooper>/Contents/XPCServices"
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "$<TARGET_BUNDLE_DIR:sirius_gui_bridge>"
-            "$<TARGET_BUNDLE_DIR:SiriusLooper>/Contents/XPCServices/$<TARGET_BUNDLE_DIR_NAME:sirius_gui_bridge>"
-        VERBATIM
-        COMMENT "Sirius: install XPC service into app bundle")
+    add_dependencies(SiriusLooper sirius_plugin_host)
 
     add_custom_command(TARGET SiriusLooper POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy
@@ -143,19 +133,12 @@ if(APPLE)
     # M7 S8 — final re-sign of the parent app AFTER the helper copies.
     # The earlier CMake auto-sign of SiriusLooper.app runs BEFORE these
     # POST_BUILD commands, so without this final step the parent's
-    # CodeResources seal does not cover Contents/XPCServices/ or the
-    # copied Contents/MacOS/sirius_plugin_host — which modern macOS
-    # treats as untrusted and refuses to register the in-app XPC
-    # service. Closes the M7 S6 deviation #2 re-sign gap.
-    #
-    # CRITICAL: do NOT pass --deep here. --deep walks down and re-signs
-    # every nested bundle with the parent's identifier, which would
-    # clobber the .xpc bundle's `com.larryseyer.siriuslooper.gui-bridge`
-    # codesign identifier — and that identifier MUST match the .xpc's
-    # CFBundleIdentifier for launchd to register the in-app XPC service.
-    # The nested .xpc + helper are independently re-signed above; this
-    # outer sign just rebuilds the parent's CodeResources to hash their
-    # existing signatures into the seal.
+    # CodeResources seal does not cover the copied
+    # Contents/MacOS/sirius_plugin_host. M7 S9 simplified this — with the
+    # XPC bridge deleted, the parent re-sign only seals the helper
+    # binary; --deep is still avoided to keep semantic parity with the
+    # multi-stage sign pipeline above (which only signs one inner thing
+    # now anyway, but the convention costs nothing).
     if(NOT CMAKE_GENERATOR STREQUAL "Xcode")
         add_custom_command(TARGET SiriusLooper POST_BUILD
             COMMAND codesign --force --sign "Developer ID Application: Larry Seyer (RR5DY39W4Q)"
