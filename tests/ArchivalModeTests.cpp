@@ -32,7 +32,6 @@ using sirius::Constituent;
 using sirius::ConstituentId;
 using sirius::EffectChain;
 using sirius::EffectChainEntry;
-using sirius::INotificationSink;
 using sirius::makeVersionPinningRecord;
 using sirius::NotificationLevel;
 using sirius::PluginDescriptor;
