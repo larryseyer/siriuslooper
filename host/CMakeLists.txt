@@ -11,6 +11,7 @@
 # =============================================================================
 
 add_library(SiriusHost STATIC
+    src/ClapBundleLoader.cpp
     src/PluginScanner.cpp
     src/GenericParameterView.cpp
     src/OutOfProcessPluginInstance.cpp
@@ -35,6 +36,7 @@ target_compile_definitions(SiriusHost PUBLIC
 
 target_link_libraries(SiriusHost
     PUBLIC  Sirius::Core
+            clap
             juce::juce_audio_processors
             juce::juce_gui_basics
             juce::juce_gui_extra

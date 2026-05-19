@@ -27,6 +27,7 @@
 //     output stream back through RingByteStream::writeAll + flush.
 // =============================================================================
 
+#include "sirius/ClapBundleLoader.h"
 #include "sirius/PluginGuiState.h"
 #include "sirius/PluginIpcMessage.h"
 #include "sirius/SharedMemoryRegion.h"
@@ -47,7 +48,6 @@
 #include <string>
 #include <vector>
 
-#include <dlfcn.h>
 #include <unistd.h>
 
 namespace
@@ -343,26 +343,6 @@ namespace
     // CLAP mode
     // -------------------------------------------------------------------------
 
-    /// On macOS, .clap is a bundle directory; the executable lives at
-    /// `<bundle>/Contents/MacOS/<basename-without-.clap>`. We hand-construct
-    /// that path so we can dlopen the inner binary without pulling in
-    /// CoreFoundation just for CFBundle.
-    std::string resolveClapBinaryPath (std::string path)
-    {
-       #ifdef __APPLE__
-        while (! path.empty() && path.back() == '/')
-            path.pop_back();
-        const auto slash = path.find_last_of ('/');
-        std::string basename = (slash == std::string::npos) ? path : path.substr (slash + 1);
-        if (basename.size() >= 5
-            && basename.compare (basename.size() - 5, 5, ".clap") == 0)
-            basename.resize (basename.size() - 5);
-        return path + "/Contents/MacOS/" + basename;
-       #else
-        return path;
-       #endif
-    }
-
     /// Minimal `clap_host` shim. Synthetic identity does not query host
     /// extensions; real plug-ins do — return null and let version
     /// negotiation do its job.
@@ -391,64 +371,36 @@ namespace
                      IpcQueue& inRing, IpcQueue& outRing,
                      sirius::PluginGuiState* guiState)
     {
-        const auto binaryPath = resolveClapBinaryPath (pluginPath);
-
-        void* handle = ::dlopen (binaryPath.c_str(), RTLD_NOW | RTLD_LOCAL);
-        if (handle == nullptr)
+        std::string loadErr;
+        auto loader = sirius::ClapBundleLoader::load (pluginPath, loadErr);
+        if (! loader.valid())
         {
             std::fprintf (stderr,
-                          "sirius_plugin_host: dlopen('%s') failed: %s\n",
-                          binaryPath.c_str(), ::dlerror());
+                          "sirius_plugin_host: %s\n",
+                          loadErr.c_str());
             return kExitClapLoadErr;
         }
 
-        auto* entry = static_cast<const clap_plugin_entry_t*> (::dlsym (handle, "clap_entry"));
-        if (entry == nullptr || ! clap_version_is_compatible (entry->clap_version))
-        {
-            std::fprintf (stderr, "sirius_plugin_host: clap_entry missing or incompatible\n");
-            ::dlclose (handle);
-            return kExitClapLoadErr;
-        }
-        if (! entry->init (binaryPath.c_str()))
-        {
-            std::fprintf (stderr, "sirius_plugin_host: entry->init failed\n");
-            ::dlclose (handle);
-            return kExitClapLoadErr;
-        }
-
-        const auto* factory = static_cast<const clap_plugin_factory_t*> (
-            entry->get_factory (CLAP_PLUGIN_FACTORY_ID));
-        if (factory == nullptr || factory->get_plugin_count (factory) == 0)
-        {
-            std::fprintf (stderr, "sirius_plugin_host: no CLAP plug-in factory\n");
-            entry->deinit();
-            ::dlclose (handle);
-            return kExitClapLoadErr;
-        }
-        const auto* desc = factory->get_plugin_descriptor (factory, 0);
-        if (desc == nullptr || desc->id == nullptr)
-        {
-            std::fprintf (stderr, "sirius_plugin_host: descriptor missing\n");
-            entry->deinit();
-            ::dlclose (handle);
-            return kExitClapLoadErr;
-        }
-
+        // First descriptor — synthetic CLAP exports exactly one; for shells
+        // (e.g. Surge XT) we'd need a `--plugin-id` arg, but M8 S2's child
+        // process is launched against a known single-plug-in bundle per slot.
         auto host = makeHost();
-        const auto* plugin = factory->create_plugin (factory, &host, desc->id);
+        const auto descriptors = loader.descriptors (pluginPath);
+        if (descriptors.empty())
+        {
+            std::fprintf (stderr, "sirius_plugin_host: bundle exports no plug-ins\n");
+            return kExitClapLoadErr;
+        }
+        const auto* plugin = loader.createPlugin (host, descriptors.front().uniqueId.c_str());
         if (plugin == nullptr || ! plugin->init (plugin))
         {
             std::fprintf (stderr, "sirius_plugin_host: create_plugin/init failed\n");
-            entry->deinit();
-            ::dlclose (handle);
             return kExitClapLoadErr;
         }
         if (! plugin->activate (plugin, kSampleRate, 1, kInitialMaxFrames))
         {
             std::fprintf (stderr, "sirius_plugin_host: plugin->activate failed\n");
             plugin->destroy (plugin);
-            entry->deinit();
-            ::dlclose (handle);
             return kExitClapLoadErr;
         }
         plugin->start_processing (plugin);
@@ -580,9 +532,7 @@ namespace
 
         plugin->stop_processing (plugin);
         plugin->deactivate (plugin);
-        plugin->destroy (plugin);
-        entry->deinit();
-        ::dlclose (handle);
+        plugin->destroy (plugin); // loader destructs at function exit: deinit + dlclose
         return exitCode;
     }
 

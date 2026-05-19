@@ -61,7 +61,8 @@ add_executable(SiriusTests
     OutputMixerPluginHostIntegrationTests.cpp
     SharedMemorySpscQueueTests.cpp
     SharedMemoryRegionTests.cpp
-    ArchivalModeTests.cpp)
+    ArchivalModeTests.cpp
+    ClapBundleLoaderTests.cpp)
 
 target_compile_features(SiriusTests PRIVATE cxx_std_20)
 
@@ -97,6 +98,10 @@ add_subdirectory(fixtures)
 # SyntheticTestPlugin.clap shared library file.
 target_compile_definitions(SiriusTests PRIVATE
     SIRIUS_PLUGIN_HOST_PATH="$<TARGET_FILE:sirius_plugin_host>"
+    # M8 S2: ClapBundleLoaderTests' malformed-bundle case dlopens a real
+    # Mach-O that lacks a `clap_entry` symbol. The bare sirius_plugin_host
+    # executable ($<TARGET_FILE:...>) is exactly that — not the .app copy.
+    SIRIUS_HOST_BINARY_PATH="$<TARGET_FILE:sirius_plugin_host>"
     $<$<PLATFORM_ID:Darwin>:SIRIUS_SYNTHETIC_CLAP_PATH="$<TARGET_BUNDLE_DIR:SyntheticTestPlugin>">
     $<$<NOT:$<PLATFORM_ID:Darwin>>:SIRIUS_SYNTHETIC_CLAP_PATH="$<TARGET_FILE:SyntheticTestPlugin>">)
 add_dependencies(SiriusTests sirius_plugin_host SyntheticTestPlugin)
