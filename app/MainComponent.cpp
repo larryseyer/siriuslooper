@@ -1,5 +1,6 @@
 #include "MainComponent.h"
 
+#include "sirius/OutOfProcessEditorView.h"
 #include "sirius/PerformanceViewState.h"
 #include "sirius/PreparationView.h"
 #include "sirius/PreparationViewState.h"
