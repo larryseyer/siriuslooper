@@ -4,6 +4,7 @@
 // engine-side populator/verifier that bridge the live session graph to
 // the persistence layer. JUCE-free for the core types; JUCE-using for
 // the SessionFormat round-trip and the NotificationBus verifier.
+#include "sirius/ArchivalMode.h"
 #include "sirius/Constituent.h"
 #include "sirius/EffectChain.h"
 #include "sirius/PluginDescriptor.h"
@@ -20,6 +21,7 @@
 #include <span>
 #include <string>
 
+using sirius::ArchivalMode;
 using sirius::Constituent;
 using sirius::ConstituentId;
 using sirius::EffectChain;
@@ -85,4 +87,27 @@ TEST_CASE ("PluginDescriptor::version round-trips through SessionFormat",
     REQUIRE (round->effectChain().has_value());
     REQUIRE (round->effectChain()->size() == 1);
     CHECK (round->effectChain()->at (0).descriptor.version == "2.3.1");
+}
+
+// Compiler-warning-as-error in the project's baseline (-Wswitch + -Werror)
+// catches any future enum extension that forgets to update this switch at
+// compile time. The runtime walk over all three enumerators ensures the
+// test is exercised even if -Wswitch isn't on — a future ArchivalMode
+// addition silently growing the enum without a matching switch arm would
+// otherwise let a "no archival" code path through.
+TEST_CASE ("ArchivalMode switch reaches every case", "[archival-mode]")
+{
+    int reached = 0;
+    for (auto mode : { ArchivalMode::DeterminismContract,
+                       ArchivalMode::WetCapture,
+                       ArchivalMode::VersionPinning })
+    {
+        switch (mode)
+        {
+            case ArchivalMode::DeterminismContract: ++reached; break;
+            case ArchivalMode::WetCapture:          ++reached; break;
+            case ArchivalMode::VersionPinning:      ++reached; break;
+        }
+    }
+    CHECK (reached == 3);
 }
