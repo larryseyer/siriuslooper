@@ -55,3 +55,33 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         SUFFIX ".clap"
         PREFIX "")
 endif()
+
+# =============================================================================
+# StatefulSynthFixture — second synthetic CLAP for M8 S2 state-IPC tests.
+# =============================================================================
+# Shaped like a real third-party plug-in: distinct id + version, two params,
+# per-instance internal state, and a real clap_plugin_state extension. No GUI
+# .mm — audio + params + state only. Same bundle pattern as SyntheticTestPlugin.
+add_library(StatefulSynthFixture MODULE StatefulSynthFixture.cpp)
+target_link_libraries(StatefulSynthFixture PRIVATE clap)
+
+target_compile_features(StatefulSynthFixture PRIVATE cxx_std_20)
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    target_link_options(StatefulSynthFixture PRIVATE
+        -exported_symbols_list ${CMAKE_CURRENT_SOURCE_DIR}/StatefulSynthFixture.symbols.txt)
+    set_target_properties(StatefulSynthFixture PROPERTIES
+        BUNDLE                          TRUE
+        BUNDLE_EXTENSION                clap
+        MACOSX_BUNDLE_GUI_IDENTIFIER    com.sirius.synthetic.statefulsynth
+        MACOSX_BUNDLE_BUNDLE_NAME       StatefulSynthFixture
+        MACOSX_BUNDLE_BUNDLE_VERSION    "1"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "1"
+        MACOSX_BUNDLE_INFO_PLIST        ${CMAKE_CURRENT_SOURCE_DIR}/StatefulSynthFixture.plist.in)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_link_options(StatefulSynthFixture PRIVATE
+        -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/StatefulSynthFixture.version
+        -Wl,-z,defs)
+    set_target_properties(StatefulSynthFixture PROPERTIES
+        SUFFIX ".clap" PREFIX "")
+endif()

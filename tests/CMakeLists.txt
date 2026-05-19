@@ -66,7 +66,8 @@ add_executable(SiriusTests
     ClapBundleLoaderTests.cpp
     ClapScannerTests.cpp
     PluginStateRegionTests.cpp
-    PluginStateExtensionTests.cpp)
+    PluginStateExtensionTests.cpp
+    StatefulSynthFixtureTests.cpp)
 
 target_compile_features(SiriusTests PRIVATE cxx_std_20)
 
@@ -107,8 +108,13 @@ target_compile_definitions(SiriusTests PRIVATE
     # executable ($<TARGET_FILE:...>) is exactly that — not the .app copy.
     SIRIUS_HOST_BINARY_PATH="$<TARGET_FILE:sirius_plugin_host>"
     $<$<PLATFORM_ID:Darwin>:SIRIUS_SYNTHETIC_CLAP_PATH="$<TARGET_BUNDLE_DIR:SyntheticTestPlugin>">
-    $<$<NOT:$<PLATFORM_ID:Darwin>>:SIRIUS_SYNTHETIC_CLAP_PATH="$<TARGET_FILE:SyntheticTestPlugin>">)
-add_dependencies(SiriusTests sirius_plugin_host SyntheticTestPlugin)
+    $<$<NOT:$<PLATFORM_ID:Darwin>>:SIRIUS_SYNTHETIC_CLAP_PATH="$<TARGET_FILE:SyntheticTestPlugin>">
+    # M8 S2: StatefulSynthFixture — second synthetic CLAP shaped like a real
+    # third-party plug-in (params + real clap_plugin_state). Same generator-
+    # expression trick: bundle dir on macOS, shared library file elsewhere.
+    $<$<PLATFORM_ID:Darwin>:SIRIUS_STATEFUL_SYNTH_CLAP_PATH="$<TARGET_BUNDLE_DIR:StatefulSynthFixture>">
+    $<$<NOT:$<PLATFORM_ID:Darwin>>:SIRIUS_STATEFUL_SYNTH_CLAP_PATH="$<TARGET_FILE:StatefulSynthFixture>">)
+add_dependencies(SiriusTests sirius_plugin_host SyntheticTestPlugin StatefulSynthFixture)
 
 include(Catch)
 catch_discover_tests(SiriusTests)

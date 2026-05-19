@@ -1,0 +1,6 @@
+STATEFUL_SYNTH_FIXTURE_ABI_1.0 {
+  global:
+    clap_entry;
+  local:
+    *;
+};
