@@ -848,6 +848,11 @@ MainComponent::MainComponent()
     audioCallback_->setOutputMixer (outputMixer_.get());
     audioCallback_->setDirectLayer (directLayer_.get());
     audioCallback_->setNotificationBus (notificationBus_.get());
+    // M7 S7 — supervisor restart / permanent-bypass events post via
+    // INotificationSink. Without this wiring the operator opens an
+    // editor, the child silently dies, and nothing surfaces in the
+    // Preparation tab's notifications.
+    effectChainHost_.setNotificationSink (notificationBus_.get());
     // TapeWriter::setNotificationBus deferred — MainComponent doesn't
     // currently construct a TapeWriter (per M6 S2 audit). When TapeWriter
     // joins the owned app graph (M11 SAF wiring, likely), add a parallel
@@ -993,6 +998,15 @@ MainComponent::MainComponent()
 
 MainComponent::~MainComponent()
 {
+    // M7 S7 — close any open plug-in editor windows BEFORE the chain
+    // host destructs. Reverse member-declaration order already does
+    // this (editorWindows_ is declared after effectChainHost_), but
+    // the explicit clear here is a safety belt against a future
+    // member-reorder regression that would otherwise compile, link,
+    // pass per-task tests, and segfault on quit while the supervisor
+    // thread polls a torn-down slot map.
+    editorWindows_.clear();
+
     // Explicit teardown order: detach the callback from the device manager
     // *before* the callback is destroyed, so the audio thread cannot deliver
     // one last buffer into freed memory. Then close the device — the manager
