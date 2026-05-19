@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sirius/PluginDescriptor.h"
+#include "sirius/INotificationSink.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
@@ -52,8 +53,15 @@ public:
     /// be silent.
     std::vector<std::string> registeredFormatNames() const;
 
+    /// Binds a notification sink so scan-progress events surface in
+    /// the operator's notification history. nullptr-tolerant — the
+    /// scanner posts only when a sink is bound. Set-once before
+    /// the first scan; not thread-safe.
+    void setNotificationSink (INotificationSink* sink) noexcept;
+
 private:
     juce::AudioPluginFormatManager formats_;
+    INotificationSink* notificationSink_ { nullptr };
 };
 
 } // namespace sirius

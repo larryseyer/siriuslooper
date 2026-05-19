@@ -1,4 +1,7 @@
 #include "sirius/PluginScanner.h"
+#include "sirius/ClapScanner.h"
+
+#include <cstdio>
 
 namespace sirius
 {
@@ -13,8 +16,7 @@ namespace
         if (formatName == "VST3")          return PluginFormat::Vst3;
         if (formatName == "AudioUnit")     return PluginFormat::AudioUnit;
         if (formatName == "AudioUnit v3")  return PluginFormat::AudioUnitV3;
-        // Anything else falls through to VST3; CLAP would land here if a third-
-        // party format were registered, but the scanner does not register it.
+        if (formatName == "CLAP")          return PluginFormat::Clap;
         return PluginFormat::Vst3;
     }
 
@@ -30,44 +32,39 @@ namespace
         return out;
     }
 
-    /// Testing-only name filter (see todo.md M7 S7 entry). When non-empty,
-    /// candidate plug-in files whose path does NOT contain this substring
-    /// are skipped before per-file instantiation. Operators with 1000+
-    /// plug-ins installed cannot wait minutes for a full scan during
-    /// eyes-on; this lets them point at the global plug-in folder and
-    /// only pay the instantiation cost for the named vendor.
-    constexpr const char* kTestingScanFilter = "FabFilter";
-
     void scanOneFormat (juce::AudioPluginFormat& format,
                         const juce::FileSearchPath& path,
                         PluginScanResult& result)
     {
         juce::KnownPluginList list;
-        const juce::String filter (kTestingScanFilter);
 
         const auto candidates = format.searchPathsForPlugins (
             path, /*recursive*/ true, /*allowAsync*/ false);
 
         for (const auto& fileOrId : candidates)
         {
-            if (filter.isNotEmpty() && ! fileOrId.containsIgnoreCase (filter))
-                continue;
-
             juce::OwnedArray<juce::PluginDescription> typesFound;
             list.scanAndAddFile (fileOrId,
                                  /*dontRescanIfAlreadyInList*/ true,
                                  typesFound,
                                  format);
-            // scanAndAddFile populates `list` directly; typesFound is the
-            // per-file result. Anything failing instantiation surfaces via
-            // KnownPluginList's failure tracking — we don't have a direct
-            // "failed" list without PluginDirectoryScanner, so failures here
-            // are silently dropped. Acceptable for the testing-only path;
-            // production scan (post-todo.md fix) restores the full reporting.
         }
 
         for (const auto& type : list.getTypes())
             result.descriptors.push_back (fromJuceDescription (type));
+    }
+
+    void postScanProgress (INotificationSink* sink,
+                           const char* phase,
+                           const char* formatName,
+                           std::size_t count)
+    {
+        if (sink == nullptr) return;
+        char msg[96];
+        std::snprintf (msg, sizeof (msg),
+                       "scan %s: %s (%zu descriptors)",
+                       phase, formatName, count);
+        sink->post (NotificationLevel::Info, Category::PluginEvent, msg);
     }
 }
 
@@ -81,14 +78,39 @@ PluginScanner::PluginScanner()
    #endif
 }
 
+void PluginScanner::setNotificationSink (INotificationSink* sink) noexcept
+{
+    notificationSink_ = sink;
+}
+
 PluginScanResult PluginScanner::scanDefaultLocations()
 {
     PluginScanResult result;
     for (int i = 0; i < formats_.getNumFormats(); ++i)
     {
         auto* format = formats_.getFormat (i);
+        const auto name = format->getName().toRawUTF8();
+        const auto before = result.descriptors.size();
+        postScanProgress (notificationSink_, "begin", name, 0);
         scanOneFormat (*format, format->getDefaultLocationsToSearch(), result);
+        postScanProgress (notificationSink_, "end", name,
+                          result.descriptors.size() - before);
     }
+
+    // CLAP — non-JUCE format, ours.
+    const auto before = result.descriptors.size();
+    postScanProgress (notificationSink_, "begin", "CLAP", 0);
+    {
+        ClapScanner clapScanner;
+        auto clapResult = clapScanner.scanDefaultLocations();
+        for (auto& d : clapResult.descriptors)
+            result.descriptors.push_back (std::move (d));
+        for (auto& f : clapResult.failedFiles)
+            result.failedFiles.push_back (std::move (f));
+    }
+    postScanProgress (notificationSink_, "end", "CLAP",
+                      result.descriptors.size() - before);
+
     return result;
 }
 
@@ -96,7 +118,33 @@ PluginScanResult PluginScanner::scan (const juce::FileSearchPath& path)
 {
     PluginScanResult result;
     for (int i = 0; i < formats_.getNumFormats(); ++i)
-        scanOneFormat (*formats_.getFormat (i), path, result);
+    {
+        auto* format = formats_.getFormat (i);
+        const auto name = format->getName().toRawUTF8();
+        const auto before = result.descriptors.size();
+        postScanProgress (notificationSink_, "begin", name, 0);
+        scanOneFormat (*format, path, result);
+        postScanProgress (notificationSink_, "end", name,
+                          result.descriptors.size() - before);
+    }
+
+    // Walk every path the caller supplied for CLAP too.
+    const auto before = result.descriptors.size();
+    postScanProgress (notificationSink_, "begin", "CLAP", 0);
+    {
+        ClapScanner clapScanner;
+        for (int i = 0; i < path.getNumPaths(); ++i)
+        {
+            auto sub = clapScanner.scan (path[i]);
+            for (auto& d : sub.descriptors)
+                result.descriptors.push_back (std::move (d));
+            for (auto& f : sub.failedFiles)
+                result.failedFiles.push_back (std::move (f));
+        }
+    }
+    postScanProgress (notificationSink_, "end", "CLAP",
+                      result.descriptors.size() - before);
+
     return result;
 }
 
