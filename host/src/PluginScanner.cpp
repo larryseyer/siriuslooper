@@ -60,7 +60,10 @@ namespace
                            std::size_t count)
     {
         if (sink == nullptr) return;
-        char msg[96];
+        // Comfortably fits the known format names ("VST3", "AudioUnit v3", "CLAP")
+        // plus the phase word and the "(%zu descriptors)" count suffix.
+        constexpr std::size_t kScanProgressMsgBytes = 96;
+        char msg[kScanProgressMsgBytes];
         std::snprintf (msg, sizeof (msg),
                        "scan %s: %s (%zu descriptors)",
                        phase, formatName, count);
@@ -89,11 +92,11 @@ PluginScanResult PluginScanner::scanDefaultLocations()
     for (int i = 0; i < formats_.getNumFormats(); ++i)
     {
         auto* format = formats_.getFormat (i);
-        const auto name = format->getName().toRawUTF8();
+        const juce::String name = format->getName();
         const auto before = result.descriptors.size();
-        postScanProgress (notificationSink_, "begin", name, 0);
+        postScanProgress (notificationSink_, "begin", name.toRawUTF8(), 0);
         scanOneFormat (*format, format->getDefaultLocationsToSearch(), result);
-        postScanProgress (notificationSink_, "end", name,
+        postScanProgress (notificationSink_, "end", name.toRawUTF8(),
                           result.descriptors.size() - before);
     }
 
@@ -120,11 +123,11 @@ PluginScanResult PluginScanner::scan (const juce::FileSearchPath& path)
     for (int i = 0; i < formats_.getNumFormats(); ++i)
     {
         auto* format = formats_.getFormat (i);
-        const auto name = format->getName().toRawUTF8();
+        const juce::String name = format->getName();
         const auto before = result.descriptors.size();
-        postScanProgress (notificationSink_, "begin", name, 0);
+        postScanProgress (notificationSink_, "begin", name.toRawUTF8(), 0);
         scanOneFormat (*format, path, result);
-        postScanProgress (notificationSink_, "end", name,
+        postScanProgress (notificationSink_, "end", name.toRawUTF8(),
                           result.descriptors.size() - before);
     }
 
