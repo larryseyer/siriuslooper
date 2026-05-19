@@ -351,6 +351,22 @@ TEST_CASE ("populateVersionPinningRecords leaves non-VersionPinning entries alon
     CHECK_FALSE (populated->effectChain()->at (0).persistedSnapshot.has_value());
 }
 
+// Mirror of the DeterminismContract case for the third enum arm. WetCapture
+// entries are captured by a wet-tape writer (M8 S4-5), not by snapshotting —
+// the populator must leave them alone too. Without this test, a bug that
+// populated snapshots on WetCapture entries would go undetected until M8 S5
+// observed phantom drift events.
+TEST_CASE ("populateVersionPinningRecords leaves WetCapture entries alone",
+           "[archival-mode][session-snapshot]")
+{
+    EffectChainEntry entry;
+    entry.descriptor   = descriptorFixture();
+    entry.archivalMode = ArchivalMode::WetCapture;
+    auto root = leafWithEntry (entry);
+    auto populated = populateVersionPinningRecords (root);
+    CHECK_FALSE (populated->effectChain()->at (0).persistedSnapshot.has_value());
+}
+
 // Constituent::ChildPtr is shared_ptr<const Constituent> — the
 // immutability contract is load-bearing across the entire structure
 // layer. A populator that mutated the input would violate every

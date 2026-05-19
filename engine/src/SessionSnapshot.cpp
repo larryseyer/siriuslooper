@@ -37,6 +37,14 @@ std::shared_ptr<const Constituent> walkAndPopulate (
         for (std::size_t i = 0; i < chain.size(); ++i)
         {
             EffectChainEntry entry = chain.at (i);
+            // M8 S1: only fill an empty optional. Re-save never refreshes
+            // a stale snapshot because the descriptor IS the source of
+            // truth in S1 (no live host query yet) — repinning would be
+            // a no-op. M8 S2 must drop the `! has_value()` guard once
+            // `OutOfProcessEffectChainHost::descriptorForSlot` /
+            // `stateBlobForSlot` are wired; otherwise a v1.0.0→v1.0.1
+            // upgrade between save-A and save-B silently re-pins to the
+            // old version.
             if (entry.archivalMode == ArchivalMode::VersionPinning
                 && ! entry.persistedSnapshot.has_value())
             {
