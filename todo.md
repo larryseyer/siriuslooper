@@ -1481,3 +1481,9 @@ assets before public launch:
   #2) is now closed by Step 5 above. Leave that doc updated to
   reflect that the dev-loop Ninja generator now produces a
   Developer-ID-signed `.app` with sealed CodeResources.
+
+### [2026-05-19] - M8 S2 — OutOfProcessPluginInstance state-result is bool-collapsed
+- Files: `/Users/larryseyer/SiriusLooper/src/sirius/OutOfProcessPluginInstance.h`, `/Users/larryseyer/SiriusLooper/src/sirius/OutOfProcessPluginInstance.cpp`, `/Users/larryseyer/SiriusLooper/tests/ThirdPartyClapIntegrationTests.cpp`
+- What was deferred: `OutOfProcessPluginInstance::requestStateSave` / `requestStateLoad` collapse three distinct outcomes — (a) plug-in has no `clap_plugin_state` extension, (b) IPC round-trip timed out, (c) child-side save/load error — into a single `false` return. The third-party CLAP integration test (`ThirdPartyClapIntegrationTests.cpp`, Case 2) therefore cannot tell a genuine timeout/error apart from a legitimately-stateless plug-in, so it WARN+SUCCEED on `false`. A real timeout is currently swallowed as a pass (fail-loud violation that cannot be cleanly fixed at the test layer).
+- Why deferred: Fixing the root cause requires changing the public API of `OutOfProcessPluginInstance` (tri-state result enum, or a `lastError()` accessor) and threading the distinction back through the IPC reply protocol — out of scope for the test-only Task 12 follow-up.
+- What's needed to finish: Give `requestStateSave` / `requestStateLoad` a tri-state result (e.g. `enum class StateResult { Ok, NoExtension, TimedOut, ChildError }`) or a `lastStateError()` accessor populated from the IPC reply, then update Case 2 to hard-fail on `TimedOut` / `ChildError` and only WARN+SUCCEED on `NoExtension`.

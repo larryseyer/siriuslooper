@@ -12,6 +12,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <span>
 #include <thread>
 #include <vector>
@@ -25,6 +26,23 @@
 
 using sirius::ClapBundleLoader;
 using sirius::OutOfProcessPluginInstance;
+
+namespace
+{
+// Real third-party plug-ins (Surge XT, FabFilter, etc.) can be slow to
+// first-serialize, so these are deliberately more generous than the
+// synthetic-CLAP timeouts — a heavyweight plug-in's first state save can
+// take well over the 2 s a synthetic stub needs.
+constexpr auto kThirdPartyStateTimeout = std::chrono::seconds (10);
+// Warmup before the first IPC round-trip: lets the host child dlopen the
+// bundle and activate the plug-in before we ask it to serialize.
+constexpr auto kThirdPartyChildWarmup = std::chrono::milliseconds (1000);
+
+// activate() arguments for the in-process load/instantiate smoke test.
+constexpr double kSampleRate = 48000.0;
+constexpr std::uint32_t kMinFrames = 1;
+constexpr std::uint32_t kMaxFrames = 1024;
+} // namespace
 
 TEST_CASE ("third-party CLAP loads and instantiates",
            "[third-party-clap]")
@@ -46,12 +64,20 @@ TEST_CASE ("third-party CLAP loads and instantiates",
 
     const auto* plugin = loader.createPlugin (host, descs.front().uniqueId.c_str());
     REQUIRE (plugin != nullptr);
-    REQUIRE (plugin->init (plugin));
-    REQUIRE (plugin->activate (plugin, 48000.0, 1, 1024));
+
+    // Scope guard: destroy() must run on every path, including a Catch2
+    // REQUIRE/CHECK throwing mid-lifecycle, or we leak the plug-in.
+    struct PluginGuard
+    {
+        const clap_plugin_t* p;
+        ~PluginGuard() { if (p != nullptr) p->destroy (p); }
+    } guard { plugin };
+
+    CHECK (plugin->init (plugin));
+    CHECK (plugin->activate (plugin, kSampleRate, kMinFrames, kMaxFrames));
     plugin->start_processing (plugin);
     plugin->stop_processing  (plugin);
     plugin->deactivate (plugin);
-    plugin->destroy    (plugin);
 }
 
 TEST_CASE ("third-party CLAP state round-trips through the host child",
@@ -61,14 +87,16 @@ TEST_CASE ("third-party CLAP state round-trips through the host child",
     OutOfProcessPluginInstance inst (
         juce::File (SIRIUS_HOST_BINARY_PATH), "thirdparty", bundle);
     REQUIRE (inst.isRunning());
-    std::this_thread::sleep_for (std::chrono::milliseconds (500));
+    std::this_thread::sleep_for (kThirdPartyChildWarmup);
 
     std::vector<std::byte> bytes;
-    const bool ok = inst.requestStateSave (bytes,
-                                           std::chrono::milliseconds (2000));
+    const bool ok = inst.requestStateSave (bytes, kThirdPartyStateTimeout);
     if (! ok)
     {
-        WARN ("third-party plug-in does not expose clap_plugin_state — skipped");
+        WARN ("requestStateSave returned false — plug-in may lack "
+              "clap_plugin_state, OR the save timed out / errored. State "
+              "round-trip skipped; cannot distinguish at the current bool "
+              "API.");
         SUCCEED();
         return;
     }
@@ -76,6 +104,6 @@ TEST_CASE ("third-party CLAP state round-trips through the host child",
 
     const bool loaded = inst.requestStateLoad (
         std::span<const std::byte> (bytes.data(), bytes.size()),
-        std::chrono::milliseconds (2000));
+        kThirdPartyStateTimeout);
     CHECK (loaded);
 }
