@@ -55,6 +55,10 @@ TEST_CASE ("sha256Hex matches the canonical \"abc\" test vector",
            == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
 }
 
+// Pinned because VersionPinning's drift verifier compares the saved
+// `version` against the live one on reopen; a serializer that silently
+// dropped the field would make every reopen a "no drift detected" false
+// negative — the worst silent-failure mode for the archival surface.
 TEST_CASE ("PluginDescriptor::version round-trips through SessionFormat",
            "[archival-mode][session-format]")
 {

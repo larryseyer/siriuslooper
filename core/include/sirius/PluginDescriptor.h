@@ -26,7 +26,7 @@ struct PluginDescriptor
 {
     PluginFormat format;
     std::string  uniqueId;     ///< format-specific stable identifier (VST3 UID, AU subtype, etc.)
-    std::string  version;      ///< format-reported version string (M8 S1 — round-trips for VersionPinning drift detection)
+    std::string  version;      ///< format-reported version string; opaque, used for VersionPinning drift detection
     std::string  name;
     std::string  manufacturer;
     std::string  filePath;     ///< location on disk; for sandboxed formats this may be empty
