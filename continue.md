@@ -10,8 +10,22 @@
 
 ## RESUME HERE (2026-05-18 — M7 S7 + eyes-on follow-ups on origin/master; M7 S8 = XPC bridge debug)
 
+> ## 🛑 PRIORITY-1 BUG (S8 must fix this first)
+>
+> **The XPC bridge is unreachable from inside the bundled .app.** The
+> engine's `PluginGuiBridge::instance().isReady()` returns false
+> forever; the child's `bootstrapXpcBridge` times out at 250 ms. No
+> cross-process CARemoteLayer pixels ever render — every editor open
+> hits the failed-to-load overlay even for the synthetic CLAP fixture
+> that passes the headless test. **All of S6's CARemoteLayer work is
+> blocked behind this until S8 fixes it.** Diagnosis hypotheses,
+> `launchctl` / `codesign` / `XPCService.ServiceType` debug steps,
+> and a non-XPC fallback path are documented below under "First
+> moves for the M7 S8 chat" + `todo.md` last entry. **Do not start
+> ANY other M7 work in S8 until this is resolved.**
+
 **M7 S7 is on `origin/master`** + 9 eyes-on follow-up commits also
-pushed. Current `origin/master` HEAD is `5f384a9`. S7 feature-set
+pushed. Current `origin/master` HEAD is `77b8012`. S7 feature-set
 close-out was at `1c52a36`; everything `1c52a36..5f384a9` is
 **post-S7 eyes-on session work** (UX bug fixes + diagnostic tooling
 + operator-facing buttons + the XPC-bridge-unreachable discovery
