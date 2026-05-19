@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-19 (M7 S9 fully shipped: eyes-on verified; library-validation entitlement landed)
+# Session Continuation — 2026-05-19 (M8 S1 spec committed; ready for writing-plans + implementation)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,73 +8,239 @@
 
 ---
 
-## RESUME HERE (2026-05-19 — M7 S9 FULLY SHIPPED, eyes-on verified; pick the next M7 followup)
+## RESUME HERE (2026-05-19 — M8 S1 spec on origin/master at `f73cf98`; next move = writing-plans skill → implementation)
 
-> ## ✅ M7 S9 FULLY SHIPPED (Reaper-style separate plug-in windows; eyes-on confirmed end-to-end)
+> ## ✅ M7 S9 fully shipped + ✅ M8 S1 brainstorm + spec committed
 >
-> S9 went through three phases:
+> Two distinct outcomes from the 2026-05-19 session:
 >
-> 1. **Architecture pivot** (2026-05-18). The original socketpair +
->    `SCM_RIGHTS` plan was empirically refuted within the first hour
->    after four cross-process mach-port-transfer paths each failed with
->    documented evidence (`errno=EBADF`, runtime exceptions, missing
->    API surfaces). Operator surfaced the right question — *"why don't
->    we follow Reaper's method?"* — and the architecture pivoted:
->    **the child process owns its own top-level NSWindow per plug-in
->    editor.** Every other professional DAW on macOS ships plug-ins
->    this way (Logic, Live, Reaper, Studio One, FL Studio).
-> 2. **Implementation + deletion** (2026-05-18). The whole M7 S6-S8
->    cross-process pixel-transport pipeline (XPC bridge,
->    CARemoteLayer*, PluginGuiBridge, OutOfProcessEditorView,
->    IGuiBridge, the entire `xpc_service/` directory) was **deleted**
->    (-1252 LOC net). The M7 S5 PluginGuiState shm IPC contract
->    survives unchanged; only the semantics of `responseContextId`
->    shift from "real CALayer client id" to "boolean-ish editor-open
->    marker" (`1` = open, `0` = closed).
-> 3. **Eyes-on verification + library-validation fix** (2026-05-19,
->    this session). Operator launched the .app and clicked the
->    synthetic-CLAP debug button. First click loaded nothing — stderr
->    showed `dlopen(.../SyntheticTestPlugin.clap/...) failed: code
->    signature ... not valid for use in process: mapping process and
->    mapped file (non-platform) have different Team IDs`. Root cause:
->    the M7 S8 Developer-ID re-sign of `sirius_plugin_host` added
->    `--options runtime` (hardened runtime) but no
->    `--entitlements`, so the hardened child refused to dlopen any
->    plug-in not signed by the same Team ID. Fix: a new
->    `host_process/sirius_plugin_host.entitlements` declaring
->    `com.apple.security.cs.disable-library-validation = true`, wired
->    into `app/CMakeLists.txt`'s child-codesign step via
->    `--entitlements`. This is the textbook pro-audio plug-in-host
->    entitlement — exactly what Logic / Live / Reaper ship. After the
->    fix, operator confirmed end-to-end: child-owned NSWindow appears,
->    synthetic plug-in's blue NSView renders inside (the entire
->    content area is the plug-in's color), close-X works, can be
->    reopened, no orphan processes after .app exit, stderr clean
->    throughout.
+> 1. **M7 S9 eyes-on verified end-to-end** + a small library-validation
+>    entitlement fix landed (see "What landed today" below). S9 is
+>    closed; no follow-up work needed.
+> 2. **M8 brainstorm completed.** The original session-end plan was
+>    "S10 = pull VST3 + AU forward into M7"; the operator pivoted
+>    mid-brainstorm to **honor V7 sequencing** and start M8 next per
+>    `docs/superpowers/plans/2026-05-17-v7-alignment.md`. M8 S1 spec
+>    is committed at HEAD `f73cf98` (pushed to origin/master).
+>
+> **The single most important first move for the next chat: read
+> `docs/superpowers/specs/2026-05-19-m8-s1-design.md`, then invoke
+> the `superpowers:writing-plans` skill on it.** The operator already
+> approved the spec for proceed-to-implementation. Do not re-
+> brainstorm. Do not re-explore the white paper. The spec is
+> self-contained and references every relevant white paper section +
+> V7-plan line. Just plan it and execute.
 
-### What landed today (2026-05-19, the eyes-on session)
+### First moves for the next chat (concrete, ordered)
 
-| File | Change |
+1. **Sanity:** `git status` clean, `git log --oneline -3` shows
+   `f73cf98` on top.
+2. **Read the spec:**
+   `docs/superpowers/specs/2026-05-19-m8-s1-design.md` (~370 lines).
+   It's self-contained — the conversation that produced it is gone
+   but the spec captures every decision.
+3. **Invoke the `superpowers:writing-plans` skill** with the spec as
+   input. The skill will produce
+   `docs/superpowers/plans/2026-05-19-m8-s1-plan.md`. Operator
+   reviews that plan before implementation starts.
+4. **Implementation (separate session per V7 execution mode).**
+   Per V7's M8 block (line 620): `orchestrator+subagents`. Expect
+   parallelisable subtasks for the new files
+   (`ArchivalMode.h`, `VersionPinningRecord.{h,cpp}`,
+   `SessionSnapshot.{h,cpp}`, `Sha256.cpp`,
+   `ArchivalModeTests.cpp`) + serial modifications to existing
+   files (`PluginDescriptor.h`, `EffectChain.h`,
+   `SessionFormat.cpp`, `PluginScanner.cpp`,
+   `NotificationBus.cpp`).
+5. **Acceptance per spec:** `ctest -R "ArchivalMode"` passes 4-6 new
+   cases; existing 381-test ctest count grows by exactly that delta;
+   `bash/test-s7.sh` lifecycle tests still pass; clean rebuild from
+   `rm -rf build` succeeds.
+
+### M8 S1 in one paragraph
+
+`ArchivalMode` enum (DeterminismContract / WetCapture /
+VersionPinning, default VersionPinning) lands on `EffectChainEntry`
+alongside an `std::optional<VersionPinningRecord> persistedSnapshot`
+field. The record is `{uniqueId, version, stateBlobSha256,
+oversamplingRate, declaredInternalStateHash}` — the
+portable + persistable identity of one hosted plug-in at the moment
+of `serializeSession`. New `SessionSnapshot` helpers bridge the
+live `OutOfProcessEffectChainHost` to the persistence layer at save
+time (snapshot population) and at load time (drift verification +
+`NotificationBus::PluginVersionDrift` emission). State blob hashing
+is the SHA-256 of zero bytes for this session — real CLAP state
+hashing arrives in M8 S2 with `clap_plugin_state` integration. No
+CLAP work, no Constituent state machine, no WetCapture writer in
+this session; each is its own later M8 session.
+
+### Why M8 next (sequencing rationale)
+
+The V7 plan
+(`docs/superpowers/plans/2026-05-17-v7-alignment.md` lines 557-621)
+puts these milestones in this order:
+
+- **M7** — Out-of-process plug-in hosting framework (✅ shipped through S9)
+- **M8** — Plug-in determinism + failure semantics + CLAP as first format (next)
+- **M9-M19** — Modality completion + persistence + signal-flow surfaces
+- **M20** — VST3 host (after CLAP/M8 is solid)
+- **M21** — AU host (prep for iOS in M23)
+
+The operator's library is mostly VST3/AU, which made "pull M20+M21
+forward into M7 S10" tempting (and was the initial mid-2026-05-19
+plan). The operator's final answer: *"Let's finish in logical
+order. ... Follow the white paper — it is our golden rule and
+source of truth to follow."* M8 ships next, then M9-M19 in order,
+then VST3 (M20), then AU (M21). VST3/AU stay un-loadable in
+production until M20/M21 land — accepted tradeoff for architectural
+discipline.
+
+### Routing concerns verified against the white paper
+
+The operator flagged two preferences during the brainstorm; both are
+already spec'd in the white paper and require no design rework:
+
+1. **Plug-ins on input AND output mixers.** White paper §5.2
+   (lines 352 & 354) treats both as "full creative mixers" — input
+   mixer channels apply gain/EQ/dynamics/bus routing (line 352);
+   output mixer channels apply channel-strip processing (line 354).
+   Plug-ins live on both sides.
+2. **Per-phrase output channels (not per-tape).** White paper §6.6
+   (line 556): *"Per-Constituent channel strips. Each active
+   Constituent — loop, phrase, section — gets its own channel
+   strip."* The Constituent hierarchy is
+   `tape → loop → phrase → section → song → set` (line 35); strips
+   exist at the Constituent level, which includes phrases
+   separately from their parent tape.
+
+No box is being painted. The architecture is the operator's; we're
+implementing in V7 order.
+
+### What landed today (2026-05-19, both halves of the session)
+
+| Commit | Subject |
 |---|---|
-| `host_process/sirius_plugin_host.entitlements` | **New.** Single key: `com.apple.security.cs.disable-library-validation = true`. Required for the hardened child to dlopen any third-party plug-in not signed by the Sirius Team ID. |
-| `app/CMakeLists.txt` | Added `--entitlements "${CMAKE_SOURCE_DIR}/host_process/sirius_plugin_host.entitlements"` to the Developer-ID re-sign of the embedded `sirius_plugin_host` (Ninja/Make path). The Xcode-generator path uses the JUCE-driven entitlements and is unaffected by this change. |
-| `continue.md` | This RESUME HERE block flipped to "fully shipped." |
+| `46557e2` | fix: M7 S9 eyes-on — sirius_plugin_host needs com.apple.security.cs.disable-library-validation entitlement |
+| `efda081` | docs: continue.md — M7 S9 fully shipped (eyes-on verified, library-validation entitlement landed) |
+| `f73cf98` | docs: M8 S1 design — ArchivalMode enum + per-instance VersionPinning record |
 
-### S9 acceptance check (final, post-eyes-on)
+All three on `origin/master`. Working tree was clean at end of
+session.
 
-- ✅ Clean rebuild from `rm -rf build`.
-- ✅ `codesign --verify --deep --strict` on the .app: clean.
-- ✅ Child binary `sirius_plugin_host` carries the
-  `disable-library-validation` entitlement (verified via
-  `codesign -dv --entitlements -`).
-- ✅ Headless `bash bash/test-s7.sh`: all assertions pass.
-- ✅ Operator click → blue editor window appears (child-owned NSWindow
-  with the synthetic plug-in's NSView rendering).
-- ✅ Operator close-X → window dies, engine state cleans up, can be
-  reopened cleanly.
-- ✅ After .app quit: zero orphan `sirius_plugin_host` or
-  `sirius_gui_bridge` processes.
-- ✅ Stderr empty (no XPC errors — the whole XPC path is gone).
+### M7 S9 close-out (recently shipped; don't redo)
+
+S9 is verified. Don't reopen it. Summary:
+
+- Reaper-style separate plug-in windows: each `sirius_plugin_host`
+  child owns its own top-level NSWindow per editor; cross-process
+  pixel-transport scaffolding (XPC bridge, CARemoteLayer,
+  PluginGuiBridge, OutOfProcessEditorView, `xpc_service/`) is
+  **deleted** (-1252 LOC net).
+- Library-validation entitlement
+  (`host_process/sirius_plugin_host.entitlements` →
+  `com.apple.security.cs.disable-library-validation = true`)
+  added today so the hardened child can dlopen plug-ins not signed
+  by Team `RR5DY39W4Q`.
+- Bundle layout: `Contents/MacOS/` has only `Sirius Looper` +
+  `sirius_plugin_host`. No `Contents/XPCServices/`, no
+  `Contents/Library/LaunchAgents/`.
+- 381-test ctest baseline holds; `codesign --verify --deep --strict`
+  clean.
+
+Eyes-on confirmed by operator end-to-end: child-owned NSWindow
+appears with the synthetic plug-in's blue NSView rendering inside,
+close-X works, reopen works, no orphan processes after .app exit,
+stderr clean.
+
+Full S9 detail (rewritten code, deleted files, four empirical
+refutations of cross-process mach-port-transfer) lives in
+`docs/superpowers/specs/2026-05-18-m7-s9-design.md` and in the
+historical section below.
+
+### Followups queued for after M8 S1 lands
+
+M8 has 10 sessions broken out in the V7 plan (lines 597-603):
+
+- **M8 S2** — CLAP loader hardening + `clap_plugin_state` real
+  state-blob hashing (the synthetic-fixture empty-state path
+  becomes a real-CLAP path).
+- **M8 S3** — `Constituent::State` enum (`Valid | Broken |
+  Invalid`) + render-as-silence semantics.
+- **M8 S4-5** — `WetCapture` writer + `<channelId>.wet.tape`
+  storage path.
+- **M8 S6** — LMC calibration corruption recovery.
+- **M8 S7-8** — Tape reachability scan for disk-full rotation.
+- **M8 S9-10** — End-to-end integration.
+
+After M8 closes, the V7 sequence is M9 (MIDI 2.0 / UMP), M10 (Mix
+snapshots), M11 (Sirius Archive Format — replaces the JSON
+SessionFormat), M12+ on out.
+
+Other queued items (independent of M8 progression):
+
+- **Audio-ring SPSC violation** (M7 S5 deviation #1). RT-path
+  discipline fix. Standalone.
+- **Out-of-process `PluginScanner`** — wait until M20/M21 because
+  the scanner re-architects around the same child binary.
+- **`PluginScanner` "FabFilter" testing-filter removal** (line 38
+  of `host/src/PluginScanner.cpp`). Hardcoded name filter from M7
+  S7 to shrink the operator's 1000+ plug-in scan during dev.
+  Must go before shipping. Tracked in `todo.md`.
+- **`get-task-allow=true` notarization blocker** —
+  `app/CMakeLists.txt`'s Xcode attributes still inject
+  `get-task-allow=true` on Release builds; notarization rejects
+  this. Tracked in `todo.md`.
+- **V7 plan reference cleanup** —
+  `docs/superpowers/plans/2026-05-17-v7-alignment.md` may still
+  mention `PluginGuiBridge` in M7's per-session block (deleted by
+  S9). Worth a sweep when M9+ touches that file.
+
+### Quick reference for the next chat (Sirius Looper specifics)
+
+- **Run the headless lifecycle tests:** `bash bash/test-s7.sh`
+  (auto-builds anything missing). Name still says s7 — covers all
+  current MainComponentPluginEditorTests cases.
+- **Launch the .app:** double-click
+  `/Users/larryseyer/Desktop/Sirius Looper` (symlink) OR `open
+  "build/app/SiriusLooper_artefacts/Release/Sirius Looper.app"`. For
+  child-stderr capture during debugging, launch the binary directly:
+  `"build/app/SiriusLooper_artefacts/Release/Sirius Looper.app/Contents/MacOS/Sirius Looper" 2>/tmp/sirius-app.log &`.
+- **No `os_log` instrumentation exists in the host process.** The
+  S8-era `os_log` calls were deleted with the XPC bridge in S9. The
+  child writes diagnostics to `stderr` via `std::fprintf`. The
+  `log stream` predicate
+  `subsystem == "com.larryseyer.siriuslooper"` returns nothing; use
+  direct-binary launch + stderr redirect instead.
+- **Bundle path inside the .app:** `/Contents/MacOS/` has only
+  `Sirius Looper` + `sirius_plugin_host`. No `Contents/XPCServices/`,
+  no `Contents/Library/LaunchAgents/`.
+- **`sirius_plugin_host` entitlements:**
+  `host_process/sirius_plugin_host.entitlements` →
+  `com.apple.security.cs.disable-library-validation = true`.
+  Without this, the hardened child cannot dlopen any plug-in not
+  signed by Team `RR5DY39W4Q`. Verify via
+  `codesign -dv --entitlements - "$BUNDLE/Contents/MacOS/sirius_plugin_host"`.
+- **`SessionFormat` JSON round-trip lives at
+  `persistence/src/SessionFormat.cpp`.** M8 S1 extends
+  `effectChainEntryToVar` / `effectChainEntryFromVar` (lines
+  503-521) and `pluginDescriptorToVar` /
+  `pluginDescriptorFromVar` (lines 481-501) — that's where the new
+  field round-trips through.
+- **SHA-256 already exists in `persistence/src/TapeStore.cpp`.** M8
+  S1 factors it into a small `core/src/Sha256.cpp` so `core/` is no
+  longer dependent on `persistence/` for hashing.
+- **The `Constituent` is immutable + copy-on-write** (its
+  `ChildPtr` is `shared_ptr<const Constituent>`). The
+  `populateVersionPinningRecords` helper described in the spec must
+  return a new tree, not mutate in place.
+
+---
+
+## HISTORICAL — M7 S9 close-out detail (verified eyes-on 2026-05-19; now in archived state, kept for archeology)
+
+> S9 detail is below for archeological reference. The leading
+> RESUME HERE block above has the operator-facing summary. Don't
+> re-implement what's here.
 
 ### What M7 S9 actually changed (files + behaviour)
 
@@ -84,15 +250,15 @@
 | `host_process/main.cpp` | Deleted `bootstrapXpcBridge()` (~130 LOC, the XPC client side). Added Apple-only `sirius_appkit_init()` call after parseArgs. Added per-iteration + onIdle calls to `sirius_appkit_drain_events()` so NSWindow events get dispatched. Wired `sirius_gui_set_state(guiState)` so the delegate can publish closes. |
 | `host/src/OutOfProcessEffectChainHost.cpp` | Removed the lazy `PluginGuiBridge::instance()` touch in `configureBus`. The chain host no longer cares about the engine-side bridge. |
 | `app/MainComponent.cpp` + `.h` | **Deleted `PluginEditorWindow`** (the engine-side `juce::DocumentWindow` per plug-in from S7). Replaced `std::vector<std::unique_ptr<PluginEditorWindow>>` with `std::vector<std::int64_t> openEditorBusIds_`. `openPluginEditor` now just calls `configureBus` + `requestEditorShow` — no engine-side window. `closePluginEditor` just `configureBus(empty)`. |
-| `app/CMakeLists.txt` | Dropped the `sirius_gui_bridge` dependency + the `Contents/XPCServices/` copy POST_BUILD. The `sirius_plugin_host` Developer-ID re-sign + final outer-app re-sign survive. |
+| `app/CMakeLists.txt` | Dropped the `sirius_gui_bridge` dependency + the `Contents/XPCServices/` copy POST_BUILD. The `sirius_plugin_host` Developer-ID re-sign + final outer-app re-sign survive. The 2026-05-19 follow-up added `--entitlements` to the child re-sign. |
 | `host/CMakeLists.txt` | Dropped `PluginGuiBridge.cpp/.mm` and `OutOfProcessEditorView.cpp/.mm` from SiriusHost sources. Dropped `-framework QuartzCore` (no longer needed). |
 | `host_process/CMakeLists.txt` | Dropped `-framework QuartzCore` (no longer needed in child either). |
 | `CMakeLists.txt` (top-level) | Dropped `add_subdirectory(xpc_service)`. |
 | `tests/CMakeLists.txt` | Dropped `PluginGuiBridgeTests.cpp` source + the Apple-only `CARemoteLayerRoundTripTests.mm` block. |
-| `website/src/docs/whitepaper.md` | Lines 1435–1437 reworded: out-of-process GUI hosting now described as "each plug-in's editor appears as a separate floating window" (Reaper/Logic/Live convention), and the implementation-complexity paragraph drops "GUI window embedding across processes" in favor of "route editor show/hide/resize events between the engine and each child's window". |
-| `docs/superpowers/specs/2026-05-18-m7-s9-design.md` | New design doc capturing all four empirical refutations + the Reaper-style pivot. |
+| `website/src/docs/whitepaper.md` | Lines 1435–1437 reworded: out-of-process GUI hosting now described as "each plug-in's editor appears as a separate floating window" (Reaper/Logic/Live convention). |
+| `docs/superpowers/specs/2026-05-18-m7-s9-design.md` | Design doc capturing all four empirical refutations + the Reaper-style pivot. |
 
-### Deleted (-1252 LOC)
+### Deleted by S9 (-1252 LOC)
 
 - `xpc_service/` — entire directory (CMakeLists.txt, main.cpp, Info.plist.in)
 - `host/include/sirius/PluginGuiBridge.h`
@@ -105,88 +271,32 @@
 - `tests/PluginGuiBridgeTests.cpp`
 - `tests/CARemoteLayerRoundTripTests.mm`
 
-### Empirical refutations encountered (documented for future archeology)
+### S9 empirical refutations (documented for future archeology)
 
 1. **`MachServices` in app `Info.plist`** — refuted. That key is
    parsed by launchd, not by LaunchServices; an app's Info.plist
    isn't a launchd .plist. `xpc_connection_create_mach_service`
-   against an unregistered name returns a connection that errors out
-   on first send (`XPC_ERROR_CONNECTION_INVALID`).
+   against an unregistered name returns a connection that errors
+   out on first send (`XPC_ERROR_CONNECTION_INVALID`).
 2. **socketpair + `SCM_RIGHTS` for mach send-rights** — refuted.
    `sendmsg` returns `errno=9 (EBADF)`. PoC at `/tmp/scm_test.c`.
    XNU's `bsd/kern/uipc_usrreq.c` validates each cmsg word as an
    fd-table entry; mach port names that aren't also valid fds are
-   rejected. The Plan agent's claim that Darwin's `SCM_RIGHTS`
-   transfers mach port rights was wrong.
+   rejected.
 3. **`xpc_endpoint_t` via inherited fd** — refuted. No public
    flat-byte serialization API; the object only survives transport
    as a value inside an existing `xpc_dictionary_t`.
 4. **`NSXPCListenerEndpoint` via `NSKeyedArchiver`** — refuted by
    PoC at `/tmp/xpc_poc/`. Runtime exception: *"-[NSXPCListenerEndpoint
-   encodeWithCoder:]: This class may only be encoded by an NSXPCCoder"*.
-   NSSecureCoding-conformant in the protocol sense but the encode
-   path runs only inside Apple's private NSXPC marshaling layer.
+   encodeWithCoder:]: This class may only be encoded by an
+   NSXPCCoder"*.
 
 The only remaining no-entitlement cross-process mach-port-transfer
 path on modern macOS is launchd-mediated bootstrap (SMAppService +
-bundled LaunchAgent). After the four refutations, operator was about
-to lock SMAppService — then asked "why don't we follow Reaper?" The
-Reaper-style pivot dodged the whole class of problems by letting the
-child own its NSWindow directly.
-
-### Followups queued (next milestone pick — operator chooses)
-
-1. **VST3 + AU hosting in `sirius_plugin_host`** — operator's library
-   is mostly VST3/AU; child currently only handles CLAP. Biggest
-   operator-facing capability gap. Likely M7 S10 if "most professional
-   and elegant" path is taken.
-2. **Audio-ring SPSC violation** (S5 deviation #1) — RT-path
-   discipline fix; was the S8 candidate, promoted to S10 candidate
-   behind the bridge fix. Now that bridge work is done (via
-   deletion), genuinely next on the RT side.
-3. **Out-of-process plug-in scanner.** Current `PluginScanner.cpp`
-   uses JUCE's `PluginDirectoryScanner` which instantiates each
-   plug-in IN-PROCESS. One bad plug-in = engine crash mid-scan.
-   Reaper spawns a sidecar per scan. Wait until VST3/AU hosting
-   lands so the scanner doesn't have to re-architect twice.
-4. **`PluginScanner` "FabFilter" testing-filter removal** — separate
-   cleanup; the hardcoded name filter was added during M7 S7 to
-   shrink scan time on the operator's 1000+ plug-in install. Must be
-   removed before any real shipping. Tracked in `todo.md`.
-5. **Notarization / CI signing** — `get-task-allow=true` `todo.md`
-   entry remains open and is independent of all of the above. The
-   `disable-library-validation` entitlement landed today is
-   notarization-compatible (Apple accepts it for plug-in-host
-   processes; many shipping DAWs use it).
-6. **`PluginGuiBridge` removal in the V7 plan** — the plan file
-   `docs/superpowers/plans/2026-05-17-v7-alignment.md` may still
-   reference the bridge in M7's per-session block. Worth a sweep at
-   the next M7 session to keep the plan honest.
-
-### Quick reference for the next chat
-
-- **Run the headless lifecycle tests:** `bash bash/test-s7.sh`
-  (auto-builds anything missing).
-- **Launch the .app:** double-click
-  `/Users/larryseyer/Desktop/Sirius Looper` (symlink) OR `open
-  "build/app/SiriusLooper_artefacts/Release/Sirius Looper.app"`. For
-  child-stderr capture during debugging, launch the binary directly:
-  `"build/app/SiriusLooper_artefacts/Release/Sirius Looper.app/Contents/MacOS/Sirius Looper" 2>/tmp/sirius-app.log &`.
-- **No `os_log` instrumentation exists in the host process after
-  S9** — the S8-era `os_log` calls were deleted along with the XPC
-  bridge. The child writes diagnostics to `stderr` via
-  `std::fprintf`. The `log stream` predicate
-  `subsystem == "com.larryseyer.siriuslooper"` will return nothing;
-  use direct-binary launch + stderr redirect instead.
-- **Bundle path inside the .app:** `/Contents/MacOS/` has only
-  `Sirius Looper` + `sirius_plugin_host`. No `Contents/XPCServices/`,
-  no `Contents/Library/LaunchAgents/`.
-- **`sirius_plugin_host` entitlements:**
-  `host_process/sirius_plugin_host.entitlements` →
-  `com.apple.security.cs.disable-library-validation = true`. Without
-  this, the hardened child cannot dlopen any plug-in not signed by
-  Team `RR5DY39W4Q`. Verify via
-  `codesign -dv --entitlements - "$BUNDLE/Contents/MacOS/sirius_plugin_host"`.
+bundled LaunchAgent). After the four refutations, the operator
+surfaced "why don't we follow Reaper?" — and the Reaper-style pivot
+sidestepped the whole class of problems by letting each child own
+its NSWindow directly.
 
 ---
 
