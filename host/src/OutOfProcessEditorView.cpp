@@ -1,5 +1,7 @@
 #include "sirius/OutOfProcessEditorView.h"
 
+#include "sirius/PluginGuiBridge.h"
+
 #include <juce_gui_basics/juce_gui_basics.h>
 
 namespace sirius
@@ -86,12 +88,16 @@ void OutOfProcessEditorView::timerCallback()
 {
     refreshFromHost();
 
-    // Failed-to-load detection: if a Show was issued kFailedToLoadTimeoutMs
-    // ago and the child still hasn't published a contextId, paint the
-    // explanatory overlay. Common cause today: operator pointed at a
-    // VST3 (sirius_plugin_host only dlopens CLAP bundles — VST3/AU
-    // need their own dlopen paths in a later session).
-    if (currentContextId_ == 0 && ! failedToLoad_)
+    // A non-zero contextId is only "real" when the engine's XPC bridge
+    // connection is live — otherwise the child fell back to the S5
+    // placeholder counter (e.g. 1, 2, 3...), and +[CALayer
+    // layerWithRemoteClientId:] hands back a CALayer pointing at a
+    // nonexistent remote client that renders BLACK. Treat that as
+    // failed-to-load so the operator sees the explanatory overlay.
+    const bool ctxIsBogus = (currentContextId_ != 0
+                             && ! PluginGuiBridge::instance().isReady());
+
+    if ((currentContextId_ == 0 || ctxIsBogus) && ! failedToLoad_)
     {
         const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds> (
             std::chrono::steady_clock::now() - showRequestedAt_).count();
@@ -108,11 +114,14 @@ void OutOfProcessEditorView::timerCallback()
             repaint();
         }
     }
-    else if (failedToLoad_ && currentContextId_ != 0)
+    else if (failedToLoad_ && currentContextId_ != 0 && ! ctxIsBogus)
     {
-        // Late publish (e.g. supervisor restarted the child and it
-        // finally came up). Clear the overlay so the embedded NSView
-        // gets the spotlight.
+        // Real late publish (e.g. supervisor restarted the child AND
+        // the bridge is live AND the child handed us a real
+        // CARemoteLayerClient.clientId). Clear the overlay so the
+        // embedded NSView gets the spotlight. NOT triggered by the
+        // placeholder counter — that would flash the overlay on/off
+        // every tick.
         failedToLoad_ = false;
        #if JUCE_MAC
         if (embed_ != nullptr)
@@ -149,10 +158,12 @@ void OutOfProcessEditorView::issueShowIfSized()
         return;
     const auto w = static_cast<std::uint32_t> (getWidth());
     const auto h = static_cast<std::uint32_t> (getHeight());
-    // Stamp the request time BEFORE the call so the failed-to-load
-    // timeout fires even if the host returns false (slot already gone /
-    // permanently bypassed). Without this, a false return left the view
-    // in a permanent black state with no operator feedback.
+    // Stamp the request time BEFORE the call and set shownOnce_ regardless
+    // of the host's return value. A `false` from requestEditorShow means
+    // the slot is gone / permanently bypassed — operator deserves the
+    // failed-to-load overlay just as much in that case as in the
+    // never-published case. Without this, a false return left the view
+    // in permanent black with no feedback.
     showRequestedAt_ = std::chrono::steady_clock::now();
     shownOnce_       = true;
     host_.requestEditorShow (busId_, slotIndex_, w, h);
