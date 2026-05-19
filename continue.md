@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-18 (M7 S6 SHIPPED to origin/master; M7 S7 selection next)
+# Session Continuation — 2026-05-18 (M7 S7 SHIPPED to origin/master; M7 S8 selection next)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -7,6 +7,179 @@
 > *state*: what just shipped and what's queued next.
 
 ---
+
+## RESUME HERE (2026-05-18 — M7 S7 on origin/master; M7 S8 selection next)
+
+**M7 S7 is on `origin/master`.** S7 head is `<FILL>` (the close-out
+docs commit); the last per-step / per-review commit is `c753488`. 11
+per-step commits + 1 close-out, all pushed. Per-step SHAs:
+
+| SHA | Subject |
+|---|---|
+| `eec63e2` | feat: M7 S7 step 1 — MainComponent owns OutOfProcessEffectChainHost + hostBinaryPath helper |
+| `42dbc73` | feat: M7 S7 step 2 — MainComponent::openPluginEditor / closePluginEditor lifecycle (stub window) |
+| `10762ec` | feat: M7 S7 step 3 — PluginsPane uses ListBox with per-row Open-editor buttons |
+| `e734014` | fix: M7 S7 step 3 review — failedFilesLabel layout fix + drop dead RowButton state + clean stale comment |
+| `ba86407` | feat: M7 S7 step 4 — PluginEditorWindow (juce::DocumentWindow) owns OutOfProcessEditorView + busId-targeted close |
+| `7841c40` | refactor: M7 S7 step 4 — move OutOfProcessEditorView.h include from .h to .cpp (only PluginEditorWindow body needs it) |
+| `269df34` | docs: M7 S7 step 4 review — soften PluginEditorWindow comment (view rebinds itself; doesn't resize parent) |
+| `e231e22` | feat: M7 S7 step 5 — wire PluginListBox Open-editor button → openPluginEditor + host-binary availability |
+| `3f70af4` | test: M7 S7 step 6 — MainComponent plug-in editor lifecycle tests + eyes-on doc refresh |
+| `c753488` | fix: M7 S7 step 6 review — Test 2 uses firstOpenBusIdForTesting (drops magic 1000) |
+
+Test count: **387/387** green on clean rebuild (was 384 at S6; +3 in
+S7 — three `[main-component-plugin-editor]` lifecycle cases: ctor/dtor
+sanity always runs; the two fixture-dependent cases SKIP cleanly when
+`hostBinaryPath()` isn't resolvable from the test binary location AND
+run/pass when the .app bundle is in scope).
+
+**S7 made S6's cross-process compositing operator-visible.** The
+Plugins tab now shows each scanned descriptor in a `juce::ListBox`
+with a per-row "Open editor" button. Clicking spawns a
+`sirius_plugin_host` child on a scratch busId (1000+) and floats a
+`juce::DocumentWindow` containing an `OutOfProcessEditorView`. The
+close-button tears down the slot via
+`juce::MessageManager::callAsync` (avoids destroying the window from
+inside its own JUCE event-dispatcher callback). Multiple plug-ins
+loadable simultaneously. No audio routes through the scratch chains —
+engine output uninterrupted.
+
+**Architectural shape (carried forward):**
+
+- **`MainComponent` owns the `OutOfProcessEffectChainHost`.** Member
+  declaration order is `effectChainHost_` BEFORE `editorWindows_` so
+  windows destruct first (reverse-declaration order) and the chain
+  host outlives them — each window's `OutOfProcessEditorView` polls
+  the host at 30 Hz.
+- **`MainComponent::PluginEditorWindow`** — new `juce::DocumentWindow`
+  subclass, ~40 LOC. Native title bar, resizable, `allButtons`. Holds
+  `busId_` + a `std::function<void(std::int64_t)> onClose_` callback
+  that captures `this`-equivalent state by value before
+  `MessageManager::callAsync` dispatches the teardown.
+- **`MainComponent::PluginListBox`** — new
+  `juce::ListBoxModel` subclass, ~110 LOC. Sibling of `PluginsPane`
+  (not deeply nested — avoids fragile nested-nested forward
+  declarations). Each row paints descriptor info + a "Open editor"
+  `juce::TextButton` via `refreshComponentForRow`. Tooltip on
+  disabled state explains "launch the .app for plug-in hosting."
+- **Test-only accessors** on `MainComponent` (`hostBinaryPathForTesting`,
+  `editorWindowCountForTesting`, `firstOpenBusIdForTesting`,
+  `childPidForTestingAtBusId`, `openPluginEditorForTesting`,
+  `closePluginEditorForTesting`). Public, marked `*ForTesting`,
+  clearly documented as not part of the operator surface.
+- **`MainComponent::PluginEditorWindow` separate test executable.**
+  Because `app/MainComponent.cpp` isn't compiled into any library
+  (only into SiriusLooper.app), the new test exe re-compiles it with
+  the same link set. Apple-only `if(APPLE)` guard.
+
+**Measured: app launch + quit cycle clean** — no orphan
+`sirius_plugin_host` or `sirius_gui_bridge` processes after
+`osascript -e 'quit app "Sirius Looper"'`. ctest 387/387 green; RT
+audio surface untouched (no S7 code reaches the audio thread).
+
+### Scope deviations locked in S7 (carry forward to S8)
+
+1. **`PluginListBox` is a sibling of `PluginsPane`** (not deeply
+   nested inside it). The plan offered both placements; sibling won
+   for fragility-of-forward-decl reasons.
+2. **`OutOfProcessEditorView.h` lives in
+   `app/MainComponent.cpp`'s includes, NOT in `MainComponent.h`.**
+   The header only forward-declares `PluginEditorWindow`; the type
+   `sirius::OutOfProcessEditorView` is only referenced inside
+   `PluginEditorWindow`'s definition (in the .cpp). Include-what-you-
+   use applied.
+3. **Plan corrections found during execution:**
+   - Plan said `sirius::PluginFormat::CLAP` — actual enum is `Clap`
+     (lowercase 'l'). Adapted in `tests/MainComponentPluginEditorTests.cpp`.
+   - Plan said `MainComponent component (dm);` — actual ctor takes
+     no arguments (the component owns its own `juce::AudioDeviceManager`).
+     Adapted.
+4. **`failedFilesLabel_` first-paint height bug** (caught in step 3
+   review). `PluginsPane::setDescriptors` now calls `resized()` after
+   setting the label's text, so the failed-files strip appears
+   immediately instead of waiting for the next parent resize.
+5. **`PluginEditorWindow` doesn't resize itself to the plug-in's
+   preferred size.** The embedded `OutOfProcessEditorView` rebinds
+   its own bounds to the child's published CARemoteLayer contextId,
+   but doesn't (yet) propagate up to the parent `DocumentWindow`.
+   Initial 600×400; operator resizes manually. Worth a later session.
+6. **`(#N)` suffix for duplicate-descriptor window titles NOT
+   implemented.** Opening the same plug-in twice produces two windows
+   with identical titles. Acceptable for S7 eyes-on; minor polish for
+   later.
+7. **Pre-existing timing-flaky tests** (#247 "concurrent producer +
+   consumer", #252 "permanent bypass") flaked once each under full-
+   suite contention during S7 verification. Both pass in isolation.
+   Not S7-introduced.
+
+### First moves for the M7 S8 chat
+
+S7 closes the M7 line item "MainComponent has no production wiring"
+that carried through M5–S6 deviation lists. Remaining M7 candidates
+for S8:
+
+1. **Audio-ring SPSC violation fix** (carryover from S5 deviation
+   #1). Engine's `tryWriteBytes` (audio thread) + `sendBytes`
+   (message thread) share the producer side of the engine→host ring.
+   Latent today, becomes a real bug AS SOON AS the operator opens an
+   editor mid-playback — which is exactly what S7 made possible. This
+   should be S8.
+2. **`PluginEditorWindow` resize-to-preferred-size** — small UX
+   polish; reads the editor view's published size and propagates up
+   to the DocumentWindow. ~10 LOC.
+3. **Bundle re-sign for distribution** (S6 deviation #2 +
+   `docs/operator/macos-sandbox.md`). Operator-pending CI signing
+   handoff.
+4. **Windows + Linux GUI embedding** — independent later sessions.
+
+**Suggested order: SPSC split first.** S7 just made the SPSC race
+genuinely reachable; fixing it is now load-bearing for any operator
+who clicks "Open editor" during playback.
+
+### S7-era decisions locked (S8 must preserve — superset of S6 list)
+
+(Carry forward all S5/S6 items unchanged. New items:)
+
+22. **Scratch bus IDs for editor-only loads** (1000+). The
+    OutputMixer doesn't know about these buses; the chain host's
+    `pumpSlot` is never called for them. Real per-bus chain
+    integration is a later session.
+23. **`MainComponent` owns the `OutOfProcessEffectChainHost`.** Lives
+    for the main window's lifetime. `editorWindows_` declared AFTER
+    the host so windows destruct first (members destruct in reverse
+    declaration order).
+24. **Floating `juce::DocumentWindow` per loaded plug-in** + multi-
+    load. `closeButtonPressed` schedules teardown via
+    `juce::MessageManager::callAsync` to avoid use-after-free in the
+    JUCE event dispatcher.
+25. **Test-only accessors are public + `*ForTesting`-suffixed.**
+    Matches existing `OutOfProcessEffectChainHost::childPidForTestingAtSlot`
+    convention. NOT `friend class`-based.
+26. **MainComponent's plug-in tests live in their own test
+    executable** because `app/MainComponent.cpp` isn't in any
+    library. The exe re-compiles MainComponent.cpp with SiriusLooper's
+    link set.
+
+### Carryover NOT resolved (S8 doesn't touch unless flagged)
+
+- **Audio-ring SPSC violation** (S5 deviation #1) — most likely S8.
+- **Bundle re-sign for distribution + `sirius_plugin_host`
+  MACOSX_BUNDLE conversion** — `docs/operator/macos-sandbox.md`.
+  Operator-pending CI signing session.
+- **`PluginEditorWindow` doesn't resize-to-preferred-size** (S7
+  deviation #5).
+- **`(#N)` suffix for duplicate-descriptor window titles** (S7
+  deviation #6).
+- **`PluginIpcMessage::monotonicNs` LMC reinterpret** still pending
+  the audio-thread LMC handle.
+- **Pre-existing timing-flaky tests** (#247, #252).
+- **Carryover from M6 + earlier still unresolved** (ProcessedRoute
+  empty span, manual operator-launch eyes-on of M6 surface, CI
+  signing handoff) — unchanged from S5/S6/S7-era state.
+
+---
+
+## HISTORICAL — M7 S6 close + M7 S7 handoff (superseded 2026-05-18 — M7 S7 now shipped)
 
 ## RESUME HERE (2026-05-18 — M7 S6 on origin/master; M7 S7 selection next)
 
