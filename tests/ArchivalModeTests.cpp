@@ -4,15 +4,30 @@
 // engine-side populator/verifier that bridge the live session graph to
 // the persistence layer. JUCE-free for the core types; JUCE-using for
 // the SessionFormat round-trip and the NotificationBus verifier.
+#include "sirius/Constituent.h"
+#include "sirius/EffectChain.h"
+#include "sirius/PluginDescriptor.h"
+#include "sirius/Position.h"
+#include "sirius/Rational.h"
+#include "sirius/SessionFormat.h"
 #include "sirius/Sha256.h"
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
 #include <cstddef>
+#include <memory>
 #include <span>
 #include <string>
 
+using sirius::Constituent;
+using sirius::ConstituentId;
+using sirius::EffectChain;
+using sirius::EffectChainEntry;
+using sirius::PluginDescriptor;
+using sirius::PluginFormat;
+using sirius::Position;
+using sirius::Rational;
 using sirius::sha256Hex;
 
 TEST_CASE ("sha256Hex of zero bytes returns the canonical empty-input digest",
@@ -38,4 +53,32 @@ TEST_CASE ("sha256Hex matches the canonical \"abc\" test vector",
     const auto* bytes = reinterpret_cast<const std::byte*> (text);
     CHECK (sha256Hex (std::span<const std::byte> (bytes, 3))
            == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+}
+
+TEST_CASE ("PluginDescriptor::version round-trips through SessionFormat",
+           "[archival-mode][session-format]")
+{
+    PluginDescriptor d;
+    d.format       = PluginFormat::Vst3;
+    d.uniqueId     = "vendor.test.eq";
+    d.version      = "2.3.1";
+    d.name         = "Test EQ";
+    d.manufacturer = "Vendor";
+    d.filePath     = "/plugins/TestEQ.vst3";
+
+    EffectChainEntry entry;
+    entry.descriptor  = d;
+    entry.displayName = d.name;
+
+    auto leaf = std::make_shared<Constituent> (
+        ConstituentId (1),
+        Position (Rational (0)),
+        Position (Rational (1)));
+    *leaf = leaf->withEffectChain (EffectChain().withAppended (entry));
+
+    const auto json   = sirius::persistence::serializeSession (*leaf);
+    const auto round  = sirius::persistence::deserializeSession (json);
+    REQUIRE (round->effectChain().has_value());
+    REQUIRE (round->effectChain()->size() == 1);
+    CHECK (round->effectChain()->at (0).descriptor.version == "2.3.1");
 }

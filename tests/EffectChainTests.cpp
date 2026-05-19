@@ -31,6 +31,7 @@ namespace
         EffectChainEntry e;
         e.descriptor.format       = PluginFormat::Vst3;
         e.descriptor.uniqueId     = uniqueId;
+        e.descriptor.version      = "1.0.0";
         e.descriptor.name         = name;
         e.descriptor.manufacturer = "AcmeAudio";
         e.descriptor.filePath     = std::string ("/plugins/") + name + ".vst3";

@@ -23,6 +23,7 @@ namespace
         PluginDescriptor out;
         out.format       = formatFromJuce (description.pluginFormatName);
         out.uniqueId     = description.createIdentifierString().toStdString();
+        out.version      = description.version.toStdString();
         out.name         = description.name.toStdString();
         out.manufacturer = description.manufacturerName.toStdString();
         out.filePath     = description.fileOrIdentifier.toStdString();

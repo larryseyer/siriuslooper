@@ -483,6 +483,7 @@ namespace
         auto obj = makeObject();
         obj->setProperty ("format",       pluginFormatToString (d.format));
         obj->setProperty ("uniqueId",     juce::String (d.uniqueId));
+        obj->setProperty ("version",      juce::String (d.version));
         obj->setProperty ("name",         juce::String (d.name));
         obj->setProperty ("manufacturer", juce::String (d.manufacturer));
         obj->setProperty ("filePath",     juce::String (d.filePath));
@@ -494,6 +495,7 @@ namespace
         PluginDescriptor d;
         d.format       = pluginFormatFromString (requireProperty (v, "format").toString());
         d.uniqueId     = requireProperty (v, "uniqueId").toString().toStdString();
+        d.version      = requireProperty (v, "version").toString().toStdString();
         d.name         = requireProperty (v, "name").toString().toStdString();
         d.manufacturer = requireProperty (v, "manufacturer").toString().toStdString();
         d.filePath     = requireProperty (v, "filePath").toString().toStdString();
