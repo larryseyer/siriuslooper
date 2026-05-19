@@ -11,6 +11,7 @@
 
 #include <juce_audio_utils/juce_audio_utils.h>
 
+#include <algorithm>
 #include <deque>
 #include <exception>
 #include <functional>
@@ -696,13 +697,55 @@ private:
     juce::Label  statusLabel_;
 };
 
-// Task 1 stub: minimal definition so unique_ptr<PluginEditorWindow> is
-// destructible. Task 4 replaces this with the real juce::DocumentWindow
-// subclass body.
-class MainComponent::PluginEditorWindow
+// =============================================================================
+// PluginEditorWindow — floating juce::DocumentWindow that owns one
+// OutOfProcessEditorView bound to a scratch busId (M7 S7).
+// =============================================================================
+class MainComponent::PluginEditorWindow final : public juce::DocumentWindow
 {
 public:
-    PluginEditorWindow() = default;
+    PluginEditorWindow (const juce::String&                  title,
+                        std::int64_t                          busId,
+                        sirius::OutOfProcessEffectChainHost&  host,
+                        std::function<void(std::int64_t)>     onClose)
+        : juce::DocumentWindow (title,
+                                juce::Colours::black,
+                                juce::DocumentWindow::allButtons),
+          busId_   (busId),
+          onClose_ (std::move (onClose))
+    {
+        setUsingNativeTitleBar (true);
+        setResizable (true, /*useBottomRightCornerResizer*/ false);
+
+        // Initial size — replaced by the plug-in's preferred size once the
+        // editor view's polling timer detects the child's first contextId
+        // publish (typically <100 ms after spawn).
+        auto* view = new sirius::OutOfProcessEditorView (host, busId, /*slot*/ 0);
+        view->setSize (600, 400);
+        setContentOwned (view, /*resizeToFitContent*/ true);
+        centreWithSize (getWidth(), getHeight());
+        setVisible (true);
+    }
+
+    std::int64_t busId() const noexcept { return busId_; }
+
+    void closeButtonPressed() override
+    {
+        // Defer the actual teardown so we don't destroy ourselves from
+        // inside JUCE's event dispatcher.
+        if (onClose_)
+        {
+            const auto busId = busId_;
+            auto cb = onClose_;
+            juce::MessageManager::callAsync ([cb, busId] { cb (busId); });
+        }
+    }
+
+private:
+    std::int64_t                       busId_;
+    std::function<void(std::int64_t)>  onClose_;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginEditorWindow)
 };
 
 // =============================================================================
@@ -1614,9 +1657,11 @@ void MainComponent::openPluginEditor (const PluginDescriptor& descriptor)
 
     effectChainHost_.configureBus (busId, chain, hostBinary, clapBundle);
 
-    // Task 4 will replace this stub with a real PluginEditorWindow body
-    // that owns an OutOfProcessEditorView at the given busId.
-    auto window = std::make_unique<PluginEditorWindow>();
+    auto window = std::make_unique<PluginEditorWindow> (
+        juce::String (descriptor.name),
+        busId,
+        effectChainHost_,
+        [this] (std::int64_t b) { closePluginEditor (b); });
     editorWindows_.push_back (std::move (window));
 }
 
@@ -1627,10 +1672,13 @@ void MainComponent::closePluginEditor (std::int64_t busId)
     const auto hostBinary = hostBinaryPath();
     effectChainHost_.configureBus (busId, sirius::EffectChain{}, hostBinary, juce::File{});
 
-    // Task 4 will tag each PluginEditorWindow with its busId so we can
-    // find + remove the matching one. For Task 2's stub, we just clear
-    // all windows whenever any close fires — Task 4 fixes this.
-    editorWindows_.clear();
+    editorWindows_.erase (
+        std::remove_if (editorWindows_.begin(), editorWindows_.end(),
+            [busId] (const std::unique_ptr<PluginEditorWindow>& w)
+            {
+                return w != nullptr && w->busId() == busId;
+            }),
+        editorWindows_.end());
 }
 
 } // namespace sirius

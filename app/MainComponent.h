@@ -17,6 +17,7 @@
 #include "sirius/OutputMixer.h"
 #include "sirius/OverloadProtection.h"
 #include "sirius/PerformanceView.h"
+#include "sirius/OutOfProcessEditorView.h"
 #include "sirius/OutOfProcessEffectChainHost.h"
 #include "sirius/PluginScanner.h"
 #include "sirius/Promotion.h"
