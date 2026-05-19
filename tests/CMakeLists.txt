@@ -117,6 +117,19 @@ target_compile_definitions(SiriusTests PRIVATE
     $<$<NOT:$<PLATFORM_ID:Darwin>>:SIRIUS_STATEFUL_SYNTH_CLAP_PATH="$<TARGET_FILE:StatefulSynthFixture>">)
 add_dependencies(SiriusTests sirius_plugin_host SyntheticTestPlugin StatefulSynthFixture)
 
+# M8 S2: optional third-party CLAP integration test. Compiled into
+# SiriusTests only when the operator supplies a real CLAP bundle path
+# (FabFilter, Surge XT, etc.) at configure time. When unset (CI, default
+# dev builds) the source is not compiled and the [third-party-clap] cases
+# do not exist — silently absent. Mirrors the SIRIUS_SYNTHETIC_CLAP_PATH
+# fixture convention above.
+if(DEFINED SIRIUS_THIRDPARTY_CLAP_PATH)
+    target_sources(SiriusTests PRIVATE
+        ThirdPartyClapIntegrationTests.cpp)
+    target_compile_definitions(SiriusTests PRIVATE
+        SIRIUS_THIRDPARTY_CLAP_PATH="${SIRIUS_THIRDPARTY_CLAP_PATH}")
+endif()
+
 include(Catch)
 catch_discover_tests(SiriusTests)
 
