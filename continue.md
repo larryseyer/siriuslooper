@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-19 (M8 S1 spec committed; ready for writing-plans + implementation)
+# Session Continuation — 2026-05-19 (M8 S1 fully shipped; next move = M8 S2)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,7 +8,148 @@
 
 ---
 
-## RESUME HERE (2026-05-19 — M8 S1 spec on origin/master at `f73cf98`; next move = writing-plans skill → implementation)
+## RESUME HERE (2026-05-19 — M8 S1 fully shipped at `8d9818f`; next move = M8 S2 CLAP loader hardening)
+
+> ## ✅ M8 S1 fully shipped end-to-end (orchestrator+subagents execution)
+>
+> M8 S1 (ArchivalMode + per-instance VersionPinning record) is on
+> `origin/master` at HEAD `8d9818f`. 12 commits across 7 plan tasks
+> + a final consolidation, all green from `efae938`..`8d9818f`.
+> Clean rebuild succeeds, ctest 400/400 pass (+19 vs 381 baseline),
+> codesign verified, test-s7 green.
+>
+> **What landed (high level):**
+> - `core/`: pure C++ RFC-6234 `sha256Hex`, `ArchivalMode` enum
+>   (default `VersionPinning`), `VersionPinningRecord` value type
+>   with `matches()` (excludes oversamplingRate) + `operator==`,
+>   `PluginDescriptor::version`, `EffectChainEntry::archivalMode` +
+>   `persistedSnapshot`.
+> - `persistence/`: full JSON round-trip for the new fields via
+>   `archivalModeTo/FromString` + `versionPinningRecordTo/FromVar`
+>   helpers; pre-M8 sessions load cleanly with defaults.
+> - `engine/`: `SessionSnapshot` populator (copy-on-write walker,
+>   lazy `std::optional<Constituent>` materialization, structural
+>   sharing pinned by test) + verifier (formats compact drift
+>   message, posts `Warning / PluginEvent` via existing bus).
+> - `app/MainComponent.cpp`: populator wired into
+>   `chooseFileAndSave`, verifier into `chooseFileAndLoad`.
+> - Operator-visible: save session → hand-edit
+>   `persistedSnapshot.version` in the JSON → reload → drift
+>   message appears in the notification-history pane.
+>
+> **The single most important next move:** start M8 S2 (CLAP loader
+> hardening + `clap_plugin_state` integration). Spec hasn't been
+> written yet — run `superpowers:brainstorming` against V7 plan
+> lines 597-598 first, then `superpowers:writing-plans`, then
+> orchestrator+subagents.
+
+### First moves for the next chat (concrete, ordered)
+
+1. **Sanity:** `git status` clean, `git log --oneline -3` shows
+   `8d9818f` on top.
+2. **Read the M8 S2 followup entry in `todo.md`** (lines ~1485-1497).
+   It enumerates 7 concrete sub-tasks the M8 S2 implementer must
+   address, including two semantic gotchas surfaced by the M8 S1
+   final review:
+   - **Drop the `! has_value()` guard** in
+     `engine/src/SessionSnapshot.cpp:40-41` once
+     `OutOfProcessEffectChainHost::descriptorForSlot` /
+     `stateBlobForSlot` exist. Without dropping it, the populator
+     never refreshes a stale snapshot — a v1.0.0→v1.0.1 upgrade
+     between save-A and save-B silently re-pins to the old version.
+     Decide the re-pinning policy (always-refresh vs warn-then-
+     refresh) before writing code.
+   - **128-byte drift-message truncation budget** at
+     `engine/src/SessionSnapshot.cpp:91`. Current format has ~75
+     bytes of headroom; adding state-blob hash or any new field
+     requires counting bytes or reordering so the most-actionable
+     info survives truncation.
+3. **Brainstorm M8 S2.** Spec doesn't exist yet — V7 plan lines
+   597-598 only give the milestone-level intent. Use
+   `superpowers:brainstorming` to produce
+   `docs/superpowers/specs/2026-MM-DD-m8-s2-design.md`, then
+   `superpowers:writing-plans` for the implementation plan.
+4. **Execute via `superpowers:subagent-driven-development`**
+   (matches V7's `orchestrator+subagents` mode for the M8 block).
+
+### M8 S1 commit log (13 commits, all pushed)
+
+| SHA | Type | Subject |
+|---|---|---|
+| `70c0f8f` | feat | pure C++ SHA-256 in core (RFC 6234) |
+| `66c41dc` | feat | PluginDescriptor::version round-trips through SessionFormat |
+| `0e64f67` | refactor | trim PluginDescriptor.version docstring + add round-trip test intent |
+| `1412046` | docs | plan — fix Position constructor calls (single Rational, not two) |
+| `3c56dc5` | feat | ArchivalMode enum (DeterminismContract/WetCapture/VersionPinning) |
+| `9632241` | refactor | ArchivalMode test docstring matches actual enforcement |
+| `df9682c` | feat | VersionPinningRecord value type with matches() semantics |
+| `b2c78ff` | refactor | co-locate VersionPinningRecord comparators + add hash-drift test + tidy test includes |
+| `dbd2b99` | refactor | drop unused VersionPinningRecord using-decl |
+| `a0425aa` | feat | EffectChainEntry.archivalMode + persistedSnapshot + JSON round-trip |
+| `21c9ea9` | feat | SessionSnapshot populator + verifier with PluginVersionDrift notifications |
+| `05a557c` | refactor | defer Constituent copy in populator + pin structural-sharing invariant |
+| `eda41a3` | refactor | drop unused INotificationSink using-decl |
+| `47a74c1` | feat | wire populator/verifier into save+load; queue M8 S2 followup |
+| `8d9818f` | refactor | re-save policy comment + WetCapture invariant test + S2 followup notes |
+
+### Coverage gaps explicitly accepted at M8 S1 ship (not blockers)
+
+The final review (operator-approved, recorded here for the M8 S2 implementer):
+
+- **Multi-entry mixed-mode chain test missing.** Every populator/
+  verifier test uses single-entry chains. The current implementation
+  almost certainly handles `[VersionPinning, DeterminismContract,
+  VersionPinning]` correctly (the loop in `walkAndPopulate` doesn't
+  short-circuit), but it's not pinned. ~20-line test would close it;
+  defer to M8 S2 since the same code is touched.
+- **Multi-level grandchild verifier test missing.** `walkAndVerify`
+  recurses through `node.children()` so deep trees should work, but
+  the only multi-level test exercises the populator, not the
+  verifier. Defensive; defer to M8 S2.
+
+### Other queued items (independent of M8 progression)
+
+- **Audio-ring SPSC violation** (M7 S5 deviation #1). RT-path
+  discipline fix. Standalone.
+- **Out-of-process `PluginScanner`** — wait until M20/M21 because
+  the scanner re-architects around the same child binary.
+- **`PluginScanner` "FabFilter" testing-filter removal** (line 38
+  of `host/src/PluginScanner.cpp`). Hardcoded name filter from M7
+  S7. Must go before shipping. Tracked in `todo.md`.
+- **`get-task-allow=true` notarization blocker** —
+  `app/CMakeLists.txt`'s Xcode attributes still inject
+  `get-task-allow=true` on Release builds; notarization rejects
+  this. Tracked in `todo.md`.
+
+### Quick reference for the next chat (Sirius Looper specifics)
+
+- **Run the headless lifecycle tests:** `bash bash/test-s7.sh`
+  (auto-builds anything missing). Name still says s7 — covers all
+  current MainComponentPluginEditorTests cases.
+- **Run the M8 S1 surface tests:** `./build/tests/SiriusTests
+  "[archival-mode]"` → 18 cases / 46 assertions. Or
+  `[session-snapshot]` → 8 / 21. Or `[version-pinning]` → 5 / 11.
+- **Full ctest:** 400 tests. The only acceptable failures are the
+  pre-existing M7 SIGTERM flakes in
+  `OutOfProcessPluginInstanceAudioThreadTests` /
+  `OutOfProcessPluginTests` /
+  `OutOfProcessEffectChainHostSupervisorTests` (subprocess timing
+  race; flakes 0-2 cases per run; unrelated to M8 S1).
+- **Bundle / signing / entitlements:** unchanged since M7 S9. The
+  `sirius_plugin_host` child still has the
+  `com.apple.security.cs.disable-library-validation` entitlement
+  (`host_process/sirius_plugin_host.entitlements`).
+- **M8 S1 spec:**
+  `docs/superpowers/specs/2026-05-19-m8-s1-design.md`.
+- **M8 S1 plan:**
+  `docs/superpowers/plans/2026-05-19-m8-s1-plan.md` (7-task TDD
+  decomposition; reflects the 2 plan-vs-spec deviations that
+  landed: pure-C++ SHA-256 in core, host parameter dropped from
+  populator/verifier signatures for M8 S1).
+
+---
+
+## HISTORICAL — M8 S1 spec committed; ready for writing-plans + implementation (superseded 2026-05-19 — M8 S1 fully shipped end-to-end)
 
 > ## ✅ M7 S9 fully shipped + ✅ M8 S1 brainstorm + spec committed
 >
