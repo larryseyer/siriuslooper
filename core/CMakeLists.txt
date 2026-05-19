@@ -20,7 +20,8 @@ add_library(SiriusCore STATIC
     src/CaptureSession.cpp
     src/Promotion.cpp
     src/EffectChain.cpp
-    src/SharedMemoryRegion.cpp)
+    src/SharedMemoryRegion.cpp
+    src/Sha256.cpp)
 
 target_include_directories(SiriusCore PUBLIC include)
 

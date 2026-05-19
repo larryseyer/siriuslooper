@@ -60,7 +60,8 @@ add_executable(SiriusTests
     OutOfProcessEditorTests.cpp
     OutputMixerPluginHostIntegrationTests.cpp
     SharedMemorySpscQueueTests.cpp
-    SharedMemoryRegionTests.cpp)
+    SharedMemoryRegionTests.cpp
+    ArchivalModeTests.cpp)
 
 target_compile_features(SiriusTests PRIVATE cxx_std_20)
 
