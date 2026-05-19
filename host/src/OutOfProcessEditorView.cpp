@@ -74,6 +74,49 @@ void OutOfProcessEditorView::visibilityChanged()
 void OutOfProcessEditorView::timerCallback()
 {
     refreshFromHost();
+
+    // Failed-to-load detection: if a Show was issued kFailedToLoadTimeoutMs
+    // ago and the child still hasn't published a contextId, paint the
+    // explanatory overlay. Common cause today: operator pointed at a
+    // VST3 (sirius_plugin_host only dlopens CLAP bundles — VST3/AU
+    // need their own dlopen paths in a later session).
+    if (shownOnce_ && currentContextId_ == 0 && ! failedToLoad_)
+    {
+        const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds> (
+            std::chrono::steady_clock::now() - showRequestedAt_).count();
+        if (elapsedMs >= kFailedToLoadTimeoutMs)
+        {
+            failedToLoad_ = true;
+            repaint();
+        }
+    }
+    else if (failedToLoad_ && currentContextId_ != 0)
+    {
+        // Late publish (e.g. supervisor restarted the child and it
+        // finally came up). Clear the overlay so the embedded NSView
+        // gets the spotlight.
+        failedToLoad_ = false;
+        repaint();
+    }
+}
+
+void OutOfProcessEditorView::paint (juce::Graphics& g)
+{
+    if (! failedToLoad_)
+        return;
+
+    g.fillAll (juce::Colour (0xff1a1a1a));
+    g.setColour (juce::Colour (0xffff6b6b));
+    g.setFont (juce::FontOptions (15.0f, juce::Font::bold));
+    g.drawText ("Plug-in failed to load",
+                getLocalBounds().removeFromTop (getHeight() / 2 + 8),
+                juce::Justification::centredBottom);
+    g.setColour (juce::Colour (0xffb0b0b0));
+    g.setFont (juce::FontOptions (12.0f, 0));
+    g.drawText ("Check the Preparation tab notifications for details. "
+                "VST3 / AU hosting is not yet implemented (M7 follow-on).",
+                getLocalBounds().removeFromBottom (getHeight() / 2 - 8).reduced (16, 4),
+                juce::Justification::centredTop);
 }
 
 void OutOfProcessEditorView::issueShowIfSized()
@@ -85,7 +128,10 @@ void OutOfProcessEditorView::issueShowIfSized()
     const auto w = static_cast<std::uint32_t> (getWidth());
     const auto h = static_cast<std::uint32_t> (getHeight());
     if (host_.requestEditorShow (busId_, slotIndex_, w, h))
-        shownOnce_ = true;
+    {
+        shownOnce_       = true;
+        showRequestedAt_ = std::chrono::steady_clock::now();
+    }
 }
 
 void OutOfProcessEditorView::refreshFromHost()

@@ -5,6 +5,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_gui_extra/juce_gui_extra.h>
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -48,6 +49,16 @@ public:
     /// burning CPU.
     static constexpr int kPollMs = 33;
 
+    /// After issuing a Show request, wait this long for the child to
+    /// publish a non-zero contextId before painting the "failed to load"
+    /// fallback. 2 seconds covers a normal CLAP plug-in's spawn +
+    /// initialise + publish path (typically <100 ms on Apple Silicon)
+    /// PLUS one supervisor restart cycle (kSupervisorPollMs +
+    /// kRestartGraceMs ≈ 150 ms). A child that hasn't published by 2 s
+    /// is either silently dead or stuck — operator gets an explanation
+    /// instead of a blank black DocumentWindow.
+    static constexpr int kFailedToLoadTimeoutMs = 2000;
+
     /// Constructs a view bound to the given slot. The host is non-owning;
     /// the caller (eventually `MainComponent`) keeps it alive for the
     /// lifetime of all OutOfProcessEditorView instances.
@@ -70,6 +81,7 @@ public:
     std::size_t   slotIndex() const noexcept { return slotIndex_; }
 
     // ---- juce::Component overrides --------------------------------------
+    void paint (juce::Graphics& g) override;
     void resized() override;
     void parentHierarchyChanged() override;
     void visibilityChanged() override;
@@ -88,6 +100,8 @@ private:
     std::int64_t                 busId_;
     std::size_t                  slotIndex_;
     bool                         shownOnce_ { false };
+    bool                         failedToLoad_ { false };
+    std::chrono::steady_clock::time_point showRequestedAt_ {};
     std::uint32_t                currentContextId_ { 0 };
 
    #if JUCE_MAC
