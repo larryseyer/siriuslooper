@@ -29,22 +29,41 @@ namespace
         return out;
     }
 
+    /// Testing-only name filter (see todo.md M7 S7 entry). When non-empty,
+    /// candidate plug-in files whose path does NOT contain this substring
+    /// are skipped before per-file instantiation. Operators with 1000+
+    /// plug-ins installed cannot wait minutes for a full scan during
+    /// eyes-on; this lets them point at the global plug-in folder and
+    /// only pay the instantiation cost for the named vendor.
+    constexpr const char* kTestingScanFilter = "FabFilter";
+
     void scanOneFormat (juce::AudioPluginFormat& format,
                         const juce::FileSearchPath& path,
                         PluginScanResult& result)
     {
         juce::KnownPluginList list;
-        juce::PluginDirectoryScanner scanner (list, format, path,
-                                              /*recursive*/ true,
-                                              /*deadMansPedalFile*/ juce::File(),
-                                              /*allowAsync*/ false);
+        const juce::String filter (kTestingScanFilter);
 
-        juce::String currentName;
-        while (scanner.scanNextFile (/*dontRescanIfAlreadyInList*/ true, currentName))
-            ; // each pass advances scanner state; we drain to completion synchronously
+        const auto candidates = format.searchPathsForPlugins (
+            path, /*recursive*/ true, /*allowAsync*/ false);
 
-        for (const auto& failed : scanner.getFailedFiles())
-            result.failedFiles.push_back (failed.toStdString());
+        for (const auto& fileOrId : candidates)
+        {
+            if (filter.isNotEmpty() && ! fileOrId.containsIgnoreCase (filter))
+                continue;
+
+            juce::OwnedArray<juce::PluginDescription> typesFound;
+            list.scanAndAddFile (fileOrId,
+                                 /*dontRescanIfAlreadyInList*/ true,
+                                 typesFound,
+                                 format);
+            // scanAndAddFile populates `list` directly; typesFound is the
+            // per-file result. Anything failing instantiation surfaces via
+            // KnownPluginList's failure tracking — we don't have a direct
+            // "failed" list without PluginDirectoryScanner, so failures here
+            // are silently dropped. Acceptable for the testing-only path;
+            // production scan (post-todo.md fix) restores the full reporting.
+        }
 
         for (const auto& type : list.getTypes())
             result.descriptors.push_back (fromJuceDescription (type));

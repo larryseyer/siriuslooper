@@ -1301,3 +1301,9 @@ assets before public launch:
   for `siriuslooper.com`, then in repo Settings → Pages set source =
   `gh-pages` branch, custom domain = `siriuslooper.com`, Enforce HTTPS
   on. Verify with `dig siriuslooper.com +short`.
+
+### 2026-05-18 - M7 S7 testing-only PluginScanner hardcoded "FabFilter" filter
+- Files: host/src/PluginScanner.cpp (kTestingScanFilter constant + scanOneFormat body)
+- What was deferred: the scanner currently skips every plug-in file whose path does not contain "FabFilter". This was a temporary measure so the operator (1000+ installed plug-ins) could eyes-on the M7 S7 "Open editor" workflow without waiting minutes for a full scan.
+- Why deferred: the operator asked for the filter for the S7 eyes-on session only; replacing PluginDirectoryScanner with a manual loop also lost the failed-files reporting surface.
+- What's needed to finish: (1) remove the hardcoded "FabFilter" substring or replace it with an opt-in mechanism (env var, UI text field, scan-on-demand-per-vendor); (2) restore failed-file reporting (either re-add PluginDirectoryScanner alongside the filter, or wrap scanAndAddFile's bool return value to surface failures).
