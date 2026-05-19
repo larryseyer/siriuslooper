@@ -262,10 +262,9 @@ public:
         addAndMakeVisible (diagnosticsLabel_);
 
         // M6 Session 3 — read-only multi-line monospaced editor for the rolling
-        // notification history. Mirrors the PluginsPane::descriptorsList_ shape
-        // (line 356-360 of pre-S3) so the operator's eye recognises the surface.
-        // Read-only because notifications are engine→UI output; the operator
-        // never types into them. Scrollbars exposed for older entries beyond
+        // notification history. Read-only because notifications are engine→UI
+        // output; the operator never types into them. Scrollbars exposed for
+        // older entries beyond
         // what fits in `kNotificationsRowHeightPx`.
         notificationsList_.setMultiLine (true);
         notificationsList_.setReadOnly (true);
@@ -482,7 +481,7 @@ public:
     int getNumRows() override { return (int) descriptors_.size(); }
 
     void paintListBoxItem (int rowNumber, juce::Graphics& g,
-                           int width, int height, bool /*rowIsSelected*/) override
+                           int width, int /*height*/, bool /*rowIsSelected*/) override
     {
         if (rowNumber < 0 || rowNumber >= (int) descriptors_.size())
             return;
@@ -517,7 +516,7 @@ public:
             delete existing;
             button = new RowButton();
         }
-        button->setRowAndDescriptor (rowNumber, descriptors_[(std::size_t) rowNumber]);
+        button->setRow (rowNumber);
         button->setEnabled (hostBinaryAvailable_);
         button->setTooltip (hostBinaryAvailable_
             ? juce::String()
@@ -537,13 +536,17 @@ private:
     {
     public:
         RowButton() : juce::TextButton ("Open editor") {}
-        void setRowAndDescriptor (int row, const PluginDescriptor&)
-        {
-            rowNumber_ = row;
-        }
+        void setRow (int row) { (void) row; /* JUCE re-bounds us each row */ }
+
         void resized() override
         {
-            // Right-aligned inside the row; ~88 px wide, vertically centred.
+            // I am the row component JUCE positions; on resize, I shrink
+            // to a right-aligned 88x24 button slot. JUCE's setBounds
+            // short-circuits when bounds don't change, so the self-shrink
+            // is idempotent. The descriptor text painted by the model is
+            // already laid out behind me (paintListBoxItem reserves
+            // width - 110 for text — leaves 110 px for this 88-wide
+            // button + an 8-px right gutter at width - 8).
             const auto bounds = getParentComponent() != nullptr
                 ? juce::Rectangle<int> (getParentWidth() - 96,
                                         (kRowHeight - 24) / 2,
@@ -551,8 +554,6 @@ private:
                 : juce::Rectangle<int> (0, 0, 88, 24);
             setBounds (bounds);
         }
-    private:
-        int rowNumber_ { -1 };
     };
 
     std::vector<PluginDescriptor> descriptors_;
@@ -626,6 +627,12 @@ public:
                 text << "  " << juce::String (f) << "\n";
             failedFilesLabel_.setText (text, juce::dontSendNotification);
         }
+
+        // resized() inspects failedFilesLabel_.getText().isEmpty() to
+        // decide whether to reserve a 60 px strip at the bottom; rerun
+        // it now so the layout reflects the new content immediately
+        // (without waiting for the parent to resize).
+        resized();
     }
 
     void resized() override
