@@ -618,6 +618,12 @@ OutOfProcessEffectChainHost::descriptorForSlot (
     const auto& state = *it->second;
     if (state.permanentlyBypassed.load (std::memory_order_acquire))
         return std::nullopt;
+    // Honor the transient bypass flag too — matches pumpSlot's discipline.
+    // Reading descriptor under the mutex is itself race-free, but the
+    // docstring promises nullopt while bypassed and consistency with
+    // stateBlobForSlot is the goal.
+    if (state.bypassed.load (std::memory_order_acquire))
+        return std::nullopt;
     return state.descriptor;
 }
 
@@ -641,6 +647,15 @@ OutOfProcessEffectChainHost::stateBlobForSlot (
     }
 
     if (snapshot->permanentlyBypassed.load (std::memory_order_acquire))
+        return std::nullopt;
+    // Bypass-flag fence — checked AFTER releasing instancesMutex_ but
+    // BEFORE dereferencing snapshot->instance. During a transient-bypass
+    // restart window the supervisor mutates instance IN PLACE without
+    // holding instancesMutex_; the acquire load here synchronizes-with
+    // the supervisor's release store (attemptRestart) and closes the
+    // unlocked data race against the in-place instance swap, exactly as
+    // pumpSlot does.
+    if (snapshot->bypassed.load (std::memory_order_acquire))
         return std::nullopt;
     if (snapshot->instance == nullptr)
         return std::nullopt;
