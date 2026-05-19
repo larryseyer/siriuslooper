@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-19 (M8 S1 fully shipped; next move = M8 S2)
+# Session Continuation — 2026-05-19 (M8 S2 fully shipped; next move = M8 S3)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,7 +8,133 @@
 
 ---
 
-## RESUME HERE (2026-05-19 — M8 S1 fully shipped at `8d9818f`; next move = M8 S2 CLAP loader hardening)
+## RESUME HERE (2026-05-19 — M8 S2 fully shipped + pushed; next move = M8 S3 Constituent state machine)
+
+> ## ✅ M8 S2 fully shipped end-to-end (orchestrator+subagents execution)
+>
+> M8 S2 (CLAP as a first-class plug-in format + live `clap_plugin_state`
+> hashing for VersionPinning) is on `origin/master`. 20 commits across
+> the 12 plan tasks, every task gated by a two-stage spec + code-quality
+> review. Clean rebuild from `rm -rf build` succeeds; ctest 427/427
+> (was 400 at M8 S1 ship; +27 new cases). The 2 GUI-lifecycle tests
+> (425/426) skip headlessly — they need a window server, pre-existing.
+>
+> **What landed (high level):**
+> - `host/`: `ClapBundleLoader` (RAII dlopen+entry+factory, extracted
+>   from `host_process/main.cpp` so the scanner + child share one load
+>   path); `ClapScanner` (walks platform CLAP search paths); CLAP folded
+>   into `PluginScanner` alongside VST3/AU + the `FabFilter` testing
+>   filter REMOVED + per-format scan-progress notifications.
+> - `core/`: `PluginStateRegion.h` — `PluginStateState` shm POD mirroring
+>   `PluginGuiState` (seq-counter request/response, 64 KiB payload caps,
+>   Save/Load/Status enums).
+> - `host_process/main.cpp`: child services `clap_plugin_state` save/load
+>   via the new state shm region (`serviceStateRequests`), tolerant of an
+>   absent region for forward-compat.
+> - `OutOfProcessPluginInstance::requestStateSave/Load` (engine-side IPC
+>   round-trip, bounded timeout, child-reported-size clamp at the trust
+>   boundary).
+> - `OutOfProcessEffectChainHost::descriptorForSlot` + `stateBlobForSlot`
+>   (snapshot-then-unlock so the IPC wait never holds `instancesMutex_`;
+>   honors the transient bypass flag to close the supervisor race).
+> - `engine/SessionSnapshot`: dropped the M8 S1 `!has_value()` re-pin
+>   guard (always-refresh on save), consults the live host for real
+>   state bytes via a `SlotLookup` callback, posts Info-level
+>   `PluginVersionRepinned` (now carries state-hash prefixes) on save-time
+>   record change, drift message reordered to `"version drift eh=.. fh=..
+>   ev=.. fv=.. id=.."` (hashes first to survive 128-byte truncation).
+> - `app/MainComponent.cpp`: real `slotLookup()` (one-editor-per-bus →
+>   `openEditorBusIds_[entryIndex]`, slot 0) wired into save+load; scanner
+>   notification sink bound to the bus.
+> - `tests/fixtures/StatefulSynthFixture.cpp`: a SECOND synthetic CLAP
+>   shaped like a real third-party plug-in (2 params, 1-pole filter state,
+>   16-byte `SLST` state layout) — gives the suite a third-party-shaped
+>   target with no external download.
+> - `tests/ThirdPartyClapIntegrationTests.cpp`: opt-in via CMake var
+>   `SIRIUS_THIRDPARTY_CLAP_PATH` (point it at a FabFilter/Surge `.clap`);
+>   silently absent when unset.
+>
+> **The single most important next move:** start M8 S3 (V7 plan line 598:
+> "Constituent state machine + broken/invalid render-as-silence; tests").
+> Spec not written yet — run `superpowers:brainstorming` against V7 plan
+> lines 598-603 first, then `superpowers:writing-plans`, then
+> orchestrator+subagents.
+
+### First moves for the next chat (concrete, ordered)
+
+1. **Sanity:** `git status` clean, `git log --oneline -3` shows the M8 S2
+   tail on top, on `origin/master`.
+2. **Read the M8 S2 spec + plan:**
+   `docs/superpowers/specs/2026-05-19-m8-s2-design.md` and
+   `docs/superpowers/plans/2026-05-19-m8-s2-plan.md`.
+3. **Check `todo.md` for the two M8 S2 deferrals** the reviews surfaced
+   (both real, both non-blocking, both recorded there):
+   - `OutOfProcessPluginInstance::requestStateSave/Load` collapse
+     no-extension / timeout / child-error into a single `false`, which
+     prevents the third-party integration test from distinguishing a
+     genuine timeout from a legitimately-stateless plug-in. Needs a
+     tri-state result or `lastStateError()` accessor.
+   - (plus any other open items already in the file).
+4. **Known M8 S2 seam (not a bug, flagged by final review):**
+   `SessionSnapshot::computeLiveRecord` pins the descriptor from
+   `descriptorForSlot`, which returns the CONFIGURE-TIME cached
+   `SlotState::descriptor`, not a descriptor read back from the live
+   plug-in — so only the STATE HASH is a live drift signal in-session;
+   descriptor-version drift fires only across machines/reopens (the
+   loaded value differs from the scanner-resolved one). And
+   `MainComponent::slotLookup()` is positional (entry index → bus index)
+   under the one-editor-per-bus model; nested chains (M11+) must resolve
+   through the engine save-orchestrator instead, or entries silently drop
+   to the empty-blob fallback.
+5. **Brainstorm M8 S3**, then `writing-plans`, then
+   `subagent-driven-development` (V7's `orchestrator+subagents` for M8).
+
+### M8 S2 commit log (20 commits, all pushed)
+
+| SHA | Type | Subject |
+|---|---|---|
+| `ff2246f` | feat | extract ClapBundleLoader shared between scanner + child |
+| `fa77b50` | feat | ClapScanner walks platform CLAP search paths |
+| `5df0e36` | fix | ClapScanner records non-macOS .clap dirs in failedFiles |
+| `a9116a3` | feat | PluginScanner integrates CLAP + drops FabFilter filter |
+| `235e659` | refactor | name PluginScanner progress-buffer + harden format-name lifetime |
+| `4e107d1` | feat | PluginStateState shm region (mirrors PluginGuiState) |
+| `2dd8683` | docs | clarify PluginStateState status semantics + memory-ordering |
+| `62ffc39` | feat | synthetic CLAP gains clap_plugin_state fixture (4-byte) |
+| `673d7d3` | feat | child services clap_plugin_state save/load via state shm |
+| `0bcae42` | feat | OutOfProcessPluginInstance::requestStateSave/Load |
+| `711a3a3` | fix | clamp child-reported state size + extract state-region helper |
+| `3c0ffc6` | feat | EffectChainHost::descriptorForSlot+stateBlobForSlot |
+| `d275e9e` | fix | slot accessors honor transient bypass flag (close race) |
+| `de52591` | feat | StatefulSynthFixture (params + real clap_plugin_state) |
+| `8606696` | refactor | drop unused cmath + harden StatefulSynthFixture snprintf |
+| `c88d274` | feat | SessionSnapshot consults live host + repin/drift notifications |
+| `cdcd7a0` | refactor | name notification buffer + surface state-hash in repin msg |
+| `dde19fc` | feat | wire MainComponent slot lookup + scanner sink; close S2 followup |
+| `3999f59` | feat | SIRIUS_THIRDPARTY_CLAP_PATH integration test |
+| `4d65a5c` | fix | honest third-party-CLAP skip + named timeouts + leak-safe lifecycle |
+
+### Quick reference for the next chat (M8 S2 test surface)
+
+- **Full ctest:** 427 tests. Acceptable failures: the pre-existing M7
+  SIGTERM flakes in `OutOfProcess*Tests` (subprocess timing race; 0-2
+  cases/run; rerun confirms transient). 425/426 (GUI lifecycle) skip
+  headlessly.
+- **M8 S2 surface tags** (run via `build/tests/SiriusTests "[tag]"`,
+  ctest `-R` matches by case NAME not tag): `[clap-bundle-loader]`,
+  `[clap-scanner]`, `[plugin-state-region]`, `[plugin-state-extension]`,
+  `[chain-host-state]`, `[stateful-synth-fixture]`, `[session-snapshot-live]`.
+- **Operator eyes-on for CLAP** (per spec acceptance): open a real CLAP
+  (FabFilter or any installed), change a parameter, save, quit, relaunch,
+  open → no drift; edit the JSON to bump the persisted version → reopen →
+  drift notification with 8-char hash prefixes in the history pane.
+- **Third-party CLAP automated test:** `cmake -B build
+  -DSIRIUS_THIRDPARTY_CLAP_PATH="/path/to/your.clap"` then the
+  `[third-party-clap]` cases run; unset = silently absent.
+
+---
+
+## HISTORICAL — M8 S1 fully shipped at `8d9818f` (superseded 2026-05-19 — M8 S2 fully shipped)
 
 > ## ✅ M8 S1 fully shipped end-to-end (orchestrator+subagents execution)
 >

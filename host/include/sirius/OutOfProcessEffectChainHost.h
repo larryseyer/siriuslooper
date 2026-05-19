@@ -197,9 +197,14 @@ public:
     /// Asks the slot's plug-in to save its state through the state shm
     /// region. Returns the bytes on success, nullopt on timeout, plug-in
     /// error, or absent slot. Posts a Warning / PluginEvent notification
-    /// on timeout (so the operator sees the pinning fall-back). Takes
-    /// `instancesMutex_`; 250 ms timeout matches the
-    /// `OutOfProcessPluginInstance::requestStateSave` default.
+    /// on timeout (so the operator sees the pinning fall-back).
+    ///
+    /// Snapshots the slot's `shared_ptr<SlotState>` under `instancesMutex_`
+    /// and then RELEASES the mutex before the bounded (250 ms) IPC wait —
+    /// the lock is never held across the blocking round-trip, so a wedged
+    /// child cannot stall `configureBus` or the supervisor. The snapshot
+    /// keeps the SlotState alive across the unlocked window. 250 ms matches
+    /// the `OutOfProcessPluginInstance::requestStateSave` call here.
     std::optional<std::vector<std::byte>> stateBlobForSlot (
         std::int64_t busId, std::size_t slotIndex) const noexcept;
 
