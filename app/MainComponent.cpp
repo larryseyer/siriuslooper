@@ -926,6 +926,10 @@ MainComponent::MainComponent()
     // --- Plugins tab ---
     pluginsPane_ = std::make_unique<PluginsPane>();
     pluginsPane_->scanButton_.onClick = [this] { chooseFolderAndScan(); };
+    pluginsPane_->listBoxModel_.onOpenEditor =
+        [this] (const PluginDescriptor& d) { openPluginEditor (d); };
+    pluginsPane_->listBoxModel_.setHostBinaryAvailable (
+        hostBinaryPath().existsAsFile());
     pluginsPane_->setRegisteredFormats (pluginScanner_.registeredFormatNames());
     pluginsPane_->setScanStatus ("");
     pluginsPane_->setDescriptors ({}, {});
