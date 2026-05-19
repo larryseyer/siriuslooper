@@ -89,12 +89,15 @@ TEST_CASE ("PluginDescriptor::version round-trips through SessionFormat",
     CHECK (round->effectChain()->at (0).descriptor.version == "2.3.1");
 }
 
-// Compiler-warning-as-error in the project's baseline (-Wswitch + -Werror)
-// catches any future enum extension that forgets to update this switch at
-// compile time. The runtime walk over all three enumerators ensures the
-// test is exercised even if -Wswitch isn't on — a future ArchivalMode
-// addition silently growing the enum without a matching switch arm would
-// otherwise let a "no archival" code path through.
+// The runtime walk over the three-value initializer list is the
+// load-bearing check: if a future ArchivalMode enumerator lands in the
+// header without a matching `case` arm added below, the new value never
+// enters the for-range, `reached` never grows past 3, and this test
+// stays green for the wrong reason — making the initializer list (which
+// the PR author must remember to extend) the real enforcement boundary.
+// A `-Wswitch` warning may also fire on the missing case under some
+// toolchains, but the project does not currently set `-Wswitch` or
+// `-Werror`, so do not rely on it.
 TEST_CASE ("ArchivalMode switch reaches every case", "[archival-mode]")
 {
     int reached = 0;
