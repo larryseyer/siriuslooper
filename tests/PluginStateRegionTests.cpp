@@ -13,10 +13,11 @@ using sirius::makeStateRegionName;
 TEST_CASE ("PluginStateState size fits within the per-instance shm budget",
            "[plugin-state-region]")
 {
-    // Two 64KiB buffers + atomics. Hard ceiling at 256KiB (one
-    // 64KB hugepage * 4) keeps the per-instance shm footprint
-    // predictable; if a future plug-in needs more, that's the chunked-
-    // protocol case the spec flags as out-of-scope.
+    // Two 64KiB payload buffers (request + response) ~= 128KiB, plus a
+    // handful of atomic counters. The 256KiB ceiling leaves comfortable
+    // headroom over that ~128KiB while keeping the per-instance shm
+    // footprint predictable; if a future plug-in needs more, that's the
+    // chunked-protocol case the spec flags as out-of-scope.
     STATIC_REQUIRE (sizeof (PluginStateState) <= 256u * 1024u);
     STATIC_REQUIRE (std::is_standard_layout_v<PluginStateState>);
 }
