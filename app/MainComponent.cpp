@@ -1457,4 +1457,50 @@ void MainComponent::chooseFolderAndScan()
     });
 }
 
+void MainComponent::openPluginEditor (const PluginDescriptor& descriptor)
+{
+    const auto hostBinary = hostBinaryPath();
+    if (! hostBinary.existsAsFile())
+    {
+        // Dev-loop or broken bundle. The UI button should be disabled in
+        // this case (Task 5 handles enable/disable + tooltip), so reaching
+        // here is a contract violation. Bail silently rather than spawning
+        // a child that will fail.
+        return;
+    }
+
+    const juce::File clapBundle (juce::String (descriptor.filePath));
+    if (! clapBundle.exists())
+        return;
+
+    const auto busId = nextScratchBusId_++;
+
+    sirius::EffectChainEntry entry;
+    entry.descriptor  = descriptor;
+    entry.displayName = descriptor.name;
+    entry.bypassed    = false;
+    sirius::EffectChain chain;
+    chain = chain.withAppended (entry);
+
+    effectChainHost_.configureBus (busId, chain, hostBinary, clapBundle);
+
+    // Task 4 will replace this stub with a real PluginEditorWindow body
+    // that owns an OutOfProcessEditorView at the given busId.
+    auto window = std::make_unique<PluginEditorWindow>();
+    editorWindows_.push_back (std::move (window));
+}
+
+void MainComponent::closePluginEditor (std::int64_t busId)
+{
+    // Empty chain → host's stale-slot eraser removes the slot in
+    // configureBus, supervisor reaps the child.
+    const auto hostBinary = hostBinaryPath();
+    effectChainHost_.configureBus (busId, sirius::EffectChain{}, hostBinary, juce::File{});
+
+    // Task 4 will tag each PluginEditorWindow with its busId so we can
+    // find + remove the matching one. For Task 2's stub, we just clear
+    // all windows whenever any close fires — Task 4 fixes this.
+    editorWindows_.clear();
+}
+
 } // namespace sirius
