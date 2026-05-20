@@ -126,6 +126,70 @@ TEST_CASE ("ChannelStrip<Audio> ignores pan on a mono buffer (gain only)",
     for (float v : mono) CHECK (v == Catch::Approx (2.0f));
 }
 
+TEST_CASE ("ChannelStrip<Audio> defaults to un-muted with zero meters",
+           "[channel-strip][mute][meter]")
+{
+    const AudioStrip strip;
+    CHECK_FALSE (strip.muted());
+    CHECK (strip.peakLeft()  == Catch::Approx (0.0f).margin (1e-6f));
+    CHECK (strip.peakRight() == Catch::Approx (0.0f).margin (1e-6f));
+}
+
+TEST_CASE ("ChannelStrip<Audio> mute silences the output and zeroes the meters",
+           "[channel-strip][mute]")
+{
+    AudioStrip strip;
+    strip.setGain (1.0f);
+    strip.setMuted (true);
+    CHECK (strip.muted());
+
+    std::array<float, 4> left, right;
+    left.fill (0.8f);
+    right.fill (-0.6f);
+    float* channelData[2] { left.data(), right.data() };
+
+    strip.process (channelData, 2, static_cast<int> (left.size()));
+
+    for (float v : left)  CHECK (v == Catch::Approx (0.0f).margin (1e-6f));
+    for (float v : right) CHECK (v == Catch::Approx (0.0f).margin (1e-6f));
+    CHECK (strip.peakLeft()  == Catch::Approx (0.0f).margin (1e-6f));
+    CHECK (strip.peakRight() == Catch::Approx (0.0f).margin (1e-6f));
+}
+
+TEST_CASE ("ChannelStrip<Audio> meters the post-fader peak per side",
+           "[channel-strip][meter]")
+{
+    AudioStrip strip;
+    strip.setGain (1.0f);
+    strip.setPan (0.0f); // hard left: leftGain = 1, rightGain = 0
+
+    std::array<float, 3> left  { 0.3f, -0.8f, 0.5f };
+    std::array<float, 3> right { 0.2f,  0.2f, 0.2f };
+    float* channelData[2] { left.data(), right.data() };
+
+    strip.process (channelData, 2, 3);
+
+    CHECK (strip.peakLeft()  == Catch::Approx (0.8f));                 // max|left| post-fader
+    CHECK (strip.peakRight() == Catch::Approx (0.0f).margin (1e-6f));  // panned out
+}
+
+TEST_CASE ("ChannelStrip<Audio> meter reflects the current block, not a running max",
+           "[channel-strip][meter]")
+{
+    AudioStrip strip;
+    strip.setPan (0.0f); // hard left for a clean left-side reading
+
+    std::array<float, 2> loudL { 0.9f, 0.9f }, loudR { 0.0f, 0.0f };
+    float* loud[2] { loudL.data(), loudR.data() };
+    strip.process (loud, 2, 2);
+    CHECK (strip.peakLeft() == Catch::Approx (0.9f));
+
+    std::array<float, 2> quietL { 0.1f, 0.1f }, quietR { 0.0f, 0.0f };
+    float* quiet[2] { quietL.data(), quietR.data() };
+    strip.process (quiet, 2, 2);
+    CHECK (strip.peakLeft() == Catch::Approx (0.1f)); // current block, not the prior 0.9
+}
+
 TEST_CASE ("ChannelStrip Midi / Video / File stubs construct and report SignalType",
            "[channel-strip][stubs]")
 {

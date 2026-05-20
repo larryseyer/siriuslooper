@@ -71,6 +71,21 @@ public:
     float gain() const noexcept { return gainLinear_.load (std::memory_order_relaxed); }
     float pan()  const noexcept { return panNormalized_.load (std::memory_order_relaxed); }
 
+    /// Message-thread mute setter. A muted strip emits silence and reports zero
+    /// meters. `relaxed` for the same reason as gain/pan — an independent scalar
+    /// the audio thread loads once per `process()`. Solo is a mixer-level policy
+    /// (the mixer computes each strip's effective mute from the mute + solo
+    /// button state); this flag is that effective mute.
+    void setMuted (bool m) noexcept { muted_.store (m, std::memory_order_relaxed); }
+    bool muted() const noexcept { return muted_.load (std::memory_order_relaxed); }
+
+    /// Post-fader peak level for each side of the last processed block, in [0, ∞).
+    /// The audio thread writes these once per `process()`; the UI reads them on
+    /// its timer and applies its own meter ballistics. Stereo (the invariant);
+    /// a mono block reports the same peak on both sides (dual-mono).
+    float peakLeft()  const noexcept { return peakLeft_.load (std::memory_order_relaxed); }
+    float peakRight() const noexcept { return peakRight_.load (std::memory_order_relaxed); }
+
     /// Audio-thread DSP entry point. `channelData[c][s]` lays out
     /// non-interleaved float samples (matches JUCE's `AudioBuffer<float>`
     /// internal layout and `AudioIODeviceCallback`'s argument shape, so
@@ -95,14 +110,33 @@ public:
     {
         if (channelData == nullptr || numChannels <= 0 || numSamples <= 0) return;
 
+        // Muted: emit silence and report zero meters. Cheap branch on the hot
+        // path; the common (un-muted) case falls straight through.
+        if (muted_.load (std::memory_order_relaxed))
+        {
+            for (int c = 0; c < numChannels; ++c)
+                if (channelData[c] != nullptr)
+                    for (int s = 0; s < numSamples; ++s)
+                        channelData[c][s] = 0.0f;
+            peakLeft_.store  (0.0f, std::memory_order_relaxed);
+            peakRight_.store (0.0f, std::memory_order_relaxed);
+            return;
+        }
+
         const float g = gainLinear_.load (std::memory_order_relaxed);
 
         if (numChannels == 1)
         {
             float* const left = channelData[0];
             if (left == nullptr) return;
+            float peak = 0.0f;
             for (int s = 0; s < numSamples; ++s)
+            {
                 left[s] *= g;
+                peak = std::max (peak, std::fabs (left[s]));
+            }
+            peakLeft_.store  (peak, std::memory_order_relaxed);
+            peakRight_.store (peak, std::memory_order_relaxed);
             return;
         }
 
@@ -118,16 +152,26 @@ public:
         float* const right = channelData[1];
         if (left == nullptr || right == nullptr) return;
 
+        float peakL = 0.0f, peakR = 0.0f;
         for (int s = 0; s < numSamples; ++s)
         {
             left[s]  *= leftGain;
             right[s] *= rightGain;
+            peakL = std::max (peakL, std::fabs (left[s]));
+            peakR = std::max (peakR, std::fabs (right[s]));
         }
+        peakLeft_.store  (peakL, std::memory_order_relaxed);
+        peakRight_.store (peakR, std::memory_order_relaxed);
     }
 
 private:
     std::atomic<float> gainLinear_;
     std::atomic<float> panNormalized_;
+    std::atomic<bool>  muted_ { false };
+    // Metering is written from the const `process` (the strip is logically const
+    // there), so the peak atomics are mutable. Audio-thread writes, UI reads.
+    mutable std::atomic<float> peakLeft_  { 0.0f };
+    mutable std::atomic<float> peakRight_ { 0.0f };
 };
 
 /// MIDI specialization — stub until M9 wires real UMP processing. Matches the
