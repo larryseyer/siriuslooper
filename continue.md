@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-19 (M8 S2 fully shipped; next move = M8 S3)
+# Session Continuation — 2026-05-20 (M8 S3 fully shipped; next move = M8 S4)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,7 +8,79 @@
 
 ---
 
-## RESUME HERE (2026-05-19 — M8 S2 fully shipped + pushed; next move = M8 S3 Constituent state machine)
+## RESUME HERE (2026-05-20 — M8 S3 fully shipped + pushed; next move = M8 S4 WetCapture writer)
+
+> ## ✅ M8 S3 fully shipped end-to-end (orchestrator+subagents execution)
+>
+> M8 S3 (Constituent `Valid | Broken | Invalid` state machine + render-as-silence,
+> V7 plan line 601) is on `origin/master`. Tasks T1–T4 each gated by two-stage
+> spec + code-quality review, plus a final holistic review. Tests: full ctest
+> **437/437 pass** (was 427 at S2 ship; +10 new `[constituent-state]` cases). The
+> 2 GUI-lifecycle tests (436/437) skip headlessly (pre-existing).
+>
+> **What landed:**
+> - `core/include/sirius/ConstituentState.h` — `enum class { Valid, Broken, Invalid }`,
+>   derived from the graph, NEVER persisted, never a field on `Constituent`
+>   (immutable/copy-on-write preserved).
+> - `engine/include/sirius/ConstituentValidator.h` + `.cpp` — `TapeResolver`
+>   predicate seam + `alwaysResolves` honest default; `ConstituentValidation`
+>   (`state()` returns Valid for unknown ids, `renderable()`); `validate(root,
+>   resolver)` depth-first walk: **Broken** = leaf loop whose `tapeReference`
+>   fails the resolver; **Invalid** = span not contained in the parent's local
+>   frame (`conceptualIn()<0 || conceptualOut() > parent.duration()`); Invalid
+>   dominates Broken. `postConstituentStateNotifications` posts
+>   `Warning`/`Category::StateRepair` per non-Valid node (caller-side, validator
+>   stays pure). `std::hash<ConstituentId>` lives in this header (core stays
+>   hash-free).
+> - `engine/RenderPipeline` — 3-arg ctor takes a `ConstituentValidation`;
+>   `collect()` returns early on a non-Valid node, silencing it AND its whole
+>   subtree (§17.7); the 2-arg ctor delegates with an all-Valid validation so
+>   existing behavior is byte-for-byte unchanged.
+> - `app/MainComponent.cpp::chooseFileAndLoad` — `validate(*loaded,
+>   alwaysResolves)` + `postConstituentStateNotifications` on load, beside the
+>   M8 S1 drift verifier.
+> - docs: spec `2026-05-19-m8-s3-design.md`, plan `2026-05-19-m8-s3-plan.md`.
+>
+> **Honest scope notes (also in `todo.md`):**
+> - Production Broken detection uses `alwaysResolves` (no TapeId→content manifest
+>   yet) — only structural **Invalid** is live in-session; the real
+>   `TapeStore`-backed resolver is M8 S7–S8.
+> - `RenderPipeline` is NOT yet wired into the production audio callback
+>   (`activeReadsAt` is test-only). The load-time validation currently drives
+>   **notifications only**, not live audio silencing; the 3-arg ctor is the seam
+>   for when the audio path lands.
+> - Tempo-map contradiction (§17.7) intentionally OUT of S3 (revert semantics,
+>   not silence).
+>
+> **Mid-session design topic captured (NOT acted on, by design):** the operator's
+> render→parts→timeline→finished-song vision ("Ableton territory"; "when render
+> is called, all tapes stop"). Recorded durably in
+> `docs/design/render-and-arrangement-vision.md` + a "Future direction" pointer
+> under whitepaper §6.11 (with the tension against §6.11's "render = playback to
+> a file" stance flagged), plus auto-memory + `todo.md`. Deserves its own
+> brainstorm→spec session.
+>
+> **The single most important next move:** start M8 S4 (V7 plan line 603:
+> WetCapture writer, Sessions 4–5). Spec not written — run
+> `superpowers:brainstorming` against V7 plan line 565 (WetCapture acceptance:
+> tape writer adds `<channelId>.wet.tape` in SAF's `tapes/` subdir) + line 581
+> (`engine/WetCaptureWriter.h/.cpp` new) + line 603, then `writing-plans`, then
+> orchestrator+subagents.
+
+### First moves for the next chat (M8 S4)
+
+1. **Sanity:** `git status` clean, `git log --oneline -8` shows the M8 S3 tail on
+   `origin/master`.
+2. **Read** `docs/superpowers/specs/2026-05-19-m8-s3-design.md` and the plan.
+3. **Check `todo.md`** for the M8 S3 follow-ups (audio-callback wiring of the
+   3-arg RenderPipeline ctor; descendant-warning policy under an Invalid
+   ancestor) and the still-open M8 S2 deferral (requestStateSave/Load tri-state).
+4. **Brainstorm M8 S4** (WetCapture writer), then `writing-plans`, then
+   `subagent-driven-development`.
+
+---
+
+## HISTORICAL — M8 S2 (superseded 2026-05-20 — M8 S3 fully shipped)
 
 > ## ✅ M8 S2 fully shipped end-to-end (orchestrator+subagents execution)
 >

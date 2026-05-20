@@ -16,6 +16,27 @@
   model, place it in the milestone roadmap, then spec. Captured in auto-memory
   as project_render_to_parts_timeline.md.
 
+### 2026-05-19 — M8 S3 follow-ups (non-blocking, surfaced by final review)
+- Files: engine/src/RenderPipeline.cpp, engine/include/sirius/RenderPipeline.h,
+  engine/src/ConstituentValidator.cpp.
+- What was deferred:
+  (1) The 3-arg RenderPipeline ctor (validation-aware render-as-silence) is the
+  seam, but the production AUDIO path does not yet construct a RenderPipeline at
+  all — activeReadsAt is called only from tests. So the validation computed in
+  chooseFileAndLoad currently drives only NOTIFICATIONS, not actual audio
+  silencing. When the audio callback is wired to RenderPipeline (later milestone),
+  pass the validation into the 3-arg ctor so Broken/Invalid nodes are truly
+  silenced live.
+  (2) validate() recurses into the children of an Invalid node, so a Broken
+  grandchild under an Invalid parent receives its own StateRepair warning even
+  though it is already silenced by the grandparent's subtree skip. Arguably
+  correct (inform of every problem) but untested — add a case or decide to
+  suppress descendant warnings under an already-failing ancestor.
+- Why deferred: (1) depends on the audio-wiring milestone that doesn't exist yet;
+  (2) is a behavior-policy decision, not a bug.
+- What's needed to finish: (1) wire RenderPipeline into the audio callback with
+  the validation; (2) decide descendant-warning policy + test it.
+
 ### 2026-05-17 — V7 alignment milestone tracking — 24 milestones, M1 ready to start
 
 - **Status:** Plan spec'd in full at
