@@ -1,5 +1,7 @@
 #include "sirius/RenderPipeline.h"
 
+#include "sirius/ConstituentValidator.h"
+
 #include <functional>
 #include <optional>
 #include <stdexcept>
@@ -33,10 +35,17 @@ namespace
     }
 
     void collect (const Constituent& constituent,
+                  const ConstituentValidation& validation,
                   const ParentToLmc& parentToLmc,
                   Rational lmcTime,
                   std::vector<ActiveRead>& out)
     {
+        // White paper §17.7: a Broken or Invalid Constituent renders as silence,
+        // and so does everything nested inside it — its slot in the parent is
+        // silent. Skip the node and its whole subtree.
+        if (validation.state (constituent.id()) != ConstituentState::Valid)
+            return;
+
         // conceptualIn / conceptualOut are positions in the parent's local time.
         const Rational spanStartLmc = parentToLmc (constituent.conceptualIn().wholeNotes());
         const Rational spanEndLmc   = parentToLmc (constituent.conceptualOut().wholeNotes());
@@ -89,13 +98,22 @@ namespace
                 };
 
             for (const auto& child : constituent.children())
-                collect (*child, childToLmc, lmcTime, out);
+                collect (*child, validation, childToLmc, lmcTime, out);
         }
     }
 }
 
 RenderPipeline::RenderPipeline (std::shared_ptr<const Constituent> root, TempoMap sessionToLmc)
-    : root_ (std::move (root)), sessionToLmc_ (std::move (sessionToLmc))
+    : RenderPipeline (std::move (root), std::move (sessionToLmc), ConstituentValidation())
+{
+}
+
+RenderPipeline::RenderPipeline (std::shared_ptr<const Constituent> root,
+                                TempoMap                            sessionToLmc,
+                                ConstituentValidation               validation)
+    : root_ (std::move (root)),
+      sessionToLmc_ (std::move (sessionToLmc)),
+      validation_ (std::move (validation))
 {
     if (root_ == nullptr)
         throw std::invalid_argument ("sirius::RenderPipeline: root must not be null");
@@ -111,7 +129,7 @@ std::vector<ActiveRead> RenderPipeline::activeReadsAt (Rational lmcTime) const
     const ParentToLmc rootToLmc =
         [sessionMap] (Rational t) { return sessionMap.apply (t); };
 
-    collect (*root_, rootToLmc, lmcTime, reads);
+    collect (*root_, validation_, rootToLmc, lmcTime, reads);
     return reads;
 }
 

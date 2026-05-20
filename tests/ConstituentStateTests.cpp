@@ -5,7 +5,9 @@
 #include "sirius/ConstituentValidator.h"
 
 #include "sirius/Constituent.h"
+#include "sirius/RenderPipeline.h"
 #include "sirius/TapeReference.h"
+#include "sirius/TempoMap.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -16,6 +18,7 @@ using sirius::ConstituentId;
 using sirius::ConstituentState;
 using sirius::Position;
 using sirius::Rational;
+using sirius::RenderPipeline;
 using sirius::TapeId;
 using sirius::TapeReference;
 
@@ -118,4 +121,47 @@ TEST_CASE ("validation does not mutate the tree", "[constituent-state]")
     REQUIRE (root.children().size() == 1);
     CHECK (root.children()[0]->id() == ConstituentId (10));
     CHECK (root.children()[0].get() == leaf.get()); // same shared node, not copied
+}
+
+TEST_CASE ("a Broken node and its subtree render as silence; Valid siblings still read",
+           "[constituent-state][renderpipeline]")
+{
+    // Session [0,8) with two leaf loops both filling it. Loop 10's tape fails
+    // (Broken); loop 11's resolves (Valid).
+    Constituent session (ConstituentId (1), Position(), Position (Rational (8)));
+    session = session.withChildAdded (makeLoop (10, Rational (0), Rational (8), 100));
+    session = session.withChildAdded (makeLoop (11, Rational (0), Rational (8), 200));
+    const auto root = std::make_shared<const Constituent> (session);
+
+    const auto resolver = [] (const TapeReference& ref)
+    { return ref.tape != TapeId (100); }; // only loop 10 is Broken
+
+    const auto validation = sirius::validate (*root, resolver);
+
+    const RenderPipeline pipeline (root, sirius::TempoMap::fromBpm (Rational (120)), validation);
+    const auto reads = pipeline.activeReadsAt (Rational (0));
+
+    // Only loop 11 sounds; the Broken loop 10 is silent.
+    REQUIRE (reads.size() == 1);
+    CHECK (reads[0].loop == ConstituentId (11));
+}
+
+TEST_CASE ("an Invalid parent silences its whole subtree", "[constituent-state][renderpipeline]")
+{
+    // Parent length 4. Child phrase placed [0,6) overflows -> Invalid. Inside it,
+    // a grandchild loop that would otherwise sound.
+    Constituent phrase (ConstituentId (20), Position(), Position (Rational (6)));
+    phrase = phrase.withChildAdded (makeLoop (30, Rational (0), Rational (6), 300));
+    Constituent session (ConstituentId (1), Position(), Position (Rational (4)));
+    session = session.withChildAdded (std::make_shared<const Constituent> (phrase));
+    const auto root = std::make_shared<const Constituent> (session);
+
+    const auto validation = sirius::validate (*root, sirius::alwaysResolves);
+    REQUIRE (validation.state (ConstituentId (20)) == ConstituentState::Invalid);
+
+    const RenderPipeline pipeline (root, sirius::TempoMap::fromBpm (Rational (120)), validation);
+    const auto reads = pipeline.activeReadsAt (Rational (0));
+
+    // The Invalid phrase is skipped, so its grandchild loop never sounds.
+    CHECK (reads.empty());
 }

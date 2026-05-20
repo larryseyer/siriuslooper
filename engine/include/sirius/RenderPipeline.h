@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sirius/Constituent.h"
+#include "sirius/ConstituentValidator.h"
 #include "sirius/Rational.h"
 #include "sirius/TapeId.h"
 #include "sirius/TempoMap.h"
@@ -49,6 +50,13 @@ public:
     /// if `root` is null.
     RenderPipeline (std::shared_ptr<const Constituent> root, TempoMap sessionToLmc);
 
+    /// As above, plus a validation result: Broken/Invalid Constituents (and
+    /// their subtrees) are treated as silence (white paper §17.7). The two-arg
+    /// form behaves as an all-Valid validation.
+    RenderPipeline (std::shared_ptr<const Constituent> root,
+                    TempoMap                            sessionToLmc,
+                    ConstituentValidation               validation);
+
     /// Every loop sounding at `lmcTime`, with its tape read position. The order
     /// of the result follows a depth-first walk of the tree.
     std::vector<ActiveRead> activeReadsAt (Rational lmcTime) const;
@@ -56,6 +64,7 @@ public:
 private:
     std::shared_ptr<const Constituent> root_;
     TempoMap sessionToLmc_;
+    ConstituentValidation validation_;
 };
 
 } // namespace sirius
