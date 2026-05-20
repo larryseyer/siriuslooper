@@ -62,6 +62,7 @@ target_link_libraries(SiriusLooper PRIVATE
     Sirius::Audio
     Sirius::AppCore
     Sirius::Ui
+    Sirius::LookAndFeel
     Sirius::Host
     Sirius::Video
     Sirius::Persistence
