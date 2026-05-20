@@ -1153,14 +1153,20 @@ MainComponent::MainComponent()
     // early-returns, and processDeviceInputs runs afterward so the meters are
     // authoritative. The two paths unify when tape-output routing lands (todo.md).
     {
-        int numInputs = kDefaultStereoChannels;
+        int numInputs = 0;
         if (auto* dev = audioDeviceManager_.getCurrentAudioDevice())
-        {
-            const int active = dev->getActiveInputChannels().countNumberOfSetBits();
-            if (active >= 2) numInputs = active;
-        }
-        for (int p = 0; p < numInputs / 2; ++p)
-            inputPairs_.push_back (InputPair { 2 * p, 2 * p + 1, /*stereo*/ true });
+            numInputs = dev->getActiveInputChannels().countNumberOfSetBits();
+        if (numInputs < 1)
+            numInputs = kDefaultStereoChannels;   // no device → a default stereo strip
+
+        // Full stereo pairs, then any odd leftover (or a single-input device like
+        // a built-in mono mic) as ONE mono-source strip — leftCh == rightCh marks
+        // a single device channel that dual-monos to both sides and cannot split.
+        int ch = 0;
+        for (; ch + 1 < numInputs; ch += 2)
+            inputPairs_.push_back (InputPair { ch, ch + 1, /*stereo*/ true });
+        if (ch < numInputs)
+            inputPairs_.push_back (InputPair { ch, ch, /*stereo*/ false });
 
         inputMixerPane_ = std::make_unique<InputMixerPane>();
         inputMixerPane_->onGain = [this] (int idx, float gain)
@@ -1483,7 +1489,12 @@ void MainComponent::rebuildInputStrips()
     for (int p = 0; p < static_cast<int> (inputPairs_.size()); ++p)
     {
         const auto& pair = inputPairs_[static_cast<std::size_t> (p)];
-        if (pair.stereo)
+        if (pair.leftCh == pair.rightCh)
+            // Single mono device channel (e.g. a built-in mono mic): one
+            // mono-source strip, dual-mono to both sides. Not splittable.
+            registerStrip (p, pair.leftCh, /*right ignored*/ -1, /*stereo*/ false,
+                           "In " + juce::String (pair.leftCh + 1));
+        else if (pair.stereo)
             registerStrip (p, pair.leftCh, pair.rightCh, /*stereo*/ true,
                            "In " + juce::String (pair.leftCh + 1)
                            + "-" + juce::String (pair.rightCh + 1));
@@ -1513,6 +1524,7 @@ void MainComponent::toggleInputPairStereo (int stripIndex)
     if (pairIndex < 0 || pairIndex >= static_cast<int> (inputPairs_.size())) return;
 
     auto& pair = inputPairs_[static_cast<std::size_t> (pairIndex)];
+    if (pair.leftCh == pair.rightCh) return;   // single mono channel — nothing to split
     pair.stereo = ! pair.stereo;
     rebuildInputStrips();
 }
