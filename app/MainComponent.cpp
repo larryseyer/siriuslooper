@@ -417,7 +417,8 @@ private:
 // panel are later slices, so the strip's output combo is hidden for now.
 // =============================================================================
 class MainComponent::InputMixerPane final : public juce::Component,
-                                            public otto::ui::CompactFaderStripListener
+                                            public otto::ui::CompactFaderStripListener,
+                                            private juce::Timer
 {
 public:
     /// One strip's display state: its name and whether its source pair is in
@@ -453,21 +454,33 @@ public:
         resized();
     }
 
-    /// Right-click on a strip → RME split/collapse menu. Other buttons (in a
-    /// later detail-panel slice) will live alongside; for now the context menu
-    /// is the source-format affordance, keeping the strip face uncluttered.
+    /// RME split/collapse affordance — gesture-only so the strip face stays
+    /// uncluttered (it's tight on iPhone): **right-click** on desktop and
+    /// **long-press** on touch both open the same menu. A drag past the
+    /// threshold cancels the long-press so it never fights the fader.
     void mouseDown (const juce::MouseEvent& e) override
     {
-        if (! e.mods.isPopupMenu()) return;   // left-clicks handled by the strip
         const int idx = stripIndexOf (e.eventComponent);
         if (idx < 0) return;
 
-        juce::PopupMenu menu;
-        const bool stereo = stripStereo_[static_cast<std::size_t> (idx)];
-        menu.addItem (stereo ? "Split to two mono channels" : "Collapse to stereo",
-                      [this, idx] { if (onToggleStereoMono) onToggleStereoMono (idx); });
-        menu.showMenuAsync (juce::PopupMenu::Options{}.withMousePosition());
+        if (e.mods.isPopupMenu())            // desktop right-click — fire now
+        {
+            showToggleMenu (idx, e.getScreenPosition());
+            return;
+        }
+        // Touch / left press — arm the long-press; a drag or release cancels it.
+        longPressIdx_      = idx;
+        longPressScreenPos_ = e.getScreenPosition();
+        startTimer (kLongPressMs);
     }
+
+    void mouseDrag (const juce::MouseEvent& e) override
+    {
+        if (isTimerRunning() && e.getDistanceFromDragStart() > kLongPressMoveTolerancePx)
+            stopTimer();                     // it's a fader drag, not a long-press
+    }
+
+    void mouseUp (const juce::MouseEvent&) override { stopTimer(); }
 
     [[nodiscard]] int stripCount() const noexcept { return static_cast<int> (strips_.size()); }
 
@@ -518,6 +531,29 @@ public:
     }
 
 private:
+    static constexpr int kLongPressMs              = 500;
+    static constexpr int kLongPressMoveTolerancePx = 8;
+
+    void timerCallback() override
+    {
+        stopTimer();                         // one-shot
+        if (longPressIdx_ >= 0 && longPressIdx_ < stripCount())
+            showToggleMenu (longPressIdx_, longPressScreenPos_);
+    }
+
+    /// Builds + shows the Split/Collapse menu for strip `idx` at `screenPos`
+    /// (a screen-point target works for both mouse and touch).
+    void showToggleMenu (int idx, juce::Point<int> screenPos)
+    {
+        if (idx < 0 || idx >= stripCount()) return;
+        juce::PopupMenu menu;
+        const bool stereo = stripStereo_[static_cast<std::size_t> (idx)];
+        menu.addItem (stereo ? "Split to two mono channels" : "Collapse to stereo",
+                      [this, idx] { if (onToggleStereoMono) onToggleStereoMono (idx); });
+        menu.showMenuAsync (juce::PopupMenu::Options{}.withTargetScreenArea (
+            juce::Rectangle<int> (screenPos.x, screenPos.y, 1, 1)));
+    }
+
     /// Maps a mouse event's source component back to a strip index (the event
     /// component may be a nested child of the strip), or -1 if it is none.
     [[nodiscard]] int stripIndexOf (juce::Component* c) const
@@ -532,6 +568,8 @@ private:
 
     std::vector<std::unique_ptr<otto::ui::CompactFaderStrip>> strips_;
     std::vector<bool>                                         stripStereo_;
+    int                                                       longPressIdx_ { -1 };
+    juce::Point<int>                                          longPressScreenPos_;
 };
 
 // =============================================================================
