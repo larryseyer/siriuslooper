@@ -41,7 +41,9 @@ juce_add_binary_data(SiriusBinaryData
         "${CMAKE_SOURCE_DIR}/assets/Fonts/JetBrains_Mono/JetBrainsMono-SemiBold.ttf")
 
 add_library(SiriusLookAndFeel STATIC
-    lookandfeel/OTTOLookAndFeel.cpp)
+    lookandfeel/OTTOLookAndFeel.cpp
+    lookandfeel/components/FaderMeter.cpp
+    lookandfeel/components/CompactFaderStrip.cpp)
 
 target_include_directories(SiriusLookAndFeel PUBLIC lookandfeel)
 
