@@ -67,3 +67,55 @@ TEST_CASE ("a leaf loop whose tape does not resolve is Broken", "[constituent-st
     CHECK_FALSE (validation.renderable (ConstituentId (10)));
     CHECK (validation.state (ConstituentId (1)) == ConstituentState::Valid); // parent intact
 }
+
+TEST_CASE ("a child extending past the parent's end is Invalid", "[constituent-state]")
+{
+    // Parent length 4; child placed [0, 6) overflows the end.
+    const Constituent root = makeSession (1, Rational (4),
+        makeLoop (10, Rational (0), Rational (6), 100));
+
+    const auto validation = sirius::validate (root, sirius::alwaysResolves);
+
+    CHECK (validation.state (ConstituentId (10)) == ConstituentState::Invalid);
+}
+
+TEST_CASE ("a child filling the parent exactly is Valid (half-open bound)", "[constituent-state]")
+{
+    const Constituent root = makeSession (1, Rational (4),
+        makeLoop (10, Rational (0), Rational (4), 100));
+
+    const auto validation = sirius::validate (root, sirius::alwaysResolves);
+
+    CHECK (validation.state (ConstituentId (10)) == ConstituentState::Valid);
+}
+
+TEST_CASE ("a node that is both out-of-bounds and tape-broken reports Invalid", "[constituent-state]")
+{
+    // Child overflows (placed [0,6) in a length-4 parent) AND its tape fails.
+    const Constituent root = makeSession (1, Rational (4),
+        makeLoop (10, Rational (0), Rational (6), 100));
+
+    const auto resolver = [] (const TapeReference&) { return false; };
+
+    const auto validation = sirius::validate (root, resolver);
+
+    // Structural error dominates: Invalid, not Broken.
+    CHECK (validation.state (ConstituentId (10)) == ConstituentState::Invalid);
+}
+
+TEST_CASE ("validation does not mutate the tree", "[constituent-state]")
+{
+    const auto leaf = makeLoop (10, Rational (0), Rational (8), 100);
+    const Constituent root = makeSession (1, Rational (8), leaf);
+
+    const auto resolver = [] (const TapeReference&) { return false; }; // mark Broken
+
+    const auto validation = sirius::validate (root, resolver);
+
+    // Identity and structure survive (white paper §17.7: repair, not recreate).
+    CHECK (validation.state (ConstituentId (10)) == ConstituentState::Broken);
+    CHECK (root.id() == ConstituentId (1));
+    REQUIRE (root.children().size() == 1);
+    CHECK (root.children()[0]->id() == ConstituentId (10));
+    CHECK (root.children()[0].get() == leaf.get()); // same shared node, not copied
+}
