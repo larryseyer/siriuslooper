@@ -372,3 +372,130 @@ TEST_CASE ("InputMixer applies ChannelStrip<Audio> gain before enqueueing to Tap
 
     juce::File (juce::String (tempDir.string())).deleteRecursively();
 }
+
+// =============================================================================
+// [input-source] — the mixer-strip source model (whitepaper §6.1/§6.2):
+// each channel sources 1 device channel (mono, dual-mono inward) or 2 (stereo
+// L/R). processDeviceInputs gathers the strip's source channels into a stereo
+// block and runs ChannelStrip<Audio>::process, populating the peak meters the
+// Input Mixer UI reads on its timer. This is distinct from the per-device-
+// channel processBuffer tape path: only channels with a source descriptor are
+// processed here, and the device buffers are never mutated.
+// =============================================================================
+
+namespace
+{
+    // Equal-power pan gain at centre (pan = 0.5): cos(0.5 * pi/2) = 0.70710678.
+    constexpr float kCentrePanGain = 0.70710678f;
+}
+
+TEST_CASE ("processDeviceInputs meters a stereo source's L and R independently",
+           "[input-mixer][input-source]")
+{
+    using sirius::ChannelStrip;
+    using sirius::InputId;
+    using sirius::SignalType;
+
+    InputMixer mixer;
+    const auto ch = mixer.addChannel (InputId (0), SignalType::Audio);
+    mixer.setChannelInputSource (ch, /*left*/ 0, /*right*/ 1, /*stereo*/ true);
+
+    constexpr int kSamples = 8;
+    std::array<float, kSamples> left;  left.fill (0.5f);
+    std::array<float, kSamples> right; right.fill (0.25f);
+    const float* deviceIn[2] { left.data(), right.data() };
+
+    mixer.processDeviceInputs (deviceIn, 2, kSamples);
+
+    auto* strip = dynamic_cast<ChannelStrip<SignalType::Audio>*> (
+        mixer.processingChainFor (ch));
+    REQUIRE (strip != nullptr);
+    // Default gain 1.0, pan centre → both sides scaled by kCentrePanGain.
+    CHECK (strip->peakLeft()  == Catch::Approx (0.5f  * kCentrePanGain).margin (1e-5));
+    CHECK (strip->peakRight() == Catch::Approx (0.25f * kCentrePanGain).margin (1e-5));
+
+    // The device buffers must be untouched (raw-monitor contract).
+    for (float v : left)  CHECK (v == Catch::Approx (0.5f));
+    for (float v : right) CHECK (v == Catch::Approx (0.25f));
+}
+
+TEST_CASE ("processDeviceInputs presents a mono source dual-mono and pans it",
+           "[input-mixer][input-source]")
+{
+    using sirius::ChannelStrip;
+    using sirius::InputId;
+    using sirius::SignalType;
+
+    InputMixer mixer;
+    const auto ch = mixer.addChannel (InputId (3), SignalType::Audio);
+    // Mono source on device channel 3 (right index ignored when stereo=false).
+    mixer.setChannelInputSource (ch, /*left*/ 3, /*right*/ -1, /*stereo*/ false);
+
+    constexpr int kSamples = 8;
+    std::array<float, kSamples> c0 {}, c1 {}, c2 {}, c3;
+    c3.fill (0.5f);
+    const float* deviceIn[4] { c0.data(), c1.data(), c2.data(), c3.data() };
+
+    auto* strip = dynamic_cast<ChannelStrip<SignalType::Audio>*> (
+        mixer.processingChainFor (ch));
+    REQUIRE (strip != nullptr);
+
+    // Centre pan: the dual-mono signal lands equally on both sides.
+    mixer.processDeviceInputs (deviceIn, 4, kSamples);
+    CHECK (strip->peakLeft()  == Catch::Approx (0.5f * kCentrePanGain).margin (1e-5));
+    CHECK (strip->peakRight() == Catch::Approx (0.5f * kCentrePanGain).margin (1e-5));
+
+    // Hard left: full level on L, silence on R — the mono source is positioned.
+    strip->setPan (0.0f);
+    mixer.processDeviceInputs (deviceIn, 4, kSamples);
+    CHECK (strip->peakLeft()  == Catch::Approx (0.5f).margin (1e-5));
+    CHECK (strip->peakRight() == Catch::Approx (0.0f).margin (1e-5));
+}
+
+TEST_CASE ("processDeviceInputs ignores channels without a source descriptor",
+           "[input-mixer][input-source]")
+{
+    using sirius::ChannelStrip;
+    using sirius::InputId;
+    using sirius::SignalType;
+
+    InputMixer mixer;
+    const auto ch = mixer.addChannel (InputId (0), SignalType::Audio);  // no source set
+
+    constexpr int kSamples = 8;
+    std::array<float, kSamples> left; left.fill (0.9f);
+    const float* deviceIn[1] { left.data() };
+
+    mixer.processDeviceInputs (deviceIn, 1, kSamples);
+
+    auto* strip = dynamic_cast<ChannelStrip<SignalType::Audio>*> (
+        mixer.processingChainFor (ch));
+    REQUIRE (strip != nullptr);
+    CHECK (strip->peakLeft()  == Catch::Approx (0.0f));
+    CHECK (strip->peakRight() == Catch::Approx (0.0f));
+}
+
+TEST_CASE ("processDeviceInputs safely skips a source whose device channel is out of range",
+           "[input-mixer][input-source]")
+{
+    using sirius::ChannelStrip;
+    using sirius::InputId;
+    using sirius::SignalType;
+
+    InputMixer mixer;
+    const auto ch = mixer.addChannel (InputId (0), SignalType::Audio);
+    mixer.setChannelInputSource (ch, /*left*/ 5, /*right*/ 6, /*stereo*/ true);  // device only has 2
+
+    constexpr int kSamples = 8;
+    std::array<float, kSamples> left;  left.fill (0.5f);
+    std::array<float, kSamples> right; right.fill (0.5f);
+    const float* deviceIn[2] { left.data(), right.data() };
+
+    mixer.processDeviceInputs (deviceIn, 2, kSamples);  // must not crash
+
+    auto* strip = dynamic_cast<ChannelStrip<SignalType::Audio>*> (
+        mixer.processingChainFor (ch));
+    REQUIRE (strip != nullptr);
+    CHECK (strip->peakLeft()  == Catch::Approx (0.0f));
+    CHECK (strip->peakRight() == Catch::Approx (0.0f));
+}

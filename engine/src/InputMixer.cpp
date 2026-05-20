@@ -26,7 +26,9 @@ namespace sirius
 {
 
 InputMixer::InputMixer()
-    : processingScratch_ (kMaxScratchSamples, 0.0f)
+    : processingScratch_ (kMaxScratchSamples, 0.0f),
+      scratchLeft_ (kMaxScratchSamples, 0.0f),
+      scratchRight_ (kMaxScratchSamples, 0.0f)
 {
 }
 
@@ -75,6 +77,7 @@ ChannelId InputMixer::addChannel (InputId source, SignalType type)
 void InputMixer::removeChannel (ChannelId id)
 {
     channels_.erase (id.value());
+    channelSources_.erase (id.value());
 }
 
 void InputMixer::setChannelTapeMode (ChannelId id, TapeMode mode)
@@ -92,6 +95,48 @@ void InputMixer::setChannelTapeMode (ChannelId id, TapeMode mode)
     // §"What 'dry' means in M3").
     if (mode == TapeMode::NonDestructive && tapeWriter_ != nullptr)
         tapeWriter_->touchParamsPartial (id);
+}
+
+void InputMixer::setChannelInputSource (ChannelId id, int leftDeviceChannel,
+                                        int rightDeviceChannel, bool stereo) noexcept
+{
+    channelSources_.insert_or_assign (
+        id.value(), ChannelInputSource { leftDeviceChannel, rightDeviceChannel, stereo });
+}
+
+void InputMixer::processDeviceInputs (const float* const* deviceIn,
+                                      int numDeviceChannels, int numSamples) noexcept
+{
+    if (deviceIn == nullptr || numDeviceChannels <= 0 || numSamples <= 0) return;
+    if (numSamples > static_cast<int> (kMaxScratchSamples))
+        numSamples = static_cast<int> (kMaxScratchSamples);
+
+    for (const auto& [channelValue, source] : channelSources_)
+    {
+        auto chIt = channels_.find (channelValue);
+        if (chIt == channels_.end()) continue;
+
+        const auto& channel = chIt->second;
+        if (channel.signalType != SignalType::Audio || channel.processing == nullptr)
+            continue;
+
+        const int leftCh  = source.left;
+        const int rightCh = source.stereo ? source.right : source.left;
+        if (leftCh  < 0 || leftCh  >= numDeviceChannels) continue;
+        if (rightCh < 0 || rightCh >= numDeviceChannels) continue;
+        if (deviceIn[leftCh] == nullptr || deviceIn[rightCh] == nullptr) continue;
+
+        // Gather the source channel(s) into the stereo scratch — a mono source
+        // (leftCh == rightCh) lands identically on both rows (dual-mono), so
+        // the strip's equal-power pan then positions it in the stereo field.
+        const auto byteCount = static_cast<std::size_t> (numSamples) * sizeof (float);
+        std::memcpy (scratchLeft_.data(),  deviceIn[leftCh],  byteCount);
+        std::memcpy (scratchRight_.data(), deviceIn[rightCh], byteCount);
+
+        float* stereo[2] { scratchLeft_.data(), scratchRight_.data() };
+        auto* strip = static_cast<ChannelStrip<SignalType::Audio>*> (channel.processing.get());
+        strip->process (stereo, 2, numSamples);
+    }
 }
 
 void InputMixer::processBuffer (ChannelId id,

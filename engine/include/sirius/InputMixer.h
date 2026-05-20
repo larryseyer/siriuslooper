@@ -57,6 +57,19 @@ public:
     void removeChannel (ChannelId);
     void setChannelTapeMode (ChannelId, TapeMode);
 
+    // Mixer-strip input source (whitepaper §6.1/§6.2) -----------------------
+    /// Assigns which physical device channel(s) feed this mixer channel's
+    /// stereo strip. `stereo` true → `leftDeviceChannel`/`rightDeviceChannel`
+    /// map to the strip's L/R. `stereo` false → `leftDeviceChannel` is a mono
+    /// source presented dual-mono (both sides) and positioned by the strip's
+    /// pan; `rightDeviceChannel` is ignored. Message-thread setter, set during
+    /// setup before the audio device starts (same contract as registerInput /
+    /// addChannel); the audio thread only reads the source map in
+    /// `processDeviceInputs`. The channel is always stereo internally — this
+    /// never creates a mono channel (the hard stereo-only invariant holds).
+    void setChannelInputSource (ChannelId, int leftDeviceChannel,
+                                int rightDeviceChannel, bool stereo) noexcept;
+
     // Audio-thread interface (real-time safe) ------------------------------
     /// Walks the channel, applies its ProcessingChain (no-op in M3), and
     /// if the channel is tape-bearing, memcpys `bytes[0..byteCount]` into a
@@ -64,6 +77,18 @@ public:
     /// queue-full, calls `OverloadProtection::reportLoad(1.0)` and drops.
     /// No allocations, no locks, no I/O on this path.
     void processBuffer (ChannelId, const std::byte* bytes, std::size_t byteCount) noexcept;
+
+    /// Audio-thread strip processing + metering for the Input Mixer UI.
+    /// For each channel that has an input source (see setChannelInputSource),
+    /// gathers its 1–2 source device channels out of `deviceIn` into a stereo
+    /// scratch (mono sources duplicated to both sides, dual-mono) and runs
+    /// `ChannelStrip<Audio>::process` on it, publishing post-fader peak meters
+    /// the UI reads on its timer. The device buffers are never mutated (the
+    /// raw-monitor contract). Channels without a source descriptor — and any
+    /// source whose device-channel index is outside [0, numDeviceChannels) —
+    /// are skipped. No allocations, no locks, no I/O on this path.
+    void processDeviceInputs (const float* const* deviceIn,
+                              int numDeviceChannels, int numSamples) noexcept;
 
     // Finalize a channel's recording — Session 3 wires the full flow.
     void finalizeChannel (ChannelId);
@@ -84,8 +109,19 @@ private:
         ChannelDefaults defaults;
     };
 
+    /// Which device channel(s) feed a mixer channel's stereo strip. `stereo`
+    /// false → `left` is a mono source duplicated to both sides; `right` is
+    /// unused. See setChannelInputSource.
+    struct ChannelInputSource
+    {
+        int left;
+        int right;
+        bool stereo;
+    };
+
     std::unordered_map<std::int64_t, InputState> inputs_;
     std::unordered_map<std::int64_t, Channel> channels_;
+    std::unordered_map<std::int64_t, ChannelInputSource> channelSources_;
     std::int64_t nextChannelId_ { 1 };
 
     TapeWriter* tapeWriter_ { nullptr };
@@ -102,6 +138,15 @@ private:
     // read the same float buffers from AudioCallback and a write through
     // them would break the raw-monitor contract.
     std::vector<float> processingScratch_;
+
+    // Audio-thread stereo-gather scratch for `processDeviceInputs` — two rows
+    // (L/R), each `kMaxScratchSamples`, pre-allocated in the constructor. The
+    // gather copies a channel's source device channel(s) here (a mono source
+    // is copied to both rows, dual-mono) so `ChannelStrip<Audio>::process`
+    // runs on a stereo block. Separate from `processingScratch_` so the tape
+    // path and the metering path never share a buffer.
+    std::vector<float> scratchLeft_;
+    std::vector<float> scratchRight_;
 };
 
 } // namespace sirius
