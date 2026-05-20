@@ -4,7 +4,7 @@ title: White Paper
 subtitle: A Reference Architecture for Time-Domain Audio/Video Looping
 description: The canonical V7 design thesis. Conceptual time, the Logical Master Clock, input and output mixers, the direct layer, the Constituent hierarchy, and the trade-offs that make Sirius Looper possible.
 permalink: /docs/whitepaper/
-sourceFile: Sirius_Looper.md
+sourceFile: Sirius Looper Whitepaper V7.md
 order: 2
 ---
 ### A Reference Architecture for Time-Domain Audio/Video Looping
@@ -487,6 +487,8 @@ This architecture eliminates several seams that plague traditional production en
 
 **MIDI 2.0 / per-note expression is first-class.** The tape format is event-shaped (timestamp + payload), and the payload is wide enough to carry a full UMP packet without translation. Per-note pitch bend, per-note pressure, per-note articulation, and 32-bit-resolution controllers are stored on tape exactly as received and reproduced exactly on playback. Per-note expression streams are treated as automatable parameters in the Constituent model: a phrase can carry, repeat, and mutate per-note vibrato as easily as it carries notes themselves. MIDI 1.0 input is upcast to UMP at the membrane and stored in the same canonical form, so a 7-bit CC and a 32-bit per-note controller occupy the same architectural slot. This is not a forward-compatibility hedge; it is the only sensible representation given the rest of the architecture, and it differentiates the looper from every existing system that treats MIDI as a 7-bit afterthought.
 
+**Audio is stereo, always.** Every audio channel, bus, send, output, and master in either mixer is a **stereo pair** — Sirius, like its sister app OTTO, has no mono audio path anywhere. The *channel* is always stereo internally; what the operator chooses is each channel's **input source format**. A **stereo source** maps two device channels to the channel's left and right. A **mono source** (a single mic, one side of an interface) takes one device channel, is presented dual-mono from the channel boundary inward, and is positioned with pan. Following the RME TotalMix convention, a stereo channel can be **split** into two independent mono-source channels and **collapsed** back into one — so a stereo interface shows clean stereo strips by default, while a bank of mono mics can be split out, each split strip still a stereo channel internally fed by one device input. The operator never sees or routes a mono audio *bus*, and no channel is ever mono internally; pan operates within the stereo field; metering is per-side (dual meters). This is a hard invariant, not a default — engine routing, mixer UI, and metering all assume stereo pairs. (It applies to the audio modality; MIDI and video channels carry their own native payloads.)
+
 ## 6.2 Two layers of routing: input layer and channel layer
 
 The input mixer makes routing decisions at two distinct layers, each meaningful in its own right.
@@ -495,10 +497,12 @@ The input mixer makes routing decisions at two distinct layers, each meaningful 
 | --- | --- | --- |
 | **About** | The source itself | The processed signal |
 | **When configured** | Once at setup; rarely revisited | During musical work; changes with the music |
-| **Decisions** | Raw direct monitor on/off · Source enable · Source-level defaults · File transport (start, rate, loop region) | Channel processing chain · Tape mode (commit-to-tape / non-destructive / no-tape) · Processed direct routing · Destinations (tapes, buses, outputs) |
+| **Decisions** | Input source format (mono / stereo, RME-style split/collapse) · Raw direct monitor on/off · Source enable · Source-level defaults · File transport (start, rate, loop region) | Channel processing chain · Tape mode (commit-to-tape / non-destructive / no-tape) · Processed direct routing · Destinations (tapes, buses, outputs) |
 | **Captured in snapshots?** | No — these are session topology | Yes — these are mix state |
 
 The two layers compose cleanly. One input may feed multiple channels with different musical roles: a guitar input might feed a "Clean Guitar" channel and a "Distorted Guitar" channel, each with its own processing and tape routing, while sharing the same input-layer raw-direct setting. Multiple inputs may sum into one channel. **The user works almost entirely at the channel layer; the input layer is configured once and forgotten.**
+
+**Input source format (mono / stereo).** An input-layer decision that does not violate the stereo-only invariant (§6.1): each channel sources either one device channel (mono — presented dual-mono and positioned with pan) or two (stereo — left and right). The channel itself is stereo regardless. Per the RME TotalMix convention, a stereo channel **splits** into two independent mono-source channels and **collapses** back; the split/collapse control lives in the channel's settings, not on the strip face, so the default mixer (clean stereo strips for the common stereo-interface case) is never cluttered by a permanent mono affordance. This keeps the stereo invariant absolute internally while matching how operators actually wire mono mics and stereo line sources to the same console.
 
 A note on the tape mode column: *commit-to-tape* bakes the channel's processing into the tape (processing is permanent); *non-destructive* writes the dry signal to one tape and the channel's processing parameters to a parallel parameter tape (processing is recoverable); *no-tape* feeds outputs and the direct layer but captures nothing. The choice is per-channel and is itself part of the artistic act — see §6.3.
 
@@ -639,6 +643,12 @@ What the architecture deliberately does **not** support: DAW project-exchange fo
 The performer's musical content is portable via stems and MIDI files; the architectural content is preserved in the session file itself. **Two complementary exchange formats: stems for everyone, the session file for any Sirius-Looper-compatible tool.** DAW project exchange is treated as out of scope in the same spirit as cross-application audio routing (§1.6) — the operating system and the receiving application can handle the translation if and when they care to.
 
 This is a deliberate refusal to chase the moving target of DAW interoperability. Project-exchange formats change with every major DAW release; chasing them would consume implementation effort that belongs elsewhere, and would mislead users about how lossless the exchange actually is. Rendered stems are lossless in the only sense that matters — they sound exactly like the production — and they play in every tool ever written. That is the right export contract.
+
+### Future direction: parts, timeline, and song rendering
+
+A forward direction under exploration extends rendering beyond export-to-file. Recording everything is not the same as keeping everything: the always-on tapes are the raw substrate, and the creative act is selecting from it and committing. Defined phrases are rendered into keepable **parts** ("pills") that the performer arranges on a timeline, which is in turn rendered into a finished song — an arrangement environment reached from the capture-and-loop foundation rather than a linear-DAW one. In this sense render becomes a *mode* that stops the always-on capture tapes and commits a selection of them to durable, arrangeable assets.
+
+This direction must be reconciled with the export philosophy above. Section 6.11 today frames render as "just playback aimed at a file" and rejects the fixed clip-timeline assumptions of DAW project-exchange. Whether a Sirius timeline-of-parts preserves those same principles — phrase identity, role substitution, polymetric coexistence — or revises them is an open question reserved for a dedicated design pass. The working record of the direction and its open questions lives in `docs/design/render-and-arrangement-vision.md`.
 
 ## 6.12 MIDI 2.0 integration
 
@@ -1432,9 +1442,9 @@ The IPC mechanism for both directions is a single-producer single-consumer (SPSC
 
 The latency cost of out-of-process hosting is one audio-buffer round-trip — the same cost as in-process hosting plus the shared-memory copy, which on modern systems is sub-microsecond per buffer at typical buffer sizes. This is invisible to the performer when the session's overall buffer budget already accommodates plug-in processing latency.
 
-GUI hosting is also out-of-process. Each plug-in's editor appears as a separate floating window owned by its host process — the same model Reaper, Logic Pro, Ableton Live, and every other DAW that isolates plug-ins from the host already use. The engine sends show / hide / resize commands over the shared-memory control channel; the host process owns the actual NSWindow and dispatches mouse and keyboard events through the OS window-server. A plug-in GUI that hangs or crashes affects only its own host process; the main UI and audio paths are unaffected. Operators can move each editor independently — across spaces, across monitors — exactly as they would expect from any modern audio workstation.
+GUI hosting is also out-of-process. The plug-in's GUI runs in its own host process and communicates with the main UI process via the same IPC mechanism. A plug-in GUI that hangs or crashes affects only its own host process; the main UI and audio paths are unaffected.
 
-The cost of out-of-process hosting is implementation complexity: the host must marshal parameter changes, manage host-process lifecycle, route editor show / hide / resize events between the engine and each child's window, and recover from supervisor-detected failures. The benefit is the architectural commitment that no third-party code can cross a process boundary into the engine. **The "audio never glitches on plug-in failure" invariant in §15.3 is true because the architecture refuses to share an address space with plug-in code, not because plug-ins are well-behaved.**
+The cost of out-of-process hosting is implementation complexity: the host must marshal parameter changes, manage host-process lifecycle, handle GUI window embedding across processes, and recover from supervisor-detected failures. The benefit is the architectural commitment that no third-party code can cross a process boundary into the engine. **The "audio never glitches on plug-in failure" invariant in §15.3 is true because the architecture refuses to share an address space with plug-in code, not because plug-ins are well-behaved.**
 
 This is well-trodden ground in modern audio software: Bitwig Studio, the Reaper sandboxing model, the Logic Pro AUv3 isolation, and the Pro Tools AAE all use variants of the same approach. The architecture commits to the discipline they all share.
 
