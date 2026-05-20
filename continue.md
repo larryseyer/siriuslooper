@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-20 (RESEQUENCED: pulling the white-paper mixer GUI forward from its late milestone slot; next = build Input Mixer)
+# Session Continuation — 2026-05-20 (Input Mixer live view shipped; next = RME mono/stereo toggle, then pan + tape-output routing)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,109 +8,89 @@
 
 ---
 
-## RESUME HERE (2026-05-20 — building white-paper mixer GUI; next = Input Mixer UI port)
+## RESUME HERE (2026-05-20 — Input Mixer tab is live with real meters; next = RME mono/stereo split toggle)
 
-> ## ▶ START HERE: build the Input Mixer **UI port**
-> The engine core is done (mute + stereo metering on `ChannelStrip`, commit
-> `70ee33b`). The next concrete work is the UI port — port OTTO's `FaderMeter` +
-> `CompactFaderStrip`, build the "Input Mixer" tab (one strip per selected input:
-> fader→`setGain`, pan→`setPan`, mute→`setMuted`, solo→mixer-level effective-mute,
-> meters←`peakLeft()/peakRight()` on a ~30 Hz timer), then tape-output routing.
-> Full step list is in "Concrete next steps" below; full design in
-> `docs/design/mixer-design.md`. The operator launches via the Desktop alias
-> `Sirius Looper` (canonical Ninja build) — eyes-on is theirs; engine is TDD'd.
+> ## ▶ START HERE: the Input Mixer's next slice
+> The Input Mixer tab now exists, OTTO-skinned, with **live stereo meters,
+> faders, mute, and solo** driven by the real engine. The next concrete work,
+> in order:
+>   1. **RME-style mono/stereo split/collapse toggle** (per-channel, in the
+>      strip's settings/detail — splits one stereo strip into two mono-source
+>      strips and collapses back). The engine source model already supports
+>      both (`setChannelInputSource` stereo flag), so this is mostly a UI
+>      re-layout + a settings affordance.
+>   2. **Pan + width detail panel** (CompactFaderStrip has no pan on its face;
+>      pan/width is the detail-panel layer — bind pan→`ChannelStrip::setPan`).
+>   3. **Tape-output routing** (the strip's hidden bottom region): route inputs
+>      → a user-selected number of tapes; pulls in `TapeWriter`/`TapeStore`
+>      wiring (store rooted at `<Sirius>/tapes`) and is where the two input
+>      dispatch paths unify (see todo.md item 4).
+> Full deferral list: `todo.md` (2026-05-20 "Input Mixer — deferred slices").
+> Design: `docs/design/mixer-design.md` (decision 8) + whitepaper §6.1/§6.2.
 >
-> ## Why we're here (NOT a pivot — a resequencing)
+> ## What shipped this session (all on origin/master)
+> - `c1edc84` **Vendored OTTO `FaderMeter` + `CompactFaderStrip`** into
+>   `ui/lookandfeel/components/`, substituting `juce::ComboBox` for OTTO's
+>   `TouchComboBox` (which drags in the iOS touch-menu stack; Sirius is
+>   desktop-first). Compiled into `SiriusLookAndFeel` (relaxed warnings,
+>   vendored). The `Fader Knob.png` + fonts were already in `SiriusBinaryData`.
+> - `25fbc2d` + `e588544` **Docs: the RME mono/stereo input-source model.**
+>   Whitepaper V7 §6.1 ("Audio is stereo, always") refined + §6.2 input-layer
+>   gains "input source format (mono/stereo, RME split/collapse)";
+>   `docs/design/mixer-design.md` decision 8. **Consolidated on V7**: the old
+>   `docs/Sirius_Looper.md` was deleted (user) and the website whitepaper
+>   (`website/src/docs/whitepaper.md`) was **resynced wholesale from V7** (it
+>   had lagged — missing the stereo invariant entirely) + `sourceFile` fixed
+>   to V7. Website builds clean (`npm run build` in `website/`).
+> - `e761c1b` **Engine source model (TDD).** `InputMixer` gained a per-channel
+>   **input-source descriptor** (`setChannelInputSource(id, left, right,
+>   stereo)`) + a new RT-safe **`processDeviceInputs(deviceIn, n, samples)`**
+>   that gathers each strip's 1–2 source device channels into a stereo block
+>   (mono → dual-mono both sides) and runs `ChannelStrip<Audio>::process`,
+>   populating the post-fader peak meters. 4 new `[input-source]` cases (30
+>   assertions). Device buffers never mutated (raw-monitor contract).
+> - `50520dd` **Input Mixer tab.** `MainComponent::InputMixerPane` — a row of
+>   `CompactFaderStrip`s (one stereo strip per stereo pair of active device
+>   inputs, default stereo). Registers strips in `InputMixer`
+>   (`addChannel` + `setChannelInputSource(2p, 2p+1, true)`); binds
+>   fader→`setGain`, mute→`setMuted`, solo→solo-in-place effective mute
+>   (`recomputeInputStripMutes`); meters read `peakLeft/peakRight` on the
+>   existing 30 Hz `timerCallback` (`refreshInputMixer`). AudioCallback Step 2b
+>   calls `processDeviceInputs`. Output combo hidden (routing is a later slice).
 >
-> The mixers are core white-paper architecture (Part VI: a full creative mixer on
-> each side of the tape). V7's milestone ORDER front-loaded the engine (M1–M8) and
-> parked the operator mixer GUI at "M22+"; we pulled it forward because the app was
-> **not operator-testable** (no visible mixers, plugins won't load). Same
-> destination the white paper always pointed to — earlier timing. **Make Sirius
-> look and work like OTTO** (sister apps); engine milestones (M8 S7+) resume after.
-> The engine (449 tests, audio flows device-in→mixers→out) stays; the work now is
-> SURFACING it in an OTTO-skinned GUI. M8 S7–S8 (tape reachability) and the rest
-> of V7 are deferred until the operability program is done.
+> ## The RME input-source model (the design decision this session locked)
+> Input Mixer channels are **always stereo internally** (hard invariant). The
+> operator chooses each channel's **source format**: stereo (2 device channels
+> → L/R) or mono (1 device channel, dual-mono, positioned by pan). Per **RME
+> TotalMix**, a stereo channel splits into two mono-source channels and
+> collapses back; the toggle lives in the channel's settings, NOT on the strip
+> face (default stereo strips stay clean). Memory:
+> `project_input_source_mono_stereo_rme.md`.
 >
-> ### The OTTO-parity program (decomposed, locked order)
-> - **A — OTTO L&F foundation** ✅ SHIPPED. Vendored OTTO `OTTOLookAndFeel` +
->   `OTTOColours` + fonts into `ui/lookandfeel/` + `assets/`, `SiriusBinaryData`
->   target (namespace kept `OTTOBinaryData` so the .cpp is zero-edit), applied
->   app-wide via `setDefaultLookAndFeel` in `app/Main.cpp`. Decision: COPY not
->   alias (independent shippable products; OTTO untouched); shared submodule is
->   the eventual form. Spec: `docs/superpowers/specs/2026-05-20-otto-laf-foundation-design.md`.
-> - **(E, pulled forward) per-entity colour method** ✅ SHIPPED. `ui/include/sirius/SiriusPalette.h`:
->   tapes/phrases/loops/pills coloured from OTTO's 8 player hues, keyed by STABLE
->   id (same entity = same colour in tree + timeline), loops = shades of their
->   phrase hue. Documented in `docs/design/sirius-colour-method.md`.
-> - **Audio device → Settings tab** ✅ SHIPPED. New `SettingsPane` holds the device
->   picker + monitoring toggle; Preparation reclaimed ~244px.
-> - **B — Mixer** ← NEXT, designed + documented, not built. See below.
-> - C — built-in EQ/comp/FX DSP (ported from OTTO). D — transport + beat counter.
->   E — pills/phrases polish (incl. 4-corner ICONS, in todo.md). F — tape capture
->   wiring (→`<Sirius>/tapes`) + fix plugin loading (M7 S9 XPC).
->
-> ### Mixer design (sub-project B) — LOCKED, see `docs/design/mixer-design.md`
-> - **Two separate mixers, two tabs** ("Input Mixer", "Output Mixer"), never combined.
-> - **Input Mixer = capture console:** inputs are physical/file ONLY (NEVER tapes);
->   one channel per selected physical input; process (gain/pan/FX/plugins) → **route
->   single or combined inputs OUT TO a user-selected number of tapes**.
-> - **Output Mixer = mixdown console:** one channel per phrase; process → route each
->   phrase to its own stereo output / a stereo bus / a single stereo master.
-> - **HARD INVARIANT: stereo only, no mono anything** (Sirius + OTTO). Added to
->   whitepaper V7 Part VI (§6.1 tail).
-> - Net-new engine for B: **peak/RMS metering** + **mute/solo** (ChannelStrip has
->   only gain/pan today). Reuse: gain/pan, `OutputMixer` bus/sends, OOP plugin host.
-> - **Build order: Input Mixer FIRST** (its meters show real signal today; Output
->   Mixer meters stay silent until the phrase→audio render path is wired — that
->   render-in-callback is NOT wired yet).
-> - **First buildable slice (operator-approved):** per-input strips with live dual
->   meters + fader(gain) + pan + mute + solo, AND output routing to the
->   user-selected number of tapes (pulls in tape-capture wiring: `TapeWriter`/
->   `TapeStore` are NOT wired into the app yet; root the store at `<Sirius>/tapes`).
->
-> ### Concrete next steps for the Input Mixer build
-> - ✅ **Engine core DONE** (commit `70ee33b`): `ChannelStrip<Audio>` gained
->   **mute** (silences output) + **post-fader stereo peak metering**
->   (`peakLeft()`/`peakRight()`, mutable atomics written from the RT `process()`,
->   UI reads on its timer). TDD, RT-safe, 10 cases/63 assertions green. Gain+pan
->   pre-existed. **Solo is a mixer-level policy** (mixer computes each strip's
->   effective mute from mute+solo button state — no further ChannelStrip change).
->   **Width** (stereo width) is a detail-panel-layer control, added with the
->   pan/width tab later — NOT part of the core strip.
-> - **NEXT — the UI port (start here):**
->   1. Port OTTO `FaderMeter` + `CompactFaderStrip` into `ui/lookandfeel/` (COPY,
->      like the L&F; watch the `TouchComboBox` dep — substitute `juce::ComboBox`).
->      Wire into the `SiriusLookAndFeel` (or a `SiriusMixerUi`) target.
->   2. New `InputMixerView` + "Input Mixer" tab in `MainComponent`; one strip per
->      selected physical input; bind fader→`setGain`, pan→`setPan`, mute→`setMuted`,
->      solo→mixer-level effective-mute, meters←`peakLeft/peakRight` on the 30 Hz
->      timer (the bus already drains notifications on a timer — reuse that cadence).
->   3. Register input channels in `InputMixer` to match the device's active inputs.
->   4. **Strip layout:** input source on TOP, tape-output routing on BOTTOM.
->   5. Tape output routing + wire `TapeWriter`/`TapeStore` (`<Sirius>/tapes`);
->      **tape COUNT is set in the Settings tab** (independent of input-channel count
->      — e.g. 32 inputs → 1 tape is valid).
-> - Full design (incl. stereo-only, independent counts, OTTO strip anatomy) in
->   `docs/design/mixer-design.md`.
->
-> ### Critical operational facts
+> ## Critical operational facts
 > - **Canonical app:** `build/app/SiriusLooper_artefacts/Release/Sirius Looper.app`
->   (CMake/Ninja, same path every build, ONLY copy on disk — `build-xcode` deleted).
->   **Desktop alias `Sirius Looper` → this** (a STALE Finder alias to a deleted
->   build was why the operator "saw no changes" for a while). Operator launches via
->   the Desktop alias; I can't keep the GUI alive from CLI — eyes-on is the operator's.
-> - **OTTO at `/Users/larryseyer/AudioDevelopment/OTTO` is READ-ONLY reference** —
->   copy FROM it, never edit it.
-> - **Deferred bugs:** (1) M8 S6 calibration sidecar isn't written on launch even
->   though MainComponent fully constructs + app not sandboxed — unresolved, low
->   priority; the write code now checks results + logs. (2) M7 S9 plugin loading
->   (in-app XPC bridge can't broker across engine+child) — its own session,
->   recommended fix = engine-as-XPC-server. (3) pill 4-corner ICONS — todo.md.
-> - Commits this session pushed to origin/master through `1ec7ddd`. ctest was
->   449/450 before the GUI work (the L&F/UI changes are operator-verified, not
->   unit-tested — same status as other GUI wiring).
-
+>   (CMake/Ninja, ONLY copy on disk). **Desktop alias `Sirius Looper` → this.**
+>   A **clean `rm -rf build` rebuild** was done before this handoff for eyes-on.
+>   GUI is **operator-verified** — open the **Input Mixer** tab and confirm the
+>   meter(s) move with live input, the fader rides level, M mutes, S solos.
+> - **Canonical whitepaper = `docs/Sirius Looper Whitepaper V7.md`** (spaces, V7).
+>   `docs/Sirius_Looper.md` is GONE (consolidated on V7). The website mirror is
+>   now synced; it deploys from origin/master.
+> - **OTTO at `/Users/larryseyer/AudioDevelopment/OTTO` is READ-ONLY** — copy
+>   FROM it, never edit it.
+> - **Engine work is TDD'd; GUI is operator-verified** (can't keep the GUI alive
+>   from CLI — I can launch it, but interactive gestures + visual confirmation
+>   are the operator's).
+> - **ctest 459/460.** The 1 failure (`MainComponentPluginEditorTests` #460,
+>   `CHECK(childPid > 0)` at line 91) is the documented pre-existing spawn-fixture
+>   failure in a bare build tree — unrelated to the input mixer (spawn path
+>   untouched).
+> - **Deferred bugs unchanged:** (1) M8 S6 calibration sidecar not written on
+>   launch; (2) M7 S9 in-app plugin loading (XPC bridge); (3) pill 4-corner ICONS.
+>   All in todo.md / the historical sections below.
+> - The OTTO-parity program (A–F) is in the historical block below; the Mixer
+>   sub-project (B) is the active line — Input Mixer first, Output Mixer after the
+>   phrase→audio render path is wired.
 ---
 
 ## HISTORICAL — M8 S6 (superseded 2026-05-20 by the OTTO-parity pivot)
