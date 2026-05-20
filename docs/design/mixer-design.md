@@ -44,7 +44,23 @@ stereo pairs.
 4. **Look & feel.** OTTO's mixer visuals — `CompactFaderStrip` + `FaderMeter`
    ported from OTTO; OTTO `LookAndFeel` already vendored (sub-project A). Strip
    anatomy follows OTTO: name header, mute/solo, fader + dual meter, routing, and
-   a detail panel (pan/width, sends, EQ, comp).
+   a detail panel (pan/**width**, sends, EQ, comp). Per-strip controls (engine):
+   gain, pan, **width** (stereo width), mute, solo, dual peak meters — pan/mute/
+   solo/metering land in B; width is a small net-new stereo control added with them.
+
+5. **Input Mixer strip layout.** The **input source** (physical/file input +
+   processing) occupies the **top** of the channel strip; the **tape-output
+   routing** occupies the **bottom**. (Operator: "input on top, output to tape on
+   bottom.")
+
+6. **Tape count lives in Settings.** How many tapes the session uses is configured
+   in the **Settings** tab, not per-strip. The input mixer routes its channels to
+   that pool of tapes.
+
+7. **Counts are independent.** Input-channel count, tape count, phrase count, and
+   output count are all independent. Example (operator): 32 stereo input channels
+   with only 1 tape enabled; then 32 phrases created and the output mixer set to
+   32 stereo outputs — one per phrase. The mixer never assumes these counts match.
 
 ## Engine reality (from the GUI seam audit)
 
