@@ -233,16 +233,7 @@ namespace
 class MainComponent::PreparationPane final : public juce::Component
 {
 public:
-    PreparationPane (juce::AudioDeviceManager& deviceManager,
-                     AudioCallback&            audioCallback)
-        : audioCallback_ (audioCallback),
-          deviceSelector_ (deviceManager,
-                           /*minInputChannels*/  0, /*maxInputChannels*/  2,
-                           /*minOutputChannels*/ 0, /*maxOutputChannels*/ 2,
-                           /*showMidiInputOptions*/  false,
-                           /*showMidiOutputSelector*/ false,
-                           /*showChannelsAsStereoPairs*/ true,
-                           /*hideAdvancedOptionsWithButton*/ true)
+    PreparationPane()
     {
         saveButton_.setButtonText ("Save...");
         loadButton_.setButtonText ("Load...");
@@ -254,21 +245,6 @@ public:
         statusLabel_.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
         statusLabel_.setMinimumHorizontalScale (1.0f);
         addAndMakeVisible (statusLabel_);
-
-        audioHeaderLabel_.setText ("Audio device", juce::dontSendNotification);
-        audioHeaderLabel_.setFont (juce::FontOptions (14.0f, juce::Font::bold));
-        addAndMakeVisible (audioHeaderLabel_);
-
-        addAndMakeVisible (deviceSelector_);
-
-        monitoringToggle_.setButtonText ("Enable monitoring (input → output pass-through)");
-        monitoringToggle_.setToggleState (audioCallback_.isMonitoringEnabled(),
-                                          juce::dontSendNotification);
-        monitoringToggle_.onClick = [this]
-        {
-            audioCallback_.setMonitoringEnabled (monitoringToggle_.getToggleState());
-        };
-        addAndMakeVisible (monitoringToggle_);
 
         addAndMakeVisible (preparationView_);
         addAndMakeVisible (timelineView_);
@@ -342,14 +318,9 @@ public:
         statusLabel_.setBounds      (topRow);
         area.removeFromTop (6);
 
-        // Audio-device block: header, JUCE picker, monitoring toggle. The
-        // picker collapses its advanced controls behind a button so the
-        // default block stays compact; 220 leaves room for the basic rows.
-        audioHeaderLabel_.setBounds (area.removeFromTop (22));
-        deviceSelector_.setBounds   (area.removeFromTop (220));
-        monitoringToggle_.setBounds (area.removeFromTop (24));
-        area.removeFromTop (8);
-
+        // The audio-device picker + monitoring toggle now live in the Settings
+        // tab (SettingsPane), reclaiming the ~244px they used to occupy here for
+        // the tree/timeline.
         diagnosticsLabel_.setBounds (area.removeFromBottom (84));
         area.removeFromBottom (6);
         // M6 Session 3 — notifications list above diagnostics, both
@@ -373,18 +344,64 @@ public:
     }
 
 private:
-    AudioCallback&   audioCallback_;
     juce::TextButton saveButton_;
     juce::TextButton loadButton_;
     juce::TextButton reloadDemoButton_;
     juce::Label      statusLabel_;
-    juce::Label      audioHeaderLabel_;
-    juce::AudioDeviceSelectorComponent deviceSelector_;
-    juce::ToggleButton                 monitoringToggle_;
     PreparationView  preparationView_;
     TimelineView     timelineView_;
     juce::Label      diagnosticsLabel_;
     juce::TextEditor notificationsList_;
+};
+
+// =============================================================================
+// SettingsPane — the Settings tab. Holds the audio-device picker and the
+// monitoring toggle (moved here from the Preparation tab, where the stock JUCE
+// selector dominated the layout). Settings that don't belong in the performer's
+// glanceable surfaces live here.
+// =============================================================================
+class MainComponent::SettingsPane final : public juce::Component
+{
+public:
+    SettingsPane (juce::AudioDeviceManager& deviceManager,
+                  AudioCallback&            audioCallback)
+        : audioCallback_ (audioCallback),
+          deviceSelector_ (deviceManager,
+                           /*minInputChannels*/  0, /*maxInputChannels*/  2,
+                           /*minOutputChannels*/ 0, /*maxOutputChannels*/ 2,
+                           /*showMidiInputOptions*/  false,
+                           /*showMidiOutputSelector*/ false,
+                           /*showChannelsAsStereoPairs*/ true,
+                           /*hideAdvancedOptionsWithButton*/ true)
+    {
+        audioHeaderLabel_.setText ("Audio device", juce::dontSendNotification);
+        audioHeaderLabel_.setFont (juce::FontOptions (14.0f, juce::Font::bold));
+        addAndMakeVisible (audioHeaderLabel_);
+        addAndMakeVisible (deviceSelector_);
+
+        monitoringToggle_.setButtonText ("Enable monitoring (input → output pass-through)");
+        monitoringToggle_.setToggleState (audioCallback_.isMonitoringEnabled(),
+                                          juce::dontSendNotification);
+        monitoringToggle_.onClick = [this]
+        {
+            audioCallback_.setMonitoringEnabled (monitoringToggle_.getToggleState());
+        };
+        addAndMakeVisible (monitoringToggle_);
+    }
+
+    void resized() override
+    {
+        auto area = getLocalBounds().reduced (12);
+        audioHeaderLabel_.setBounds (area.removeFromTop (22));
+        deviceSelector_.setBounds   (area.removeFromTop (220));
+        monitoringToggle_.setBounds (area.removeFromTop (24));
+    }
+
+private:
+    AudioCallback&                     audioCallback_;
+    juce::Label                        audioHeaderLabel_;
+    juce::AudioDeviceSelectorComponent deviceSelector_;
+    juce::ToggleButton                 monitoringToggle_;
 };
 
 // =============================================================================
@@ -927,8 +944,7 @@ MainComponent::MainComponent()
     tabs_.addTab ("Performance", juce::Colours::black, &performanceView_, false);
 
     // --- Preparation tab ---
-    preparationPane_ = std::make_unique<PreparationPane> (audioDeviceManager_,
-                                                          *audioCallback_);
+    preparationPane_ = std::make_unique<PreparationPane>();
     preparationPane_->saveButton().onClick       = [this] { chooseFileAndSave(); };
     preparationPane_->loadButton().onClick       = [this] { chooseFileAndLoad(); };
     preparationPane_->reloadDemoButton().onClick = [this] { reloadDemo(); };
@@ -952,6 +968,10 @@ MainComponent::MainComponent()
     };
     preparationPane_->setStatus ("");
     tabs_.addTab ("Preparation", juce::Colours::black, preparationPane_.get(), false);
+
+    // --- Settings tab ---
+    settingsPane_ = std::make_unique<SettingsPane> (audioDeviceManager_, *audioCallback_);
+    tabs_.addTab ("Settings", juce::Colours::black, settingsPane_.get(), false);
 
     // --- Plugins tab ---
     pluginsPane_ = std::make_unique<PluginsPane>();

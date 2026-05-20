@@ -26,24 +26,6 @@ namespace
         return "?";
     }
 
-    juce::Colour kindColour (InputKind k) noexcept
-    {
-        // A small palette that keeps each kind visually distinct without
-        // shouting — the strip head is a glance, not a focal point. The
-        // hues track Reaper's track-colour convention loosely (audio cool,
-        // MIDI warm, automation green) so users carry intuition over.
-        switch (k)
-        {
-            case InputKind::Audio:               return juce::Colour (0xff4b7fc4);
-            case InputKind::Video:               return juce::Colour (0xff8b5fbf);
-            case InputKind::Midi:                return juce::Colour (0xffc47f4b);
-            case InputKind::Control:             return juce::Colour (0xff7a8b3f);
-            case InputKind::ParameterAutomation: return juce::Colour (0xff3fa07a);
-            case InputKind::Transport:           return juce::Colour (0xff6a6a8b);
-            case InputKind::System:              return juce::Colour (0xff8a8a8a);
-        }
-        return juce::Colours::grey;
-    }
 
     int findRowIndexForTape (const TimelineViewState& s, TapeId t)
     {

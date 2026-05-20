@@ -205,6 +205,10 @@ private:
     class PreparationPane;
     std::unique_ptr<PreparationPane> preparationPane_;
 
+    // --- Settings tab ---
+    class SettingsPane;
+    std::unique_ptr<SettingsPane> settingsPane_;
+
     // --- Plugins tab ---
     class PluginListBox;
     class PluginsPane;
