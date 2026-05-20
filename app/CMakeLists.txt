@@ -31,6 +31,8 @@ juce_add_gui_app(SiriusLooper
     # greys out files in the user's Downloads / Documents / Desktop folders
     # and on removable volumes, even with NSOpenPanel.
     PLIST_TO_MERGE "<plist version=\"1.0\"><dict>\
+<key>NSMicrophoneUsageDescription</key>\
+<string>Sirius Looper needs access to audio input so it can capture, monitor, and meter your microphones and line inputs.</string>\
 <key>NSDownloadsFolderUsageDescription</key>\
 <string>Sirius Looper needs access to your Downloads folder so you can load and save session files there.</string>\
 <key>NSDocumentsFolderUsageDescription</key>\
@@ -146,10 +148,11 @@ if(APPLE)
             COMMAND codesign --force --sign "Developer ID Application: Larry Seyer (RR5DY39W4Q)"
                     --identifier "com.larryseyer.siriuslooper"
                     --options runtime
+                    --entitlements "${CMAKE_CURRENT_SOURCE_DIR}/SiriusLooper.macos.entitlements"
                     --generate-entitlement-der
                     "$<TARGET_BUNDLE_DIR:SiriusLooper>"
             VERBATIM
-            COMMENT "Sirius: Developer-ID re-sign parent .app after helper copies (no --deep)")
+            COMMENT "Sirius: Developer-ID re-sign parent .app after helper copies (audio-input entitlement, no --deep)")
     endif()
 endif()
 
