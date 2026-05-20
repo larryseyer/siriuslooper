@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-20 (Input Mixer live view + RME mono/stereo toggle + macOS mic fix shipped; next = pan detail panel, then tape-output routing)
+# Session Continuation — 2026-05-20 (Input Mixer fully live: dual peak+LUFS meters, fader/mute/solo, universal mono/stereo toggle, mic fix — all operator-verified GOOD; next = pan + width detail panel)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,21 +8,24 @@
 
 ---
 
-## RESUME HERE (2026-05-20 — Input Mixer live + mono/stereo toggle + mic fix shipped; next = pan detail panel)
+## RESUME HERE (2026-05-20 — Input Mixer fully live + operator-verified GOOD; next = pan + width detail panel)
 
-> ## ▶ START HERE: the Input Mixer's next slice
-> The Input Mixer tab is live, OTTO-skinned, with **real stereo meters, faders,
-> mute, solo, and the RME mono/stereo split/collapse toggle** (right-click on
-> desktop / long-press on touch). macOS mic access is fixed (the dev build was
-> being handed silent input). The next concrete work, in order:
->   1. **Pan + width detail panel.** CompactFaderStrip has no pan on its face;
->      pan/width is the detail-panel layer — bind pan→`ChannelStrip::setPan`.
->      (The mono/stereo toggle is **gesture-only** and stays that way — operator
->      wants no extra strip/panel element; the iPhone strip is already crowded.)
->   2. **Tape-output routing** (the strip's hidden bottom region): route inputs
->      → a user-selected number of tapes; pulls in `TapeWriter`/`TapeStore`
->      wiring (store rooted at `<Sirius>/tapes`) and is where the two input
->      dispatch paths unify (see todo.md item 4).
+> ## ▶ START HERE: the Input Mixer's next slice = **pan + width detail panel**
+> The Input Mixer tab is **done and operator-verified ("good")**: OTTO-skinned
+> strips with the **dual peak+LUFS meter**, fader, mute, solo (solo-in-place),
+> and a **universal mono/stereo toggle** (stereo = 1 strip, mono = 2 strips, on
+> every input incl. the built-in mono mic; gesture-only — right-click / long-press).
+> macOS mic capture is fixed. **Do NOT re-litigate any of that.** The next
+> concrete work, in order:
+>   1. **Pan + width detail panel.** `CompactFaderStrip` has no pan on its face;
+>      pan/width is a detail-panel layer. Bind pan→`ChannelStrip<Audio>::setPan`
+>      (already exists). **Width** is net-new on `ChannelStrip` (a stereo-width
+>      control — small DSP addition, TDD it). Keep the mono/stereo toggle
+>      gesture-only (no new strip/panel element — the iPhone strip is crowded).
+>   2. **Tape-output routing** (the strip's hidden bottom region, `setOutputComboVisible(false)`
+>      today): route inputs → a user-selected number of tapes; pulls in
+>      `TapeWriter`/`TapeStore` wiring (store rooted at `<Sirius>/tapes`) and is
+>      where the two input dispatch paths unify (see todo.md item 4).
 > Full deferral list: `todo.md` (2026-05-20 "Input Mixer — deferred slices").
 > Design: `docs/design/mixer-design.md` (decision 8) + whitepaper §6.1/§6.2.
 >
@@ -32,11 +35,16 @@
 > Don't jump to transport before the mixers are done unless redirected. Memory:
 > `project_mixer_then_transport_roadmap.md`.
 >
-> **Eyes-on note for the operator:** if meters were flat before, it was the
-> missing macOS mic permission — the relaunched build prompts for it (or grant
-> in System Settings → Privacy & Security → Microphone). Verify: meters move
-> with live input; fader rides level; M mutes; S solos (solo-in-place); and
-> right-click (or long-press) a strip offers Split-to-mono / Collapse-to-stereo.
+> **⚠ OPEN THREAD — UI expectations (operator raised, not yet captured):** the
+> operator wants to convey UI expectations not in the white paper yet (transport,
+> metering conventions beyond the channel strip, navigation/layout, gestures &
+> touch parity, theming) BEFORE they silently diverge from what's built. If the
+> operator opens this, capture each expectation into `docs/design/` + memory as
+> canonical (like the RME + dual-meter + gesture-only decisions already were).
+> Two conventions already locked this session: **every channel meter is the dual
+> OTTO peak+LUFS meter** (one exception the operator will name later — await it,
+> don't guess) and **gestures over UI clutter** (memories
+> `project_channel_meter_dual_otto`, `feedback_gesture_over_ui_clutter`).
 >
 > ## What shipped this session (all on origin/master)
 > - `c1edc84` **Vendored OTTO `FaderMeter` + `CompactFaderStrip`** into
@@ -95,15 +103,24 @@
 >   now show the **dual peak+LUFS** meter. 3 `[lufs]` cases. **Convention: every
 >   channel meter is the dual OTTO meter** (memory `project_channel_meter_dual_otto`)
 >   — one exception the operator will name later.
+> - `2bb5caf` **Universal mono/stereo toggle.** Replaced the earlier "single
+>   input = non-splittable mono strip" rule: now **stereo = 1 strip, mono = 2
+>   strips on EVERY input** (operator: "two strips if mono, one if stereo"). A
+>   single physical input (built-in mic) → 1 dual-mono strip in stereo, or 2
+>   independently-pannable strips (both carrying that one input) in mono. The
+>   toggle always changes the strip count, so it's visible even on a lone mic.
+>   (Superseded `18ba878`'s non-toggleable rule.) Operator-verified GOOD.
 >
 > ## The RME input-source model (the design decision this session locked)
 > Input Mixer channels are **always stereo internally** (hard invariant). The
-> operator chooses each channel's **source format**: stereo (2 device channels
-> → L/R) or mono (1 device channel, dual-mono, positioned by pan). Per **RME
-> TotalMix**, a stereo channel splits into two mono-source channels and
-> collapses back; the toggle lives in the channel's settings, NOT on the strip
-> face (default stereo strips stay clean). Memory:
-> `project_input_source_mono_stereo_rme.md`.
+> operator chooses each channel's **source format** via the universal toggle:
+> **stereo = ONE strip** (a true pair = its L/R; a single input = dual-mono),
+> **mono = TWO strips** (a true pair = its two channels; a single input = two
+> independently-pannable copies of the one dual-mono signal). Per **RME TotalMix**.
+> The toggle is **gesture-only** — right-click (desktop) + long-press (touch,
+> 500 ms, drag-cancels) — with **no visible toggle element** (strip too crowded,
+> esp. iPhone). Memories: `project_input_source_mono_stereo_rme`,
+> `feedback_gesture_over_ui_clutter`.
 >
 > ## Critical operational facts
 > - **Canonical app:** `build/app/SiriusLooper_artefacts/Release/Sirius Looper.app`
