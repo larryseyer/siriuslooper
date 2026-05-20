@@ -57,14 +57,29 @@
 >   `TapeStore` are NOT wired into the app yet; root the store at `<Sirius>/tapes`).
 >
 > ### Concrete next steps for the Input Mixer build
-> 1. Port OTTO `FaderMeter` + `CompactFaderStrip` into `ui/lookandfeel/` (same COPY
->    approach as the L&F; watch the `TouchComboBox` dep — substitute `juce::ComboBox`).
-> 2. Engine: add peak/RMS metering (compute in `InputMixer`/`Bus` render, publish via
->    atomics, UI reads ~30 Hz) and mute/solo on `ChannelStrip` (TDD — engine is
->    headless-testable).
-> 3. Register input channels in `InputMixer` to match the device's active inputs.
-> 4. New `InputMixerView` + "Input Mixer" tab in `MainComponent`; wire strips↔engine.
-> 5. Tape output routing + wire `TapeWriter`/`TapeStore` (`<Sirius>/tapes`).
+> - ✅ **Engine core DONE** (commit `70ee33b`): `ChannelStrip<Audio>` gained
+>   **mute** (silences output) + **post-fader stereo peak metering**
+>   (`peakLeft()`/`peakRight()`, mutable atomics written from the RT `process()`,
+>   UI reads on its timer). TDD, RT-safe, 10 cases/63 assertions green. Gain+pan
+>   pre-existed. **Solo is a mixer-level policy** (mixer computes each strip's
+>   effective mute from mute+solo button state — no further ChannelStrip change).
+>   **Width** (stereo width) is a detail-panel-layer control, added with the
+>   pan/width tab later — NOT part of the core strip.
+> - **NEXT — the UI port (start here):**
+>   1. Port OTTO `FaderMeter` + `CompactFaderStrip` into `ui/lookandfeel/` (COPY,
+>      like the L&F; watch the `TouchComboBox` dep — substitute `juce::ComboBox`).
+>      Wire into the `SiriusLookAndFeel` (or a `SiriusMixerUi`) target.
+>   2. New `InputMixerView` + "Input Mixer" tab in `MainComponent`; one strip per
+>      selected physical input; bind fader→`setGain`, pan→`setPan`, mute→`setMuted`,
+>      solo→mixer-level effective-mute, meters←`peakLeft/peakRight` on the 30 Hz
+>      timer (the bus already drains notifications on a timer — reuse that cadence).
+>   3. Register input channels in `InputMixer` to match the device's active inputs.
+>   4. **Strip layout:** input source on TOP, tape-output routing on BOTTOM.
+>   5. Tape output routing + wire `TapeWriter`/`TapeStore` (`<Sirius>/tapes`);
+>      **tape COUNT is set in the Settings tab** (independent of input-channel count
+>      — e.g. 32 inputs → 1 tape is valid).
+> - Full design (incl. stereo-only, independent counts, OTTO strip anatomy) in
+>   `docs/design/mixer-design.md`.
 >
 > ### Critical operational facts
 > - **Canonical app:** `build/app/SiriusLooper_artefacts/Release/Sirius Looper.app`
