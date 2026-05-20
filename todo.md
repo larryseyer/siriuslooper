@@ -1,5 +1,30 @@
 # Sirius Looper — Deferred Items
 
+### 2026-05-20 — M8 S6 follow-ups (honest scope, recorded at ship)
+- Files: future — engine/AudioDeviceCalibration (the real measurement routine,
+  net-new); engine/CalibrationStore.h (the recalibrationPending seam it feeds);
+  app/MainComponent.cpp (calibration sidecar wiring).
+- What was deferred:
+  1. The REAL loopback DSP calibration engine. M8 S6 shipped the
+     persistence + checksum + validate-on-load + recover-and-notify layer, but
+     nothing yet MEASURES a fresh calibration. The V7 line-602 acceptance says
+     "trigger fresh loopback calibration via existing AudioDeviceCalibration" —
+     that routine does not exist (AudioDeviceCalibration is a pure value type).
+     On corruption/absence the app recovers to identity, posts a Warning, and
+     persists `recalibrationPending=true` as the seam the future engine reads.
+  2. Multi-device keying. The sidecar holds ONE calibration; keying by audio
+     interface identity (so each device carries its own calibration) is a future
+     extension — device-identity plumbing does not exist yet.
+- Why deferred: the loopback DSP engine is a net-new real-time feature (emit a
+  probe, measure round-trip drift, derive rate+offset) requiring live audio I/O
+  and operator hardware — not buildable or verifiable in a headless TDD loop.
+  Same mechanism-plus-tested-seam precedent as M8 S3/S4.
+- What's needed to finish: a dedicated session — design the loopback probe +
+  measurement + derivation, add the measure entry point, clear
+  `recalibrationPending` on success, and wire a recalibration trigger to the
+  pending marker. The calibration sidecar format + checksum + recovery path are
+  already in place (`engine/CalibrationStore.{h,cpp}`).
+
 ### 2026-05-19 — Render-to-parts / timeline / finished-song (MAJOR design topic, own session)
 - Files: future — engine/RenderPipeline + new "part" materialization +
   clip/timeline arrangement layer; reconcile with core/Arrangement.h and the

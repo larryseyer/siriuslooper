@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-20 (M8 S4 fully shipped; next move = M8 S6)
+# Session Continuation — 2026-05-20 (M8 S6 fully shipped; next move = M8 S7–S8)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,7 +8,86 @@
 
 ---
 
-## RESUME HERE (2026-05-20 — M8 S4 fully shipped + pushed; next move = M8 S6 LMC calibration recovery)
+## RESUME HERE (2026-05-20 — M8 S6 fully shipped + pushed; next move = M8 S7–S8 tape reachability scan)
+
+> ## ✅ M8 S6 fully shipped end-to-end (direct TDD execution)
+>
+> M8 S6 (LMC calibration corruption recovery; V7 plan line 602) is on
+> `origin/master`. 4 commits (docs + module + wiring + handoff). Implemented
+> directly with TDD (not subagents — the feature is one pure module + thin
+> wiring, smaller than S2/S4; same tested/reviewed/pushed quality). Clean
+> rebuild from `rm -rf build`; ctest **449/450** — the 1 non-pass is
+> `MainComponentPluginEditorTests_NOT_BUILT` (built+run separately by
+> `bash/test-s7.sh`). +7 new `[calibration-recovery]` cases (32 assertions).
+>
+> **The V7 wording assumed infrastructure that did not exist** — there was no
+> persisted calibration AND no loopback-measurement routine. So S6 shipped the
+> buildable nucleus (the M8 S3 pattern: pure validator + caller-side notify,
+> production data source deferred) and deferred the real DSP engine.
+>
+> **What landed:**
+> - `engine/include/sirius/CalibrationStore.h` + `.cpp` — pure, JUCE-free
+>   (engine public API is JUCE-free by design). `serializeCalibration` /
+>   `parseAndValidateCalibration` over a canonical text doc
+>   (`rateFactor=n/d` / `offset=n/d` / `pending=0|1` payload + a `sha256=` line
+>   over the payload bytes, reusing core `sha256Hex`). `CalibrationLoadStatus
+>   { Ok, Missing, Corrupt }`; non-Ok always returns a recoverable
+>   `{identity, recalibrationPending=true}` document. `AudioDeviceCalibration`
+>   itself is UNMODIFIED — `recalibrationPending` is store metadata, not a field
+>   on the immutable value. `postCalibrationRecoveryNotification` posts one
+>   `Warning`/`StateRepair` on non-Ok (kept out of the parse so the parse stays
+>   sink-free, parallel to `postConstituentStateNotifications`).
+> - `app/MainComponent.cpp` — device-scoped sidecar at
+>   `userApplicationDataDirectory/Sirius Looper/calibration.json` (calibration
+>   belongs to the machine, NOT the session — it never travels with a session
+>   moved to other hardware). Startup hook (before `setCalibration` at the ctor's
+>   audio-callback wiring): read+validate; `Ok` adopts the values, non-Ok leaves
+>   identity, re-persists `{identity, pending=true}`, and warns. On-session-load
+>   re-check in `chooseFileAndLoad` beside the M8 S1/S3 hooks (satisfies the
+>   spec's literal "on session load").
+> - docs: spec `2026-05-20-m8-s6-design.md`, plan `2026-05-20-m8-s6-plan.md`.
+>
+> **Honest scope notes (also in `todo.md` 2026-05-20 M8 S6 entry):**
+> - **No real loopback DSP calibration engine** — nothing MEASURES a fresh
+>   calibration. The V7 "trigger fresh loopback calibration" clause is unmet by
+>   design: that routine doesn't exist (needs live audio I/O + hardware). On
+>   corruption the app recovers to identity + posts Warning + persists
+>   `recalibrationPending=true` as the seam the future engine reads. Own session.
+> - **Single-device sidecar** — multi-device keying (per-interface calibration)
+>   is a future extension; device-identity plumbing absent.
+>
+> **The single most important next move:** start M8 S7–S8 (V7 plan line 604 +
+> the "tape reachability scan (Session 7-8)" breakout): tape rotation on
+> disk-full — a reachability scan from the Constituent graph identifies tape
+> segments referenced by no active Constituent, reclaims oldest-unreferenced
+> first, on a non-realtime thread. New `engine/TapeReachabilityScan.{h,cpp}`;
+> `persistence/TapeStore` gains a `reclaimUnreferenced(span<TapeId>)` API; new
+> `tests/TapeReachabilityTests.cpp`. This is ALSO where the real `TapeStore`-backed
+> `TapeResolver` for M8 S3's Broken detection lands (the `alwaysResolves` honest
+> default gets replaced). Spec not written — brainstorm V7 line 604, then
+> `writing-plans`, then implement.
+
+### First moves for the next chat (M8 S7–S8)
+
+1. **Sanity:** `git status` clean, `git log --oneline -6` shows the M8 S6 tail on
+   `origin/master`.
+2. **Read** `persistence/include/sirius/TapeStore.h` + `.cpp` (the content-addressed
+   store + any existing reclaim/enumerate API), `core/.../Constituent.h` +
+   `engine/ConstituentValidator.{h,cpp}` (the `TapeResolver` seam to satisfy with a
+   real store-backed resolver), and the M8 S6 spec/plan for the review cadence.
+3. **Check `todo.md`** for the M8 S6 follow-ups (loopback engine, multi-device
+   keying), the M8 S3 follow-ups (the `TapeId→content` manifest that S7–S8 finally
+   provides), and the still-open M8 S2 tri-state `requestStateSave/Load` deferral.
+4. **Brainstorm M8 S7–S8**, then `writing-plans`, then implement (subagents for the
+   larger surface, or direct TDD if it stays contained).
+5. **Known pre-existing test note:** `bash/test-s7.sh`'s "openPluginEditor … spawns
+   a child" case fails with `childPid -1` in a bare `rm -rf build` tree (the spawn
+   fixture needs the built host in scope). S6 touched no spawn-path files —
+   environmental, pre-existing, not an S6 regression (2/3 lifecycle cases pass).
+
+---
+
+## HISTORICAL — M8 S4 (superseded 2026-05-20 — M8 S6 fully shipped)
 
 > ## ✅ M8 S4 fully shipped end-to-end (orchestrator+subagents execution)
 >
