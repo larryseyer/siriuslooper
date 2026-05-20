@@ -6,6 +6,7 @@
 #include "sirius/AudioCallback.h"
 #include "sirius/AudioDeviceCalibration.h"
 #include "sirius/CaptureSession.h"
+#include "sirius/ChannelStrip.h"
 #include "sirius/DirectLayer.h"
 #include "sirius/EngineConfig.h"
 #include "sirius/InputDescriptor.h"
@@ -83,6 +84,16 @@ private:
     void refreshPreparation();
     void refreshTimeline();
     void refreshDiagnostics();
+    void refreshInputMixer();
+
+    // --- input mixer strip wiring ---
+    /// The Audio ChannelStrip behind input-mixer strip `index`, or nullptr if
+    /// the index is out of range. Message-thread only.
+    ChannelStrip<SignalType::Audio>* inputStripAt (int index) noexcept;
+    /// Recomputes each strip's effective mute from the mute + solo button state
+    /// (solo-in-place: any solo → non-soloed strips are silenced) and applies it
+    /// to both the engine strip and the strip's visual mute indication.
+    void recomputeInputStripMutes();
 
     // --- per-tape arm + focus (refined Mockup A, this session's UX) ---
     void toggleArm    (TapeId tape);
@@ -208,6 +219,17 @@ private:
     // --- Settings tab ---
     class SettingsPane;
     std::unique_ptr<SettingsPane> settingsPane_;
+
+    // --- Input Mixer tab (whitepaper Part VI — the capture console) ---
+    // One stereo strip per stereo pair of active device inputs (default
+    // stereo, RME-style; the mono/stereo split toggle is a later slice). Each
+    // strip's fader/mute/solo drives the engine ChannelStrip behind its
+    // ChannelId; meters read the strip's post-fader peaks on the 30 Hz timer.
+    class InputMixerPane;
+    std::unique_ptr<InputMixerPane> inputMixerPane_;
+    std::vector<ChannelId>          inputStripChannelIds_;
+    std::vector<bool>               inputStripMuted_;
+    std::vector<bool>               inputStripSoloed_;
 
     // --- Plugins tab ---
     class PluginListBox;

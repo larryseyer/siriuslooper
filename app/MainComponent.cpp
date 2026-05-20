@@ -1,5 +1,6 @@
 #include "MainComponent.h"
 
+#include "components/CompactFaderStrip.h"
 #include "sirius/CalibrationStore.h"
 #include "sirius/ConstituentValidator.h"
 #include "sirius/PerformanceViewState.h"
@@ -15,6 +16,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 
 #include <algorithm>
+#include <cmath>
 #include <deque>
 #include <exception>
 #include <functional>
@@ -402,6 +404,95 @@ private:
     juce::Label                        audioHeaderLabel_;
     juce::AudioDeviceSelectorComponent deviceSelector_;
     juce::ToggleButton                 monitoringToggle_;
+};
+
+// =============================================================================
+// InputMixerPane — the Input Mixer tab (white paper Part VI, the capture
+// console). A horizontal row of OTTO-skinned CompactFaderStrips, one stereo
+// strip per stereo pair of active device inputs. The pane is pure presentation
+// + gesture relay: it owns the strips and forwards fader/mute/solo/select
+// changes to MainComponent via std::function hooks, which apply them to the
+// engine ChannelStrips. MainComponent pushes meter levels back in on its timer.
+// Tape-output routing (the strip's bottom region) and the pan/width detail
+// panel are later slices, so the strip's output combo is hidden for now.
+// =============================================================================
+class MainComponent::InputMixerPane final : public juce::Component,
+                                            public otto::ui::CompactFaderStripListener
+{
+public:
+    // Gesture relays (idx = strip index). Set by MainComponent.
+    std::function<void (int idx, float gainLinear)> onGain;
+    std::function<void (int idx, bool muted)>       onMute;
+    std::function<void (int idx, bool soloed)>      onSolo;
+
+    /// Rebuilds the row to hold `count` stereo strips named "In 1-2", "In 3-4"…
+    void setStripCount (int count)
+    {
+        strips_.clear();
+        for (int i = 0; i < count; ++i)
+        {
+            auto strip = std::make_unique<otto::ui::CompactFaderStrip> (
+                i, otto::ui::ChannelType::Instrument);
+            strip->setChannelName ("In " + juce::String (2 * i + 1)
+                                   + "-" + juce::String (2 * i + 2));
+            strip->setOutputComboVisible (false);   // tape-output routing is a later slice
+            strip->addListener (this);
+            addAndMakeVisible (*strip);
+            strips_.push_back (std::move (strip));
+        }
+        resized();
+    }
+
+    [[nodiscard]] int stripCount() const noexcept { return static_cast<int> (strips_.size()); }
+
+    void setStripLevelDb (int idx, float dbL, float dbR)
+    {
+        if (idx >= 0 && idx < stripCount()) strips_[static_cast<std::size_t> (idx)]->setLevel (dbL, dbR);
+    }
+
+    void setEffectiveMute (int idx, bool effectivelyMuted)
+    {
+        if (idx >= 0 && idx < stripCount())
+            strips_[static_cast<std::size_t> (idx)]->setEffectivelyMuted (effectivelyMuted);
+    }
+
+    void resized() override
+    {
+        // Left-to-right row of fixed-width strips. A few strips fit a typical
+        // window; wide input counts get a horizontal Viewport in a later slice.
+        constexpr int kStripW = otto::ui::CompactFaderStrip::kStripWidth;
+        constexpr int kGap    = 6;
+        auto area = getLocalBounds().reduced (kGap);
+        for (auto& strip : strips_)
+        {
+            strip->setBounds (area.removeFromLeft (kStripW));
+            area.removeFromLeft (kGap);
+        }
+    }
+
+    void paint (juce::Graphics& g) override { g.fillAll (otto::Colours::bg2); }
+
+    // --- CompactFaderStripListener ---
+    void stripGainChanged (int idx, otto::ui::ChannelType, float gain) override
+    {
+        if (onGain) onGain (idx, gain);
+    }
+    void stripMuteChanged (int idx, otto::ui::ChannelType, bool muted) override
+    {
+        if (onMute) onMute (idx, muted);
+    }
+    void stripSoloChanged (int idx, otto::ui::ChannelType, bool soloed) override
+    {
+        if (onSolo) onSolo (idx, soloed);
+    }
+    void stripChannelSelected (int idx, otto::ui::ChannelType) override
+    {
+        for (int i = 0; i < stripCount(); ++i)
+            strips_[static_cast<std::size_t> (i)]->setSelected (i == idx);
+    }
+
+private:
+    std::vector<std::unique_ptr<otto::ui::CompactFaderStrip>> strips_;
 };
 
 // =============================================================================
@@ -973,6 +1064,56 @@ MainComponent::MainComponent()
     settingsPane_ = std::make_unique<SettingsPane> (audioDeviceManager_, *audioCallback_);
     tabs_.addTab ("Settings", juce::Colours::black, settingsPane_.get(), false);
 
+    // --- Input Mixer tab (white paper Part VI) ---
+    // Register one stereo strip per stereo pair of active device inputs. The
+    // strip's ChannelStrip<Audio> is reached via processingChainFor; its source
+    // is the device channel pair (2p, 2p+1). processDeviceInputs (Step 2b in the
+    // audio callback) runs each strip and publishes peak meters. NOTE: the
+    // legacy per-device-channel tape dispatch (dispatchInputMixer) also keys on
+    // these ChannelIds, but harmlessly — the strips are NoTape, so it runs the
+    // strip and early-returns, and processDeviceInputs runs afterward so the
+    // stereo meters are authoritative. The two paths unify when tape-output
+    // routing lands (todo.md).
+    {
+        int numInputs = kDefaultStereoChannels;
+        if (auto* dev = audioDeviceManager_.getCurrentAudioDevice())
+        {
+            const int active = dev->getActiveInputChannels().countNumberOfSetBits();
+            if (active >= 2) numInputs = active;
+        }
+        const int numPairs = numInputs / 2;
+
+        for (int p = 0; p < numPairs; ++p)
+        {
+            const auto chId = inputMixer_->addChannel (InputId (2 * p), SignalType::Audio);
+            inputMixer_->setChannelInputSource (chId, /*left*/ 2 * p, /*right*/ 2 * p + 1,
+                                                /*stereo*/ true);
+            inputStripChannelIds_.push_back (chId);
+        }
+        inputStripMuted_.assign (static_cast<std::size_t> (numPairs), false);
+        inputStripSoloed_.assign (static_cast<std::size_t> (numPairs), false);
+
+        inputMixerPane_ = std::make_unique<InputMixerPane>();
+        inputMixerPane_->setStripCount (numPairs);
+        inputMixerPane_->onGain = [this] (int idx, float gain)
+        {
+            if (auto* s = inputStripAt (idx)) s->setGain (gain);
+        };
+        inputMixerPane_->onMute = [this] (int idx, bool muted)
+        {
+            if (idx >= 0 && idx < static_cast<int> (inputStripMuted_.size()))
+                inputStripMuted_[static_cast<std::size_t> (idx)] = muted;
+            recomputeInputStripMutes();
+        };
+        inputMixerPane_->onSolo = [this] (int idx, bool soloed)
+        {
+            if (idx >= 0 && idx < static_cast<int> (inputStripSoloed_.size()))
+                inputStripSoloed_[static_cast<std::size_t> (idx)] = soloed;
+            recomputeInputStripMutes();
+        };
+        tabs_.addTab ("Input Mixer", juce::Colours::black, inputMixerPane_.get(), false);
+    }
+
     // --- Plugins tab ---
     pluginsPane_ = std::make_unique<PluginsPane>();
     pluginsPane_->scanButton_.onClick = [this] { chooseFolderAndScan(); };
@@ -1191,6 +1332,7 @@ void MainComponent::timerCallback()
             preparationPane_->setNotifications (notificationHistory_);
     }
 
+    refreshInputMixer();
     refreshDiagnostics();
 }
 
@@ -1199,6 +1341,48 @@ void MainComponent::refreshPerformance()
     const Rational t = playheadValueToLmc (playhead_.getValue());
     performanceView_.setState (selectPerformanceView (*undoStack_.current(),
                                                       demo_.sessionToLmc, t));
+}
+
+ChannelStrip<SignalType::Audio>* MainComponent::inputStripAt (int index) noexcept
+{
+    if (index < 0 || index >= static_cast<int> (inputStripChannelIds_.size()))
+        return nullptr;
+    auto* chain = inputMixer_->processingChainFor (
+        inputStripChannelIds_[static_cast<std::size_t> (index)]);
+    return dynamic_cast<ChannelStrip<SignalType::Audio>*> (chain);
+}
+
+void MainComponent::recomputeInputStripMutes()
+{
+    // Solo-in-place: if any strip is soloed, every non-soloed strip is silenced.
+    // A strip's own mute always silences it. The effective mute drives both the
+    // engine strip (audible result) and the strip's visual mute indication.
+    const bool anySolo = std::any_of (inputStripSoloed_.begin(), inputStripSoloed_.end(),
+                                      [] (bool s) { return s; });
+    for (int i = 0; i < static_cast<int> (inputStripChannelIds_.size()); ++i)
+    {
+        const auto idx = static_cast<std::size_t> (i);
+        const bool effective = inputStripMuted_[idx] || (anySolo && ! inputStripSoloed_[idx]);
+        if (auto* s = inputStripAt (i)) s->setMuted (effective);
+        if (inputMixerPane_ != nullptr) inputMixerPane_->setEffectiveMute (i, effective);
+    }
+}
+
+void MainComponent::refreshInputMixer()
+{
+    if (inputMixerPane_ == nullptr) return;
+
+    // Linear post-fader peak → dBFS for the meter (FaderMeter clamps to its
+    // own [-60, +6] window). -60 dB is the silence floor.
+    const auto linToDb = [] (float linear) -> float
+    {
+        return linear <= 1.0e-6f ? -60.0f : 20.0f * std::log10 (linear);
+    };
+
+    for (int i = 0; i < inputMixerPane_->stripCount(); ++i)
+        if (auto* s = inputStripAt (i))
+            inputMixerPane_->setStripLevelDb (i, linToDb (s->peakLeft()),
+                                              linToDb (s->peakRight()));
 }
 
 void MainComponent::refreshPreparation()

@@ -167,6 +167,13 @@ void AudioCallback::audioDeviceIOCallbackWithContext (
                         numInputChannels,
                         numSamples);
 
+    // Step 2b: Input Mixer strip processing + metering. Gathers each registered
+    // strip's 1–2 source device channels into a stereo block and runs its
+    // ChannelStrip, publishing post-fader peak meters the Input Mixer UI reads
+    // on its timer. No-op until the app registers strips (empty source map).
+    if (inputMixer_ != nullptr)
+        inputMixer_->processDeviceInputs (inputChannelData, numInputChannels, numSamples);
+
     // Step 3: DirectLayer routing. Gated by monitoringEnabled_ — direct
     // monitoring is where the feedback risk lives. Tape recording (step 2)
     // is unaffected by the monitoring gate.
