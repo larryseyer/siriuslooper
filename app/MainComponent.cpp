@@ -899,9 +899,16 @@ MainComponent::MainComponent()
         }
         else
         {
-            sidecar.getParentDirectory().createDirectory();
-            sidecar.replaceWithText (juce::String (serializeCalibration (
-                { AudioDeviceCalibration::identity(), /*recalibrationPending*/ true })));
+            const auto dirResult = sidecar.getParentDirectory().createDirectory();
+            const bool wrote = dirResult.wasOk()
+                && sidecar.replaceWithText (juce::String (serializeCalibration (
+                       { AudioDeviceCalibration::identity(), /*recalibrationPending*/ true })));
+            if (! wrote)
+                juce::Logger::writeToLog (
+                    "calibration: could not persist recovery sidecar at "
+                    + sidecar.getFullPathName()
+                    + (dirResult.failed() ? " — " + dirResult.getErrorMessage()
+                                          : juce::String()));
             if (notificationBus_)
                 postCalibrationRecoveryNotification (result.status, *notificationBus_);
         }
