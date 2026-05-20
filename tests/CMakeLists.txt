@@ -28,6 +28,7 @@ add_executable(SiriusTests
     OverloadProtectionTests.cpp
     SessionFormatTests.cpp
     TapeStoreTests.cpp
+    WetCaptureWriterTests.cpp
     EffectChainTests.cpp
     ParameterAutomationTests.cpp
     PluginScannerTests.cpp

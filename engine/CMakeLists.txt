@@ -24,6 +24,7 @@ add_library(SiriusEngine STATIC
     src/OutputMixer.cpp
     src/ProcessingChain.cpp
     src/TapeWriter.cpp
+    src/WetCaptureWriter.cpp
     src/NotificationBus.cpp
     src/SessionSnapshot.cpp
     src/ConstituentValidator.cpp)
