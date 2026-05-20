@@ -81,6 +81,20 @@
 >   entitlement in the **Ninja** parent re-sign (it was previously only applied
 >   in the Xcode-generator path). Without these a hardened-runtime app gets
 >   silent input buffers — which is why the meters read flat on first eyes-on.
+> - `18ba878` **Mono-device registration fix.** A single-input device (e.g. the
+>   MacBook built-in mono mic) was being registered as a phantom stereo pair
+>   sourcing device ch 0+1; ch 1 doesn't exist → the stereo strip was skipped
+>   (no meter) and split showed left-only. Now a 1-input (or odd-leftover)
+>   channel registers as ONE mono strip (dual-mono → both meter sides move) and
+>   isn't splittable.
+> - `ece8843` + `1ff4b68` **Per-channel EBU R128 LUFS meter (OTTO parity), TDD.**
+>   `ChannelStrip<Audio>` now carries a `sirius::LufsMeter`
+>   (`engine/include/sirius/LufsMeter.h`, adapted faithfully from OTTO's
+>   `otto::mixer::LUFSMeter`) fed post-fader; `prepare(sr, maxBlock)` off the
+>   audio thread, `lufsIntegrated()` read on the UI timer. Input Mixer strips
+>   now show the **dual peak+LUFS** meter. 3 `[lufs]` cases. **Convention: every
+>   channel meter is the dual OTTO meter** (memory `project_channel_meter_dual_otto`)
+>   — one exception the operator will name later.
 >
 > ## The RME input-source model (the design decision this session locked)
 > Input Mixer channels are **always stereo internally** (hard invariant). The
