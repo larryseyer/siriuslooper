@@ -210,3 +210,75 @@ TEST_CASE ("ChannelStrip Midi / Video / File stubs construct and report SignalTy
     CHECK (v.signalType() == SignalType::Video);
     CHECK (f.signalType() == SignalType::File);
 }
+
+// =============================================================================
+// [lufs] — per-channel EBU R128 loudness, the LUFS half of the dual OTTO-style
+// channel meter. Every audio channel carries it (ChannelStrip<Audio>); the UI
+// reads lufsIntegrated() on its timer.
+// =============================================================================
+
+namespace
+{
+    // Runs `blocks` 512-sample blocks of a 1 kHz sine at `amp` through the strip
+    // (process applies gain/pan in place AND feeds the loudness meter), and
+    // returns the strip's integrated LUFS afterwards.
+    float feedSineGetLufs (AudioStrip& strip, float amp, double sampleRate, int blocks)
+    {
+        constexpr int kBlock = 512;
+        std::array<float, kBlock> left {}, right {};
+        float* data[2] { left.data(), right.data() };
+        double phase = 0.0;
+        const double inc = 2.0 * M_PI * 1000.0 / sampleRate;
+        for (int b = 0; b < blocks; ++b)
+        {
+            for (int i = 0; i < kBlock; ++i)
+            {
+                const float s = amp * static_cast<float> (std::sin (phase));
+                phase += inc;
+                left[static_cast<std::size_t> (i)]  = s;
+                right[static_cast<std::size_t> (i)] = s;
+            }
+            strip.process (data, 2, kBlock);
+        }
+        return strip.lufsIntegrated();
+    }
+}
+
+TEST_CASE ("ChannelStrip<Audio> reports integrated loudness above the gate for a "
+           "loud signal and stays gated on silence", "[channel-strip][lufs]")
+{
+    constexpr double kSampleRate = 48000.0;
+
+    AudioStrip loud;
+    loud.prepare (kSampleRate, 512);
+    const float loudLufs = feedSineGetLufs (loud, 0.5f, kSampleRate, 300);  // ~3.2 s
+    CHECK (std::isfinite (loudLufs));
+    CHECK (loudLufs > -40.0f);          // a half-scale tone is well above the -70 gate
+
+    AudioStrip silent;
+    silent.prepare (kSampleRate, 512);
+    const float silentLufs = feedSineGetLufs (silent, 0.0f, kSampleRate, 300);
+    CHECK (silentLufs <= -70.0f);       // absolute gate → no integration on silence
+}
+
+TEST_CASE ("ChannelStrip<Audio> integrated loudness tracks level — louder reads higher",
+           "[channel-strip][lufs]")
+{
+    constexpr double kSampleRate = 48000.0;
+
+    AudioStrip loud;  loud.prepare  (kSampleRate, 512);
+    AudioStrip quiet; quiet.prepare (kSampleRate, 512);
+
+    const float loudLufs  = feedSineGetLufs (loud,  0.5f,  kSampleRate, 300);
+    const float quietLufs = feedSineGetLufs (quiet, 0.05f, kSampleRate, 300);  // ~20 dB down
+
+    CHECK (loudLufs > quietLufs + 6.0f);   // a 20 dB level drop reads clearly lower
+}
+
+TEST_CASE ("ChannelStrip<Audio> loudness is silent + safe before prepare() is called",
+           "[channel-strip][lufs]")
+{
+    AudioStrip strip;   // no prepare()
+    const float lufs = feedSineGetLufs (strip, 0.5f, 48000.0, 50);  // must not crash
+    CHECK (lufs <= -70.0f);   // unprepared meter reports silence
+}

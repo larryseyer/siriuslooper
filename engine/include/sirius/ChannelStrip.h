@@ -1,5 +1,6 @@
 #pragma once
 
+#include "sirius/LufsMeter.h"
 #include "sirius/ProcessingChain.h"
 #include "sirius/SignalType.h"
 
@@ -86,6 +87,16 @@ public:
     float peakLeft()  const noexcept { return peakLeft_.load (std::memory_order_relaxed); }
     float peakRight() const noexcept { return peakRight_.load (std::memory_order_relaxed); }
 
+    /// Message-thread setup for the per-channel EBU R128 loudness meter. Call
+    /// before the audio thread runs `process` (e.g. when the device's sample
+    /// rate is known / on device start). Allocates; not RT-safe. Until called,
+    /// `lufsIntegrated()` reads silence and `process` skips the loudness work.
+    void prepare (double sampleRate, int maxBlockSize) { lufsMeter_.prepare (sampleRate, maxBlockSize); }
+
+    /// Integrated loudness (LUFS) of the post-fader signal, for the dual
+    /// peak+LUFS channel meter (OTTO parity). UI reads on its timer.
+    float lufsIntegrated() const noexcept { return lufsMeter_.getIntegrated(); }
+
     /// Audio-thread DSP entry point. `channelData[c][s]` lays out
     /// non-interleaved float samples (matches JUCE's `AudioBuffer<float>`
     /// internal layout and `AudioIODeviceCallback`'s argument shape, so
@@ -120,6 +131,9 @@ public:
                         channelData[c][s] = 0.0f;
             peakLeft_.store  (0.0f, std::memory_order_relaxed);
             peakRight_.store (0.0f, std::memory_order_relaxed);
+            // Feed the loudness meter the (now silent) output so it decays.
+            const float* r = (numChannels >= 2) ? channelData[1] : channelData[0];
+            lufsMeter_.process (channelData[0], r, numSamples);
             return;
         }
 
@@ -137,6 +151,7 @@ public:
             }
             peakLeft_.store  (peak, std::memory_order_relaxed);
             peakRight_.store (peak, std::memory_order_relaxed);
+            lufsMeter_.process (left, left, numSamples);   // mono → dual-mono
             return;
         }
 
@@ -162,6 +177,7 @@ public:
         }
         peakLeft_.store  (peakL, std::memory_order_relaxed);
         peakRight_.store (peakR, std::memory_order_relaxed);
+        lufsMeter_.process (left, right, numSamples);
     }
 
 private:
@@ -169,9 +185,12 @@ private:
     std::atomic<float> panNormalized_;
     std::atomic<bool>  muted_ { false };
     // Metering is written from the const `process` (the strip is logically const
-    // there), so the peak atomics are mutable. Audio-thread writes, UI reads.
+    // there), so the peak atomics + loudness meter are mutable. Audio-thread
+    // writes, UI reads. The LufsMeter is the dual-meter's LUFS source (OTTO
+    // parity); it self-no-ops until prepare() is called with the sample rate.
     mutable std::atomic<float> peakLeft_  { 0.0f };
     mutable std::atomic<float> peakRight_ { 0.0f };
+    mutable LufsMeter          lufsMeter_;
 };
 
 /// MIDI specialization — stub until M9 wires real UMP processing. Matches the
