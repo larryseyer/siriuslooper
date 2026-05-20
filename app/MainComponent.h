@@ -94,6 +94,15 @@ private:
     /// (solo-in-place: any solo → non-soloed strips are silenced) and applies it
     /// to both the engine strip and the strip's visual mute indication.
     void recomputeInputStripMutes();
+    /// (Re)registers the engine input channels and rebuilds the pane's strips
+    /// from `inputPairs_`: a stereo pair → one stereo strip, a mono pair → two
+    /// mono-source strips (RME split). Brackets the channel-map mutation with
+    /// removeAudioCallback/addAudioCallback so the audio thread never reads a
+    /// half-mutated registry. Message-thread only; resets mute/solo state.
+    void rebuildInputStrips();
+    /// Flips the stereo/mono mode of the pair behind `stripIndex` (RME-style
+    /// split/collapse) and rebuilds. Message-thread only.
+    void toggleInputPairStereo (int stripIndex);
 
     // --- per-tape arm + focus (refined Mockup A, this session's UX) ---
     void toggleArm    (TapeId tape);
@@ -227,7 +236,14 @@ private:
     // ChannelId; meters read the strip's post-fader peaks on the 30 Hz timer.
     class InputMixerPane;
     std::unique_ptr<InputMixerPane> inputMixerPane_;
+    /// One source pair per stereo pair of device inputs. `stereo` true → one
+    /// stereo strip; false → two mono-source strips (RME split). `leftCh`/
+    /// `rightCh` are device channel indices.
+    struct InputPair { int leftCh; int rightCh; bool stereo; };
+    std::vector<InputPair>          inputPairs_;
+    // Flat per-strip state, parallel arrays rebuilt by rebuildInputStrips().
     std::vector<ChannelId>          inputStripChannelIds_;
+    std::vector<int>                inputStripPair_;     // strip → index into inputPairs_
     std::vector<bool>               inputStripMuted_;
     std::vector<bool>               inputStripSoloed_;
 

@@ -420,27 +420,53 @@ class MainComponent::InputMixerPane final : public juce::Component,
                                             public otto::ui::CompactFaderStripListener
 {
 public:
+    /// One strip's display state: its name and whether its source pair is in
+    /// stereo mode (drives the right-click "Split / Collapse" label).
+    struct StripInfo { juce::String name; bool stereo; };
+
     // Gesture relays (idx = strip index). Set by MainComponent.
     std::function<void (int idx, float gainLinear)> onGain;
     std::function<void (int idx, bool muted)>       onMute;
     std::function<void (int idx, bool soloed)>      onSolo;
+    /// Right-click "Split to two mono channels" / "Collapse to stereo" (RME).
+    std::function<void (int idx)>                   onToggleStereoMono;
 
-    /// Rebuilds the row to hold `count` stereo strips named "In 1-2", "In 3-4"…
-    void setStripCount (int count)
+    /// Rebuilds the row from `infos` (one CompactFaderStrip each). The pane
+    /// listens for each strip's right-click via addMouseListener so the
+    /// vendored CompactFaderStrip stays unmodified.
+    void setStrips (const std::vector<StripInfo>& infos)
     {
         strips_.clear();
-        for (int i = 0; i < count; ++i)
+        stripStereo_.clear();
+        for (int i = 0; i < static_cast<int> (infos.size()); ++i)
         {
             auto strip = std::make_unique<otto::ui::CompactFaderStrip> (
                 i, otto::ui::ChannelType::Instrument);
-            strip->setChannelName ("In " + juce::String (2 * i + 1)
-                                   + "-" + juce::String (2 * i + 2));
+            strip->setChannelName (infos[static_cast<std::size_t> (i)].name);
             strip->setOutputComboVisible (false);   // tape-output routing is a later slice
             strip->addListener (this);
+            strip->addMouseListener (this, /*wantsNestedEvents*/ true);
             addAndMakeVisible (*strip);
             strips_.push_back (std::move (strip));
+            stripStereo_.push_back (infos[static_cast<std::size_t> (i)].stereo);
         }
         resized();
+    }
+
+    /// Right-click on a strip → RME split/collapse menu. Other buttons (in a
+    /// later detail-panel slice) will live alongside; for now the context menu
+    /// is the source-format affordance, keeping the strip face uncluttered.
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        if (! e.mods.isPopupMenu()) return;   // left-clicks handled by the strip
+        const int idx = stripIndexOf (e.eventComponent);
+        if (idx < 0) return;
+
+        juce::PopupMenu menu;
+        const bool stereo = stripStereo_[static_cast<std::size_t> (idx)];
+        menu.addItem (stereo ? "Split to two mono channels" : "Collapse to stereo",
+                      [this, idx] { if (onToggleStereoMono) onToggleStereoMono (idx); });
+        menu.showMenuAsync (juce::PopupMenu::Options{}.withMousePosition());
     }
 
     [[nodiscard]] int stripCount() const noexcept { return static_cast<int> (strips_.size()); }
@@ -492,7 +518,20 @@ public:
     }
 
 private:
+    /// Maps a mouse event's source component back to a strip index (the event
+    /// component may be a nested child of the strip), or -1 if it is none.
+    [[nodiscard]] int stripIndexOf (juce::Component* c) const
+    {
+        for (int i = 0; i < stripCount(); ++i)
+        {
+            auto* s = strips_[static_cast<std::size_t> (i)].get();
+            if (s == c || s->isParentOf (c)) return i;
+        }
+        return -1;
+    }
+
     std::vector<std::unique_ptr<otto::ui::CompactFaderStrip>> strips_;
+    std::vector<bool>                                         stripStereo_;
 };
 
 // =============================================================================
@@ -1065,15 +1104,16 @@ MainComponent::MainComponent()
     tabs_.addTab ("Settings", juce::Colours::black, settingsPane_.get(), false);
 
     // --- Input Mixer tab (white paper Part VI) ---
-    // Register one stereo strip per stereo pair of active device inputs. The
-    // strip's ChannelStrip<Audio> is reached via processingChainFor; its source
-    // is the device channel pair (2p, 2p+1). processDeviceInputs (Step 2b in the
-    // audio callback) runs each strip and publishes peak meters. NOTE: the
-    // legacy per-device-channel tape dispatch (dispatchInputMixer) also keys on
-    // these ChannelIds, but harmlessly — the strips are NoTape, so it runs the
-    // strip and early-returns, and processDeviceInputs runs afterward so the
-    // stereo meters are authoritative. The two paths unify when tape-output
-    // routing lands (todo.md).
+    // Each active device-input stereo pair becomes one InputPair, stereo by
+    // default (RME convention). rebuildInputStrips() registers the engine
+    // channels + builds the pane strips from inputPairs_; the right-click
+    // split/collapse toggle flips a pair between one stereo strip and two
+    // mono-source strips. processDeviceInputs (Step 2b in the audio callback)
+    // runs each strip and publishes its peak meters. NOTE: the legacy
+    // per-device-channel tape dispatch (dispatchInputMixer) also keys on these
+    // ChannelIds, harmlessly — the strips are NoTape, so it runs the strip and
+    // early-returns, and processDeviceInputs runs afterward so the meters are
+    // authoritative. The two paths unify when tape-output routing lands (todo.md).
     {
         int numInputs = kDefaultStereoChannels;
         if (auto* dev = audioDeviceManager_.getCurrentAudioDevice())
@@ -1081,20 +1121,10 @@ MainComponent::MainComponent()
             const int active = dev->getActiveInputChannels().countNumberOfSetBits();
             if (active >= 2) numInputs = active;
         }
-        const int numPairs = numInputs / 2;
-
-        for (int p = 0; p < numPairs; ++p)
-        {
-            const auto chId = inputMixer_->addChannel (InputId (2 * p), SignalType::Audio);
-            inputMixer_->setChannelInputSource (chId, /*left*/ 2 * p, /*right*/ 2 * p + 1,
-                                                /*stereo*/ true);
-            inputStripChannelIds_.push_back (chId);
-        }
-        inputStripMuted_.assign (static_cast<std::size_t> (numPairs), false);
-        inputStripSoloed_.assign (static_cast<std::size_t> (numPairs), false);
+        for (int p = 0; p < numInputs / 2; ++p)
+            inputPairs_.push_back (InputPair { 2 * p, 2 * p + 1, /*stereo*/ true });
 
         inputMixerPane_ = std::make_unique<InputMixerPane>();
-        inputMixerPane_->setStripCount (numPairs);
         inputMixerPane_->onGain = [this] (int idx, float gain)
         {
             if (auto* s = inputStripAt (idx)) s->setGain (gain);
@@ -1111,7 +1141,10 @@ MainComponent::MainComponent()
                 inputStripSoloed_[static_cast<std::size_t> (idx)] = soloed;
             recomputeInputStripMutes();
         };
+        inputMixerPane_->onToggleStereoMono = [this] (int idx) { toggleInputPairStereo (idx); };
         tabs_.addTab ("Input Mixer", juce::Colours::black, inputMixerPane_.get(), false);
+
+        rebuildInputStrips();
     }
 
     // --- Plugins tab ---
@@ -1383,6 +1416,67 @@ void MainComponent::refreshInputMixer()
         if (auto* s = inputStripAt (i))
             inputMixerPane_->setStripLevelDb (i, linToDb (s->peakLeft()),
                                               linToDb (s->peakRight()));
+}
+
+void MainComponent::rebuildInputStrips()
+{
+    // Mutating the InputMixer channel registry races the audio thread (it reads
+    // channelSources_/channels_ in processDeviceInputs/processBuffer). Bracket
+    // the rebuild with removeAudioCallback/addAudioCallback: JUCE guarantees the
+    // callback is not executing between them, so the maps are mutated safely.
+    audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+
+    for (const auto& id : inputStripChannelIds_)
+        inputMixer_->removeChannel (id);
+    inputStripChannelIds_.clear();
+    inputStripPair_.clear();
+
+    std::vector<InputMixerPane::StripInfo> infos;
+    const auto registerStrip = [&] (int pairIndex, int leftCh, int rightCh,
+                                    bool stereo, const juce::String& name)
+    {
+        const auto chId = inputMixer_->addChannel (InputId (leftCh), SignalType::Audio);
+        inputMixer_->setChannelInputSource (chId, leftCh, rightCh, stereo);
+        inputStripChannelIds_.push_back (chId);
+        inputStripPair_.push_back (pairIndex);
+        infos.push_back ({ name, stereo });
+    };
+
+    for (int p = 0; p < static_cast<int> (inputPairs_.size()); ++p)
+    {
+        const auto& pair = inputPairs_[static_cast<std::size_t> (p)];
+        if (pair.stereo)
+            registerStrip (p, pair.leftCh, pair.rightCh, /*stereo*/ true,
+                           "In " + juce::String (pair.leftCh + 1)
+                           + "-" + juce::String (pair.rightCh + 1));
+        else
+        {
+            registerStrip (p, pair.leftCh, /*right ignored*/ -1, /*stereo*/ false,
+                           "In " + juce::String (pair.leftCh + 1));
+            registerStrip (p, pair.rightCh, /*right ignored*/ -1, /*stereo*/ false,
+                           "In " + juce::String (pair.rightCh + 1));
+        }
+    }
+
+    // A rebuild changes channel identities, so mute/solo do not carry over.
+    inputStripMuted_.assign (inputStripChannelIds_.size(), false);
+    inputStripSoloed_.assign (inputStripChannelIds_.size(), false);
+
+    if (inputMixerPane_ != nullptr) inputMixerPane_->setStrips (infos);
+    recomputeInputStripMutes();
+
+    audioDeviceManager_.addAudioCallback (audioCallback_.get());
+}
+
+void MainComponent::toggleInputPairStereo (int stripIndex)
+{
+    if (stripIndex < 0 || stripIndex >= static_cast<int> (inputStripPair_.size())) return;
+    const int pairIndex = inputStripPair_[static_cast<std::size_t> (stripIndex)];
+    if (pairIndex < 0 || pairIndex >= static_cast<int> (inputPairs_.size())) return;
+
+    auto& pair = inputPairs_[static_cast<std::size_t> (pairIndex)];
+    pair.stereo = ! pair.stereo;
+    rebuildInputStrips();
 }
 
 void MainComponent::refreshPreparation()
