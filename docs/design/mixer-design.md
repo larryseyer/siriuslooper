@@ -78,9 +78,13 @@ bank of mono mics and stereo line sources share one console.
    32 stereo outputs — one per phrase. The mixer never assumes these counts match.
 
 8. **Input source format = mono or stereo, RME-style (per channel).** Strips are
-   **stereo by default**. A per-channel source-format toggle (in the channel's
-   settings/detail, not on the strip face) **splits** a stereo channel into two
-   mono-source channels and **collapses** them back, exactly like RME TotalMix.
+   **stereo by default**. A per-channel source-format toggle **splits** a stereo
+   channel into two mono-source channels and **collapses** them back, exactly
+   like RME TotalMix. The affordance is **gesture-only — right-click (desktop)
+   and long-press (touch)** open a Split/Collapse context menu; there is **no
+   visible toggle element on the strip or in a detail panel** (operator: the
+   strip is already too crowded, especially on iPhone). A drag past an 8 px
+   tolerance cancels the long-press so it never fights the fader.
    A mono-source channel takes one device channel (dual-mono inward) and uses its
    pan to position it; a stereo-source channel takes two device channels (L/R).
    The channel is stereo internally either way (see the hard-invariant section).

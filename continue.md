@@ -12,13 +12,13 @@
 
 > ## ▶ START HERE: the Input Mixer's next slice
 > The Input Mixer tab is live, OTTO-skinned, with **real stereo meters, faders,
-> mute, solo, and the RME mono/stereo split/collapse toggle** (right-click a
-> strip). macOS mic access is fixed (the dev build was being handed silent
-> input). The next concrete work, in order:
+> mute, solo, and the RME mono/stereo split/collapse toggle** (right-click on
+> desktop / long-press on touch). macOS mic access is fixed (the dev build was
+> being handed silent input). The next concrete work, in order:
 >   1. **Pan + width detail panel.** CompactFaderStrip has no pan on its face;
 >      pan/width is the detail-panel layer — bind pan→`ChannelStrip::setPan`.
->      This panel is also the proper home for the mono/stereo toggle (currently
->      a right-click context menu — see below).
+>      (The mono/stereo toggle is **gesture-only** and stays that way — operator
+>      wants no extra strip/panel element; the iPhone strip is already crowded.)
 >   2. **Tape-output routing** (the strip's hidden bottom region): route inputs
 >      → a user-selected number of tapes; pulls in `TapeWriter`/`TapeStore`
 >      wiring (store rooted at `<Sirius>/tapes`) and is where the two input
@@ -26,11 +26,17 @@
 > Full deferral list: `todo.md` (2026-05-20 "Input Mixer — deferred slices").
 > Design: `docs/design/mixer-design.md` (decision 8) + whitepaper §6.1/§6.2.
 >
+> **Operator roadmap (remember across chats):** finish **Input Mixer** →
+> **Output Mixer** (mixdown console, one channel per phrase) → then **discuss
+> transport + other metering** (its own design conversation, not yet specified).
+> Don't jump to transport before the mixers are done unless redirected. Memory:
+> `project_mixer_then_transport_roadmap.md`.
+>
 > **Eyes-on note for the operator:** if meters were flat before, it was the
 > missing macOS mic permission — the relaunched build prompts for it (or grant
 > in System Settings → Privacy & Security → Microphone). Verify: meters move
 > with live input; fader rides level; M mutes; S solos (solo-in-place); and
-> right-clicking a strip offers Split-to-mono / Collapse-to-stereo.
+> right-click (or long-press) a strip offers Split-to-mono / Collapse-to-stereo.
 >
 > ## What shipped this session (all on origin/master)
 > - `c1edc84` **Vendored OTTO `FaderMeter` + `CompactFaderStrip`** into
@@ -61,12 +67,14 @@
 >   (`recomputeInputStripMutes`); meters read `peakLeft/peakRight` on the
 >   existing 30 Hz `timerCallback` (`refreshInputMixer`). AudioCallback Step 2b
 >   calls `processDeviceInputs`. Output combo hidden (routing is a later slice).
-> - `cae0593` **RME mono/stereo split/collapse toggle.** Right-click a strip →
->   "Split to two mono channels" / "Collapse to stereo". `inputPairs_` holds the
+> - `cae0593` + `8c58a35` **RME mono/stereo split/collapse toggle (gesture-only).**
+>   **Right-click (desktop) and long-press (touch, 500 ms, drag-cancels)** open a
+>   "Split to two mono channels" / "Collapse to stereo" menu — no visible toggle
+>   element (operator: strip too crowded on iPhone). `inputPairs_` holds the
 >   per-pair mode; `rebuildInputStrips()` re-registers engine channels (1 stereo
 >   strip or 2 mono-source strips) and rebuilds the pane, **bracketed by
 >   removeAudioCallback/addAudioCallback** so the runtime registry mutation never
->   races the audio thread. The pane catches the right-click via `addMouseListener`
+>   races the audio thread. The pane catches the gestures via `addMouseListener`
 >   so vendored `CompactFaderStrip` stays unmodified.
 > - `5efea7f` **macOS audio input fix.** Added `NSMicrophoneUsageDescription` to
 >   the merged Info.plist + applied the `com.apple.security.device.audio-input`
