@@ -70,6 +70,7 @@ target_compile_features(SiriusUi PUBLIC cxx_std_20)
 
 target_link_libraries(SiriusUi
     PUBLIC  Sirius::Core
+            Sirius::LookAndFeel
             juce::juce_gui_basics
             juce::juce_recommended_config_flags
             juce::juce_recommended_warning_flags)

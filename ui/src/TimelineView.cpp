@@ -1,5 +1,7 @@
 #include "sirius/TimelineView.h"
 
+#include "sirius/SiriusPalette.h"
+
 #include <algorithm>
 #include <limits>
 #include <unordered_map>
@@ -155,8 +157,10 @@ void TimelineView::paint (juce::Graphics& g)
         g.drawHorizontalLine (strip.getBottom() - 1,
                               0.0f, (float) getWidth());
 
-        // Kind colour band on the left edge of the strip — the glance affordance.
-        g.setColour (kindColour (row.kind));
+        // Per-tape colour band on the left edge of the strip — each tape gets
+        // its own OTTO hue (keyed by TapeId, stable across reorders). This is
+        // the glance affordance that ties a row to its pills.
+        g.setColour (palette::tapeColour (row.tapeId.value()));
         g.fillRect (strip.getX(), strip.getY() + 2,
                     4, strip.getHeight() - 4);
 
@@ -211,10 +215,14 @@ void TimelineView::paint (juce::Graphics& g)
                                         std::max (10, x2 - x1 - 2),
                                         content.getHeight() - 8 };
 
-        const auto fill = juce::Colour (0xff2e4a6b);
+        // Each Pill carries its phrase's hue (keyed by the phrase ConstituentId,
+        // so the same phrase is this colour in the tree too). OTTO pill treatment:
+        // a dark fill of the hue with the bright hue as the border.
+        const auto hue  = palette::phraseColour (pill.id.value());
+        const auto fill = hue.darker (0.55f);
         g.setColour (fill);
         g.fillRoundedRectangle (pillRect.toFloat(), 8.0f);
-        g.setColour (fill.brighter (0.4f));
+        g.setColour (hue);
         g.drawRoundedRectangle (pillRect.toFloat(), 8.0f, 1.5f);
 
         // OTTO 4-corner contract — top-left loop count, top-right ↻ toggle,

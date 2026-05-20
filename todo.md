@@ -1,5 +1,18 @@
 # Sirius Looper — Deferred Items
 
+### 2026-05-20 — Pill 4-corner ICONS (OTTO parity)
+- Files: ui/src/TimelineView.cpp (pill drawing ~line 220+), ui/lookandfeel/ (OTTO
+  uses the Phosphor icon font — assets/Fonts/Phosphor in OTTO).
+- What was deferred: the timeline pills currently draw the OTTO 4-corner contract
+  as TEXT (loop count TL, loop-toggle TR, entrance BL, exit BR, name centre). OTTO
+  shows ICONS in the corners instead. Port OTTO's corner icons (likely via OTTO's
+  Phosphor icon font) so Sirius pills match OTTO's pill corner treatment.
+- Why deferred: operator approved the per-entity colour pass and asked to move on
+  to the mixer; icons are a polish step on the pills (part of sub-project E).
+- What's needed to finish: bring OTTO's Phosphor icon font into Sirius's binary
+  data, identify OTTO's corner glyph codepoints, and render them in the pill
+  corners in place of (or alongside) the current text.
+
 ### 2026-05-20 — M8 S6 follow-ups (honest scope, recorded at ship)
 - Files: future — engine/AudioDeviceCalibration (the real measurement routine,
   net-new); engine/CalibrationStore.h (the recalibrationPending seam it feeds);
