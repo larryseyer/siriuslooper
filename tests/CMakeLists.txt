@@ -5,6 +5,7 @@ add_executable(SiriusTests
     PositionTests.cpp
     TimeDomainTests.cpp
     ConstituentTests.cpp
+    ConstituentStateTests.cpp
     ArrangementTests.cpp
     RoleResolverTests.cpp
     CaptureSessionTests.cpp

@@ -25,7 +25,8 @@ add_library(SiriusEngine STATIC
     src/ProcessingChain.cpp
     src/TapeWriter.cpp
     src/NotificationBus.cpp
-    src/SessionSnapshot.cpp)
+    src/SessionSnapshot.cpp
+    src/ConstituentValidator.cpp)
 
 target_include_directories(SiriusEngine PUBLIC include)
 
