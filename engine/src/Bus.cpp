@@ -108,16 +108,19 @@ void Bus::process (float* const* output, int numChannels, int numSamples) const 
     // post-effects signal to the sink. Planar pointers into processedBuffer_;
     // stride is kMaxBusMixSamples per channel. lmcTime=0 parallels the dry
     // path. A false return (queue full / oversized) drops this buffer.
+    // CEILING: the sink's per-message cap is kMaxTapeWriteMessageBytes (32 KB =
+    // 4096 stereo float32 frames), which is LESS than kMaxBusMixSamples (8192).
+    // So at activeChannels==2 a host buffer above 4096 frames returns false and
+    // silently drops the wet buffer. Safe (no overflow), unreachable until the
+    // M9+ production wiring drives the seam — revisit the cap then.
     if (wetSink_ != nullptr)
     {
-        const int wetChannels = numChannels < kMaxBusChannelsHard
-                              ? numChannels : kMaxBusChannelsHard;
         const float* wetPtrs[kMaxBusChannelsHard] {};
-        for (int c = 0; c < wetChannels; ++c)
+        for (int c = 0; c < activeChannels; ++c)
             wetPtrs[c] = processedBuffer_.data()
                        + static_cast<std::size_t> (c) * kMaxBusMixSamples;
         (void) wetSink_->tryEnqueueWet (wetCaptureId_, Rational { 0 },
-                                        wetPtrs, wetChannels, numSamples);
+                                        wetPtrs, activeChannels, clampedSamples);
     }
 
     // Additively accumulate processedBuffer_ into output, then zero

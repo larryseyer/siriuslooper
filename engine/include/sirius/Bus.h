@@ -161,9 +161,9 @@ private:
     BusId             id_;
     BusConfig         config_;
     EffectChain       effectChain_;
-    IEffectChainHost* host_ { nullptr }; ///< M7 S3 — null = M5 inline path.
-    IWetCaptureSink* wetSink_ { nullptr };       ///< M8 S4 — null = no wet capture.
-    ChannelId        wetCaptureId_ { 0 };        ///< tag for enqueued wet buffers.
+    IEffectChainHost* host_          { nullptr }; ///< M7 S3 — null = M5 inline path.
+    IWetCaptureSink* wetSink_        { nullptr }; ///< M8 S4 — null = no wet capture.
+    ChannelId        wetCaptureId_   { 0 };       ///< tag for enqueued wet buffers.
 
     /// Pre-allocated mix scratch. Sized to
     /// `kMaxBusMixSamples * kMaxBusChannelsHard` in the constructor; the
