@@ -1,7 +1,11 @@
 #include "sirius/WetCaptureWriter.h"
 
+#include "sirius/Bus.h"
 #include "sirius/Channel.h"
+#include "sirius/EffectChain.h"
+#include "sirius/IEffectChainHost.h"
 #include "sirius/NotificationBus.h"
+#include "sirius/PluginDescriptor.h"
 #include "sirius/Rational.h"
 #include "sirius/TapeStore.h"
 
@@ -166,6 +170,90 @@ TEST_CASE ("WetCaptureWriter posts DiskPressure on open failure", "[wet-capture]
         if (n.level == NotificationLevel::Error && n.category == Category::DiskPressure)
             sawDiskPressure = true;
     CHECK (sawDiskPressure);
+
+    std::filesystem::remove_all (dir);
+}
+
+namespace
+{
+// Doubles every sample in-place; proves the tap is post-effects.
+struct DoublingHost : sirius::IEffectChainHost
+{
+    bool pumpSlot (std::int64_t, std::size_t,
+                   const float* const* in, float* const* out,
+                   int numChannels, int numSamples) noexcept override
+    {
+        for (int c = 0; c < numChannels; ++c)
+            for (int s = 0; s < numSamples; ++s)
+                out[c][s] = in[c][s] * 2.0f;
+        return true;
+    }
+};
+
+sirius::EffectChain chainWithOneSlot()
+{
+    sirius::EffectChainEntry entry;
+    entry.descriptor.name = "doubler";
+    return sirius::EffectChain{}.withAppended (entry);
+}
+} // namespace
+
+TEST_CASE ("Bus with no wet sink does not capture", "[wet-capture]")
+{
+    const auto dir = makeTempDir ("bus-inert");
+    WetCaptureWriter writer (dir, 5ms, 64);
+
+    Bus bus (BusId { 1 }, BusConfig { 2, "Reverb" });
+    // No setWetCaptureSink call.
+
+    const int n = 4;
+    for (int c = 0; c < 2; ++c)
+    {
+        float* mix = bus.mixBufferChannel (c);
+        for (int s = 0; s < n; ++s) mix[s] = 0.1f;
+    }
+    std::vector<float> outL (n, 0.0f), outR (n, 0.0f);
+    float* out[2] { outL.data(), outR.data() };
+    bus.process (out, 2, n);
+
+    REQUIRE_FALSE (std::filesystem::exists (writer.flushChannel (ChannelId { 1 })));
+    std::filesystem::remove_all (dir);
+}
+
+TEST_CASE ("Bus wet sink captures the post-effects signal", "[wet-capture]")
+{
+    const auto dir = makeTempDir ("bus-seam");
+    const auto storeDir = dir / "tapes";
+    persistence::TapeStore store (juce::File (juce::String (storeDir.string())));
+    WetCaptureWriter writer (dir, 5ms, 64);
+
+    DoublingHost host;
+    Bus bus (BusId { 1 }, BusConfig { 2, "Reverb" });
+    bus.setEffectChain (chainWithOneSlot());
+    bus.setEffectChainHost (&host);
+    bus.setWetCaptureSink (&writer, ChannelId { 11 });
+
+    const int n = 3;
+    for (int c = 0; c < 2; ++c)
+    {
+        float* mix = bus.mixBufferChannel (c);
+        for (int s = 0; s < n; ++s) mix[s] = 0.25f; // dry input
+    }
+    std::vector<float> outL (n, 0.0f), outR (n, 0.0f);
+    float* out[2] { outL.data(), outR.data() };
+    bus.process (out, 2, n);
+
+    const juce::String hash = writer.finalizeToStore (ChannelId { 11 }, store);
+    REQUIRE (hash.isNotEmpty());
+
+    juce::MemoryBlock back;
+    REQUIRE (store.read (hash, back));
+    std::vector<float> got (back.getSize() / sizeof (float));
+    std::memcpy (got.data(), back.getData(), got.size() * sizeof (float));
+
+    // Wet = dry * 2 = 0.5 on every interleaved sample (6 = 3 frames × 2 ch).
+    REQUIRE (got.size() == static_cast<std::size_t> (n * 2));
+    for (float v : got) REQUIRE (v == 0.5f);
 
     std::filesystem::remove_all (dir);
 }

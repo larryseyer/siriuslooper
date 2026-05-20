@@ -1,5 +1,8 @@
 #include "sirius/Bus.h"
 
+#include "sirius/IWetCaptureSink.h"
+#include "sirius/Rational.h"
+
 #include <juce_core/juce_core.h>
 
 #include <algorithm>
@@ -99,6 +102,22 @@ void Bus::process (float* const* output, int numChannels, int numSamples) const 
         (void) host_->pumpSlot (id_.value(), slotIdx,
                                 processedPtrs, processedPtrs,
                                 activeChannels, clampedSamples);
+    }
+
+    // M8 S4 — wet-capture tap. Default-off (null sink). When set, hand the
+    // post-effects signal to the sink. Planar pointers into processedBuffer_;
+    // stride is kMaxBusMixSamples per channel. lmcTime=0 parallels the dry
+    // path. A false return (queue full / oversized) drops this buffer.
+    if (wetSink_ != nullptr)
+    {
+        const int wetChannels = numChannels < kMaxBusChannelsHard
+                              ? numChannels : kMaxBusChannelsHard;
+        const float* wetPtrs[kMaxBusChannelsHard] {};
+        for (int c = 0; c < wetChannels; ++c)
+            wetPtrs[c] = processedBuffer_.data()
+                       + static_cast<std::size_t> (c) * kMaxBusMixSamples;
+        (void) wetSink_->tryEnqueueWet (wetCaptureId_, Rational { 0 },
+                                        wetPtrs, wetChannels, numSamples);
     }
 
     // Additively accumulate processedBuffer_ into output, then zero

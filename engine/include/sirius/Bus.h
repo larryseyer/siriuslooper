@@ -12,6 +12,8 @@
 namespace sirius
 {
 
+class IWetCaptureSink;
+
 /// Small POD describing the static shape of a Bus. Configured set-once on
 /// the message thread before the audio thread ever reads the owning Bus;
 /// mutating these fields after the audio thread has been started is a
@@ -97,6 +99,20 @@ public:
 
     IEffectChainHost* effectChainHost() const noexcept { return host_; }
 
+    /// Message-thread setter — installs the wet-capture sink (M8 S4). When set,
+    /// `process` enqueues the post-effects signal (`processedBuffer_`) tagged
+    /// with `captureId` after the effect chain runs. Non-owning, set-once
+    /// before the audio thread starts (same collaborator contract as
+    /// `setEffectChainHost`); the sink must outlive this Bus. `nullptr`
+    /// (default) disables capture with zero hot-path cost.
+    void setWetCaptureSink (IWetCaptureSink* sink, ChannelId captureId) noexcept
+    {
+        wetSink_ = sink;
+        wetCaptureId_ = captureId;
+    }
+
+    IWetCaptureSink* wetCaptureSink() const noexcept { return wetSink_; }
+
     /// Audio-thread mix entry point. Two paths:
     ///
     ///  - **M5 inline path** (taken when no `IEffectChainHost` is bound,
@@ -146,6 +162,8 @@ private:
     BusConfig         config_;
     EffectChain       effectChain_;
     IEffectChainHost* host_ { nullptr }; ///< M7 S3 — null = M5 inline path.
+    IWetCaptureSink* wetSink_ { nullptr };       ///< M8 S4 — null = no wet capture.
+    ChannelId        wetCaptureId_ { 0 };        ///< tag for enqueued wet buffers.
 
     /// Pre-allocated mix scratch. Sized to
     /// `kMaxBusMixSamples * kMaxBusChannelsHard` in the constructor; the
