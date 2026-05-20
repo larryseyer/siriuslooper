@@ -12,6 +12,21 @@ channel, bus, send, output, and master is a stereo pair. The mixer never present
 a mono channel or a mono bus. Engine code, routing, and metering all assume
 stereo pairs.
 
+The channel is *always stereo internally*. What the operator chooses is each
+channel's **input source format** (an input-layer decision, whitepaper §6.2):
+
+- **Stereo source** — two device channels map to the channel's L and R.
+- **Mono source** — one device channel, presented dual-mono from the channel
+  boundary inward and positioned with **pan**.
+
+Per the **RME TotalMix** convention, a stereo channel **splits** into two
+independent mono-source channels and **collapses** back into one. Default is
+stereo strips (the common stereo-interface case stays clean); the split/collapse
+toggle lives in the channel's settings/detail, never as a permanent button on the
+strip face. Each split strip is still a stereo channel internally, fed by one
+device input. This keeps the stereo invariant absolute internally while letting a
+bank of mono mics and stereo line sources share one console.
+
 ## Decisions made
 
 1. **Two separate mixers, two tabs.** "Input Mixer" and "Output Mixer" are
@@ -61,6 +76,20 @@ stereo pairs.
    output count are all independent. Example (operator): 32 stereo input channels
    with only 1 tape enabled; then 32 phrases created and the output mixer set to
    32 stereo outputs — one per phrase. The mixer never assumes these counts match.
+
+8. **Input source format = mono or stereo, RME-style (per channel).** Strips are
+   **stereo by default**. A per-channel source-format toggle (in the channel's
+   settings/detail, not on the strip face) **splits** a stereo channel into two
+   mono-source channels and **collapses** them back, exactly like RME TotalMix.
+   A mono-source channel takes one device channel (dual-mono inward) and uses its
+   pan to position it; a stereo-source channel takes two device channels (L/R).
+   The channel is stereo internally either way (see the hard-invariant section).
+   Engine consequence: a channel carries an **input-source descriptor** (1 device
+   channel, or an L/R pair); the input dispatch gathers that channel's 1–2 device
+   channels into a stereo block before `ChannelStrip<Audio>::process` (gain-only
+   for a mono block, equal-power pan for a stereo block). Build order: stereo
+   default + live meters first; the split/collapse toggle is the next slice (the
+   engine source model already supports both, so the toggle is a UI re-layout).
 
 ## Engine reality (from the GUI seam audit)
 
