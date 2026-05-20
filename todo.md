@@ -37,6 +37,39 @@
 - What's needed to finish: (1) wire RenderPipeline into the audio callback with
   the validation; (2) decide descendant-warning policy + test it.
 
+### 2026-05-20 — M8 S4 follow-ups (non-blocking, surfaced by spec scope + final review)
+- Files: engine/src/Bus.cpp, engine/include/sirius/Bus.h,
+  engine/include/sirius/WetCaptureWriter.h, engine/include/sirius/TapeWriter.h,
+  app/MainComponent.cpp (future).
+- What was deferred:
+  (1) The Bus wet-capture seam (setWetCaptureSink + the processedBuffer_ tap) is
+  set-once plumbing, default-off, and NOT yet bound to any production
+  capture-arm flow. Nothing in the operator path calls setWetCaptureSink, and no
+  WetCaptureWriter is owned/finalized by MainComponent. The seam is exercised
+  only by tests. Wire it when the capture flow that decides "this
+  EffectChainEntry is ArchivalMode::WetCapture, capture its bus output" lands.
+  (2) Per-Constituent effect-chain routing (whitepaper §6.6) is M9+; the
+  structure-layer TapeId -> wet-tape-hash mapping is M11 SAF — same deferral as
+  the dry tape's TapeId->hash mapping. Until then a finalized wet tape lives in
+  TapeStore content-addressed but is not referenced by any Constituent.
+  (3) WetCaptureWriter duplicates TapeWriter's worker-drain loop (the shared
+  concurrency primitive LockFreeSpscQueue is reused; the ~60-line worker/flush
+  body is parallel). A later refactor could extract a shared partial-writer core.
+  Deferred to avoid touching proven M3 RT code in this session.
+  (4) ALIGNMENT: WetWriteMessage::samples got `alignas(alignof(float))` so the
+  reinterpret_cast<float*> is well-defined regardless of field layout.
+  TapeWriteMessage (engine/include/sirius/TapeWriter.h) has the IDENTICAL cast
+  pattern (inherited by InputMixer.cpp) WITHOUT the alignas — currently safe only
+  because `samples` happens to land at a float-aligned offset. Bring
+  TapeWriteMessage in line (add the same alignas) when next touching TapeWriter,
+  so the two message types stay consistent.
+- Why deferred: (1)+(2) depend on milestones (capture-arm flow, M9+/M11) that
+  don't exist yet; (3) is a refactor against working RT code; (4) is a
+  defensive-consistency fix on out-of-scope M3 code.
+- What's needed to finish: (1) own a WetCaptureWriter in MainComponent + wire
+  setWetCaptureSink from the WetCapture-mode decision; (2) M9+/M11; (3) extract
+  shared writer core; (4) add alignas to TapeWriteMessage::samples.
+
 ### 2026-05-17 — V7 alignment milestone tracking — 24 milestones, M1 ready to start
 
 - **Status:** Plan spec'd in full at

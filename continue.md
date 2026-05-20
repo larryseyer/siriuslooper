@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-20 (M8 S3 fully shipped; next move = M8 S4)
+# Session Continuation — 2026-05-20 (M8 S4 fully shipped; next move = M8 S6)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,7 +8,83 @@
 
 ---
 
-## RESUME HERE (2026-05-20 — M8 S3 fully shipped + pushed; next move = M8 S4 WetCapture writer)
+## RESUME HERE (2026-05-20 — M8 S4 fully shipped + pushed; next move = M8 S6 LMC calibration recovery)
+
+> ## ✅ M8 S4 fully shipped end-to-end (orchestrator+subagents execution)
+>
+> M8 S4 (WetCaptureWriter mechanism + tested Bus seam; V7 plan lines 565/581/603)
+> is on `origin/master`. 4 implementation commits + 1 ceiling-comment, each gated
+> by review — Task 4 (the production `Bus` change) got the full two-stage spec +
+> code-quality review plus a final holistic opus review ("ready to push"); the
+> test-only tasks (T2/T3) were verified directly (verbatim from the reviewed
+> plan, real read-back assertions). Clean rebuild from `rm -rf build`; ctest
+> **442/443** pass — the 1 non-pass is `MainComponentPluginEditorTests_NOT_BUILT`
+> (the lifecycle exe isn't built by the `SiriusTests` target; built+run separately
+> by `bash/test-s7.sh`). +8 new `[wet-capture]` cases (33 assertions).
+>
+> **What landed:**
+> - `engine/include/sirius/IWetCaptureSink.h` — pure JUCE-free audio-thread
+>   interface (parallel to `IEffectChainHost`): `tryEnqueueWet(ChannelId, Rational,
+>   const float* const*, int, int) noexcept`. Sink owns the interleave; `Bus`
+>   never names the wire layout.
+> - `engine/include/sirius/WetCaptureWriter.h` + `.cpp` — captures wet
+>   (post-effects) audio to `<channelId>.wet.tape.partial`, then `finalizeToStore`
+>   into the content-addressed `TapeStore` (`<sha256>.tape`). A faithful parallel
+>   of M3 `TapeWriter` (lock-free SPSC enqueue → worker drain → partial → finalize),
+>   reusing `LockFreeSpscQueue`. `WetWriteMessage` POD carries interleaved float32
+>   with `alignas(alignof(float))` samples (makes the `reinterpret_cast<float*>`
+>   well-defined; the dry `TapeWriteMessage` only memcpys so it didn't need this).
+>   `Error/DiskPressure` on I/O failure via `setNotificationBus`, same as TapeWriter.
+> - `engine/Bus` — `setWetCaptureSink(IWetCaptureSink*, ChannelId)` (set-once,
+>   non-owning, mirrors `setEffectChainHost`). `Bus::process` taps `processedBuffer_`
+>   AFTER the effect chain (genuinely post-effects, proven by a DoublingHost test:
+>   dry 0.25 → wet 0.5), default-off, single null-check on the hot path, clamped to
+>   `activeChannels`/`clampedSamples`. RT contract (`const noexcept`, no
+>   alloc/lock/throw/IO) preserved; `[bus]` noexcept static_assert still holds.
+>   Bus.cpp:107 documents the 4096-stereo-frame effective ceiling
+>   (kMaxTapeWriteMessageBytes < kMaxBusMixSamples) — safe drop, revisit at M9+.
+> - docs: spec `2026-05-20-m8-s4-design.md`, plan `2026-05-20-m8-s4-plan.md`.
+>
+> **Honest scope notes (also in `todo.md` 2026-05-20 M8 S4 entry):**
+> - The Bus seam is set-once plumbing, **default-off, NOT bound to any production
+>   capture-arm flow** — nothing calls `setWetCaptureSink` outside tests, and
+>   `MainComponent` owns no `WetCaptureWriter`. Exercised only by tests. Wire when
+>   the "this `EffectChainEntry` is `ArchivalMode::WetCapture` → capture its bus
+>   output" decision flow lands. This is why M8 S5 (more WetCapture) is effectively
+>   absorbed: the remaining WetCapture work is production wiring that depends on
+>   M9+ machinery, so the next *buildable* V7 session is S6.
+> - Per-Constituent effect-chain routing → M9+; structure-layer `TapeId → wet-hash`
+>   mapping → M11 SAF (same deferral as the dry tape's `TapeId → hash`).
+> - `TapeWriteMessage` has the identical `reinterpret_cast` pattern WITHOUT
+>   `alignas` — bring it in line when next touching `TapeWriter` (todo item 4).
+>
+> **The single most important next move:** start M8 S6 (V7 plan line 602: LMC
+> calibration corruption recovery — on session load, validate the calibration-table
+> checksum; on failure, trigger fresh loopback calibration via the existing
+> `engine/.../AudioDeviceCalibration`; emit a NotificationBus event during
+> recalibration). Spec not written — run `superpowers:brainstorming` against V7
+> plan line 568 + line 602, then `writing-plans`, then orchestrator+subagents.
+
+### First moves for the next chat (M8 S6)
+
+1. **Sanity:** `git status` clean, `git log --oneline -8` shows the M8 S4 tail on
+   `origin/master`.
+2. **Read** `engine/include/sirius/AudioDeviceCalibration.h` + `.cpp` for the
+   calibration table, any existing checksum, and the loopback-calibration entry
+   point; and the M8 S4 spec/plan for the review-cadence pattern.
+3. **Check `todo.md`** for the M8 S4 follow-ups (seam wiring, alignas-on-
+   `TapeWriteMessage`), the M8 S3 follow-ups, and the still-open M8 S2 tri-state
+   `requestStateSave/Load` deferral.
+4. **Brainstorm M8 S6**, then `writing-plans`, then `subagent-driven-development`.
+5. **Known pre-existing test note:** `bash/test-s7.sh`'s "openPluginEditor …
+   spawns a child" case fails with `childPid -1` in a bare `rm -rf build` tree
+   because the spawn fixture needs the built `.app`/host in scope (the host binary
+   itself runs fine). S4 touched no spawn-path files — environmental, pre-existing,
+   not an S4 regression.
+
+---
+
+## HISTORICAL — M8 S3 (superseded 2026-05-20 — M8 S4 fully shipped)
 
 > ## ✅ M8 S3 fully shipped end-to-end (orchestrator+subagents execution)
 >
