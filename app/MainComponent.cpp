@@ -1,5 +1,6 @@
 #include "MainComponent.h"
 
+#include "sirius/ConstituentValidator.h"
 #include "sirius/PerformanceViewState.h"
 #include "sirius/PreparationView.h"
 #include "sirius/PreparationViewState.h"
@@ -1597,6 +1598,18 @@ void MainComponent::chooseFileAndLoad()
                 if (notificationBus_ != nullptr)
                     sirius::verifyVersionPinningOnLoad (
                         *loaded, effectChainHost_, slotLookup(), *notificationBus_);
+                // M8 S3: derive Constituent state and warn on Broken/Invalid
+                // nodes (white paper §17.7). The session still loads — the
+                // performer is informed and can repair. Broken detection uses
+                // the honest always-true resolver until the TapeId->content
+                // manifest exists (M8 S7–S8); structural Invalid is live now.
+                if (notificationBus_ != nullptr)
+                {
+                    const auto validation =
+                        sirius::validate (*loaded, sirius::alwaysResolves);
+                    sirius::postConstituentStateNotifications (
+                        *loaded, validation, *notificationBus_);
+                }
                 // The white paper Part 14.7 rule: load is an edit; preserve
                 // the existing undo history rather than wiping it. The
                 // operator can undo back to whatever was on screen before.

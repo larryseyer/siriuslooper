@@ -7,11 +7,14 @@
 #include "sirius/Constituent.h"
 #include "sirius/RenderPipeline.h"
 #include "sirius/TapeReference.h"
+#include "sirius/INotificationSink.h"
 #include "sirius/TempoMap.h"
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <memory>
+#include <string>
+#include <vector>
 
 using sirius::Constituent;
 using sirius::ConstituentId;
@@ -41,6 +44,20 @@ namespace
         const Constituent session { ConstituentId (id), Position(), Position (length) };
         return session.withChildAdded (std::move (child));
     }
+
+    /// Minimal recording sink: captures level/category/message for assertions.
+    struct RecordingSink : sirius::INotificationSink
+    {
+        struct Entry { sirius::NotificationLevel level; sirius::Category category; std::string message; };
+        std::vector<Entry> entries;
+
+        bool post (sirius::NotificationLevel level, sirius::Category category,
+                   const char* message) noexcept override
+        {
+            entries.push_back ({ level, category, message ? message : "" });
+            return true;
+        }
+    };
 }
 
 TEST_CASE ("a well-formed tree validates entirely Valid", "[constituent-state]")
@@ -164,4 +181,23 @@ TEST_CASE ("an Invalid parent silences its whole subtree", "[constituent-state][
 
     // The Invalid phrase is skipped, so its grandchild loop never sounds.
     CHECK (reads.empty());
+}
+
+TEST_CASE ("load posts a Warning per Broken/Invalid node, none for Valid", "[constituent-state]")
+{
+    Constituent session (ConstituentId (1), Position(), Position (Rational (8)));
+    session = session.withChildAdded (makeLoop (10, Rational (0), Rational (8), 100)); // Broken below
+    session = session.withChildAdded (makeLoop (11, Rational (0), Rational (8), 200)); // Valid
+
+    const auto resolver = [] (const TapeReference& ref) { return ref.tape != TapeId (100); };
+    const auto validation = sirius::validate (session, resolver);
+
+    RecordingSink sink;
+    sirius::postConstituentStateNotifications (session, validation, sink);
+
+    REQUIRE (sink.entries.size() == 1);
+    CHECK (sink.entries[0].level == sirius::NotificationLevel::Warning);
+    CHECK (sink.entries[0].category == sirius::Category::StateRepair);
+    CHECK (sink.entries[0].message.find ("broken") != std::string::npos);
+    CHECK (sink.entries[0].message.find ("10") != std::string::npos);
 }
