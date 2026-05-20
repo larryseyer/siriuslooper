@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-20 (M8 S6 fully shipped; next move = M8 S7–S8)
+# Session Continuation — 2026-05-20 (RESEQUENCED: pulling the white-paper mixer GUI forward from its late milestone slot; next = build Input Mixer)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -7,6 +7,85 @@
 > *state*: what just shipped and what's queued next.
 
 ---
+
+## RESUME HERE (2026-05-20 — PIVOT to OTTO-parity GUI; next = build Input Mixer first slice)
+
+> ## ⚠️ DIRECTION CHANGE — the engine-milestone march (M1–M8) is PAUSED
+>
+> The operator stopped the V7 engine milestones: the app was engine-rich but
+> GUI-poor and **not operator-testable** (no visible mixers, plugins won't load,
+> stale GUI). New mission: **make Sirius look and work like OTTO** (sister apps).
+> The engine (449 tests, audio flows device-in→mixers→out) stays; the work now is
+> SURFACING it in an OTTO-skinned GUI. M8 S7–S8 (tape reachability) and the rest
+> of V7 are deferred until the operability program is done.
+>
+> ### The OTTO-parity program (decomposed, locked order)
+> - **A — OTTO L&F foundation** ✅ SHIPPED. Vendored OTTO `OTTOLookAndFeel` +
+>   `OTTOColours` + fonts into `ui/lookandfeel/` + `assets/`, `SiriusBinaryData`
+>   target (namespace kept `OTTOBinaryData` so the .cpp is zero-edit), applied
+>   app-wide via `setDefaultLookAndFeel` in `app/Main.cpp`. Decision: COPY not
+>   alias (independent shippable products; OTTO untouched); shared submodule is
+>   the eventual form. Spec: `docs/superpowers/specs/2026-05-20-otto-laf-foundation-design.md`.
+> - **(E, pulled forward) per-entity colour method** ✅ SHIPPED. `ui/include/sirius/SiriusPalette.h`:
+>   tapes/phrases/loops/pills coloured from OTTO's 8 player hues, keyed by STABLE
+>   id (same entity = same colour in tree + timeline), loops = shades of their
+>   phrase hue. Documented in `docs/design/sirius-colour-method.md`.
+> - **Audio device → Settings tab** ✅ SHIPPED. New `SettingsPane` holds the device
+>   picker + monitoring toggle; Preparation reclaimed ~244px.
+> - **B — Mixer** ← NEXT, designed + documented, not built. See below.
+> - C — built-in EQ/comp/FX DSP (ported from OTTO). D — transport + beat counter.
+>   E — pills/phrases polish (incl. 4-corner ICONS, in todo.md). F — tape capture
+>   wiring (→`<Sirius>/tapes`) + fix plugin loading (M7 S9 XPC).
+>
+> ### Mixer design (sub-project B) — LOCKED, see `docs/design/mixer-design.md`
+> - **Two separate mixers, two tabs** ("Input Mixer", "Output Mixer"), never combined.
+> - **Input Mixer = capture console:** inputs are physical/file ONLY (NEVER tapes);
+>   one channel per selected physical input; process (gain/pan/FX/plugins) → **route
+>   single or combined inputs OUT TO a user-selected number of tapes**.
+> - **Output Mixer = mixdown console:** one channel per phrase; process → route each
+>   phrase to its own stereo output / a stereo bus / a single stereo master.
+> - **HARD INVARIANT: stereo only, no mono anything** (Sirius + OTTO). Added to
+>   whitepaper V7 Part VI (§6.1 tail).
+> - Net-new engine for B: **peak/RMS metering** + **mute/solo** (ChannelStrip has
+>   only gain/pan today). Reuse: gain/pan, `OutputMixer` bus/sends, OOP plugin host.
+> - **Build order: Input Mixer FIRST** (its meters show real signal today; Output
+>   Mixer meters stay silent until the phrase→audio render path is wired — that
+>   render-in-callback is NOT wired yet).
+> - **First buildable slice (operator-approved):** per-input strips with live dual
+>   meters + fader(gain) + pan + mute + solo, AND output routing to the
+>   user-selected number of tapes (pulls in tape-capture wiring: `TapeWriter`/
+>   `TapeStore` are NOT wired into the app yet; root the store at `<Sirius>/tapes`).
+>
+> ### Concrete next steps for the Input Mixer build
+> 1. Port OTTO `FaderMeter` + `CompactFaderStrip` into `ui/lookandfeel/` (same COPY
+>    approach as the L&F; watch the `TouchComboBox` dep — substitute `juce::ComboBox`).
+> 2. Engine: add peak/RMS metering (compute in `InputMixer`/`Bus` render, publish via
+>    atomics, UI reads ~30 Hz) and mute/solo on `ChannelStrip` (TDD — engine is
+>    headless-testable).
+> 3. Register input channels in `InputMixer` to match the device's active inputs.
+> 4. New `InputMixerView` + "Input Mixer" tab in `MainComponent`; wire strips↔engine.
+> 5. Tape output routing + wire `TapeWriter`/`TapeStore` (`<Sirius>/tapes`).
+>
+> ### Critical operational facts
+> - **Canonical app:** `build/app/SiriusLooper_artefacts/Release/Sirius Looper.app`
+>   (CMake/Ninja, same path every build, ONLY copy on disk — `build-xcode` deleted).
+>   **Desktop alias `Sirius Looper` → this** (a STALE Finder alias to a deleted
+>   build was why the operator "saw no changes" for a while). Operator launches via
+>   the Desktop alias; I can't keep the GUI alive from CLI — eyes-on is the operator's.
+> - **OTTO at `/Users/larryseyer/AudioDevelopment/OTTO` is READ-ONLY reference** —
+>   copy FROM it, never edit it.
+> - **Deferred bugs:** (1) M8 S6 calibration sidecar isn't written on launch even
+>   though MainComponent fully constructs + app not sandboxed — unresolved, low
+>   priority; the write code now checks results + logs. (2) M7 S9 plugin loading
+>   (in-app XPC bridge can't broker across engine+child) — its own session,
+>   recommended fix = engine-as-XPC-server. (3) pill 4-corner ICONS — todo.md.
+> - Commits this session pushed to origin/master through `1ec7ddd`. ctest was
+>   449/450 before the GUI work (the L&F/UI changes are operator-verified, not
+>   unit-tested — same status as other GUI wiring).
+
+---
+
+## HISTORICAL — M8 S6 (superseded 2026-05-20 by the OTTO-parity pivot)
 
 ## RESUME HERE (2026-05-20 — M8 S6 fully shipped + pushed; next move = M8 S7–S8 tape reachability scan)
 
