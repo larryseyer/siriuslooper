@@ -95,3 +95,46 @@ TEST_CASE ("WetCaptureWriter flushChannel returns a complete ordered partial", "
 
     std::filesystem::remove_all (dir);
 }
+
+TEST_CASE ("WetCaptureWriter finalizeToStore round-trips through TapeStore", "[wet-capture]")
+{
+    const auto dir = makeTempDir ("finalize");
+    const auto storeDir = dir / "tapes";
+    persistence::TapeStore store (juce::File (juce::String (storeDir.string())));
+
+    WetCaptureWriter writer (dir, 5ms, 64);
+
+    std::vector<float> left  { 0.25f, 0.50f };
+    std::vector<float> right { 0.75f, 1.00f };
+    const float* chans[2] { left.data(), right.data() };
+    REQUIRE (writer.tryEnqueueWet (ChannelId { 9 }, Rational { 0 }, chans, 2, 2));
+
+    const juce::String hash = writer.finalizeToStore (ChannelId { 9 }, store);
+    REQUIRE (hash.isNotEmpty());
+    REQUIRE (store.exists (hash));
+
+    // Partial is gone after finalize.
+    REQUIRE_FALSE (std::filesystem::exists (dir / "9.wet.tape.partial"));
+
+    // Stored bytes equal the interleaved payload.
+    juce::MemoryBlock back;
+    REQUIRE (store.read (hash, back));
+    std::vector<float> got (back.getSize() / sizeof (float));
+    std::memcpy (got.data(), back.getData(), got.size() * sizeof (float));
+    const std::vector<float> expected { 0.25f, 0.75f, 0.50f, 1.00f };
+    REQUIRE (got == expected);
+
+    std::filesystem::remove_all (dir);
+}
+
+TEST_CASE ("WetCaptureWriter finalizeToStore returns empty when nothing captured", "[wet-capture]")
+{
+    const auto dir = makeTempDir ("finalize-empty");
+    const auto storeDir = dir / "tapes";
+    persistence::TapeStore store (juce::File (juce::String (storeDir.string())));
+    WetCaptureWriter writer (dir, 5ms, 64);
+
+    REQUIRE (writer.finalizeToStore (ChannelId { 2 }, store).isEmpty());
+
+    std::filesystem::remove_all (dir);
+}
