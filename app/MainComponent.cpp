@@ -426,7 +426,8 @@ class MainComponent::InputMixerPane final : public juce::Component,
 {
 public:
     /// One strip's display state: its name and whether its source pair is in
-    /// stereo mode (drives the right-click "Split / Collapse" label).
+    /// stereo mode (drives the Split/Collapse menu wording). Stereo = one strip;
+    /// mono = two strips (the pair's L and R halves).
     struct StripInfo { juce::String name; bool stereo; };
 
     // Gesture relays (idx = strip index). Set by MainComponent.
@@ -1175,7 +1176,10 @@ MainComponent::MainComponent()
         for (; ch + 1 < numInputs; ch += 2)
             inputPairs_.push_back (InputPair { ch, ch + 1, /*stereo*/ true });
         if (ch < numInputs)
-            inputPairs_.push_back (InputPair { ch, ch, /*stereo*/ false });
+            // A single physical input (built-in mono mic, or an odd leftover):
+            // default to one stereo (dual-mono) strip; toggling to mono yields
+            // two independently-pannable strips of the same source.
+            inputPairs_.push_back (InputPair { ch, ch, /*stereo*/ true });
 
         inputMixerPane_ = std::make_unique<InputMixerPane>();
         inputMixerPane_->onGain = [this] (int idx, float gain)
@@ -1501,21 +1505,34 @@ void MainComponent::rebuildInputStrips()
     for (int p = 0; p < static_cast<int> (inputPairs_.size()); ++p)
     {
         const auto& pair = inputPairs_[static_cast<std::size_t> (p)];
-        if (pair.leftCh == pair.rightCh)
-            // Single mono device channel (e.g. a built-in mono mic): one
-            // mono-source strip, dual-mono to both sides. Not splittable.
-            registerStrip (p, pair.leftCh, /*right ignored*/ -1, /*stereo*/ false,
-                           "In " + juce::String (pair.leftCh + 1));
-        else if (pair.stereo)
+        const bool single = (pair.leftCh == pair.rightCh);   // one physical input
+        if (pair.stereo)
+        {
+            // STEREO → one strip. A single physical input is dual-mono (L == R
+            // source); a true pair takes its two device channels.
             registerStrip (p, pair.leftCh, pair.rightCh, /*stereo*/ true,
-                           "In " + juce::String (pair.leftCh + 1)
-                           + "-" + juce::String (pair.rightCh + 1));
+                           single ? "In " + juce::String (pair.leftCh + 1)
+                                  : "In " + juce::String (pair.leftCh + 1)
+                                    + "-" + juce::String (pair.rightCh + 1));
+        }
         else
         {
-            registerStrip (p, pair.leftCh, /*right ignored*/ -1, /*stereo*/ false,
-                           "In " + juce::String (pair.leftCh + 1));
-            registerStrip (p, pair.rightCh, /*right ignored*/ -1, /*stereo*/ false,
-                           "In " + juce::String (pair.rightCh + 1));
+            // MONO → two strips (the stereo channel's L and R halves). For a
+            // single physical input both halves carry the same dual-mono signal,
+            // independently pannable; a true pair splits to its two channels.
+            if (single)
+            {
+                const auto base = juce::String (pair.leftCh + 1);
+                registerStrip (p, pair.leftCh, -1, /*stereo*/ false, "In " + base + "L");
+                registerStrip (p, pair.leftCh, -1, /*stereo*/ false, "In " + base + "R");
+            }
+            else
+            {
+                registerStrip (p, pair.leftCh,  -1, /*stereo*/ false,
+                               "In " + juce::String (pair.leftCh + 1));
+                registerStrip (p, pair.rightCh, -1, /*stereo*/ false,
+                               "In " + juce::String (pair.rightCh + 1));
+            }
         }
     }
 
@@ -1544,8 +1561,7 @@ void MainComponent::toggleInputPairStereo (int stripIndex)
     if (pairIndex < 0 || pairIndex >= static_cast<int> (inputPairs_.size())) return;
 
     auto& pair = inputPairs_[static_cast<std::size_t> (pairIndex)];
-    if (pair.leftCh == pair.rightCh) return;   // single mono channel — nothing to split
-    pair.stereo = ! pair.stereo;
+    pair.stereo = ! pair.stereo;   // stereo (1 strip) ↔ mono (2 strips), every input
     rebuildInputStrips();
 }
 
