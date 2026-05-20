@@ -1,5 +1,21 @@
 # Sirius Looper — Deferred Items
 
+### 2026-05-19 — Render-to-parts / timeline / finished-song (MAJOR design topic, own session)
+- Files: future — engine/RenderPipeline + new "part" materialization +
+  clip/timeline arrangement layer; reconcile with core/Arrangement.h and the
+  V7 milestone roadmap (docs/superpowers/plans/2026-05-17-v7-alignment.md).
+- What was deferred: the operator's end-goal — Sirius records everything but
+  keeps only what's promoted; defined phrases get RENDERED into keepable
+  "parts"/"pills", arranged on a timeline, bounced into a finished song
+  ("Ableton Live territory"). The current RenderPipeline answers "what sounds
+  at LMC time T"; the goal adds render-to-persisted-asset + arrangement/bounce.
+- Why deferred: surfaced mid-flight during M8 S3 execution; per the
+  defer-big-design rule it gets its own brainstorm→spec→plan session rather
+  than being folded into M8.
+- What's needed to finish: dedicated session — brainstorm the part/clip/timeline
+  model, place it in the milestone roadmap, then spec. Captured in auto-memory
+  as project_render_to_parts_timeline.md.
+
 ### 2026-05-17 — V7 alignment milestone tracking — 24 milestones, M1 ready to start
 
 - **Status:** Plan spec'd in full at

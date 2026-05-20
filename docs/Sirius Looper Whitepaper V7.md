@@ -633,6 +633,12 @@ The performer's musical content is portable via stems and MIDI files; the archit
 
 This is a deliberate refusal to chase the moving target of DAW interoperability. Project-exchange formats change with every major DAW release; chasing them would consume implementation effort that belongs elsewhere, and would mislead users about how lossless the exchange actually is. Rendered stems are lossless in the only sense that matters — they sound exactly like the production — and they play in every tool ever written. That is the right export contract.
 
+### Future direction: parts, timeline, and song rendering
+
+A forward direction under exploration extends rendering beyond export-to-file. Recording everything is not the same as keeping everything: the always-on tapes are the raw substrate, and the creative act is selecting from it and committing. Defined phrases are rendered into keepable **parts** ("pills") that the performer arranges on a timeline, which is in turn rendered into a finished song — an arrangement environment reached from the capture-and-loop foundation rather than a linear-DAW one. In this sense render becomes a *mode* that stops the always-on capture tapes and commits a selection of them to durable, arrangeable assets.
+
+This direction must be reconciled with the export philosophy above. Section 6.11 today frames render as "just playback aimed at a file" and rejects the fixed clip-timeline assumptions of DAW project-exchange. Whether a Sirius timeline-of-parts preserves those same principles — phrase identity, role substitution, polymetric coexistence — or revises them is an open question reserved for a dedicated design pass. The working record of the direction and its open questions lives in `docs/design/render-and-arrangement-vision.md`.
+
 ## 6.12 MIDI 2.0 integration
 
 §6.1 established that the tape format is MIDI 2.0-native. This subsection specifies what that means at the implementation level.
