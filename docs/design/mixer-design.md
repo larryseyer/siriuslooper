@@ -78,22 +78,25 @@ bank of mono mics and stereo line sources share one console.
    32 stereo outputs — one per phrase. The mixer never assumes these counts match.
 
 8. **Input source format = mono or stereo, RME-style (per channel).** Strips are
-   **stereo by default**. A per-channel source-format toggle **splits** a stereo
-   channel into two mono-source channels and **collapses** them back, exactly
-   like RME TotalMix. The affordance is **gesture-only — right-click (desktop)
-   and long-press (touch)** open a Split/Collapse context menu; there is **no
-   visible toggle element on the strip or in a detail panel** (operator: the
-   strip is already too crowded, especially on iPhone). A drag past an 8 px
-   tolerance cancels the long-press so it never fights the fader.
-   A mono-source channel takes one device channel (dual-mono inward) and uses its
-   pan to position it; a stereo-source channel takes two device channels (L/R).
-   The channel is stereo internally either way (see the hard-invariant section).
-   Engine consequence: a channel carries an **input-source descriptor** (1 device
-   channel, or an L/R pair); the input dispatch gathers that channel's 1–2 device
-   channels into a stereo block before `ChannelStrip<Audio>::process` (gain-only
-   for a mono block, equal-power pan for a stereo block). Build order: stereo
-   default + live meters first; the split/collapse toggle is the next slice (the
-   engine source model already supports both, so the toggle is a UI re-layout).
+   **stereo by default**. The toggle is **universal: stereo = ONE strip, mono =
+   TWO strips** (the stereo channel's L and R halves), like RME TotalMix.
+   - **True 2-channel pair:** stereo = one strip on device ch (L,R); mono = two
+     strips, one per device channel.
+   - **Single physical input** (built-in mono mic, or an odd leftover channel):
+     stereo = one dual-mono strip (L == R source); mono = **two** strips, both
+     carrying that one input's dual-mono signal, independently pannable (e.g.
+     hard-pan two copies for width, or process each differently). The toggle
+     changes strip count 1↔2 on every input, so it's always visible — even a
+     lone mic. (Operator decision: "two strips if mono, one if stereo.")
+
+   The affordance is **gesture-only — right-click (desktop) and long-press
+   (touch, 500 ms, drag-cancels)** open a Split/Collapse menu; there is **no
+   visible toggle element on the strip or in a detail panel** (the strip is
+   already too crowded, especially on iPhone). The channel is stereo internally
+   either way (the hard invariant). Engine: a channel carries an **input-source
+   descriptor** (1 device channel, or an L/R pair); the input dispatch gathers
+   that channel's source channels into a stereo block before
+   `ChannelStrip<Audio>::process` (a single channel is dual-mono'd to both sides).
 
 ## Engine reality (from the GUI seam audit)
 
