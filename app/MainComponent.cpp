@@ -61,6 +61,10 @@ namespace
     /// one place.
     constexpr int kDefaultStereoChannels = 2;
 
+    /// Max block size passed to each input strip's LUFS meter prepare(). Sized
+    /// generously so the meter never clamps a large device buffer.
+    constexpr int kInputLufsMaxBlock = 8192;
+
     /// M6 Session 3 — vertical pixel budget for the rolling notifications
     /// list inside the Preparation pane. The list sits above the
     /// 84px diagnostics row (which already lives at the bottom). 100px holds
@@ -487,6 +491,11 @@ public:
     void setStripLevelDb (int idx, float dbL, float dbR)
     {
         if (idx >= 0 && idx < stripCount()) strips_[static_cast<std::size_t> (idx)]->setLevel (dbL, dbR);
+    }
+
+    void setStripLufs (int idx, float lufs)
+    {
+        if (idx >= 0 && idx < stripCount()) strips_[static_cast<std::size_t> (idx)]->setLUFSLevel (lufs);
     }
 
     void setEffectiveMute (int idx, bool effectivelyMuted)
@@ -1458,8 +1467,11 @@ void MainComponent::refreshInputMixer()
 
     for (int i = 0; i < inputMixerPane_->stripCount(); ++i)
         if (auto* s = inputStripAt (i))
+        {
             inputMixerPane_->setStripLevelDb (i, linToDb (s->peakLeft()),
                                               linToDb (s->peakRight()));
+            inputMixerPane_->setStripLufs (i, s->lufsIntegrated());
+        }
 }
 
 void MainComponent::rebuildInputStrips()
@@ -1513,6 +1525,14 @@ void MainComponent::rebuildInputStrips()
 
     if (inputMixerPane_ != nullptr) inputMixerPane_->setStrips (infos);
     recomputeInputStripMutes();
+
+    // Prepare each strip's EBU R128 loudness meter for the device's sample rate
+    // (off the audio thread — the callback is removed). A generous max block
+    // keeps the meter from ever clamping a large device buffer.
+    const double sampleRate = audioCallback_->currentSampleRate();
+    for (int i = 0; i < static_cast<int> (inputStripChannelIds_.size()); ++i)
+        if (auto* s = inputStripAt (i))
+            s->prepare (sampleRate, kInputLufsMaxBlock);
 
     audioDeviceManager_.addAudioCallback (audioCallback_.get());
 }
