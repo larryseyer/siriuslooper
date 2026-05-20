@@ -8,13 +8,26 @@
 
 ---
 
-## RESUME HERE (2026-05-20 — PIVOT to OTTO-parity GUI; next = build Input Mixer first slice)
+## RESUME HERE (2026-05-20 — building white-paper mixer GUI; next = Input Mixer UI port)
 
-> ## ⚠️ DIRECTION CHANGE — the engine-milestone march (M1–M8) is PAUSED
+> ## ▶ START HERE: build the Input Mixer **UI port**
+> The engine core is done (mute + stereo metering on `ChannelStrip`, commit
+> `70ee33b`). The next concrete work is the UI port — port OTTO's `FaderMeter` +
+> `CompactFaderStrip`, build the "Input Mixer" tab (one strip per selected input:
+> fader→`setGain`, pan→`setPan`, mute→`setMuted`, solo→mixer-level effective-mute,
+> meters←`peakLeft()/peakRight()` on a ~30 Hz timer), then tape-output routing.
+> Full step list is in "Concrete next steps" below; full design in
+> `docs/design/mixer-design.md`. The operator launches via the Desktop alias
+> `Sirius Looper` (canonical Ninja build) — eyes-on is theirs; engine is TDD'd.
 >
-> The operator stopped the V7 engine milestones: the app was engine-rich but
-> GUI-poor and **not operator-testable** (no visible mixers, plugins won't load,
-> stale GUI). New mission: **make Sirius look and work like OTTO** (sister apps).
+> ## Why we're here (NOT a pivot — a resequencing)
+>
+> The mixers are core white-paper architecture (Part VI: a full creative mixer on
+> each side of the tape). V7's milestone ORDER front-loaded the engine (M1–M8) and
+> parked the operator mixer GUI at "M22+"; we pulled it forward because the app was
+> **not operator-testable** (no visible mixers, plugins won't load). Same
+> destination the white paper always pointed to — earlier timing. **Make Sirius
+> look and work like OTTO** (sister apps); engine milestones (M8 S7+) resume after.
 > The engine (449 tests, audio flows device-in→mixers→out) stays; the work now is
 > SURFACING it in an OTTO-skinned GUI. M8 S7–S8 (tape reachability) and the rest
 > of V7 are deferred until the operability program is done.
