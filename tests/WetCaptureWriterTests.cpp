@@ -1,6 +1,7 @@
 #include "sirius/WetCaptureWriter.h"
 
 #include "sirius/Channel.h"
+#include "sirius/NotificationBus.h"
 #include "sirius/Rational.h"
 #include "sirius/TapeStore.h"
 
@@ -135,6 +136,36 @@ TEST_CASE ("WetCaptureWriter finalizeToStore returns empty when nothing captured
     WetCaptureWriter writer (dir, 5ms, 64);
 
     REQUIRE (writer.finalizeToStore (ChannelId { 2 }, store).isEmpty());
+
+    std::filesystem::remove_all (dir);
+}
+
+TEST_CASE ("WetCaptureWriter posts DiskPressure on open failure", "[wet-capture]")
+{
+    const auto dir = makeTempDir ("iofail");
+    WetCaptureWriter writer (dir, 5ms, 64);
+
+    NotificationBus bus;
+    writer.setNotificationBus (&bus);
+
+    // Occupy the partial path with a directory → FileOutputStream open fails.
+    std::filesystem::create_directories (dir / "5.wet.tape.partial");
+
+    std::vector<float> mono { 0.5f };
+    const float* chans[1] { mono.data() };
+    REQUIRE (writer.tryEnqueueWet (ChannelId { 5 }, Rational { 0 }, chans, 1, 1));
+
+    (void) writer.flushChannel (ChannelId { 5 }); // forces a worker drain pass
+
+    CHECK (writer.errorCountForChannel (ChannelId { 5 }) >= 1u);
+
+    std::vector<Notification> drained;
+    bus.drain (drained);
+    bool sawDiskPressure = false;
+    for (const auto& n : drained)
+        if (n.level == NotificationLevel::Error && n.category == Category::DiskPressure)
+            sawDiskPressure = true;
+    CHECK (sawDiskPressure);
 
     std::filesystem::remove_all (dir);
 }
