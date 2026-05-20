@@ -1,5 +1,6 @@
 #include "MainComponent.h"
 
+#include "sirius/CalibrationStore.h"
 #include "sirius/ConstituentValidator.h"
 #include "sirius/PerformanceViewState.h"
 #include "sirius/PreparationView.h"
@@ -36,6 +37,17 @@ namespace
         std::function<void()> onTimer;
         void timerCallback() override { if (onTimer) onTimer(); }
     };
+
+    /// M8 S6 — the device-scoped calibration sidecar. Calibration describes one
+    /// hardware clock's drift (white paper Part 4.3), so it belongs to the
+    /// machine, not to a session document — it lives under app-support and never
+    /// travels inside a session moved to other hardware.
+    juce::File calibrationSidecarFile()
+    {
+        return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+            .getChildFile ("Sirius Looper")
+            .getChildFile ("calibration.json");
+    }
 
     /// The playhead slider works in sixteenths of an LMC second so its value
     /// converts to an exact Rational — the engine still never sees a double.
@@ -869,6 +881,32 @@ MainComponent::MainComponent()
         audioDeviceLastError_ = juce::String ("ASRC init failed: ") + e.what();
     }
 
+    // M8 S6 — validate the calibration sidecar's checksum before the calibration
+    // reaches the audio callback. An absent or corrupt table recovers to identity,
+    // re-persists a {identity, recalibration-pending} sidecar so the future
+    // loopback engine knows a real measurement is owed, and warns the operator
+    // through the existing NotificationBus (live since line 826). The real
+    // loopback DSP recalibration is deferred to its own session (todo.md).
+    {
+        const juce::File sidecar = calibrationSidecarFile();
+        const std::string contents = sidecar.existsAsFile()
+            ? sidecar.loadFileAsString().toStdString()
+            : std::string {};
+        const auto result = parseAndValidateCalibration (contents);
+        if (result.status == CalibrationLoadStatus::Ok)
+        {
+            calibration_ = result.document.calibration;
+        }
+        else
+        {
+            sidecar.getParentDirectory().createDirectory();
+            sidecar.replaceWithText (juce::String (serializeCalibration (
+                { AudioDeviceCalibration::identity(), /*recalibrationPending*/ true })));
+            if (notificationBus_)
+                postCalibrationRecoveryNotification (result.status, *notificationBus_);
+        }
+    }
+
     audioCallback_->setCalibration (&calibration_);
 
     const auto deviceInitError = audioDeviceManager_.initialiseWithDefaultDevices (
@@ -1609,6 +1647,20 @@ void MainComponent::chooseFileAndLoad()
                         sirius::validate (*loaded, sirius::alwaysResolves);
                     sirius::postConstituentStateNotifications (
                         *loaded, validation, *notificationBus_);
+                }
+                // M8 S6: re-validate the device-scoped calibration sidecar on
+                // load — the spec's "on session load" detection. Startup owns
+                // re-persistence; here we only surface corruption that occurred
+                // after launch (the sidecar is independent of the session file).
+                if (notificationBus_ != nullptr)
+                {
+                    const juce::File sidecar = calibrationSidecarFile();
+                    const std::string contents = sidecar.existsAsFile()
+                        ? sidecar.loadFileAsString().toStdString()
+                        : std::string {};
+                    sirius::postCalibrationRecoveryNotification (
+                        sirius::parseAndValidateCalibration (contents).status,
+                        *notificationBus_);
                 }
                 // The white paper Part 14.7 rule: load is an edit; preserve
                 // the existing undo history rather than wiping it. The
