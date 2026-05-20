@@ -201,3 +201,17 @@ TEST_CASE ("load posts a Warning per Broken/Invalid node, none for Valid", "[con
     CHECK (sink.entries[0].message.find ("broken") != std::string::npos);
     CHECK (sink.entries[0].message.find ("10") != std::string::npos);
 }
+
+TEST_CASE ("a child beginning before the parent's start is Invalid", "[constituent-state]")
+{
+    // Child placed [-1, 3) starts before the parent's local frame begins. The
+    // Position ctor and withBoundaries only reject out < in, so a negative
+    // conceptualIn is constructible — this exercises the `in < 0` branch that
+    // the overflow-end case does not.
+    const Constituent root = makeSession (1, Rational (4),
+        makeLoop (10, Rational (-1), Rational (3), 100));
+
+    const auto validation = sirius::validate (root, sirius::alwaysResolves);
+
+    CHECK (validation.state (ConstituentId (10)) == ConstituentState::Invalid);
+}
