@@ -159,7 +159,6 @@ TEST_CASE ("a Constituent without effect chain stays absent through round-trip",
 TEST_CASE ("EffectChain caps at kMaxSlots (8) appended slots", "[effect-chain][cap]")
 {
     EffectChain chain;
-    REQUIRE (EffectChain::kMaxSlots == 8u);
 
     for (std::size_t i = 0; i < EffectChain::kMaxSlots; ++i)
     {

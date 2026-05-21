@@ -63,7 +63,7 @@ public:
     /// True when the chain holds `kMaxSlots` entries — no further append is
     /// possible. UI callers check this before offering "add a slot" so the
     /// cap is not enforced via exception-as-control-flow.
-    bool full() const noexcept { return entries_.size() >= kMaxSlots; }
+    bool full() const noexcept { return entries_.size() == kMaxSlots; }
 
     bool        empty()      const noexcept { return entries_.empty(); }
     std::size_t size()       const noexcept { return entries_.size(); }
@@ -71,7 +71,8 @@ public:
     const EffectChainEntry& at (std::size_t index) const;
 
     /// Returns a chain with `entry` appended at the end. Pure: the receiver is
-    /// untouched.
+    /// untouched. Throws std::length_error if the chain is already full
+    /// (size() == kMaxSlots).
     EffectChain withAppended (EffectChainEntry entry) const;
 
     /// Returns a chain with the slot at `index` replaced. Throws
