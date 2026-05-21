@@ -429,7 +429,46 @@ void InputMixer::renderInputGraph (const float* const* deviceIn, int numDeviceCh
         }
     }
 
-    // Step 3 (bus / FX-return processing) is added in Task 5.
+    // ── Step 3: process each bus / FX return into its main-out destination ──
+    // RT-safety: evaluationOrder() is a const& to a pre-built vector (no alloc);
+    // busNodeIds_ lookups are bounded linear scans; no graph mutators are called.
+    for (const MixerNodeId nodeId : graph_.evaluationOrder())
+    {
+        std::size_t busIdx = busNodeIds_.size();
+        for (std::size_t i = 0; i < busNodeIds_.size(); ++i)
+            if (busNodeIds_[i] == nodeId) { busIdx = i; break; }
+        if (busIdx >= busNodeIds_.size()) continue; // channel or terminal node
+
+        const Bus& bus         = buses_[busIdx];
+        const MixerNodeId dest  = graph_.mainOutOf (nodeId);
+
+        if (dest == tapeNode)
+        {
+            std::memset (scratchLeft_.data(),  0, static_cast<std::size_t> (n) * sizeof (float));
+            std::memset (scratchRight_.data(), 0, static_cast<std::size_t> (n) * sizeof (float));
+            float* sc[2] { scratchLeft_.data(), scratchRight_.data() };
+            bus.process (sc, 2, n);
+            if (tapeWriter_ != nullptr)
+                enqueueToTape (ChannelId { bus.id().value() },
+                               scratchLeft_.data(), scratchRight_.data(), n);
+        }
+        else if (dest == hwNode)
+        {
+            float* dp[2] { (numDirectOutChannels > 0 ? directOut[0] : nullptr),
+                           (numDirectOutChannels > 1 ? directOut[1] : nullptr) };
+            bus.process (dp, std::min (numDirectOutChannels, 2), n);
+        }
+        else // another bus
+        {
+            for (std::size_t di = 0; di < busNodeIds_.size(); ++di)
+            {
+                if (busNodeIds_[di] != dest) continue;
+                float* dp[2] { buses_[di].mixBufferChannel (0), buses_[di].mixBufferChannel (1) };
+                bus.process (dp, 2, n);
+                break;
+            }
+        }
+    }
 }
 
 void InputMixer::finalizeChannel (ChannelId id)

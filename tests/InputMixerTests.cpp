@@ -25,12 +25,16 @@
 #include <cstring>
 #include <filesystem>
 #include <type_traits>
+#include <utility>
 
 using sirius::InputMixer;
 
 static_assert (std::is_default_constructible_v<InputMixer>,
                "InputMixer must remain default-constructible");
 static_assert (std::is_destructible_v<InputMixer>);
+static_assert (noexcept (std::declval<sirius::InputMixer&>().renderInputGraph (
+                   nullptr, 0, nullptr, 0, 0)),
+               "InputMixer::renderInputGraph must be noexcept (RT-safety contract §6)");
 
 TEST_CASE ("InputMixer is default-constructible and destructible without crashing",
            "[input-mixer]")
@@ -663,4 +667,68 @@ TEST_CASE ("renderInputGraph: a channel routed to the hardware output sums into 
     CHECK_FALSE (partial.existsAsFile()); // routed to hardware output, not tape
 
     juce::File (juce::String (tempDir.string())).deleteRecursively();
+}
+
+TEST_CASE ("renderInputGraph: channel -> bus -> tape delivers the bus output to tape",
+           "[input-routing][render]")
+{
+    using sirius::InputMixer; using sirius::InputId; using sirius::SignalType; using sirius::TapeWriter;
+
+    const auto tempDirJuce = juce::File::getSpecialLocation (juce::File::tempDirectory)
+        .getChildFile ("sirius-render-bustape-" + juce::String (juce::Time::getMillisecondCounterHiRes()));
+    tempDirJuce.createDirectory();
+    const std::filesystem::path tempDir (tempDirJuce.getFullPathName().toStdString());
+
+    TapeWriter writer (tempDir, std::chrono::milliseconds (1), 16);
+    InputMixer mixer;
+    mixer.setTapeWriter (&writer);
+
+    const auto ch  = mixer.addChannel (InputId (0), SignalType::Audio);
+    mixer.setChannelInputSource (ch, 0, 1, true);
+    const auto bus = mixer.addBus (sirius::BusConfig { 2, "Drums", sirius::BusKind::Bus });
+    REQUIRE (mixer.setChannelMainOutToBus (ch, bus)); // channel -> bus
+    REQUIRE (mixer.setBusMainOutToTape (bus));        // bus -> tape
+
+    constexpr int n = 48;
+    std::vector<float> left (n, 0.5f), right (n, 0.5f);
+    const float* deviceIn[2] = { left.data(), right.data() };
+    float* directOut[2] = { nullptr, nullptr };
+
+    mixer.renderInputGraph (deviceIn, 2, directOut, 0, n);
+
+    // The bus enqueues under a ChannelId derived from its BusId (see implementation note).
+    const juce::File partial (juce::String (writer.flushChannel (sirius::ChannelId { bus.value() }).string()));
+    REQUIRE (partial.existsAsFile());
+    CHECK (partial.getSize() == static_cast<juce::int64> (static_cast<std::size_t> (n) * 2 * sizeof (float)));
+
+    juce::File (juce::String (tempDir.string())).deleteRecursively();
+}
+
+TEST_CASE ("renderInputGraph: a channel send reaches an FX return, which delivers to direct-out",
+           "[input-routing][render]")
+{
+    using sirius::InputMixer; using sirius::InputId; using sirius::SignalType;
+
+    InputMixer mixer;
+    const auto ch  = mixer.addChannel (InputId (0), SignalType::Audio);
+    mixer.setChannelInputSource (ch, 0, 1, true);
+    const auto rvb = mixer.addFxReturn ("RVB2");
+    // Isolate the SEND path: dry main-out -> tape (off direct-out); the only path to
+    // direct-out is send -> FX return -> hardware output. Non-zero direct-out proves it.
+    REQUIRE (mixer.setChannelMainOutToTape (ch));
+    REQUIRE (mixer.setChannelSend (ch, rvb, 1.0f));
+    REQUIRE (mixer.setBusMainOutToHardwareOutput (rvb));
+
+    constexpr int n = 16;
+    std::vector<float> left (n, 0.5f), right (n, 0.5f);
+    std::vector<float> outL (n, 0.0f), outR (n, 0.0f);
+    const float* deviceIn[2] = { left.data(), right.data() };
+    float* directOut[2] = { outL.data(), outR.data() };
+
+    mixer.renderInputGraph (deviceIn, 2, directOut, 2, n);
+
+    // FX return has no DSP yet (empty chain = pass-through); direct-out is non-zero
+    // ONLY via send -> FX-return -> hardware-output.
+    CHECK (outL[0] != 0.0f);
+    CHECK (outR[0] != 0.0f);
 }
