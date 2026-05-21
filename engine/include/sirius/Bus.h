@@ -14,6 +14,11 @@ namespace sirius
 
 class IWetCaptureSink;
 
+/// Distinguishes a summing node that takes channel/bus main-outs (Bus) from one
+/// that takes sends only (FxReturn). Structurally identical nodes; differ in how
+/// signal arrives and typical contents (Bus: comp/EQ; FxReturn: RVB/DLY).
+enum class BusKind { Bus, FxReturn };
+
 /// Small POD describing the static shape of a Bus. Configured set-once on
 /// the message thread before the audio thread ever reads the owning Bus;
 /// mutating these fields after the audio thread has been started is a
@@ -29,6 +34,7 @@ struct BusConfig
 {
     int         channelCount { 2 };
     std::string name;
+    BusKind     kind { BusKind::Bus };
 };
 
 /// Session-level effect bus per V3 Step 7 / V7 alignment plan M5

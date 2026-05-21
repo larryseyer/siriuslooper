@@ -110,3 +110,25 @@ TEST_CASE ("Bus::process handles defensive guards without crashing",
     bus.process (nullChannels.data(), 0, 64);
     bus.process (nullChannels.data(), 2, 0);
 }
+
+TEST_CASE ("BusConfig defaults to BusKind::Bus and carries FxReturn through a Bus",
+           "[bus][bus-kind]")
+{
+    using sirius::Bus;
+    using sirius::BusConfig;
+    using sirius::BusId;
+    using sirius::BusKind;
+
+    SECTION ("default kind is Bus")
+    {
+        const BusConfig cfg;
+        CHECK (cfg.kind == BusKind::Bus);
+    }
+
+    SECTION ("FxReturn kind round-trips through Bus::config()")
+    {
+        Bus bus (BusId { 7 }, BusConfig { 2, "Reverb", BusKind::FxReturn });
+        CHECK (bus.config().kind == BusKind::FxReturn);
+        CHECK (bus.config().channelCount == 2);
+    }
+}
