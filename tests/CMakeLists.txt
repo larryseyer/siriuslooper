@@ -75,7 +75,8 @@ add_executable(SiriusTests
     PluginStateRegionTests.cpp
     PluginStateExtensionTests.cpp
     StatefulSynthFixtureTests.cpp
-    MixerGraphTests.cpp)
+    MixerGraphTests.cpp
+    FlacTapeSinkTests.cpp)
 
 target_compile_features(SiriusTests PRIVATE cxx_std_20)
 

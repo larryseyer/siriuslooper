@@ -14,7 +14,8 @@
 # =============================================================================
 
 add_library(SiriusAudio STATIC
-    src/AudioCallback.cpp)
+    src/AudioCallback.cpp
+    src/FlacTapeSink.cpp)
 
 target_include_directories(SiriusAudio PUBLIC include)
 
