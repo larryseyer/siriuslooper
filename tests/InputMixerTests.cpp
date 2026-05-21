@@ -807,6 +807,9 @@ TEST_CASE ("InputMixer importGraphState round-trips an exported graph", "[input-
     const auto reverb = source.addFxReturn ("Reverb");
     sirius::EffectChainEntry comp; comp.displayName = "comp";
     source.setBusEffectChain (drums, sirius::EffectChain{}.withAppended (comp));
+    // Exercise the "apply chain to an EXISTING ctor bus" import path (busId 1 = RVB).
+    sirius::EffectChainEntry rvbVerb; rvbVerb.displayName = "rvb-plate";
+    source.setBusEffectChain (sirius::BusId (1), sirius::EffectChain{}.withAppended (rvbVerb));
     const auto ch = source.addChannel (sirius::InputId (1), sirius::SignalType::Audio);
     source.setChannelInputSource (ch, 2, 3, true);
     source.setChannelTapeMode (ch, sirius::TapeMode::CommitToTape);

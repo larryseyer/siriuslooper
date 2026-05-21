@@ -290,9 +290,9 @@ void InputMixer::importGraphState (const InputMixerGraphState& state)
 
     // 4. Apply sends.
     for (const auto& b : state.buses)
-        for (const auto& s : b.sends) setBusSend (BusId (b.busId), BusId (s.busId), s.level);
+        for (const auto& s : b.sends) { const bool ok = setBusSend (BusId (b.busId), BusId (s.busId), s.level); jassert (ok); juce::ignoreUnused (ok); }
     for (const auto& c : state.channels)
-        for (const auto& s : c.sends) setChannelSend (ChannelId (c.channelId), BusId (s.busId), s.level);
+        for (const auto& s : c.sends) { const bool ok = setChannelSend (ChannelId (c.channelId), BusId (s.busId), s.level); jassert (ok); juce::ignoreUnused (ok); }
 
     // 5. Advance id counters — never rewind (the ctor already set nextBusId_ == 3).
     nextBusId_     = std::max (nextBusId_, state.nextBusId);
@@ -301,16 +301,24 @@ void InputMixer::importGraphState (const InputMixerGraphState& state)
 
 void InputMixer::applyChannelMainOut (ChannelId id, const MixerMainOut& m)
 {
-    if (m.kind == MixerMainOut::Kind::Bus)                    setChannelMainOutToBus (id, BusId (m.busId));
-    else if (m.terminal == MixerTerminalKind::HardwareOutput) setChannelMainOutToHardwareOutput (id);
-    else                                                      setChannelMainOutToTape (id);
+    const bool ok = (m.kind == MixerMainOut::Kind::Bus)
+                        ? setChannelMainOutToBus (id, BusId (m.busId))
+                        : (m.terminal == MixerTerminalKind::HardwareOutput)
+                              ? setChannelMainOutToHardwareOutput (id)
+                              : setChannelMainOutToTape (id);
+    jassert (ok); // a snapshot edge the graph rejected = corrupt/incompatible snapshot
+    juce::ignoreUnused (ok);
 }
 
 void InputMixer::applyBusMainOut (BusId id, const MixerMainOut& m)
 {
-    if (m.kind == MixerMainOut::Kind::Bus)                    setBusMainOutToBus (id, BusId (m.busId));
-    else if (m.terminal == MixerTerminalKind::HardwareOutput) setBusMainOutToHardwareOutput (id);
-    else                                                      setBusMainOutToTape (id);
+    const bool ok = (m.kind == MixerMainOut::Kind::Bus)
+                        ? setBusMainOutToBus (id, BusId (m.busId))
+                        : (m.terminal == MixerTerminalKind::HardwareOutput)
+                              ? setBusMainOutToHardwareOutput (id)
+                              : setBusMainOutToTape (id);
+    jassert (ok); // a snapshot edge the graph rejected = corrupt/incompatible snapshot
+    juce::ignoreUnused (ok);
 }
 
 int InputMixer::busCount() const noexcept { return static_cast<int> (buses_.size()); }
