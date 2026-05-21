@@ -101,3 +101,24 @@ TEST_CASE ("MixerGraph main-out defaults to terminal and validates destination k
         CHECK_FALSE (g.setMainOut (g.terminalNode(), busA));
     }
 }
+
+TEST_CASE ("MixerGraph rejects main-out assignments that would create a cycle",
+           "[mixer-graph][cycle]")
+{
+    MixerGraph g (MixerTerminal::Output);
+    const auto busA = g.addNode (MixerNodeKind::Bus);
+    const auto busB = g.addNode (MixerNodeKind::Bus);
+
+    SECTION ("a valid subgroup A->B succeeds")
+    {
+        CHECK (g.setMainOut (busA, busB));
+        CHECK (g.mainOutOf (busA) == busB);
+    }
+    SECTION ("closing the loop B->A is rejected and leaves B unchanged")
+    {
+        REQUIRE (g.setMainOut (busA, busB));
+        CHECK (g.wouldMainOutCycle (busB, busA));
+        CHECK_FALSE (g.setMainOut (busB, busA));
+        CHECK (g.mainOutOf (busB) == g.terminalNode());
+    }
+}
