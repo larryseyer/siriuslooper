@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-20 (pan+width detail panel shipped; then mixer routing-graph SPEC written + approved — next = writing-plans against the spec, multi-phase build in a fresh chat)
+# Session Continuation — 2026-05-20 (mixer routing-graph spec approved → Phase 1 PLAN now written + 6-phase roadmap recorded — next = EXECUTE Phase 1 in a fresh chat via subagent-driven-development)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,14 +8,38 @@
 
 ---
 
-## RESUME HERE (2026-05-20 — mixer routing-graph spec WRITTEN + approved; next = run writing-plans against it, multi-phase build in a fresh chat)
+## RESUME HERE (2026-05-20 — routing-graph Phase 1 PLAN written + 6-phase roadmap; next = EXECUTE Phase 1 in a fresh chat)
 
-> ## ▶ START HERE: the mixer **routing-graph** spec is written — next is `writing-plans`
-> A full brainstorm landed the **unified mixer routing graph** design, approved by
-> the operator. The spec is committed at
-> **`docs/superpowers/specs/2026-05-20-mixer-routing-graph-design.md`** — read it
-> first. The next move is **`superpowers:writing-plans` against that spec**, then
-> implement **phase by phase** (the spec lists 6 phases). Do NOT re-brainstorm; the
+> ## ▶ START HERE: the routing-graph **Phase 1 plan** is written — next is to **execute it**
+> The spec is approved and `superpowers:writing-plans` has run against it. The
+> **Phase 1 implementation plan** is committed at
+> **`docs/superpowers/plans/2026-05-20-mixer-routing-graph-phase1.md`** — read it
+> first, then execute it via **`superpowers:subagent-driven-development`** (8 tasks,
+> all engine TDD, no operator eyes-on for Phase 1). Do NOT re-brainstorm or
+> re-plan; the plan is self-contained with full per-step code.
+>
+> **Phase 1 = engine routing-graph core.** New JUCE-free `engine/.../MixerGraph.{h,cpp}`
+> (node model, main-out vs sends, acyclic enforcement via `reaches`, topological
+> `evaluationOrder` via Kahn) + a `BusKind` discriminator on `BusConfig` +
+> `OutputMixer` refactored to drive its bus processing order from `MixerGraph`
+> (behavior-preserving; enables bus→bus subgroups). **Scope nuance carried to
+> Phase 2:** the graph models send *topology*; send-level *summing DSP* stays in
+> `OutputMixer`'s `sendMatrix_` until Phase 2 reconciles it.
+>
+> **Long-range roadmap (operator: "have a long range plan to finish the entire
+> thing… spread over several chats… keep continue updated").** Each phase = its own
+> plan (`docs/superpowers/plans/…-phaseN.md`) + (usually) its own chat:
+> - **P1** Engine routing-graph core (shared `MixerGraph`) — *plan written, ready to execute*
+> - **P2** Input-side routing apparatus (terminal=tape; channel→bus/tape; sends→FX returns; absorbs tape-output routing; reconciles send-summing DSP) — engine TDD
+> - **P3** UI: blank-area creation gesture + Bus/FXReturn strips + main-out picker (Input Mixer) — operator-verified
+> - **P4** UI: Sends detail tab (vendor OTTO `ChannelDetailSendsTab`) — operator-verified
+> - **P5** Persistence: serialize the graph into `SessionFormat`; pre-graph sessions load clean — engine TDD
+> - **P6** Output Mixer UI parity (reuses the shared engine model) — operator-verified, gated on the Output Mixer surface existing
+>
+> After P6: the **follow-on spec** (OTTO `PlayerIRConvolution` + `PlayerDelay` as
+> internal RVB/DLY droppable into an FX return) — its own brainstorm→spec→plan.
+> Open items to carry across phases: pre/post-fader send toggle (default post),
+> FX-return sends (none in v1), input-side caps (P2). Do NOT re-brainstorm; the
 > spec is self-contained and the design decisions are locked.
 >
 > **What the routing graph is (decided):** **buses** (fed by channel main-outs;
