@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-21 (**Tape subsystem slice 2 SHIPPED** — multi-tape routing engine on origin/master, headless-TDD'd via subagent-driven dev, per-task + final holistic review = "SAFE TO PUSH". Next = **implement slice 3 (capture-to-disk wiring — "real recording")** in a fresh chat. Phase 6 UI stays gated behind slices 3→4.)
+# Session Continuation — 2026-05-21 (**Tape subsystem slice 3 code SHIPPED** — append-only **FLAC** capture-to-disk wiring on origin/master, headless-TDD'd via subagent-driven dev, per-task spec+code-quality review + final holistic **opus** review = "SAFE TO PUSH". **⚠ Operator eyes-on of LIVE recording is PENDING** — the MainComponent wiring has no unit coverage. Next = **slice 4 (Tapes UI + Input Mixer destination picker + creation gesture)** in a fresh chat. Phase 6 UI stays gated behind slice 4.)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,88 +8,87 @@
 
 ---
 
-## RESUME HERE (2026-05-21 — **Tape subsystem slice 2 SHIPPED on origin/master**; next = **implement slice 3 (capture-to-disk wiring — "real recording")** in a fresh chat)
+## RESUME HERE (2026-05-21 — **Tape subsystem slice 3 code SHIPPED on origin/master; operator eyes-on PENDING**; next = **slice 4 (Tapes UI + destination picker + creation gesture)** in a fresh chat)
 
-> ## ▶ START HERE: implement the tape-subsystem **slice 3** (capture-to-disk wiring — "real recording")
-> Slice 2 (the **multi-tape routing engine**) is **done and on origin/master** — 7 commits
-> `308d5e8..fec0b1a` (executed via `superpowers:writing-plans` →
-> `superpowers:subagent-driven-development`; each task spec-review + code-quality-review with
-> fixes looped back; final holistic **opus** review = **"SAFE TO PUSH"**). Clean `rm -rf build`
-> rebuild green; full **ctest 552/553** (the 1 Not-Run is the documented
-> `MainComponentPluginEditorTests_NOT_BUILT` sentinel run separately by `bash/test-s7.sh`;
-> +12 cases over the 540/541 slice-1 baseline: 4 `[mixer-graph][terminal]`, 4
-> `[input-mixer][multi-tape]`, 6 `[input-mixer][multi-tape][render]`, −1 deleted duplicate
-> render test). **Do NOT re-do slice 2.** Plan:
-> `docs/superpowers/plans/2026-05-21-tape-subsystem-slice2-routing.md`.
+> ## ▶ FIRST: confirm slice 3 live recording (operator eyes-on), THEN start slice 4
+> Slice 3 (**append-only FLAC capture-to-disk wiring — "real recording"**) is **code-complete on
+> origin/master** — 10 commits `fe310c8..80d6a9d` (executed via `superpowers:writing-plans` →
+> `superpowers:subagent-driven-development`; each task spec-review + code-quality-review with fixes
+> looped back; final holistic **opus** review = **"SAFE TO PUSH"**). Clean `rm -rf build` rebuild of
+> `SiriusLooper` + `SiriusTests` green; full **ctest 559/560** (the 1 Not-Run is the documented
+> `MainComponentPluginEditorTests_NOT_BUILT` sentinel run separately by `bash/test-s7.sh`; +5
+> `[flac-tape-sink]` + 1 `[audio-callback][render]` cases). **Do NOT re-do slice 3.** Plan:
+> `docs/superpowers/plans/2026-05-21-tape-subsystem-slice3-capture.md`.
 >
-> **What slice 2 landed (all pushed):**
-> - **`MixerGraph` dynamic terminals** (`engine/.../MixerGraph.{h,cpp}`, `308d5e8`+`e12771a`)
->   — `addTerminal(MixerTerminal)→MixerNodeId` + `removeTerminal(MixerNodeId)→bool` (refuses
->   the primary `terminals_.front()` + unknown/non-terminal; orphaned main-outs fall back to
->   the primary, same policy as `removeNode`). `addTerminal` caps at `kMaxNodes` and the ctor
->   now reserves `terminals_`/`order_` for growth (the documented "never reallocate" invariant
->   restored). The graph stays a **pure topology layer — it knows NOTHING about `TapeId`.**
-> - **`InputMixer` tape registry + per-tape routing** (`engine/.../InputMixer.{h,cpp}`, `f2f908b`)
->   — private `tapeTerminals_` (`{ int64 tapeId; MixerNodeId node }`, `[0]` = primary, seeded in
->   ctor to **`TapeId{1}`** = the `TapePool` default primary). `addTape(TapeId)`/`removeTape(TapeId)`
->   (cap `kMaxTapes=64`; `removeTape` refuses `TapeId{1}` + unknown), `tapeCount`/`hasTape`,
->   `setChannelMainOutToTape(ChannelId,TapeId)`/`setBusMainOutToTape(BusId,TapeId)` (the **no-arg
->   overloads still target the primary, behavior-preserving**), `channelMainOutIsTape(id,TapeId)`/
->   `busMainOutIsTape(id,TapeId)`; generalized `busMainOutIsTape(BusId)` + `classifyMainOut` to
->   recognize **any** tape terminal. Helpers `tapeNodeFor`/`tapeSlotForNode`.
-> - **Per-tape summing + `ITapeSink` delivery** (`engine/.../ITapeSink.h` new, `InputMixer.cpp`,
->   `309e297`+`a4e7a7e`) — new `engine/include/sirius/ITapeSink.h`: pure-virtual
->   `deliverTapeBlock(TapeId, const float* L, const float* R, int n) noexcept` (the spec's "capture
->   sink"). `renderInputGraph` now **sums** every node (channel AND bus) routed to a tape into
->   pre-allocated per-tape mix buffers (`tapeMixLeft_/Right_`/`tapeTouched_`, `kMaxTapes ×
->   kMaxScratchSamples`, ctor-allocated) and **delivers each touched tape once per block** via
->   `tapeSink_` (no-op if unbound). The old per-node `enqueueToTape` is **removed** (grep-clean).
->   `setTapeSink(ITapeSink*)` set-once. RT-safe (noexcept, no alloc/lock/I/O; audit row added to
->   `docs/RT_SAFETY_CONTRACT.md`). The legacy `processBuffer`/`TapeWriter` path is **untouched**.
+> **⚠ THE ONE OPEN ITEM — operator eyes-on (the MainComponent wiring has NO unit coverage):**
+> build + launch `build/app/SiriusLooper_artefacts/Release/Sirius Looper.app` (clean `rm -rf build`
+> first), open the **Input Mixer**, feed live input to a strip routed to the primary tape, and
+> confirm `~/Library/Application Support/Sirius Looper/tapes/tape-1.flac` is created, **grows**, and
+> decodes/plays back the captured signal (e.g. `afplay` it). If GOOD → slice 3 is fully done; if not,
+> debug the wiring (the engine/sink pieces are headless-verified, so suspect MainComponent rate/route
+> wiring or device input). Claude is authorized to build + launch; interactive gestures + the
+> visual/audible confirmation are the operator's.
 >
-> **⚠ Scope:** slice 2 is **engine apparatus only — NOT wired into `MainComponent`/`AudioCallback`,
-> no UI, no real recording.** Nothing binds an `ITapeSink`, nothing constructs a `TapePool`, and
-> `renderInputGraph` is not on the live audio path yet. Same "apparatus first" posture as the
-> routing-graph phases.
+> **What slice 3 landed (all pushed):**
+> - **`audio/.../FlacTapeSink.{h,cpp}`** (`fe310c8`→`cadb547`,`ddf36ff`) — the real RT-safe
+>   `ITapeSink`. Audio thread's `deliverTapeBlock` ONLY copies a stack POD into ONE lock-free
+>   `LockFreeSpscQueue` + bumps a relaxed dropped-count (noexcept, no alloc/lock/I-O; RT-contract
+>   row added). ONE dedicated worker thread is the SOLE owner of per-`TapeId` `juce::AudioFormatWriter`
+>   (24-bit **FLAC**) state — no locks; lazily creates `<tapesDir>/tape-<id>.flac`, encodes via
+>   `writeFromFloatArrays`, flushes the `FileOutputStream` each pass (crash-durability bound ≈ one
+>   FLAC block). `closeTape` is an ordered control message through the SAME queue. `juce_audio_formats`
+>   linked into `Sirius::Audio`.
+> - **Live audio path** (`34fd360`,`0619047`) — `AudioCallback` Step 2 now calls
+>   `InputMixer::renderInputGraph(deviceIn, n, nullptr, 0, samples)`, RETIRING the legacy
+>   `processBuffer` + `processDeviceInputs` call pair (the old path double-processed strips → double
+>   LUFS; renderInputGraph runs each strip ONCE, publishing the same peak/LUFS meters AND delivering
+>   per-tape). `processBuffer`/`processDeviceInputs` remain in the InputMixer API for direct unit tests
+>   (header-noted superseded). Added a `directOut` contract `jassert`.
+> - **MainComponent wiring** (`73cd0f3`,`3e2db8e`,`80d6a9d`) — owns `flacTapeSink_` (declared before
+>   `audioCallback_` for teardown), constructs it at `<app-data>/Sirius Looper/tapes`, `setTapeSink`
+>   (set-once), sets the device sample rate at audio start AND in `rebuildInputStrips`. FLAC sink
+>   oversized-block guard now fails loud (assert + drop) instead of silent truncation.
+> - **Tests** (`b6c4d15`) — 5 `[flac-tape-sink]` cases (round-trip decode, two parallel tapes,
+>   closeTape finalization, drop accounting, rate-0 safety-net) + 1 `[audio-callback][render]`.
 >
-> **⚠ Carry-forward (in `todo.md`, slice 5):** `mainOutSnapshot` records only
-> `MixerTerminalKind::Tape` (no `TapeId`) — so `exportGraphState()` **hits `jassertfalse`** if any
-> node is routed to a **non-primary** tape (latent, not live: export isn't production-wired and no
-> UI can make a non-primary route until slice 4). Slice 5 must add a `tapeId` field to
-> `MixerMainOut` before either persistence or the picker lands.
+> **Format model (LOCKED — memory `project_tape_disk_format_flac`, spec + whitepaper §8.5/§8.3/§17.8):**
+> RAM ring = uncompressed PCM; live disk = append-only **FLAC** per `TapeId` (required for iOS/small-
+> device storage); a tape is immutable from the instant bytes flow (**no "finalize the take" event**);
+> **SHA-256 content-addressing + the `TapeId→contentHash` manifest are DEFERRED to session-close
+> archival** (cannot hash a still-growing file; the always-running tape only stops at session close).
 >
-> **NEXT = slice 3: capture-to-disk wiring (headless TDD + operator eyes-on) — "real recording".**
-> Wire the production capture path so routing a node to tape X **actually records** into tape X.
-> Implement `ITapeSink` over real per-tape `TapeWriter`s owned by `MainComponent` (absent today —
-> see the audit note at `MainComponent.cpp:1101`), one capture sink per pooled `TapePool` tape,
-> writing per-tape partials and finalizing into the content-addressed `TapeStore` under
-> `<Sirius>/tapes`; establish the **`TapeId → content` manifest seam** (deferred until now). This
-> is the slice that turns the routing model from apparatus into behavior. See the spec's **Slice 3**
-> section (`docs/superpowers/specs/2026-05-21-tape-subsystem-design.md:113`).
+> **NEXT = slice 4: Tapes UI + Input Mixer destination picker + blank-area creation gesture**
+> (operator-verified). The **Tapes tab/list** (create/rename/remove, ≥1 floor) + per-node destination
+> picker targeting a chosen tape + the blank-area "Add tape / use existing" gesture (extends the
+> existing right-click/500 ms long-press plumbing in `InputMixerPane`). After slice 4, the original
+> **Phase 6** (bus/FX-return strips) resumes with the tape model beneath its picker. Spec: the
+> `2026-05-21-tape-subsystem-design.md` **Slice 4** section.
 >
-> **First moves for the fresh chat (slice 3):**
-> 1. Sanity: `git status` clean; `git log --oneline -8` shows `fec0b1a` newest on origin/master
->    (the slice-2 tail).
-> 2. Read the spec's **Slice 3** section + `engine/include/sirius/ITapeSink.h` (the seam to
->    implement) + `engine/.../InputMixer.{h,cpp}` (`setTapeSink`, `renderInputGraph` delivery) +
->    `engine/include/sirius/TapeWriter.h` (per-`ChannelId` partials today — slice 3 makes it
->    per-tape) + `persistence/.../TapeStore.{h,cpp}` (content-addressed store) + `MainComponent.cpp`
->    (the AudioCallback wiring + the `:1101` audit note that TapeWriter isn't wired).
-> 3. **brainstorming likely NOT needed** (the seam is defined) → `superpowers:writing-plans` →
->    `docs/superpowers/plans/2026-05-21-tape-subsystem-slice3-capture.md` →
->    `superpowers:subagent-driven-development`. The `TapeWriter`/`TapeStore` plumbing is
->    headless-TDD'd; the MainComponent wiring is **operator-verified** (build + launch the .app,
->    confirm a routed input actually records to disk). Authorized to build + launch.
-> 4. Decide the multiplexer shape: a `MainComponent`-owned object implementing `ITapeSink` that
->    fans `deliverTapeBlock(TapeId, …)` out to the right per-tape `TapeWriter` (the SPSC enqueue is
->    already RT-safe). Keep it RT-safe — `deliverTapeBlock` is on the audio thread.
-> 5. End by updating THIS file: slice 3 shipped (commits + ctest count + clean-rebuild + operator
->    eyes-on result), next = **slice 4 (Tapes UI + Input Mixer destination picker + blank-area
->    creation gesture)** with its first moves.
+> **First moves for the fresh chat (slice 4):**
+> 1. Sanity: `git status` clean; `git log --oneline -10` shows `80d6a9d` newest on origin/master.
+>    Do the slice-3 operator eyes-on above FIRST if not yet done.
+> 2. Read the spec's **Slice 4** section; `core/include/sirius/TapePool.h` (slice-1 model, NOT yet
+>    constructed in MainComponent — slice 4 wires it); `app/MainComponent.cpp` `InputMixerPane`
+>    (gesture plumbing, `rebuildInputStrips`, the strip row); `engine/.../InputMixer.h`
+>    (`addTape`/`removeTape`/`setChannelMainOutToTape(id,TapeId)`/`busCount`/`busForId`); and
+>    `audio/include/sirius/FlacTapeSink.h` (`closeTape` — ⚠ MUST be bracketed by
+>    remove/addAudioCallback when wired live; see the doc warning + todo).
+> 3. `superpowers:brainstorming` likely NOT needed (model is decided) → `superpowers:writing-plans`
+>    → `docs/superpowers/plans/2026-05-21-tape-subsystem-slice4-ui.md` →
+>    `superpowers:subagent-driven-development`. GUI work is **operator-verified**, not unit-tested.
+> 4. Slice 4 wires `TapePool` ↔ `InputMixer.addTape/removeTape` ↔ `FlacTapeSink.closeTape` (the three
+>    surfaces of the one pool), all under the remove/addAudioCallback bracket. Surface
+>    `FlacTapeSink::droppedBlockCount()` via the NotificationBus.
+> 5. End by updating THIS file: slice 4 shipped + next.
 >
-> **⚠ Do NOT jump to Phase 6 UI or the bus/FX-return strips** — Phase 6's destination picker
-> depends on the tape model + multi-tape routing + the Tapes UI; the tape subsystem (slices 3→4)
-> comes first, then Phase 6 resumes. The bus-controls engine slice (below) is already on
+> **⚠ Carry-forward (in `todo.md`):** slice-3 deferrals (float→int24 fidelity floor; SHA-256/manifest =
+> session-close archival; per-tier sub-block flush; §17.8 scan-and-truncate-on-reopen [no reader yet];
+> queue-capacity tuning for many tapes). Slice-5 carry-forward unchanged: `mainOutSnapshot` records no
+> `TapeId` → `exportGraphState()` `jassertfalse` on a non-primary tape route (latent; fix before
+> persistence or the picker persists routes).
+>
+> **⚠ Do NOT jump to Phase 6 UI or the bus/FX-return strips** — Phase 6's destination picker depends
+> on the Tapes UI (slice 4); then Phase 6 resumes. The bus-controls engine slice (below) is on
 > origin/master.
 
 ## HISTORICAL — Bus-controls engine slice (superseded 2026-05-21 by the tape-subsystem design above; still on origin/master, do NOT re-do)

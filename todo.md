@@ -1,5 +1,38 @@
 # Sirius Looper — Deferred Items
 
+### 2026-05-21 — Tape subsystem slice 3 (capture-to-disk / FLAC) deferrals
+- Files: audio/src/FlacTapeSink.cpp, audio/include/sirius/FlacTapeSink.h, app/MainComponent.cpp.
+- What was deferred (all intentional — slice-3 scope was "make routing record"):
+  1. **float→24-bit FLAC quantization** is the live capture fidelity floor. Bit-exact-float
+     archival (whitepaper §15 "archival exact") would need a different codec/bit depth — revisit
+     if/when §15 fidelity is required. See [[project_tape_disk_format_flac]].
+  2. **SHA-256 content-addressing + the TapeId→contentHash manifest** are a session-close
+     ARCHIVAL step (whitepaper §8.5), out of slice 3. Pairs with the deferred M8 S7–8
+     tape-rotation/reachability work. Live tapes are identified on disk by TapeId (filename
+     tape-<id>.flac).
+  3. **Per-tier sub-FLAC-block flush** (§17.8: Lavish ~1–3 ms): current durability granularity
+     is one FLAC block (~85 ms @48 k) via FileOutputStream flush each worker pass. Finer needs
+     driving libFLAC's streaming encoder directly.
+  4. **§17.8 scan-and-truncate on reopen** — no tape READER/playback consumer exists yet; add the
+     crash-recovery scan when the read path lands.
+  5. **TapePool ↔ FlacTapeSink lifecycle** (open/closeTape on tape add/remove) is slice 4. ⚠ When
+     wiring closeTape live, it MUST be bracketed by removeAudioCallback/addAudioCallback — closeTape
+     and deliverTapeBlock both push to a SINGLE-PRODUCER SPSC queue; concurrent producers corrupt it
+     (final-review Issue 1; doc-warned in FlacTapeSink.h).
+  6. **Mid-session sample-rate-change re-prepare** of the sink beyond the rebuildInputStrips hook.
+  7. **Queue-capacity tuning**: FlacTapeSink queue is 256 slots — ample for the default 1 tape, but
+     with many simultaneously-touched tapes (toward kMaxTapes=64) a 20 ms drain window could overflow
+     (→ counted drops). Tune capacity (or drain cadence) when multi-tape capture is exercised (slice 4).
+- Why deferred: read-side / archival / multi-tape-UI concerns beyond "route → record".
+- What's needed to finish: each as noted (its own slice / the §15 + M8 S7–8 work).
+
+### 2026-05-21 — Routing Phase 3: wire renderInputGraph into the production audio path — ✅ RESOLVED by tape slice 3
+- `AudioCallback` Step 2 now calls `renderInputGraph(deviceIn, n, nullptr, 0, samples)`; the legacy
+  `processBuffer` + `processDeviceInputs` calls were retired from the live callback (commit 34fd360).
+  Both remain in the InputMixer API for direct unit testing (header-noted as superseded). The
+  hardware-output direct-out buffer is still passed null/0 (no hardware-output route is active until
+  the destination picker lands in slice 4) — that remaining sub-item folds into slice 4.
+
 ### 2026-05-21 - Tape subsystem slice 2 carry-forward
 - Files: engine/src/InputMixer.cpp (mainOutSnapshot), core/include/sirius/MixerGraphState.h
 - What was deferred: persisting WHICH tape a node's main-out targets. mainOutSnapshot
@@ -14,38 +47,14 @@
 - What's needed to finish: add a tapeId field to MixerMainOut (Terminal kind) + serialize it;
   applyChannelMainOut/applyBusMainOut route to setChannelMainOutToTape(id, tapeId).
 
-### 2026-05-21 — Routing Phase 3: wire renderInputGraph into the production audio path
-- Files: app/MainComponent.cpp (AudioCallback wiring, rebuildInputStrips ~1555,
-  refreshInputMixer), audio/src/AudioCallback.cpp (Step 2 dispatchInputMixer +
-  Step 2b processDeviceInputs), engine/src/InputMixer.cpp (renderInputGraph).
-- What was deferred: the new `InputMixer::renderInputGraph` (full graph traversal:
-  channel main-out → bus/tape/hardware-output, sends → FX returns, topo walk) is
-  built + TDD'd but NOT called in production. The app still uses the legacy
-  `processBuffer` (per-device-channel tape) + `processDeviceInputs` (metering).
-- Why deferred: operator-confirmed Phase 3 scope = engine apparatus, tested; the
-  UI to CREATE input buses/sends/routes doesn't exist until Phases 6–7. Matches
-  the repo's established "tested seam, production wiring follows" pattern (M8 S4).
-- What's needed to finish: when the Input Mixer UI (P6/P7) lands, migrate
-  AudioCallback to call `renderInputGraph(deviceIn, n, directOut, m, samples)`,
-  retire the now-redundant `processBuffer`/`processDeviceInputs` (or fold their
-  metering into the new traversal), and supply a direct-out buffer for the
-  hardware-output terminal.
-
-### 2026-05-21 — Routing Phase 3: bus→tape ChannelId derivation + stereo tape payload
-- Files: engine/src/InputMixer.cpp (enqueueToTape, the bus→tape branch of
-  renderInputGraph), engine/include/sirius/TapeWriter.h.
-- What was deferred: a bus routed to the tape terminal enqueues under
-  `ChannelId{ bus.id().value() }` (channel-id space and bus-id space overlap by
-  value). The proper TapeId/channel-vs-bus tape identity is an M11 SAF concern.
-  Also: input tape delivery now writes STEREO INTERLEAVED float32, while the
-  legacy `processBuffer` writes per-device-channel mono — these two tape-write
-  paths have different payload layouts.
-- Why deferred: the SAF TapeId→content mapping (same deferral as the dry/wet
-  tape hash) isn't built; bus-id-as-channel-id is a reasonable interim key.
-- What's needed to finish: when SAF/TapeId identity lands (M11), give buses a
-  proper tape identity distinct from channels, and unify the tape payload layout
-  across the legacy and graph paths (or fully retire the legacy path per the
-  wiring item above).
+### 2026-05-21 — Routing Phase 3: bus→tape ChannelId derivation + stereo tape payload — ✅ SUPERSEDED by tape slices 2–3
+- The `enqueueToTape`/bus-id-as-ChannelId scheme was removed in slice 2: `renderInputGraph` now
+  SUMS any node (channel or bus) routed to a tape into a per-`TapeId` mix buffer and delivers once
+  per touched `TapeId` via `ITapeSink`. Slice 3 routes that to `FlacTapeSink`, keyed by `TapeId`
+  (filename tape-<id>.flac) — so tape identity is the `TapeId`, with no channel-vs-bus key clash and
+  no dual mono/stereo payload (the legacy `processBuffer` tape path is retired from the live callback).
+  The SAF `TapeId→contentHash` manifest remains a session-close archival concern (see the slice-3
+  deferrals entry at the top).
 
 ### 2026-05-21 — Routing Phase 3: FX returns + per/post-fader sends
 - Files: engine/src/InputMixer.cpp (renderInputGraph sends), the internal-FX
