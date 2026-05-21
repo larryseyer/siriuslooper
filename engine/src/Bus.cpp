@@ -193,7 +193,7 @@ void Bus::process (float* const* output, int numChannels, int numSamples) const 
     {
         const float* const lufsL = processedPtrs[0];
         const float* const lufsR = activeChannels > 1 ? processedPtrs[1] : lufsL;
-        if (lufsL != nullptr) lufsMeter_.process (lufsL, lufsR, clampedSamples);
+        lufsMeter_.process (lufsL, lufsR, clampedSamples);   // mono → dual-mono
     }
 }
 
