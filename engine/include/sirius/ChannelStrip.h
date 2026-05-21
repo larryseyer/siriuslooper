@@ -1,5 +1,7 @@
 #pragma once
 
+#include "sirius/EffectChain.h"
+#include "sirius/IEffectChainHost.h"
 #include "sirius/LufsMeter.h"
 #include "sirius/ProcessingChain.h"
 #include "sirius/SignalType.h"
@@ -8,6 +10,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <utility>
 
 namespace sirius
@@ -107,6 +110,29 @@ public:
     /// Integrated loudness (LUFS) of the post-fader signal, for the dual
     /// peak+LUFS channel meter (OTTO parity). UI reads on its timer.
     float lufsIntegrated() const noexcept { return lufsMeter_.getIntegrated(); }
+
+    /// Message-thread setter — copies the insert chain in (routing-graph
+    /// Phase 4). Set-once before the audio thread starts; mutating after
+    /// start is a threading-contract violation (same collaborator contract
+    /// as Bus::setEffectChain).
+    void setEffectChain (EffectChain chain) { effectChain_ = std::move (chain); }
+
+    const EffectChain& effectChain() const noexcept { return effectChain_; }
+
+    /// Message-thread setter — wires the audio-thread effect-chain dispatcher
+    /// and the node's `pumpSlot` key. The strip does NOT own the host; the
+    /// caller owns its lifetime AND guarantees `nodeKey` does not collide
+    /// with any other node sharing the same host (channels and buses can
+    /// collide on raw id values — the caller partitions the key space).
+    /// Pass `nullptr` to disable dispatch — the pre-Phase-4 inline path runs
+    /// unchanged. Set-once before the audio thread starts.
+    void setEffectChainHost (IEffectChainHost* host, std::int64_t nodeKey) noexcept
+    {
+        host_    = host;
+        nodeKey_ = nodeKey;
+    }
+
+    IEffectChainHost* effectChainHost() const noexcept { return host_; }
 
     /// Audio-thread DSP entry point. `channelData[c][s]` lays out
     /// non-interleaved float samples (matches JUCE's `AudioBuffer<float>`
@@ -219,6 +245,16 @@ private:
     mutable std::atomic<float> peakLeft_  { 0.0f };
     mutable std::atomic<float> peakRight_ { 0.0f };
     mutable LufsMeter          lufsMeter_;
+
+    // Routing-graph Phase 4 — per-channel insert chain. `effectChain_` is the
+    // ordered slot list (copy-in via setEffectChain); `host_` dispatches each
+    // non-bypassed slot on the audio thread; `nodeKey_` is the host's
+    // `pumpSlot` key for this strip. null `host_` (default) = the pre-Phase-4
+    // path, byte-identical. Message-thread set-once; the audio thread only
+    // reads.
+    EffectChain       effectChain_;
+    IEffectChainHost* host_    { nullptr };
+    std::int64_t      nodeKey_ { 0 };
 };
 
 /// MIDI specialization — stub until M9 wires real UMP processing. Matches the

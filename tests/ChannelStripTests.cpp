@@ -6,6 +6,9 @@
 // The signature is JUCE-free (raw float* const* + counts) because the
 // engine layer's public API is JUCE-free per engine/CMakeLists.txt.
 #include "sirius/ChannelStrip.h"
+#include "sirius/EffectChain.h"
+#include "sirius/IEffectChainHost.h"
+#include "sirius/PluginDescriptor.h"
 #include "sirius/ProcessingChain.h"
 #include "sirius/SignalType.h"
 
@@ -14,7 +17,10 @@
 
 #include <array>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <utility>
+#include <vector>
 
 using sirius::ChannelStrip;
 using sirius::FileChain;
@@ -449,4 +455,33 @@ TEST_CASE ("ChannelStrip<Audio> loudness is silent + safe before prepare() is ca
     AudioStrip strip;   // no prepare()
     const float lufs = feedSineGetLufs (strip, 0.5f, 48000.0, 50);  // must not crash
     CHECK (lufs <= -70.0f);   // unprepared meter reports silence
+}
+
+TEST_CASE ("ChannelStrip<Audio> stores a set-once effect chain + host + node key",
+           "[channel-strip][inserts]")
+{
+    using sirius::EffectChain;
+    using sirius::EffectChainEntry;
+
+    AudioStrip strip;
+
+    // Defaults: no host, empty chain — the pre-Phase-4 configuration.
+    CHECK (strip.effectChainHost() == nullptr);
+    CHECK (strip.effectChain().empty());
+
+    EffectChainEntry entry;
+    entry.descriptor.name = "Comp";
+    EffectChain chain;
+    chain = chain.withAppended (entry);
+    strip.setEffectChain (chain);
+    CHECK (strip.effectChain().size() == 1u);
+
+    struct NullHost : sirius::IEffectChainHost
+    {
+        bool pumpSlot (std::int64_t, std::size_t, const float* const*,
+                       float* const*, int, int) noexcept override { return false; }
+    } host;
+
+    strip.setEffectChainHost (&host, 42);
+    CHECK (strip.effectChainHost() == &host);
 }
