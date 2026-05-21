@@ -523,3 +523,19 @@ TEST_CASE ("OutputMixer bus->bus subgroup actually routes audio through the pare
     // assertion FAILS if subgroup routing breaks.
     for (float v : out) CHECK (v == Catch::Approx (0.25f));
 }
+
+TEST_CASE ("OutputMixer routeBusToBus rejects master-as-source and unknown buses",
+           "[output-mixer][subgroup]")
+{
+    using sirius::BusConfig;
+    using sirius::OutputMixer;
+
+    OutputMixer mixer;
+    const auto busA = mixer.addBus (BusConfig { 2, "A" });
+
+    // Master's main-out is fixed to the terminal — it can never be a subgroup source.
+    CHECK_FALSE (mixer.routeBusToBus (BusId { 0 }, busA));
+    // Out-of-range ids are rejected (no graph mutation, no crash).
+    CHECK_FALSE (mixer.routeBusToBus (busA, BusId { 999 }));
+    CHECK_FALSE (mixer.routeBusToBus (BusId { 999 }, busA));
+}

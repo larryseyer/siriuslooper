@@ -165,6 +165,11 @@ void OutputMixer::routeChannelToBus (OutputChannelId channel, BusId bus, float s
 
 bool OutputMixer::routeBusToBus (BusId from, BusId to)
 {
+    // Master's main-out is fixed to the terminal (Step 4 always drains it to
+    // the physical outputs); never let it be re-pointed at an aux bus, which
+    // would make the graph disagree with the DSP.
+    if (from.value() == 0) return false;
+
     // Invariant: BusId values are dense and 0-based (master == BusId{0},
     // addBus assigns sequentially), so BusId.value() indexes busNodeIds_
     // directly. The bounds check below rejects any out-of-range id.
