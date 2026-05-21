@@ -1,5 +1,14 @@
 # Sirius Looper — Deferred Items
 
+### 2026-05-21 - Tape subsystem slice 2 carry-forward
+- Files: engine/src/InputMixer.cpp (mainOutSnapshot), core/include/sirius/MixerGraphState.h
+- What was deferred: persisting WHICH tape a node's main-out targets. mainOutSnapshot
+  records only MixerTerminalKind::Tape (no TapeId); a non-primary tape route round-trips
+  as the primary on load.
+- Why deferred: per-node tape-terminal persistence is routing-spec slice 5, out of slice-2 scope.
+- What's needed to finish: add a tapeId field to MixerMainOut (Terminal kind) + serialize it;
+  applyChannelMainOut/applyBusMainOut route to setChannelMainOutToTape(id, tapeId).
+
 ### 2026-05-21 — Routing Phase 3: wire renderInputGraph into the production audio path
 - Files: app/MainComponent.cpp (AudioCallback wiring, rebuildInputStrips ~1555,
   refreshInputMixer), audio/src/AudioCallback.cpp (Step 2 dispatchInputMixer +

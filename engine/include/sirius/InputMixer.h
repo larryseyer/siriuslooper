@@ -7,6 +7,7 @@
 #include "sirius/MixerGraph.h"
 #include "sirius/MixerGraphState.h"
 #include "sirius/SignalType.h"
+#include "sirius/TapeId.h"
 #include "sirius/TapeMode.h"
 
 #include <cstddef>
@@ -40,6 +41,7 @@ public:
 
     static constexpr int kMaxInputChannels = 32;
     static constexpr int kMaxInputBuses    = 64;
+    static constexpr int kMaxTapes         = 64;
 
     BusId addBus (BusConfig config);
     BusId addFxReturn (const std::string& name);
@@ -63,6 +65,28 @@ public:
     bool setBusMainOutToTape (BusId);
     MainOutDest channelMainOut (ChannelId) const noexcept;
     MainOutDest busMainOut (BusId) const noexcept;
+
+    // Multi-tape terminal registry (tape subsystem slice 2) -----------------
+    /// Registers a Tape terminal for a pooled tape. The eventual owner (slice 4)
+    /// keeps this in sync with the project TapePool. Returns false on a duplicate
+    /// id or when kMaxTapes is exceeded. Message-thread only.
+    bool addTape (TapeId);
+    /// Unregisters a Tape terminal. Returns false for an unknown id or the
+    /// primary tape (TapeId{1} — the permanent default). Nodes routed to the
+    /// removed tape fall back to the primary tape. Message-thread only.
+    bool removeTape (TapeId);
+    int  tapeCount() const noexcept;
+    bool hasTape (TapeId) const noexcept;
+
+    /// Routes a node's main-out to a specific pooled tape. Returns false if the
+    /// node or the tape is unknown, or the edge is invalid. The no-arg overloads
+    /// target the PRIMARY tape, behavior-preserving.
+    bool setChannelMainOutToTape (ChannelId, TapeId);
+    bool setBusMainOutToTape (BusId, TapeId);
+
+    /// True iff the node's main-out targets this specific pooled tape.
+    bool channelMainOutIsTape (ChannelId, TapeId) const noexcept;
+    bool busMainOutIsTape (BusId, TapeId) const noexcept;
 
     bool  setChannelSend (ChannelId, BusId fxReturn, float level);
     bool  setBusSend (BusId source, BusId fxReturn, float level);
@@ -200,9 +224,14 @@ private:
     std::vector<MixerNodeId>  busNodeIds_;
     std::int64_t              nextBusId_ { 1 };
 
+    struct TapeTerminal { std::int64_t tapeId; MixerNodeId node; };
+    std::vector<TapeTerminal> tapeTerminals_; // [0] = primary (TapeId 1); >= 1
+
     MixerNodeId nodeForBus (BusId) const noexcept;
     MixerNodeId nodeForChannel (ChannelId) const noexcept;
     MainOutDest classifyMainOut (MixerNodeId dest) const noexcept;
+    MixerNodeId tapeNodeFor (TapeId) const noexcept;        // invalid id if absent
+    int         tapeSlotForNode (MixerNodeId) const noexcept; // -1 if not a tape terminal
 
     void applyChannelMainOut (ChannelId, const MixerMainOut&);
     void applyBusMainOut (BusId, const MixerMainOut&);

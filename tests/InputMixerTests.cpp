@@ -859,3 +859,65 @@ TEST_CASE ("InputMixer::busForId returns the bus for a known id, nullptr otherwi
 
     REQUIRE (mixer.busForId (sirius::BusId { 9999 }) == nullptr);
 }
+
+TEST_CASE ("InputMixer: a freshly constructed mixer has exactly the primary tape (TapeId 1)",
+           "[input-mixer][multi-tape]")
+{
+    using sirius::InputMixer; using sirius::TapeId;
+    InputMixer mixer;
+    CHECK (mixer.tapeCount() == 1);
+    CHECK (mixer.hasTape (TapeId { 1 }));
+    CHECK_FALSE (mixer.hasTape (TapeId { 2 }));
+}
+
+TEST_CASE ("InputMixer: addTape registers a routable terminal; removeTape unregisters it; primary is permanent",
+           "[input-mixer][multi-tape]")
+{
+    using sirius::InputMixer; using sirius::TapeId;
+    InputMixer mixer;
+
+    CHECK (mixer.addTape (TapeId { 2 }));
+    CHECK (mixer.tapeCount() == 2);
+    CHECK (mixer.hasTape (TapeId { 2 }));
+    CHECK_FALSE (mixer.addTape (TapeId { 2 }));   // duplicate refused
+
+    CHECK (mixer.removeTape (TapeId { 2 }));
+    CHECK_FALSE (mixer.hasTape (TapeId { 2 }));
+    CHECK_FALSE (mixer.removeTape (TapeId { 99 })); // unknown refused
+    CHECK_FALSE (mixer.removeTape (TapeId { 1 }));  // primary refused
+    CHECK (mixer.tapeCount() == 1);
+}
+
+TEST_CASE ("InputMixer: a channel routes to a chosen tape; the no-arg overload targets the primary",
+           "[input-mixer][multi-tape]")
+{
+    using sirius::InputMixer; using sirius::InputId; using sirius::SignalType; using sirius::TapeId;
+    InputMixer mixer;
+    REQUIRE (mixer.addTape (TapeId { 2 }));
+    const auto ch = mixer.addChannel (InputId { 1 }, SignalType::Audio);
+
+    REQUIRE (mixer.setChannelMainOutToTape (ch, TapeId { 2 }));
+    CHECK (mixer.channelMainOut (ch) == InputMixer::MainOutDest::Tape);
+    CHECK (mixer.channelMainOutIsTape (ch, TapeId { 2 }));
+    CHECK_FALSE (mixer.channelMainOutIsTape (ch, TapeId { 1 }));
+
+    REQUIRE (mixer.setChannelMainOutToTape (ch));   // no-arg → primary
+    CHECK (mixer.channelMainOutIsTape (ch, TapeId { 1 }));
+
+    CHECK_FALSE (mixer.setChannelMainOutToTape (ch, TapeId { 99 })); // unknown tape refused
+}
+
+TEST_CASE ("InputMixer: a bus routes to a chosen tape via setBusMainOutToTape(BusId, TapeId)",
+           "[input-mixer][multi-tape]")
+{
+    using sirius::InputMixer; using sirius::BusId; using sirius::BusConfig; using sirius::TapeId;
+    InputMixer mixer;
+    REQUIRE (mixer.addTape (TapeId { 2 }));
+    const auto bus = mixer.addBus (BusConfig { 2, "Sub", sirius::BusKind::Bus });
+
+    REQUIRE (mixer.setBusMainOutToTape (bus, TapeId { 2 }));
+    CHECK (mixer.busMainOut (bus) == InputMixer::MainOutDest::Tape);
+    CHECK (mixer.busMainOutIsTape (bus));                 // routed to *a* tape
+    CHECK (mixer.busMainOutIsTape (bus, TapeId { 2 }));
+    CHECK_FALSE (mixer.busMainOutIsTape (bus, TapeId { 1 }));
+}

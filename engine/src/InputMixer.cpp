@@ -33,6 +33,8 @@ InputMixer::InputMixer()
 {
     buses_.reserve (static_cast<std::size_t> (kMaxInputBuses));
     busNodeIds_.reserve (static_cast<std::size_t> (kMaxInputBuses));
+    tapeTerminals_.reserve (static_cast<std::size_t> (kMaxTapes));
+    tapeTerminals_.push_back ({ 1, graph_.terminalNode (MixerTerminal::Tape) });
     setBusMainOutToHardwareOutput (addFxReturn ("RVB"));
     setBusMainOutToHardwareOutput (addFxReturn ("DLY"));
 }
@@ -343,6 +345,48 @@ BusKind InputMixer::busKindAt (int index) const noexcept
     return buses_[static_cast<std::size_t> (index)].config().kind;
 }
 
+MixerNodeId InputMixer::tapeNodeFor (TapeId id) const noexcept
+{
+    for (const auto& t : tapeTerminals_)
+        if (t.tapeId == id.value()) return t.node;
+    return MixerNodeId {};
+}
+
+int InputMixer::tapeSlotForNode (MixerNodeId node) const noexcept
+{
+    for (std::size_t i = 0; i < tapeTerminals_.size(); ++i)
+        if (tapeTerminals_[i].node == node) return static_cast<int> (i);
+    return -1;
+}
+
+bool InputMixer::hasTape (TapeId id) const noexcept { return tapeNodeFor (id).isValid(); }
+int  InputMixer::tapeCount() const noexcept { return static_cast<int> (tapeTerminals_.size()); }
+
+bool InputMixer::addTape (TapeId id)
+{
+    if (hasTape (id)) return false;
+    if (tapeTerminals_.size() >= static_cast<std::size_t> (kMaxTapes))
+    {
+        jassertfalse; // fail loud — silently dropping a tape terminal corrupts routing
+        return false;
+    }
+    tapeTerminals_.push_back ({ id.value(), graph_.addTerminal (MixerTerminal::Tape) });
+    return true;
+}
+
+bool InputMixer::removeTape (TapeId id)
+{
+    if (id == TapeId { 1 }) return false;            // primary is permanent
+    const MixerNodeId node = tapeNodeFor (id);
+    if (! node.isValid()) return false;
+    if (! graph_.removeTerminal (node)) return false; // graph also refuses the primary
+    tapeTerminals_.erase (std::remove_if (tapeTerminals_.begin(), tapeTerminals_.end(),
+                                          [id] (const TapeTerminal& t)
+                                          { return t.tapeId == id.value(); }),
+                          tapeTerminals_.end());
+    return true;
+}
+
 MixerNodeId InputMixer::nodeForBus (BusId id) const noexcept
 {
     for (std::size_t i = 0; i < buses_.size(); ++i)
@@ -353,8 +397,7 @@ MixerNodeId InputMixer::nodeForBus (BusId id) const noexcept
 bool InputMixer::busMainOutIsTape (BusId id) const noexcept
 {
     const MixerNodeId node = nodeForBus (id);
-    return node.isValid()
-        && graph_.mainOutOf (node) == graph_.terminalNode (MixerTerminal::Tape);
+    return node.isValid() && tapeSlotForNode (graph_.mainOutOf (node)) >= 0;
 }
 
 bool InputMixer::channelIsRegisteredInGraph (ChannelId id) const noexcept
@@ -489,7 +532,7 @@ MixerNodeId InputMixer::nodeForChannel (ChannelId id) const noexcept
 
 InputMixer::MainOutDest InputMixer::classifyMainOut (MixerNodeId dest) const noexcept
 {
-    if (dest == graph_.terminalNode (MixerTerminal::Tape))           return MainOutDest::Tape;
+    if (tapeSlotForNode (dest) >= 0)                                 return MainOutDest::Tape;
     if (dest == graph_.terminalNode (MixerTerminal::HardwareOutput)) return MainOutDest::HardwareOutput;
     return MainOutDest::Bus;
 }
@@ -506,6 +549,20 @@ bool InputMixer::setBusMainOutToHardwareOutput (BusId bus)
 { return graph_.setMainOut (nodeForBus (bus), graph_.terminalNode (MixerTerminal::HardwareOutput)); }
 bool InputMixer::setBusMainOutToTape (BusId bus)
 { return graph_.setMainOut (nodeForBus (bus), graph_.terminalNode (MixerTerminal::Tape)); }
+bool InputMixer::setChannelMainOutToTape (ChannelId ch, TapeId tape)
+{ return graph_.setMainOut (nodeForChannel (ch), tapeNodeFor (tape)); }
+bool InputMixer::setBusMainOutToTape (BusId bus, TapeId tape)
+{ return graph_.setMainOut (nodeForBus (bus), tapeNodeFor (tape)); }
+bool InputMixer::channelMainOutIsTape (ChannelId ch, TapeId tape) const noexcept
+{
+    const MixerNodeId node = tapeNodeFor (tape);
+    return node.isValid() && graph_.mainOutOf (nodeForChannel (ch)) == node;
+}
+bool InputMixer::busMainOutIsTape (BusId bus, TapeId tape) const noexcept
+{
+    const MixerNodeId node = tapeNodeFor (tape);
+    return node.isValid() && graph_.mainOutOf (nodeForBus (bus)) == node;
+}
 InputMixer::MainOutDest InputMixer::channelMainOut (ChannelId ch) const noexcept
 { return classifyMainOut (graph_.mainOutOf (nodeForChannel (ch))); }
 InputMixer::MainOutDest InputMixer::busMainOut (BusId bus) const noexcept
