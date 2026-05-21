@@ -147,10 +147,19 @@ juce::AudioFormatWriter* FlacTapeSink::writerFor (std::int64_t tapeId)
     // still holds the stream (no leak, no double-free). Cast FileOutputStream
     // unique_ptr to the base OutputStream unique_ptr via a local.
     std::unique_ptr<juce::OutputStream> streamBase = std::move (stream);
+    // 24-bit stereo FLAC at compression level 3. All FLAC levels are lossless;
+    // the level only trades encoder CPU against file size. Level 3 is pinned
+    // (rather than inheriting libFLAC's implicit default of 5) for the iOS path:
+    // capture is continuous and may run many tapes at once on a single worker
+    // thread, so on a phone (iPhone 11 / A13 is the slowest target) the battery
+    // and thermal headroom of a lower level matters more than the ~1-2% extra
+    // size that levels 5-8 would buy. JUCE maps qualityOptionIndex directly to
+    // FLAC__stream_encoder_set_compression_level.
     const auto options = juce::AudioFormatWriterOptions{}
                              .withSampleRate (sr)
                              .withNumChannels (2)
-                             .withBitsPerSample (24);
+                             .withBitsPerSample (24)
+                             .withQualityOptionIndex (3);
     auto writer = flacFormat_.createWriterFor (streamBase, options);
     if (writer == nullptr)
     {
