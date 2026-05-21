@@ -258,17 +258,30 @@ TEST_CASE ("Bus peak reflects the post-fader signal (inline path)", "[bus][meter
 TEST_CASE ("Bus peak reads silence when muted", "[bus][meter][mute]")
 {
     sirius::Bus bus (sirius::BusId { 1 }, sirius::BusConfig {});
-    bus.setMuted (true);
     constexpr int kSamples = 8;
-    for (int s = 0; s < kSamples; ++s)
+    const auto fillMix = [&]
     {
-        bus.mixBufferChannel (0)[s] = 0.9f;
-        bus.mixBufferChannel (1)[s] = 0.9f;
-    }
+        for (int s = 0; s < kSamples; ++s)
+        {
+            bus.mixBufferChannel (0)[s] = 0.9f;
+            bus.mixBufferChannel (1)[s] = 0.9f;
+        }
+    };
     std::vector<float> l (kSamples, 0.0f), r (kSamples, 0.0f);
     float* out[2] = { l.data(), r.data() };
-    bus.process (out, 2, kSamples);
 
+    // First, un-muted, to leave a NON-zero peak in the atomics — otherwise the
+    // post-mute check would pass vacuously against a fresh Bus's 0.0 defaults
+    // and could not catch a muted path that fails to update the meter.
+    fillMix();
+    bus.process (out, 2, kSamples);
+    REQUIRE (bus.peakLeft()  > 0.0f);
+    REQUIRE (bus.peakRight() > 0.0f);
+
+    // Now mute and process a fresh block: the meter must fall to silence.
+    bus.setMuted (true);
+    fillMix();   // process() zeroed the mix buffer; refill it
+    bus.process (out, 2, kSamples);
     REQUIRE (bus.peakLeft()  == 0.0f);
     REQUIRE (bus.peakRight() == 0.0f);
 }

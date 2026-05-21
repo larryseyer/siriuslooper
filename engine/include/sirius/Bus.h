@@ -88,7 +88,7 @@ public:
     /// Move ctor — hand-written because the atomic members are not movable.
     /// `noexcept` so std::vector<Bus> uses it on (reserve-bounded, never-hit-at-
     /// runtime) reallocation rather than refusing to compile. Copies the atomic
-    /// values (the post-fader meter member is added in Task 4).
+    /// values (the LUFS meter member is added in Task 4).
     Bus (Bus&& other) noexcept;
     Bus& operator= (Bus&&)      = delete;
     Bus (const Bus&)            = delete;
