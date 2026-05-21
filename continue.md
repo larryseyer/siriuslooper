@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-21 (**Tape subsystem slice 3 code SHIPPED** — append-only **FLAC** capture-to-disk wiring on origin/master, headless-TDD'd via subagent-driven dev, per-task spec+code-quality review + final holistic **opus** review = "SAFE TO PUSH". **⚠ Operator eyes-on of LIVE recording is PENDING** — the MainComponent wiring has no unit coverage. Next = **slice 4 (Tapes UI + Input Mixer destination picker + creation gesture)** in a fresh chat. Phase 6 UI stays gated behind slice 4.)
+# Session Continuation — 2026-05-21 (**Tape subsystem slice 3 SHIPPED + VERIFIED** — append-only **FLAC** capture-to-disk live on origin/master; operator eyes-on PASSED (a routed input strip records a growing, valid `tape-1.flac` to `~/Library/Sirius Looper/tapes/`). Headless-TDD'd via subagent-driven dev + final holistic **opus** review = "SAFE TO PUSH". Next = **slice 4 (Tapes UI + Input Mixer destination picker + creation gesture)** in a fresh chat. Phase 6 UI stays gated behind slice 4.)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,11 +8,11 @@
 
 ---
 
-## RESUME HERE (2026-05-21 — **Tape subsystem slice 3 code SHIPPED on origin/master; operator eyes-on PENDING**; next = **slice 4 (Tapes UI + destination picker + creation gesture)** in a fresh chat)
+## RESUME HERE (2026-05-21 — **Tape subsystem slice 3 SHIPPED + VERIFIED on origin/master**; next = **slice 4 (Tapes UI + destination picker + creation gesture)** in a fresh chat)
 
-> ## ▶ FIRST: confirm slice 3 live recording (operator eyes-on), THEN start slice 4
-> Slice 3 (**append-only FLAC capture-to-disk wiring — "real recording"**) is **code-complete on
-> origin/master** — 10 commits `fe310c8..80d6a9d` (executed via `superpowers:writing-plans` →
+> ## ▶ START HERE: slice 4 (Tapes UI + Input Mixer destination picker + creation gesture)
+> Slice 3 (**append-only FLAC capture-to-disk — "real recording"**) is **done, on origin/master, and
+> operator-verified** — 13 commits `fe310c8..5d4f842` (executed via `superpowers:writing-plans` →
 > `superpowers:subagent-driven-development`; each task spec-review + code-quality-review with fixes
 > looped back; final holistic **opus** review = **"SAFE TO PUSH"**). Clean `rm -rf build` rebuild of
 > `SiriusLooper` + `SiriusTests` green; full **ctest 559/560** (the 1 Not-Run is the documented
@@ -20,14 +20,16 @@
 > `[flac-tape-sink]` + 1 `[audio-callback][render]` cases). **Do NOT re-do slice 3.** Plan:
 > `docs/superpowers/plans/2026-05-21-tape-subsystem-slice3-capture.md`.
 >
-> **⚠ THE ONE OPEN ITEM — operator eyes-on (the MainComponent wiring has NO unit coverage):**
-> build + launch `build/app/SiriusLooper_artefacts/Release/Sirius Looper.app` (clean `rm -rf build`
-> first), open the **Input Mixer**, feed live input to a strip routed to the primary tape, and
-> confirm `~/Library/Application Support/Sirius Looper/tapes/tape-1.flac` is created, **grows**, and
-> decodes/plays back the captured signal (e.g. `afplay` it). If GOOD → slice 3 is fully done; if not,
-> debug the wiring (the engine/sink pieces are headless-verified, so suspect MainComponent rate/route
-> wiring or device input). Claude is authorized to build + launch; interactive gestures + the
-> visual/audible confirmation are the operator's.
+> **✅ OPERATOR EYES-ON PASSED:** with a live input strip, `tape-1.flac` is created and **grows**
+> (421 KB→591 KB over 3 s, valid FLAC) at the real path **`~/Library/Sirius Looper/tapes/`** (note:
+> JUCE `userApplicationDataDirectory` on macOS = `~/Library`, NOT `~/Library/Application Support`).
+> Two eyes-on bugs were found + fixed (commits `57cde1d`,`5d4f842`): (1) input strips defaulted to
+> `TapeMode::NoTape` so nothing recorded → now default to `CommitToTape` (the **≥1 channel→≥1 tape
+> looper invariant**, memory `project_looper_at_least_one_tape_invariant`); (2) the `FlacTapeSink`
+> sample rate was latched at 0 during construction (before `audioDeviceAboutToStart` fired) → now
+> refreshed on the 30 Hz `timerCallback`. **macOS gotcha:** a Developer-ID **re-sign** can reset the
+> app's mic-permission grant — if a rebuilt app captures silence, re-grant Microphone in System
+> Settings → Privacy.
 >
 > **What slice 3 landed (all pushed):**
 > - **`audio/.../FlacTapeSink.{h,cpp}`** (`fe310c8`→`cadb547`,`ddf36ff`) — the real RT-safe
