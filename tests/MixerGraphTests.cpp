@@ -229,3 +229,85 @@ TEST_CASE ("MixerGraph evaluation order: sources before destinations, terminal l
         CHECK (posOf (order, fx)   < posOf (order, g.terminalNode()));
     }
 }
+
+TEST_CASE ("MixerGraph supports multiple typed terminals",
+           "[mixer-graph][multi-terminal]")
+{
+    MixerGraph g ({ MixerTerminal::Tape, MixerTerminal::HardwareOutput });
+
+    const auto tape = g.terminalNode (MixerTerminal::Tape);
+    const auto hw   = g.terminalNode (MixerTerminal::HardwareOutput);
+
+    CHECK (tape.isValid());
+    CHECK (hw.isValid());
+    CHECK (tape != hw);
+    CHECK (g.kindOf (tape) == MixerNodeKind::Terminal);
+    CHECK (g.kindOf (hw)   == MixerNodeKind::Terminal);
+    CHECK (g.contains (tape));
+    CHECK (g.contains (hw));
+
+    // Primary (no-arg) accessors return the first-listed terminal.
+    CHECK (g.terminalNode() == tape);
+    CHECK (g.terminal()     == MixerTerminal::Tape);
+
+    // A node defaults its main-out to the primary terminal (tape = capture).
+    const auto ch = g.addNode (MixerNodeKind::Channel);
+    CHECK (g.mainOutOf (ch) == tape);
+
+    // An absent terminal kind resolves to invalid on a single-terminal graph.
+    MixerGraph single (MixerTerminal::HardwareOutput);
+    CHECK_FALSE (single.terminalNode (MixerTerminal::Tape).isValid());
+    CHECK (single.terminalNode (MixerTerminal::HardwareOutput) == single.terminalNode());
+}
+
+TEST_CASE ("MixerGraph routes distinct nodes to distinct terminals",
+           "[mixer-graph][multi-terminal]")
+{
+    MixerGraph g ({ MixerTerminal::Tape, MixerTerminal::HardwareOutput });
+    const auto tape = g.terminalNode (MixerTerminal::Tape);
+    const auto hw   = g.terminalNode (MixerTerminal::HardwareOutput);
+    const auto busA = g.addNode (MixerNodeKind::Bus);
+    const auto busB = g.addNode (MixerNodeKind::Bus);
+
+    REQUIRE (g.setMainOut (busA, tape));
+    REQUIRE (g.setMainOut (busB, hw));
+    CHECK (g.mainOutOf (busA) == tape);
+    CHECK (g.mainOutOf (busB) == hw);
+}
+
+TEST_CASE ("MixerGraph removeNode falls a dangling main-out back to the primary terminal",
+           "[mixer-graph][multi-terminal]")
+{
+    MixerGraph g ({ MixerTerminal::Tape, MixerTerminal::HardwareOutput });
+    const auto tape = g.terminalNode (MixerTerminal::Tape);
+    const auto busA = g.addNode (MixerNodeKind::Bus);
+    const auto busB = g.addNode (MixerNodeKind::Bus);
+    REQUIRE (g.setMainOut (busA, busB)); // busA -> busB
+
+    g.removeNode (busB);
+    CHECK (g.mainOutOf (busA) == tape); // fell back to the primary terminal
+}
+
+TEST_CASE ("MixerGraph evaluation order: every node precedes all terminals",
+           "[mixer-graph][multi-terminal][evaluation-order]")
+{
+    MixerGraph g ({ MixerTerminal::Tape, MixerTerminal::HardwareOutput });
+    const auto tape = g.terminalNode (MixerTerminal::Tape);
+    const auto hw   = g.terminalNode (MixerTerminal::HardwareOutput);
+    const auto ch   = g.addNode (MixerNodeKind::Channel);
+    const auto busA = g.addNode (MixerNodeKind::Bus);
+    REQUIRE (g.setMainOut (ch,   busA));
+    REQUIRE (g.setMainOut (busA, hw)); // busA -> hardware output
+
+    const auto& order = g.evaluationOrder();
+    REQUIRE (order.size() == 4); // ch, busA, tape, hw
+
+    const int chPos = posOf (order, ch);
+    const int buPos = posOf (order, busA);
+    CHECK (chPos < buPos);
+    CHECK (buPos < posOf (order, tape));
+    CHECK (buPos < posOf (order, hw));
+    const int lastNonTerminal = (chPos > buPos) ? chPos : buPos;
+    CHECK (posOf (order, tape) > lastNonTerminal);
+    CHECK (posOf (order, hw)   > lastNonTerminal);
+}

@@ -5,14 +5,34 @@
 namespace sirius
 {
 
-MixerGraph::MixerGraph (MixerTerminal terminal)
-    : terminal_ (terminal)
+MixerGraph::MixerGraph (std::initializer_list<MixerTerminal> terminals)
 {
     nodes_.reserve (kMaxNodes);
     sends_.reserve (kMaxNodes);
-    order_.reserve (kMaxNodes + 1);
-    terminalId_ = MixerNodeId { nextId_++ }; // the implicit terminal owns id 1
+    order_.reserve (static_cast<std::size_t> (kMaxNodes) + terminals.size());
+    terminals_.reserve (terminals.size());
+    for (const MixerTerminal kind : terminals)
+        terminals_.push_back (TerminalNode { MixerNodeId { nextId_++ }, kind });
     recomputeOrder();
+}
+
+MixerGraph::MixerGraph (MixerTerminal terminal)
+    : MixerGraph (std::initializer_list<MixerTerminal> { terminal })
+{
+}
+
+bool MixerGraph::isTerminal (MixerNodeId id) const noexcept
+{
+    for (const auto& t : terminals_)
+        if (t.id == id) return true;
+    return false;
+}
+
+MixerNodeId MixerGraph::terminalNode (MixerTerminal kind) const noexcept
+{
+    for (const auto& t : terminals_)
+        if (t.kind == kind) return t.id;
+    return MixerNodeId {};
 }
 
 const MixerGraph::Node* MixerGraph::find (MixerNodeId id) const noexcept
@@ -33,12 +53,12 @@ int MixerGraph::nodeCount() const noexcept { return static_cast<int> (nodes_.siz
 
 bool MixerGraph::contains (MixerNodeId node) const noexcept
 {
-    return node == terminalId_ || find (node) != nullptr;
+    return isTerminal (node) || find (node) != nullptr;
 }
 
 MixerNodeKind MixerGraph::kindOf (MixerNodeId node) const noexcept
 {
-    if (node == terminalId_) return MixerNodeKind::Terminal;
+    if (isTerminal (node)) return MixerNodeKind::Terminal;
     if (const Node* n = find (node)) return n->kind;
     return MixerNodeKind::Terminal; // unknown ids are treated as the sink
 }
@@ -49,14 +69,14 @@ MixerNodeId MixerGraph::addNode (MixerNodeKind kind)
     if (static_cast<int> (nodes_.size()) >= kMaxNodes) return MixerNodeId {};
 
     const MixerNodeId id { nextId_++ };
-    nodes_.push_back (Node { id, kind, terminalId_ }); // main-out defaults to terminal
+    nodes_.push_back (Node { id, kind, terminals_.front().id }); // default: primary terminal
     recomputeOrder();
     return id;
 }
 
 void MixerGraph::removeNode (MixerNodeId node)
 {
-    if (node == terminalId_) return;
+    if (isTerminal (node)) return;
 
     nodes_.erase (std::remove_if (nodes_.begin(), nodes_.end(),
                                   [node] (const Node& n) { return n.id == node; }),
@@ -68,9 +88,9 @@ void MixerGraph::removeNode (MixerNodeId node)
                                   { return e.source == node || e.fxReturn == node; }),
                   sends_.end());
 
-    // Any node whose main-out pointed at the removed node falls back to terminal.
+    // Any node whose main-out pointed at the removed node falls back to the primary terminal.
     for (auto& n : nodes_)
-        if (n.mainOut == node) n.mainOut = terminalId_;
+        if (n.mainOut == node) n.mainOut = terminals_.front().id;
 
     recomputeOrder();
 }
@@ -119,8 +139,8 @@ bool MixerGraph::setMainOut (MixerNodeId node, MixerNodeId dest)
     if (n == nullptr) return false; // unknown / terminal cannot have a main-out
 
     const MixerNodeKind destKind = kindOf (dest);
-    const bool destValid = (dest == terminalId_) || (destKind == MixerNodeKind::Bus);
-    if (! destValid) return false; // only a Bus or the Terminal is a valid destination
+    const bool destValid = isTerminal (dest) || (destKind == MixerNodeKind::Bus);
+    if (! destValid) return false; // only a Bus or a Terminal is a valid destination
 
     if (wouldMainOutCycle (node, dest)) return false;
 
@@ -166,17 +186,27 @@ bool MixerGraph::setSend (MixerNodeId source, MixerNodeId fxReturn, float level)
 
 void MixerGraph::recomputeOrder()
 {
-    // Kahn's algorithm. Nodes: all registered nodes + the implicit terminal.
+    // Kahn's algorithm. Nodes: all registered nodes + all terminal nodes.
     // Edges: each node's main-out (node -> mainOut) and each send (source -> fxReturn).
+    //
+    // Terminals are always last in the output regardless of their real in-degree
+    // (an unreachable terminal has in-degree 0 but must still follow all non-terminal
+    // nodes). We achieve this by seeding each terminal's in-degree to 1 and appending
+    // them explicitly after Kahn has drained the non-terminal nodes.
     order_.clear();
 
     std::vector<MixerNodeId> ids;
-    ids.reserve (nodes_.size() + 1);
+    ids.reserve (nodes_.size() + terminals_.size());
     for (const auto& n : nodes_) ids.push_back (n.id);
-    ids.push_back (terminalId_);
+    for (const auto& t : terminals_) ids.push_back (t.id);
 
-    // in-degree per node id (parallel to ids)
+    // in-degree per node id (parallel to ids); terminals start at 1 so they
+    // never enter the queue during the normal Kahn pass.
     std::vector<int> indeg (ids.size(), 0);
+    const std::size_t nonTerminalCount = nodes_.size();
+    for (std::size_t i = nonTerminalCount; i < ids.size(); ++i)
+        indeg[i] = 1;
+
     const auto indexOf = [&ids] (MixerNodeId id) -> int
     {
         for (std::size_t i = 0; i < ids.size(); ++i)
@@ -197,7 +227,7 @@ void MixerGraph::recomputeOrder()
         addEdge (e.source, e.fxReturn);
 
     std::vector<MixerNodeId> queue;
-    for (std::size_t i = 0; i < ids.size(); ++i)
+    for (std::size_t i = 0; i < nonTerminalCount; ++i)
         if (indeg[i] == 0) queue.push_back (ids[i]);
 
     while (! queue.empty())
@@ -206,11 +236,14 @@ void MixerGraph::recomputeOrder()
         queue.erase (queue.begin());
         order_.push_back (cur);
 
-        // Decrement in-degree of every node cur points at.
+        // Decrement in-degree of every non-terminal node cur points at.
         const auto relax = [&] (MixerNodeId to)
         {
             const int ti = indexOf (to);
-            if (ti >= 0 && --indeg[static_cast<std::size_t> (ti)] == 0)
+            // Only enqueue non-terminal nodes during the Kahn pass; terminals
+            // are appended explicitly after.
+            if (ti >= 0 && static_cast<std::size_t> (ti) < nonTerminalCount
+                && --indeg[static_cast<std::size_t> (ti)] == 0)
                 queue.push_back (to);
         };
 
@@ -221,8 +254,10 @@ void MixerGraph::recomputeOrder()
                 if (e.source == cur) relax (e.fxReturn);
         }
     }
-    // The graph is acyclic by construction (setMainOut/setSend reject cycles), so
-    // order_ contains every id. The terminal, having no outgoing edge, sorts last.
+
+    // Append all terminals in declaration order — they are always last.
+    for (const auto& t : terminals_)
+        order_.push_back (t.id);
 }
 
 } // namespace sirius

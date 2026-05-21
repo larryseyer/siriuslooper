@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <initializer_list>
 #include <vector>
 
 namespace sirius
@@ -8,8 +9,9 @@ namespace sirius
 
 /// Graph-layer node kind (distinct from BusConfig::BusKind, which is the DSP
 /// registry's view). A Channel is a source (input strip or phrase strip); Bus
-/// and FxReturn are summing nodes; Terminal is the single implicit sink
-/// (tape on the input side, output·master on the output side).
+/// and FxReturn are summing nodes; Terminal is an implicit sink node (tape on
+/// the input side, hardware output on the output side; multi-terminal graphs
+/// have one Terminal node per kind).
 enum class MixerNodeKind { Channel, Bus, FxReturn, Terminal };
 
 /// Which terminal this graph drives — set at construction, never changes.
@@ -47,10 +49,21 @@ public:
     /// node/edge/order vectors never reallocate during normal use.
     static constexpr int kMaxNodes = 256;
 
+    /// Single-terminal graph (Output Mixer): one implicit terminal of the given
+    /// kind. Delegates to the list constructor.
     explicit MixerGraph (MixerTerminal terminal);
 
-    MixerTerminal terminal()     const noexcept { return terminal_; }
-    MixerNodeId   terminalNode() const noexcept { return terminalId_; }
+    /// Multi-terminal graph (Input Mixer): one implicit Terminal node per kind,
+    /// in order. terminals[0] is the PRIMARY — the zero-config default main-out
+    /// destination and the removeNode fallback. Precondition: non-empty.
+    explicit MixerGraph (std::initializer_list<MixerTerminal> terminals);
+
+    MixerTerminal terminal()     const noexcept { return terminals_.front().kind; }
+    MixerNodeId   terminalNode() const noexcept { return terminals_.front().id; }
+
+    /// The Terminal node id for a given kind, or an invalid id if this graph has
+    /// no terminal of that kind.
+    MixerNodeId   terminalNode (MixerTerminal kind) const noexcept;
 
     /// Registers a Channel / Bus / FxReturn node. Its main-out defaults to the
     /// terminal (zero-config). Passing Terminal returns an invalid id (the
@@ -85,18 +98,20 @@ public:
 private:
     struct Node { MixerNodeId id; MixerNodeKind kind; MixerNodeId mainOut; };
     struct SendEdge { MixerNodeId source; MixerNodeId fxReturn; float level; };
+    struct TerminalNode { MixerNodeId id; MixerTerminal kind; };
+
+    bool        isTerminal (MixerNodeId id) const noexcept;
 
     const Node* find (MixerNodeId id) const noexcept;
     Node*       find (MixerNodeId id) noexcept;
     bool        reaches (MixerNodeId from, MixerNodeId target) const noexcept;
     void        recomputeOrder();
 
-    MixerTerminal            terminal_;
-    MixerNodeId              terminalId_;
-    std::vector<Node>        nodes_;   // excludes the terminal (handled separately)
-    std::vector<SendEdge>    sends_;
-    std::vector<MixerNodeId> order_;
-    std::int64_t             nextId_ { 1 };
+    std::vector<TerminalNode> terminals_; // [0] = primary; >= 1 by construction
+    std::vector<Node>         nodes_;     // excludes terminal nodes
+    std::vector<SendEdge>     sends_;
+    std::vector<MixerNodeId>  order_;
+    std::int64_t              nextId_ { 1 };
 };
 
 } // namespace sirius
