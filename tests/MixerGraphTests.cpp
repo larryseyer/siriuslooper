@@ -1,8 +1,16 @@
+// The float == comparisons below assert EXACT stored send levels (clamp
+// boundaries 0/0.5/1.0 and edge removal), not arithmetic results, so exact
+// equality is the correct check; silence the project's -Wfloat-equal here.
+#if defined(__clang__)
+ #pragma clang diagnostic ignored "-Wfloat-equal"
+#elif defined(__GNUC__)
+ #pragma GCC diagnostic ignored "-Wfloat-equal"
+#endif
+
 #include "sirius/MixerGraph.h"
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <type_traits>
 #include <utility>
 #include <vector>
 
