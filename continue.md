@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-21 (**Tape subsystem DESIGNED + slice-1 plan READY** — discovered while prepping Phase 6 that "Add tape" has no engine support and the operator's real vision is a full project tape pool. Spec + slice-1 plan written this session; **NOTHING implemented yet**. Next = **implement slice 1 (tape pool model + persistence)** in a fresh chat. Phase 6 UI is now gated behind the tape subsystem.)
+# Session Continuation — 2026-05-21 (**Tape subsystem slice 1 SHIPPED** — `TapePool` model + `SessionFormat` round-trip on origin/master, headless-TDD'd, reviewed clean. Next = **implement slice 2 (multi-tape routing engine)** in a fresh chat. Phase 6 UI stays gated behind slices 2→4.)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,52 +8,80 @@
 
 ---
 
-## RESUME HERE (2026-05-21 — **Tape subsystem designed; slice-1 plan ready**; next = **implement slice 1** in a fresh chat)
+## RESUME HERE (2026-05-21 — **Tape subsystem slice 1 SHIPPED on origin/master**; next = **implement slice 2 (multi-tape routing engine)** in a fresh chat)
 
-> ## ▶ START HERE: implement the tape-subsystem **slice 1** (tape pool model + persistence)
-> Prepping Phase 6 surfaced that the creation menu's "Add tape" has **no engine
-> support** (the `MixerGraph` terminal set is fixed at construction; one `Tape`
-> terminal; no tape-creation path; production `TapeWriter` isn't even wired —
-> `MainComponent.cpp:1101`). The operator's intent is bigger than a menu item: a
-> **project tape pool** — a list/tab of tapes, **≥1 required, unbounded max**,
-> create-new-or-use-existing, surfaced in three views of ONE set (Tapes tab +
-> timeline arm/focus + Input Mixer routing). Grounded in whitepaper §5.2/§6.2 +
-> `docs/design/mixer-design.md` (41–43, 71–77, 112): any node (channel **or** bus)
-> routes its main-out to a **specific** tape; many nodes→one tape = summing; each→
-> its own = parallel tapes; channels may go bus-first. **Nothing is implemented
-> yet — this session produced the design + the first plan only.**
+> ## ▶ START HERE: implement the tape-subsystem **slice 2** (multi-tape routing engine)
+> Slice 1 (the project **tape pool** model + persistence) is **done and on
+> origin/master** — commit `37ac1ad` (single commit, headless-TDD'd, holistic code
+> review = "clean, ship it"). Clean `rm -rf build` rebuild green; full **ctest
+> 540/541** (the 1 Not-Run is the documented `MainComponentPluginEditorTests_NOT_BUILT`
+> sentinel run separately by `bash/test-s7.sh`; +9 `[tape-pool]` cases / 48 assertions
+> over the 531/532 bus-controls baseline). **Do NOT re-do slice 1.**
 >
-> **Two docs written + committed this session (read both):**
-> - **Spec:** `docs/superpowers/specs/2026-05-21-tape-subsystem-design.md` — the
->   full model + the **4-slice decomposition**: (1) tape pool model + persistence
->   [headless TDD], (2) multi-tape routing engine [headless TDD], (3) capture-to-
->   disk wiring = "real recording", **explicitly sequenced in the path per the
->   operator** [TDD + eyes-on], (4) Tapes UI [operator-verified]. Then the original
->   mixer **Phase 6** (bus/FX-return strips) resumes with the tape model beneath it.
-> - **Slice-1 plan:** `docs/superpowers/plans/2026-05-21-tape-subsystem-slice1-pool.md`
->   — 7 tasks, pure headless TDD. New `core/TapeDescriptor.h` + `core/TapePool.{h,cpp}`
->   (≥1 invariant, monotonic ids, add/remove/rename, explicit-list ctor) + `SessionFormat`
->   `serializeTapePool`/`deserializeTapePool` round-trip + `tests/TapePoolTests.cpp`.
->   CMake is **explicit-list, not glob** — the plan edits `core/CMakeLists.txt:25`
->   and `tests/CMakeLists.txt` (both spelled out).
+> **What slice 1 landed (all pushed, `37ac1ad`):**
+> - **`core/include/sirius/TapeDescriptor.h`** — JUCE-free value struct
+>   `{ TapeId id; std::string name; }` + `operator==`. (Note: non-default-constructible
+>   because `TapeId` has no default ctor — by design; aggregate-init everywhere.)
+> - **`core/include/sirius/TapePool.h` + `core/src/TapePool.cpp`** — the project's
+>   ordered tape list, **≥1 floor / unbounded max / monotonic non-reused ids**.
+>   Default ctor seeds `{TapeId(1), "Tape 1"}`. `add(name)→TapeId` (appends, `nextId_++`),
+>   `remove(id)→bool` (refuses if it'd empty the pool OR id unknown; `nextId_` never
+>   rewinds), `rename(id,name)→bool`, `count/find/at/tapes/primary`. Explicit-list ctor
+>   `TapePool(vector<TapeDescriptor>)` validates non-empty + unique ids (throws
+>   `std::invalid_argument`) and seeds `nextId_ = maxId+1`. Message-thread only.
+>   Added to `core/CMakeLists.txt` (explicit list).
+> - **`persistence` `serializeTapePool`/`deserializeTapePool`** (`SessionFormat.{h,cpp}`)
+>   — self-contained `{ "tapes": [ { "id", "name" } ] }` JSON, round-trips exactly
+>   (incl. `nextId_` via the max-id seed). Deserialize throws `std::runtime_error` on
+>   invalid JSON / non-object root / missing-or-empty `tapes` array. Reuses the file's
+>   anon-namespace helpers (`fail`/`makeObject`/`objectVar`/`requireProperty`/`requireInt64`).
+>   ⚠ **Carry-forward (documented gap, not a bug):** duplicate-id JSON surfaces as
+>   `std::invalid_argument` (from the ctor), NOT `runtime_error` — out of slice-1 test
+>   scope; if a later slice loads hand-edited pool JSON, wrap the ctor call to re-throw
+>   via `fail`.
+> - **`tests/TapePoolTests.cpp`** — 9 cases (`[tape-pool]` 7 + `[tape-pool][sessionformat]` 2).
 >
-> **First moves for the fresh chat (implement slice 1):**
-> 1. Sanity: `git status` clean; `git log --oneline -5` shows the spec + plan commits
->    on origin/master (newest after `f7a849e`).
-> 2. Read the spec's "Slice 1 detail" + the slice-1 plan top-to-bottom.
-> 3. **brainstorming NOT needed** (design locked this session) → go straight to
->    `superpowers:subagent-driven-development` (recommended) or
->    `superpowers:executing-plans` on the slice-1 plan. Final acceptance for slice 1
->    is the full ctest passing (was **531/532** at the bus-controls slice; this adds
->    a `TapePoolTests` file — expect 9 new cases).
-> 4. Slice 1 is engine/persistence apparatus only — NO MainComponent/UI wiring (that's
->    slice 4). Same "apparatus first" posture as the routing-graph phases.
-> 5. End by updating THIS file: slice 1 shipped (commits + new ctest count + clean-
->    rebuild status), next = **slice 2 (multi-tape routing engine)** with its first moves.
+> **⚠ Scope:** slice 1 is the **model + serializer only — NOT wired into any `MixerGraph`,
+> `TapeWriter`, UI, or `MainComponent` save/load.** Nothing constructs a `TapePool` in
+> production yet. That wiring is slices 2–4. Same "apparatus first" posture as the routing
+> graph phases.
+>
+> **NEXT = slice 2: multi-tape routing engine (headless TDD).** Generalize the **input
+> mixer's** `MixerGraph` from one implicit `Tape` terminal to **N `Tape` terminals**, one
+> per pooled tape (`HardwareOutput` stays singleton; the **output mixer's single-terminal
+> graph is untouched** and re-proven behavior-preserving by its existing suite). Add/remove
+> a tape terminal keyed by `TapeId`; assign a node's main-out to a chosen tape; enforce
+> acyclic routing + topological evaluation across multiple tape terminals; deliver each
+> tape terminal's summed input to that tape. New `InputMixer` API:
+> `setChannelMainOutToTape(ChannelId, TapeId)` + `setBusMainOutToTape(BusId, TapeId)` (the
+> existing no-arg overloads keep targeting the pool's **primary** tape, behavior-preserving).
+> Cover: per-tape delivery, summing many nodes→one tape, parallel distinct tapes, cycle
+> rejection, topo order with >1 tape terminal, **stereo invariant**, traversal **RT-safety
+> static-asserts**, single-tape default equivalence.
+>
+> **First moves for the fresh chat (slice 2):**
+> 1. Sanity: `git status` clean; `git log --oneline -5` shows `37ac1ad` newest on
+>    origin/master (the slice-1 commit, after `fdc15df`).
+> 2. Read the spec's **Slice 2** section
+>    (`docs/superpowers/specs/2026-05-21-tape-subsystem-design.md:96`) + the existing
+>    `engine/include/sirius/MixerGraph.{h,cpp}` (terminal model, `evaluationOrder()`,
+>    acyclic enforcement) + `engine/.../InputMixer.{h,cpp}` (the `setChannelMainOutToTape`
+>    no-arg form + `MixerGraph(MixerTerminal::Tape)` construction).
+> 3. **brainstorming NOT needed** (design locked) → `superpowers:writing-plans` →
+>    `docs/superpowers/plans/2026-05-21-tape-subsystem-slice2-routing.md` →
+>    `superpowers:subagent-driven-development` (or direct TDD — slice 1 went direct, one
+>    cohesive engine unit). Final acceptance = full ctest green.
+> 4. Slice 2 is engine apparatus only — NO UI/MainComponent wiring (slices 3–4). Routing-
+>    graph **persistence** (the mixer-routing spec's slice 5) will later extend to record
+>    per-node tape-terminal assignments by `TapeId`.
+> 5. End by updating THIS file: slice 2 shipped (commits + ctest count + clean-rebuild),
+>    next = **slice 3 (capture-to-disk wiring — "real recording", explicitly in the path
+>    per the operator)** with its first moves.
 >
 > **⚠ Do NOT jump to Phase 6 UI or the bus/FX-return strips** — Phase 6's destination
-> picker depends on the tape model; the tape subsystem (slices 1→4) comes first, then
-> Phase 6 resumes. The bus-controls engine slice (below) is already on origin/master.
+> picker depends on the tape model + multi-tape routing; the tape subsystem (slices 2→4)
+> comes first, then Phase 6 resumes. The bus-controls engine slice (below) is already on
+> origin/master.
 
 ## HISTORICAL — Bus-controls engine slice (superseded 2026-05-21 by the tape-subsystem design above; still on origin/master, do NOT re-do)
 
