@@ -1,5 +1,51 @@
 # Sirius Looper — Deferred Items
 
+### 2026-05-21 — Routing Phase 3: wire renderInputGraph into the production audio path
+- Files: app/MainComponent.cpp (AudioCallback wiring, rebuildInputStrips ~1555,
+  refreshInputMixer), audio/src/AudioCallback.cpp (Step 2 dispatchInputMixer +
+  Step 2b processDeviceInputs), engine/src/InputMixer.cpp (renderInputGraph).
+- What was deferred: the new `InputMixer::renderInputGraph` (full graph traversal:
+  channel main-out → bus/tape/hardware-output, sends → FX returns, topo walk) is
+  built + TDD'd but NOT called in production. The app still uses the legacy
+  `processBuffer` (per-device-channel tape) + `processDeviceInputs` (metering).
+- Why deferred: operator-confirmed Phase 3 scope = engine apparatus, tested; the
+  UI to CREATE input buses/sends/routes doesn't exist until Phases 6–7. Matches
+  the repo's established "tested seam, production wiring follows" pattern (M8 S4).
+- What's needed to finish: when the Input Mixer UI (P6/P7) lands, migrate
+  AudioCallback to call `renderInputGraph(deviceIn, n, directOut, m, samples)`,
+  retire the now-redundant `processBuffer`/`processDeviceInputs` (or fold their
+  metering into the new traversal), and supply a direct-out buffer for the
+  hardware-output terminal.
+
+### 2026-05-21 — Routing Phase 3: bus→tape ChannelId derivation + stereo tape payload
+- Files: engine/src/InputMixer.cpp (enqueueToTape, the bus→tape branch of
+  renderInputGraph), engine/include/sirius/TapeWriter.h.
+- What was deferred: a bus routed to the tape terminal enqueues under
+  `ChannelId{ bus.id().value() }` (channel-id space and bus-id space overlap by
+  value). The proper TapeId/channel-vs-bus tape identity is an M11 SAF concern.
+  Also: input tape delivery now writes STEREO INTERLEAVED float32, while the
+  legacy `processBuffer` writes per-device-channel mono — these two tape-write
+  paths have different payload layouts.
+- Why deferred: the SAF TapeId→content mapping (same deferral as the dry/wet
+  tape hash) isn't built; bus-id-as-channel-id is a reasonable interim key.
+- What's needed to finish: when SAF/TapeId identity lands (M11), give buses a
+  proper tape identity distinct from channels, and unify the tape payload layout
+  across the legacy and graph paths (or fully retire the legacy path per the
+  wiring item above).
+
+### 2026-05-21 — Routing Phase 3: FX returns + per/post-fader sends
+- Files: engine/src/InputMixer.cpp (renderInputGraph sends), the internal-FX
+  follow-on spec (not yet written).
+- What was deferred: (1) FX returns (RVB/DLY + operator-created) have NO DSP —
+  empty EffectChains pass through; the actual reverb/delay engines are the
+  internal-FX follow-on. (2) Sends are post-fader only (they read the post-strip
+  scratch); the per-send pre/post-fader toggle is unimplemented.
+- Why deferred: internal FX DSP is an explicit follow-on spec; pre/post toggle is
+  an Open Item in the routing spec (default post-fader was the agreed v1).
+- What's needed to finish: the internal-FX follow-on (EQ/Comp/Rvb/Dly seeded by
+  OTTO) wires real DSP into the FX-return EffectChains; add a per-send pre/post
+  flag to the graph send model + the traversal if a use case appears.
+
 ### 2026-05-20 — White-paper "always recording" caveat: global enable/disable
 - Files: docs/Sirius Looper Whitepaper V7.md (the "tape is the always-running
   source of truth" / "everything the input mixer produces is captured to tape"
