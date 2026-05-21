@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-21 (routing **Phase 5 routing-graph persistence SHIPPED** to origin/master via writing-plans → subagent-driven-development; clean-rebuild full ctest 521/522 green; next = **Phase 6 Input Mixer UI** in a fresh chat)
+# Session Continuation — 2026-05-21 (**Bus-controls engine slice SHIPPED** — the Phase 6 prerequisite: `Bus` gains gain/mute/dual peak+LUFS meter + `InputMixer::busForId`. On origin/master via writing-plans → subagent-driven-development; clean-rebuild full ctest **531/532**; final holistic review = SAFE TO CONSIDER COMPLETE. Next = **Phase 6 Input Mixer UI** in a fresh chat)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,7 +8,105 @@
 
 ---
 
-## RESUME HERE (2026-05-21 — routing **Phase 5 SHIPPED**; next = **Phase 6 Input Mixer UI** in a fresh chat)
+## RESUME HERE (2026-05-21 — **Bus-controls engine slice SHIPPED**; next = **Phase 6 Input Mixer UI** in a fresh chat)
+
+> ## ▶ START HERE: the Phase 6 ENGINE PREREQUISITE is on origin/master; build the **Phase 6 UI** next
+> A discovery while prepping Phase 6: the spec says bus/FX-return strips get "fader/
+> mute/solo + the dual peak+LUFS meter like channel strips," but the engine `Bus`
+> type had **none** of that — only an effect chain + mix scratch. Rendering those
+> controls now would be dead, unwired UI. The operator chose **"engine phase first"**
+> — so this slice added the missing engine surface BEFORE the UI. Executed end-to-end
+> via `superpowers:writing-plans` → `superpowers:subagent-driven-development` (5 impl
+> tasks, each spec-review + code-quality-review with fixes looped back; final holistic
+> opus review = **"SAFE TO CONSIDER COMPLETE"**). On **origin/master**, 10 commits
+> `9cf0921..4c2fcdc`. **Clean `rm -rf build` rebuild green; full ctest 531/532** (the 1
+> Not-Run = the documented `MainComponentPluginEditorTests_NOT_BUILT` sentinel, run
+> separately by `bash/test-s7.sh`; +10 cases over the Phase-5 521/522 baseline). **Do
+> NOT re-do this slice.** Plan: `docs/superpowers/plans/2026-05-21-mixer-bus-controls-engine.md`.
+>
+> **What the slice landed (all pushed):**
+> - **`LufsMeter` is now move-only** (`engine/include/sirius/LufsMeter.h`) — hand-written
+>   `noexcept` move ctor (loads its 3 `std::atomic<float>` members, moves its vectors,
+>   copies scalars; copy + move-assign deleted). Needed so `Bus` can hold one by value
+>   inside `std::vector<Bus>`. (The plan wrongly assumed "std::vector + scalars" → a
+>   defaulted move would've been deleted; the implementer caught it.)
+> - **`Bus` gains the full ChannelStrip-parity control surface** (`Bus.{h,cpp}`):
+>   `setGain/gain` (`std::atomic<float> gainLinear_{1.0f}`), `setMuted/muted`
+>   (`std::atomic<bool>`), `peakLeft/peakRight` (mutable atomics), `prepare(sr,maxBlock)`
+>   + `lufsIntegrated()` (a mutable `LufsMeter`), and a hand-written **`noexcept` move
+>   ctor** (all 13 members, declaration order — atomics relaxed-loaded, vectors + meter
+>   moved). `Bus::process` applies gain+mute and writes the post-fader peak + feeds the
+>   LUFS meter in **BOTH** paths (inline + effect-chain). Stays `const noexcept`,
+>   alloc/lock/throw-free (static_assert holds). **Default config (gain 1.0 / unmuted /
+>   un-prepared meter) is bit-identical** → OutputMixer is structurally untouched and
+>   its 1216-assertion suite is unchanged; the metering is a free side-effect its buses
+>   inherit at defaults. **Wet-capture (M8 S4) tap stays pre-fader** (reads
+>   `processedBuffer_` before gain) — preserved + verified.
+> - **`InputMixer::busForId(BusId) noexcept`** (`InputMixer.{h,cpp}`) — message-thread
+>   accessor returning the live `Bus*` (linear scan of `buses_`, mirrors
+>   `setBusEffectChain`), or nullptr. The UI drives a bus strip's fader/mute and reads
+>   its meter through this. Pointer is stable (`buses_` is `reserve()`d to cap).
+>
+> **⚠ Scope:** this is the **engine apparatus only — NOT wired into any UI yet.** No
+> bus strips render; nothing calls `setGain`/`busForId`/`prepare` outside tests. The
+> Phase 6 UI is what wires it. (Same "apparatus, then UI" posture as Phases 3–5.)
+>
+> **NEXT = Phase 6: Input Mixer UI** (operator-verified, NOT headless). Spec **locked**
+> (`docs/superpowers/specs/2026-05-20-mixer-routing-graph-design.md`, Phase 6 + the
+> "UI design" section) — **do NOT re-brainstorm.** Three pieces:
+> 1. **Blank-area creation gesture** — extend `InputMixerPane`'s existing right-click/
+>    500 ms long-press plumbing (currently per-strip Split/Collapse) so a gesture on
+>    BLANK pane area (no strip under cursor — `stripIndexOf` returns -1) opens a 3-option
+>    menu: **Add bus / Add FX return / Add tape**. Each calls the engine
+>    (`inputMixer_->addBus(...)` / `addFxReturn(...)`), **bracketed by
+>    `removeAudioCallback`/`addAudioCallback`** (same as `rebuildInputStrips` — `addBus`
+>    mutates `buses_` + the graph, both read by the audio thread), and calls
+>    `bus->prepare(currentSampleRate, kInputLufsMaxBlock)` for the new bus's meter
+>    INSIDE the bracket.
+> 2. **Bus / FXReturn strips** — render a `CompactFaderStrip` with
+>    `ChannelType::Bus` / `ChannelType::FXReturn` (both enum values already exist in the
+>    vendored strip) for each engine bus (enumerate via `busCount()`/`busIdAt()`/
+>    `busKindAt()`; name via `busForId(id)->config().name`). Wire fader→`bus->setGain`,
+>    mute→`bus->setMuted`, solo→solo-in-place across ALL strips (channels + buses), and
+>    the dual peak+LUFS meter ← `bus->peakLeft()/peakRight()/lufsIntegrated()` on the
+>    existing 30 Hz `refreshInputMixer` timer. NOTE the ctor already seeds 2 FX returns
+>    (RVB busId 1, DLY busId 2) → strips should appear for them immediately.
+> 3. **Per-channel destination picker** (bottom of each INPUT-CHANNEL strip) — wired to
+>    `setChannelMainOutToBus/Tape/HardwareOutput` (all exist), offering only acyclic
+>    destinations. **⚠ Do NOT re-enable the vendored `CompactFaderStrip`'s output combo**
+>    — it's hardwired to OTTO's hardware-output-PAIRS model (`kNumOutputPairs`,
+>    `formatOutputPairLabel`, private `populateOutputCombo`); re-enabling shows wrong
+>    labels and rewriting it breaks the byte-faithful vendoring rule. Instead have
+>    `InputMixerPane` render its OWN small destination picker beneath each strip (the
+>    pane already owns layout + gesture relay) — same pattern already used for gestures.
+>    A button showing the current destination that opens a `PopupMenu` is the
+>    touch-friendly, vendoring-safe choice.
+>
+> This is the FIRST phase that touches the GUI → **operator-verified, not unit-tested**.
+> Clean `rm -rf build` first, build + launch `build/app/SiriusLooper_artefacts/Release/
+> Sirius Looper.app` (Claude is authorized to build + launch; interactive gestures +
+> visual confirmation are the operator's). Phase 7 (sends tab + insert management) and
+> the production wiring of Phase 4/5's apparatus follow.
+>
+> **First moves for the next chat (Phase 6 UI):**
+> 1. Sanity: `git status` clean; `git log --oneline -12` shows `4c2fcdc` newest on
+>    origin/master (the bus-controls slice tail).
+> 2. Read the spec Phase 6 + "UI design" sections; `app/MainComponent.cpp`
+>    `InputMixerPane` (the `mouseDown`/`stripIndexOf`/`showToggleMenu` gesture plumbing,
+>    `setStrips`, `rebuildInputStrips`, `refreshInputMixer`, `recomputeInputStripMutes`)
+>    + `app/MainComponent.h` input-mixer members; `ui/lookandfeel/components/
+>    CompactFaderStrip.h` (`ChannelType`, the combo caveat above); the new engine API on
+>    `InputMixer` (`addBus`/`addFxReturn`/`busCount`/`busIdAt`/`busKindAt`/`busForId`/
+>    `setChannelMainOutTo*`).
+> 3. `superpowers:brainstorming` NOT needed (spec locked) → `superpowers:writing-plans`
+>    → `docs/superpowers/plans/2026-05-20-mixer-routing-graph-phase6.md` →
+>    `superpowers:subagent-driven-development`, BUT final acceptance is the operator
+>    eyes-on the .app, not a unit test.
+> 4. Carry-forward: the chain-path Bus metering is untested headlessly (todo.md
+>    2026-05-21 entry); a `const Bus* busForId const` overload is YAGNI until a
+>    read-only caller appears.
+
+## HISTORICAL — routing **Phase 5** (superseded 2026-05-21 by the bus-controls engine slice above)
 
 > ## ▶ START HERE: Phase 5 (routing-graph persistence) is on origin/master; build **Phase 6** next
 > Phase 5 executed end-to-end via `superpowers:writing-plans` →
