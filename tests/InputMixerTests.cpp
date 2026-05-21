@@ -394,6 +394,8 @@ namespace
     // Equal-power pan gain at centre (pan = 0.5): cos(0.5 * pi/2) = 0.70710678.
     constexpr float kCentrePanGain = 0.70710678f;
 
+    // Test-only: deliverTapeBlock allocates (vector copies). NOT a production
+    // ITapeSink implementation — a real sink must be allocation-free.
     struct RecordingTapeSink : sirius::ITapeSink
     {
         struct Block { std::int64_t tapeId; std::vector<float> left, right; };

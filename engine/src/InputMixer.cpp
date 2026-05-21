@@ -585,7 +585,6 @@ ProcessingChain* InputMixer::processingChainFor (ChannelId id) noexcept
     return it->second.processing.get();
 }
 
-
 void InputMixer::accumulateIntoBus (MixerNodeId busNode, const float* left, const float* right,
                                     float level, int numSamples) noexcept
 {
@@ -604,6 +603,7 @@ void InputMixer::accumulateIntoTape (int slot, const float* left, const float* r
                                      float level, int numSamples) noexcept
 {
     if (slot < 0 || slot >= static_cast<int> (tapeMixLeft_.size())) return;
+    jassert (numSamples >= 0 && numSamples <= static_cast<int> (tapeMixLeft_[static_cast<std::size_t> (slot)].size()));
     float* tl = tapeMixLeft_[static_cast<std::size_t> (slot)].data();
     float* tr = tapeMixRight_[static_cast<std::size_t> (slot)].data();
     for (int s = 0; s < numSamples; ++s) { tl[s] += left[s] * level; tr[s] += right[s] * level; }
@@ -682,6 +682,8 @@ void InputMixer::renderInputGraph (const float* const* deviceIn, int numDeviceCh
     }
 
     // ── Step 3: process each bus / FX return into its main-out destination ──
+    // RT-safety: evaluationOrder() is a const& to a pre-built vector (no alloc);
+    // busNodeIds_ lookups are bounded linear scans; no graph mutators are called.
     for (const MixerNodeId nodeId : graph_.evaluationOrder())
     {
         std::size_t busIdx = busNodeIds_.size();
