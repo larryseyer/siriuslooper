@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-21 (**Tape subsystem slice 3 SHIPPED + VERIFIED** — append-only **FLAC** capture-to-disk live on origin/master; operator eyes-on PASSED (a routed input strip records a growing, valid `tape-1.flac` to `~/Library/Sirius Looper/tapes/`). Headless-TDD'd via subagent-driven dev + final holistic **opus** review = "SAFE TO PUSH". Next = **slice 4 (Tapes UI + Input Mixer destination picker + creation gesture)** in a fresh chat. Phase 6 UI stays gated behind slice 4.)
+# Session Continuation — 2026-05-21 (**Tape subsystem slice 3 code SHIPPED on origin/master — but live-capture LEVEL is UNDER INVESTIGATION**, NOT yet signed off. FLAC capture-to-disk works mechanically — a routed strip writes a growing, valid `tape-1.flac` to `~/Library/Sirius Looper/tapes/` — but the captured audio measured **≈ −58 dBFS (near-silent / "blank" in an editor)** while input meters moved. A decisive controlled-level test is PENDING (operator plays a LOUD input, meter hot, quit, measure). Resolve that FIRST, then proceed to **slice 4 (Tapes UI + destination picker + creation gesture)**. End goal + full path below.)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,90 +8,143 @@
 
 ---
 
-## RESUME HERE (2026-05-21 — **Tape subsystem slice 3 SHIPPED + VERIFIED on origin/master**; next = **slice 4 (Tapes UI + destination picker + creation gesture)** in a fresh chat)
+## RESUME HERE (2026-05-21 — slice 3 FLAC capture-to-disk SHIPPED on origin/master; **OPEN: captured audio level ≈ −58 dBFS, under investigation** — resolve before sign-off, then slice 4)
 
-> ## ▶ START HERE: slice 4 (Tapes UI + Input Mixer destination picker + creation gesture)
-> Slice 3 (**append-only FLAC capture-to-disk — "real recording"**) is **done, on origin/master, and
-> operator-verified** — 13 commits `fe310c8..5d4f842` (executed via `superpowers:writing-plans` →
-> `superpowers:subagent-driven-development`; each task spec-review + code-quality-review with fixes
-> looped back; final holistic **opus** review = **"SAFE TO PUSH"**). Clean `rm -rf build` rebuild of
-> `SiriusLooper` + `SiriusTests` green; full **ctest 559/560** (the 1 Not-Run is the documented
-> `MainComponentPluginEditorTests_NOT_BUILT` sentinel run separately by `bash/test-s7.sh`; +5
-> `[flac-tape-sink]` + 1 `[audio-callback][render]` cases). **Do NOT re-do slice 3.** Plan:
-> `docs/superpowers/plans/2026-05-21-tape-subsystem-slice3-capture.md`.
+> ## ▶ STEP 1 (do this FIRST): resolve the slice-3 capture-LEVEL investigation
+> Slice 3 (**append-only FLAC capture-to-disk — "real recording"**) is code-complete on origin/master
+> (15 commits `fe310c8..cee1c44`, subagent-driven dev, per-task spec+code-quality review, final
+> holistic **opus** review = "SAFE TO PUSH"; clean rebuild green, **ctest 559/560**). It WORKS
+> mechanically: a routed input strip creates a growing, valid `tape-1.flac` at
+> **`~/Library/Sirius Looper/tapes/`** (⚠ JUCE `userApplicationDataDirectory` on macOS = `~/Library`,
+> NOT `~/Library/Application Support` — earlier doc gave the wrong path). **BUT** the operator opened
+> the finalized file in an audio editor and it was **blank**; a measured decode (`afconvert` → WAV →
+> peak scan) showed **peak ≈ 40/32767 ≈ −58 dBFS**, 94% nonzero — i.e. **near-silent / low-level
+> noise**, NOT the signal that was moving the input meters. So capture is NOT yet trustworthy.
 >
-> **✅ OPERATOR EYES-ON PASSED:** with a live input strip, `tape-1.flac` is created and **grows**
-> (421 KB→591 KB over 3 s, valid FLAC) at the real path **`~/Library/Sirius Looper/tapes/`** (note:
-> JUCE `userApplicationDataDirectory` on macOS = `~/Library`, NOT `~/Library/Application Support`).
-> Two eyes-on bugs were found + fixed (commits `57cde1d`,`5d4f842`): (1) input strips defaulted to
-> `TapeMode::NoTape` so nothing recorded → now default to `CommitToTape` (the **≥1 channel→≥1 tape
-> looper invariant**, memory `project_looper_at_least_one_tape_invariant`); (2) the `FlacTapeSink`
-> sample rate was latched at 0 during construction (before `audioDeviceAboutToStart` fired) → now
-> refreshed on the 30 Hz `timerCallback`. **macOS gotcha:** a Developer-ID **re-sign** can reset the
-> app's mic-permission grant — if a rebuilt app captures silence, re-grant Microphone in System
-> Settings → Privacy.
+> **The decisive test (PENDING — ask the operator to run it, or resume from their result):**
+> 1. Relaunch the app (Desktop symlink `Sirius Looper` → the build).
+> 2. Open **Input Mixer**, make a **LOUD sustained** input, watch the strip meter climb **clearly high
+>    (near top)** for ~5 s.
+> 3. **Quit the app** (the FLAC header `total_samples`/MD5 is only finalized on writer close = app
+>    quit / `closeTape`; an editor opening the still-recording file shows it blank — this alone may
+>    explain the operator's observation, so the hot-meter test is what disambiguates).
+> 4. Measure: `afinfo "$F"` then `afconvert "$F" /tmp/x.wav -d LEI16 -f WAVE` and a python peak scan
+>    (`array('h')`, max abs). `F=~/Library/"Sirius Looper"/tapes/tape-1.flac`.
+> - **Hot meter → capture now hot (≈ −12…−3 dBFS):** it works; the −58 dBFS file was just quiet
+>   ambient mic input. Sign off slice 3, proceed to slice 4.
+> - **Hot meter → capture still ≈ −58 dBFS:** real signal-path bug. Breadcrumbs below.
 >
-> **What slice 3 landed (all pushed):**
-> - **`audio/.../FlacTapeSink.{h,cpp}`** (`fe310c8`→`cadb547`,`ddf36ff`) — the real RT-safe
->   `ITapeSink`. Audio thread's `deliverTapeBlock` ONLY copies a stack POD into ONE lock-free
->   `LockFreeSpscQueue` + bumps a relaxed dropped-count (noexcept, no alloc/lock/I-O; RT-contract
->   row added). ONE dedicated worker thread is the SOLE owner of per-`TapeId` `juce::AudioFormatWriter`
->   (24-bit **FLAC**) state — no locks; lazily creates `<tapesDir>/tape-<id>.flac`, encodes via
->   `writeFromFloatArrays`, flushes the `FileOutputStream` each pass (crash-durability bound ≈ one
->   FLAC block). `closeTape` is an ordered control message through the SAME queue. `juce_audio_formats`
->   linked into `Sirius::Audio`.
-> - **Live audio path** (`34fd360`,`0619047`) — `AudioCallback` Step 2 now calls
->   `InputMixer::renderInputGraph(deviceIn, n, nullptr, 0, samples)`, RETIRING the legacy
->   `processBuffer` + `processDeviceInputs` call pair (the old path double-processed strips → double
->   LUFS; renderInputGraph runs each strip ONCE, publishing the same peak/LUFS meters AND delivering
->   per-tape). `processBuffer`/`processDeviceInputs` remain in the InputMixer API for direct unit tests
->   (header-noted superseded). Added a `directOut` contract `jassert`.
-> - **MainComponent wiring** (`73cd0f3`,`3e2db8e`,`80d6a9d`) — owns `flacTapeSink_` (declared before
->   `audioCallback_` for teardown), constructs it at `<app-data>/Sirius Looper/tapes`, `setTapeSink`
->   (set-once), sets the device sample rate at audio start AND in `rebuildInputStrips`. FLAC sink
->   oversized-block guard now fails loud (assert + drop) instead of silent truncation.
-> - **Tests** (`b6c4d15`) — 5 `[flac-tape-sink]` cases (round-trip decode, two parallel tapes,
->   closeTape finalization, drop accounting, rate-0 safety-net) + 1 `[audio-callback][render]`.
+> **Investigation breadcrumbs (if it IS a bug):**
+> - Engine + sink are UNIT-PROVEN to capture at full level: `[flac-tape-sink]` round-trip asserts
+>   exact sample values; `[audio-callback][render]` proves delivery. So the bug is NOT in
+>   `FlacTapeSink` or `renderInputGraph`'s math.
+> - `renderInputGraph` (`engine/src/InputMixer.cpp:613-732`): gathers `deviceIn`→`scratchLeft_/Right_`,
+>   runs `strip->process(stereo,2,n)` IN PLACE (this publishes the peak/LUFS meters), then
+>   `accumulateIntoTape` reads the SAME scratch. So in the engine, metered buffer == captured buffer.
+> - `ChannelStrip<Audio>::process` (`engine/include/sirius/ChannelStrip.h:157+`): default gain = **1.0
+>   (unity)**; peak is **POST-fader** (computed from the post-gain buffer). So meter and capture should
+>   match at the engine boundary.
+> - ⇒ Prime suspect is the **UI fader default**: `CompactFaderStrip` (`ui/lookandfeel/components/
+>   CompactFaderStrip.h`) → `faderMeterVolumeChanged(dB)` → `notifyGainChanged` → `stripGainChanged`
+>   → `onGain` → `s->setGain(linear)` (`MainComponent.cpp:1266`). If the fader's DEFAULT dB position
+>   maps to a low linear gain and is pushed to the engine on init, BOTH meter (post-fader) and capture
+>   are attenuated equally — but the operator may have read a low-but-moving meter as "moving". CHECK
+>   the fader's default value + whether it fires `onGain` on construction; `rebuildInputStrips` does
+>   NOT explicitly set strip gain, so the engine starts at unity unless the UI overrides it.
+> - Also possible: the selected input DEVICE gain is just low (built-in mic) → genuinely −58 dBFS
+>   ambient. The hot-meter test rules this in/out.
 >
-> **Format model (LOCKED — memory `project_tape_disk_format_flac`, spec + whitepaper §8.5/§8.3/§17.8):**
-> RAM ring = uncompressed PCM; live disk = append-only **FLAC** per `TapeId` (required for iOS/small-
-> device storage); a tape is immutable from the instant bytes flow (**no "finalize the take" event**);
-> **SHA-256 content-addressing + the `TapeId→contentHash` manifest are DEFERRED to session-close
-> archival** (cannot hash a still-growing file; the always-running tape only stops at session close).
+> **Capture is CONTINUOUS, no arm gating** (confirmed to operator): in slice 3 a `CommitToTape` strip
+> with live input records the whole time the app runs. Arm/disarm (marking Constituents) is NOT wired
+> into the capture path — that's later.
 >
-> **NEXT = slice 4: Tapes UI + Input Mixer destination picker + blank-area creation gesture**
-> (operator-verified). The **Tapes tab/list** (create/rename/remove, ≥1 floor) + per-node destination
-> picker targeting a chosen tape + the blank-area "Add tape / use existing" gesture (extends the
-> existing right-click/500 ms long-press plumbing in `InputMixerPane`). After slice 4, the original
-> **Phase 6** (bus/FX-return strips) resumes with the tape model beneath its picker. Spec: the
-> `2026-05-21-tape-subsystem-design.md` **Slice 4** section.
+> ## What slice 3 LANDED (all on origin/master, `fe310c8..cee1c44`)
+> - **`audio/.../FlacTapeSink.{h,cpp}`** — RT-safe `ITapeSink`. Audio thread's `deliverTapeBlock` ONLY
+>   copies a stack POD into ONE lock-free `LockFreeSpscQueue` + a relaxed dropped-count (noexcept, no
+>   alloc/lock/I-O; RT-contract row added). ONE dedicated worker thread SOLELY owns the per-`TapeId`
+>   `juce::AudioFormatWriter` (**24-bit FLAC, compression level 3** — iOS battery/thermal, iPhone-11
+>   floor) — no locks; lazily creates `<tapesDir>/tape-<id>.flac`; flushes the stream each pass
+>   (durability ≈ one FLAC block). `closeTape` = ordered control msg through the SAME queue.
+>   `juce_audio_formats` linked into `Sirius::Audio`.
+> - **Live audio path** — `AudioCallback` Step 2 now calls `renderInputGraph(deviceIn,n,nullptr,0,n)`,
+>   RETIRING the legacy `processBuffer`+`processDeviceInputs` pair (the old pair double-processed strips
+>   → double LUFS; renderInputGraph runs each strip ONCE, meters AND tape-delivers). Both remain in the
+>   InputMixer API for unit tests (header-noted superseded). Added a `directOut` contract `jassert`.
+> - **MainComponent wiring** — owns `flacTapeSink_` (declared before `audioCallback_` for teardown),
+>   constructs it at `~/Library/Sirius Looper/tapes`, `setTapeSink` (set-once); sample rate refreshed
+>   on the 30 Hz `timerCallback` (an init-order race latched it at 0 → dropped all blocks; FIXED in
+>   `5d4f842`). Input strips default to **`TapeMode::CommitToTape`** so they capture to the primary
+>   tape (FIXED in `57cde1d` — they were `NoTape` = silent).
+> - **Tests** (`b6c4d15`) — 5 `[flac-tape-sink]` + 1 `[audio-callback][render]`.
 >
-> **First moves for the fresh chat (slice 4):**
-> 1. Sanity: `git status` clean; `git log --oneline -10` shows `80d6a9d` newest on origin/master.
->    Do the slice-3 operator eyes-on above FIRST if not yet done.
-> 2. Read the spec's **Slice 4** section; `core/include/sirius/TapePool.h` (slice-1 model, NOT yet
->    constructed in MainComponent — slice 4 wires it); `app/MainComponent.cpp` `InputMixerPane`
->    (gesture plumbing, `rebuildInputStrips`, the strip row); `engine/.../InputMixer.h`
->    (`addTape`/`removeTape`/`setChannelMainOutToTape(id,TapeId)`/`busCount`/`busForId`); and
->    `audio/include/sirius/FlacTapeSink.h` (`closeTape` — ⚠ MUST be bracketed by
->    remove/addAudioCallback when wired live; see the doc warning + todo).
-> 3. `superpowers:brainstorming` likely NOT needed (model is decided) → `superpowers:writing-plans`
->    → `docs/superpowers/plans/2026-05-21-tape-subsystem-slice4-ui.md` →
->    `superpowers:subagent-driven-development`. GUI work is **operator-verified**, not unit-tested.
-> 4. Slice 4 wires `TapePool` ↔ `InputMixer.addTape/removeTape` ↔ `FlacTapeSink.closeTape` (the three
->    surfaces of the one pool), all under the remove/addAudioCallback bracket. Surface
->    `FlacTapeSink::droppedBlockCount()` via the NotificationBus.
-> 5. End by updating THIS file: slice 4 shipped + next.
+> ## DECISIONS LOCKED THIS SESSION (do NOT relitigate — also in auto-memory)
+> - **Tape disk format = append-only FLAC, 24-bit, level 3** (`project_tape_disk_format_flac`). RAM
+>   ring = uncompressed PCM. A tape is immutable from the instant bytes flow — **no "finalize the take"
+>   event**. **SHA-256 content-addressing + `TapeId→contentHash` manifest = DEFERRED to session-close
+>   archival** (can't hash a growing file; the always-running tape only stops at session close). Pairs
+>   with deferred M8 S7–8 tape-rotation. Whitepaper §8.5/§8.3/§17.8 (sharpened this session).
+> - **Looper invariant: ≥1 channel → ≥1 tape at all times** (`project_looper_at_least_one_tape_
+>   invariant`) — else it's a mixer, not a looper. A channel MAY route direct-to-output (`NoTape`),
+>   so we CANNOT force all to record; enforce only the FLOOR. Strips default to `CommitToTape`;
+>   per-channel opt-out + ACTIVE floor-enforcement = slice 4 (in `todo.md`).
+> - Path: `~/Library/Sirius Looper/tapes/` (NOT Application Support). macOS Developer-ID **re-sign can
+>   reset mic permission** → re-grant in System Settings → Privacy if a rebuild captures silence.
 >
-> **⚠ Carry-forward (in `todo.md`):** slice-3 deferrals (float→int24 fidelity floor; SHA-256/manifest =
-> session-close archival; per-tier sub-block flush; §17.8 scan-and-truncate-on-reopen [no reader yet];
-> queue-capacity tuning for many tapes). Slice-5 carry-forward unchanged: `mainOutSnapshot` records no
-> `TapeId` → `exportGraphState()` `jassertfalse` on a non-primary tape route (latent; fix before
-> persistence or the picker persists routes).
+> ## NEXT (after the level investigation is signed off) = slice 4: Tapes UI
+> Operator-verified. **Tapes tab/list** (create/rename/remove, ≥1 floor) + Input-Mixer per-node
+> **destination picker** (route a channel/bus to a chosen tape, or direct-to-output) + blank-area
+> **"Add tape / use existing"** creation gesture (extends `InputMixerPane`'s existing right-click/500 ms
+> long-press plumbing). Slice 4 WIRES the one pool across its three surfaces: `TapePool` (core, slice-1
+> model — NOT yet constructed in MainComponent) ↔ `InputMixer.addTape/removeTape/setChannelMainOutToTape
+> (id,TapeId)` ↔ `FlacTapeSink.openTape?/closeTape`. ⚠ `closeTape` and any `addTape`/route mutation MUST
+> be bracketed by `removeAudioCallback`/`addAudioCallback` (single-producer SPSC + audio-thread reads).
+> Surface `FlacTapeSink::droppedBlockCount()` via the NotificationBus. Implement the ACTIVE ≥1→≥1
+> floor-enforcement here. Spec: `docs/superpowers/specs/2026-05-21-tape-subsystem-design.md` Slice 4.
+> First moves: `git status` clean (`cee1c44` newest); read the Slice 4 spec + `TapePool.h` +
+> `InputMixerPane`/`rebuildInputStrips` + `FlacTapeSink.h`; `writing-plans` →
+> `docs/superpowers/plans/2026-05-21-tape-subsystem-slice4-ui.md` → `subagent-driven-development`
+> (GUI = operator-verified, not unit-tested).
 >
-> **⚠ Do NOT jump to Phase 6 UI or the bus/FX-return strips** — Phase 6's destination picker depends
-> on the Tapes UI (slice 4); then Phase 6 resumes. The bus-controls engine slice (below) is on
-> origin/master.
+> ## THE LONG-RANGE PATH (where we are in the whole thing — keep our place)
+> **End goal:** Sirius Looper — a full production-looper environment per **whitepaper V7**
+> (`docs/Sirius Looper Whitepaper V7.md`): signal path **input mixer → tape → output mixer** with a
+> sub-ms direct-monitor layer; the **always-running tape is the source of truth**; the **Constituent
+> hierarchy** (tape → loop → phrase → section → song → set) in exact `Rational` conceptual time; OTTO
+> visual parity (vendored L&F). Ships alongside OTTO (sister apps, sold separately). Platform order:
+> **macOS → iOS (AUv3, Release-only) → Windows → Linux**.
+>
+> **Tape subsystem (the active line — 4 slices, gates Phase 6 mixer UI):**
+>   1. ✅ Tape pool model + persistence (`TapePool`, core, headless) — SHIPPED.
+>   2. ✅ Multi-tape routing engine (`MixerGraph` N tape terminals, per-tape summing, `ITapeSink`) — SHIPPED.
+>   3. ◧ Capture-to-disk (FLAC) — code SHIPPED; **capture-LEVEL sign-off OPEN** (this session).
+>   4. ⏳ Tapes UI + destination picker + creation gesture + ≥1→≥1 enforcement — NEXT.
+>
+> **Mixer routing-graph phases (engine/persistence apparatus mostly shipped; UI gated on tape slice 4):**
+>   - P1 engine routing-graph core ✅ · P2 multi-terminal graph ✅ · P3 input routing apparatus ✅ ·
+>     P4 per-node insert chains (8-slot) ✅ · P5 routing-graph persistence ✅ (all engine/persistence,
+>     NOT wired into MainComponent save/load yet) · bus-controls engine slice ✅.
+>   - **P6 Input Mixer UI** (bus/FX-return strips + destination picker) — resumes AFTER tape slice 4.
+>   - **P7** Input Mixer sends tab + insert mgmt ≤8 + WIRE P4/P5 apparatus into production save/load.
+>   - **P8** Output Mixer UI parity (mixdown console, one channel per phrase).
+>   - Follow-on (own spec): internal Sirius FX (EQ/Comp/**Rvb**/**Dly**, seeded by OTTO's
+>     `PlayerIRConvolution`/`PlayerDelay`) + the union slot model (external VST/CLAP OR built-in).
+>
+> **Operator's near-term ordering:** finish **Input Mixer** → **Output Mixer** → THEN design
+> **transport + metering** (own conversation). Don't jump to transport early. Bigger vision (own design
+> session): **render → parts/pills → timeline → finished song** (Ableton territory).
+> **Engine milestones M8 S7+** (tape reachability scan + rotation on disk-full; real `TapeStore`-backed
+> `TapeResolver`) resume after the mixer/UI line — and absorb the deferred slice-3 archival/manifest work.
+>
+> ## CARRY-FORWARD (in `todo.md`)
+> - Slice-3 deferrals: float→int24 fidelity floor; SHA-256/manifest = session-close archival; per-tier
+>   sub-FLAC-block flush (now ≈ one block); §17.8 scan-and-truncate-on-reopen (no reader yet);
+>   FlacTapeSink queue-capacity tuning for many simultaneous tapes (256 slots ok for 1 tape).
+> - Slice-4: per-channel direct-out opt-out + ACTIVE ≥1-channel→≥1-tape enforcement.
+> - Routing slice-5: `mainOutSnapshot` records no `TapeId` → `exportGraphState()` `jassertfalse` on a
+>   non-primary tape route (latent; fix before persistence/the picker persists routes).
+>
+> **⚠ Do NOT jump to Phase 6 UI / bus strips** — it depends on the Tapes UI (slice 4). The bus-controls
+> engine slice (historical block below) is already on origin/master.
 
 ## HISTORICAL — Bus-controls engine slice (superseded 2026-05-21 by the tape-subsystem design above; still on origin/master, do NOT re-do)
 
