@@ -95,9 +95,15 @@ public:
     /// terminal last). Recomputed on every successful mutation.
     const std::vector<MixerNodeId>& evaluationOrder() const noexcept { return order_; }
 
+    /// One leveled send edge (source -> FX return). Public so the owning mixer's
+    /// audio-thread traversal can sum sources into FX returns. Read-only view.
+    struct SendEdge { MixerNodeId source; MixerNodeId fxReturn; float level; };
+
+    /// Audio-thread read: all send edges. const& to a pre-built vector — no alloc.
+    const std::vector<SendEdge>& sendEdges() const noexcept { return sends_; }
+
 private:
     struct Node { MixerNodeId id; MixerNodeKind kind; MixerNodeId mainOut; };
-    struct SendEdge { MixerNodeId source; MixerNodeId fxReturn; float level; };
     struct TerminalNode { MixerNodeId id; MixerTerminal kind; };
 
     bool        isTerminal (MixerNodeId id) const noexcept;

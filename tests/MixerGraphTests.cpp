@@ -311,3 +311,30 @@ TEST_CASE ("MixerGraph evaluation order: every node precedes all terminals",
     CHECK (posOf (order, tape) > lastNonTerminal);
     CHECK (posOf (order, hw)   > lastNonTerminal);
 }
+
+TEST_CASE ("MixerGraph exposes its send edges for audio-thread traversal",
+           "[mixer-graph][sends]")
+{
+    MixerGraph g (MixerTerminal::HardwareOutput);
+    const auto ch  = g.addNode (MixerNodeKind::Channel);
+    const auto fxA = g.addNode (MixerNodeKind::FxReturn);
+    const auto fxB = g.addNode (MixerNodeKind::FxReturn);
+    REQUIRE (g.setSend (ch, fxA, 0.5f));
+    REQUIRE (g.setSend (ch, fxB, 0.25f));
+
+    const auto& edges = g.sendEdges();
+    REQUIRE (edges.size() == 2);
+
+    float toA = 0.0f, toB = 0.0f;
+    for (const auto& e : edges)
+    {
+        CHECK (e.source == ch);
+        if (e.fxReturn == fxA) toA = e.level;
+        if (e.fxReturn == fxB) toB = e.level;
+    }
+    CHECK (toA == 0.5f);
+    CHECK (toB == 0.25f);
+}
+
+static_assert (noexcept (std::declval<const MixerGraph&>().sendEdges()),
+               "MixerGraph::sendEdges must be noexcept (audio-thread read)");
