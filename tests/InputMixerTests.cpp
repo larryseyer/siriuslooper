@@ -1025,3 +1025,30 @@ TEST_CASE ("renderInputGraph: with no sink bound, tape-routed signal is dropped 
     mixer.renderInputGraph (deviceIn, 2, nullptr, 0, n);
     SUCCEED();
 }
+
+TEST_CASE ("renderInputGraph: removing a tape a channel was routed to falls the channel back to the primary",
+           "[input-mixer][multi-tape][render]")
+{
+    using sirius::InputMixer; using sirius::TapeId;
+    InputMixer mixer;
+    RecordingTapeSink sink;
+    mixer.setTapeSink (&sink);
+    REQUIRE (mixer.addTape (TapeId { 2 }));
+
+    const auto ch = addStereoChannel (mixer, 0, 1);
+    REQUIRE (mixer.setChannelMainOutToTape (ch, TapeId { 2 }));
+
+    // Remove the tape the channel targets. The graph reassigns the orphaned
+    // main-out to the primary terminal; the InputMixer slot bookkeeping must
+    // stay consistent so the next render delivers to the primary tape (1).
+    REQUIRE (mixer.removeTape (TapeId { 2 }));
+    CHECK (mixer.channelMainOutIsTape (ch, TapeId { 1 }));
+
+    constexpr int n = 4;
+    std::vector<float> l (n, 0.5f), r (n, 0.5f);
+    const float* deviceIn[2] { l.data(), r.data() };
+    mixer.renderInputGraph (deviceIn, 2, nullptr, 0, n);
+
+    REQUIRE (sink.find (2) == nullptr);  // the removed tape receives nothing
+    REQUIRE (sink.find (1) != nullptr);  // signal fell back to the primary
+}
