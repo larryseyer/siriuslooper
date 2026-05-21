@@ -460,31 +460,66 @@ TEST_CASE ("OutputMixer::renderBuffer 32-channel x 8-bus RT smoke",
     CHECK (maxElapsedSec < kBudgetSec);
 }
 
-TEST_CASE ("OutputMixer bus->bus subgroup routes through the parent bus",
+namespace
+{
+    // Synchronous in-process effect host that halves every sample. Stands in
+    // for a real plug-in so a bus applies an OBSERVABLE transform — the only
+    // way to prove signal actually traversed a given bus in a Phase-1 unity
+    // routing graph (where total signal reaching master is otherwise
+    // path-invariant).
+    struct HalvingEffectHost : sirius::IEffectChainHost
+    {
+        bool pumpSlot (std::int64_t, std::size_t,
+                       const float* const* inChannels, float* const* outChannels,
+                       int numChannels, int numSamples) noexcept override
+        {
+            for (int c = 0; c < numChannels; ++c)
+                for (int s = 0; s < numSamples; ++s)
+                    outChannels[c][s] = inChannels[c][s] * 0.5f;
+            return true;
+        }
+    };
+}
+
+TEST_CASE ("OutputMixer bus->bus subgroup actually routes audio through the parent bus",
            "[output-mixer][subgroup]")
 {
+    using sirius::BusConfig;
+    using sirius::EffectChain;
+    using sirius::EffectChainEntry;
+    using sirius::OutputMixer;
+    using sirius::SignalType;
+
     OutputMixer mixer;
     const auto ch   = mixer.addChannel (SignalType::Audio);
     const auto busA = mixer.addBus (BusConfig { 2, "A" });
     const auto busB = mixer.addBus (BusConfig { 2, "B" });
 
-    // Zero the default master direct send so the channel only flows through
-    // the subgroup path: ch -> busA -> busB -> master -> output.
-    mixer.routeChannelToBus (ch, BusId { 0 }, 0.0f);
-    // Route the channel's send fully into busA, and subgroup busA -> busB.
-    mixer.routeChannelToBus (ch, busA, 1.0f);
-    REQUIRE (mixer.routeBusToBus (busA, busB)); // new thin accessor over MixerGraph
+    // busB carries a one-slot chain so the halving host transforms anything
+    // that flows THROUGH busB. busA stays unity (empty chain).
+    EffectChainEntry slot;
+    slot.descriptor.name = "Halve";
+    slot.displayName     = "Halve";
+    mixer.setBusEffectChain (busB, EffectChain {}.withAppended (slot));
+    HalvingEffectHost host;
+    mixer.setEffectChainHost (&host);
 
-    // One sample of input on channel index 0 (ch.value()-1 == 0).
+    // Channel feeds ONLY busA (its default direct-to-master send is zeroed),
+    // and busA subgroups into busB. So the signal path is ch -> busA -> busB.
+    mixer.routeChannelToBus (ch, BusId { 0 }, 0.0f); // kill direct-to-master
+    mixer.routeChannelToBus (ch, busA, 1.0f);
+    REQUIRE (mixer.routeBusToBus (busA, busB));
+
     std::array<float, 4> in;  in.fill (0.5f);
     std::array<float, 4> out; out.fill (0.0f);
     const float* inPtrs[1]  = { in.data() };
     float*       outPtrs[2] = { out.data(), nullptr };
+    mixer.renderBuffer (inPtrs, 1, outPtrs, 1, static_cast<int> (in.size()));
 
-    mixer.renderBuffer (inPtrs, 1, outPtrs, 1,
-                        static_cast<int> (in.size()));
-
-    // The signal flowed ch -> busA -> busB -> master -> output (unity throughout),
-    // so the output carries the channel signal (no double-count, no drop).
-    for (float v : out) CHECK (v == Catch::Approx (0.5f));
+    // Signal traversed busB, so busB's halving applied exactly once:
+    // 0.5 (input) -> busA (unity) -> busB (x0.5) -> master -> 0.25.
+    // If routeBusToBus regressed to a no-op (busA -> master directly), busB
+    // would never see the signal and the output would be 0.5 — so this
+    // assertion FAILS if subgroup routing breaks.
+    for (float v : out) CHECK (v == Catch::Approx (0.25f));
 }
