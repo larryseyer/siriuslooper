@@ -33,6 +33,8 @@ namespace
     /// Output buses route bus->bus (incl. ->master) only; the sole terminal
     /// main-out belongs to the master. Returns Kind::Bus with the resolved
     /// busId for everything else.
+    // Mirrors InputMixer::mainOutSnapshot intentionally — the two consoles are
+    // separate by design (one terminal here vs two there); shared *types* only.
     sirius::MixerMainOut busMainOutSnapshot (const sirius::MixerGraph& graph,
                                              sirius::MixerNodeId node,
                                              const std::vector<sirius::MixerNodeId>& busNodeIds,
@@ -50,6 +52,7 @@ namespace
         out.kind = MixerMainOut::Kind::Bus;
         for (std::size_t i = 0; i < busNodeIds.size(); ++i)
             if (busNodeIds[i] == dest) { out.busId = buses[i].id().value(); break; }
+        jassertfalse; // graph invariant: dest is a bus node absent from busNodeIds
         return out;
     }
 }
@@ -410,6 +413,8 @@ OutputMixerGraphState OutputMixer::exportGraphState() const
         state.buses.push_back (std::move (entry));   // master is index 0 by construction
     }
 
+    // channels_ is a vector — insertion order is already deterministic, so (unlike
+    // InputMixer's unordered_map) no sort is needed before export.
     for (const auto& ce : channels_)
     {
         OutputChannelState entry;
@@ -470,9 +475,12 @@ void OutputMixer::importGraphState (const OutputMixerGraphState& state)
     for (const auto& c : state.channels)
     {
         const auto created = addChannel (c.signalType);
-        auto strip = std::make_unique<ChannelStrip<SignalType::Audio>>();
-        strip->setEffectChain (c.inserts);
-        setChannelStrip (created, std::move (strip));
+        if (c.signalType == SignalType::Audio)
+        {
+            auto strip = std::make_unique<ChannelStrip<SignalType::Audio>>();
+            strip->setEffectChain (c.inserts);
+            setChannelStrip (created, std::move (strip));
+        }
         for (const auto& s : c.sends) routeChannelToBus (created, BusId (s.busId), s.level);
     }
 
