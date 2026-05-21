@@ -73,8 +73,9 @@ public:
     void setBusEffectChain (BusId id, EffectChain chain);
 
     /// Message-thread accessor — the live Bus for `id`, or nullptr if unknown.
-    /// Mirrors `processingChainFor(ChannelId)`. The Input Mixer UI uses this to
-    /// drive a bus/FX-return strip's fader/mute and read its peak/LUFS meter.
+    /// Same linear-scan idiom as `setBusEffectChain`. The Input Mixer UI uses
+    /// this to drive a bus/FX-return strip's fader/mute and read its peak/LUFS
+    /// meter.
     /// NOT for the audio thread (the bus is held by value in a reserved vector;
     /// the pointer is stable for the bus's lifetime within this mixer).
     Bus* busForId (BusId id) noexcept;
