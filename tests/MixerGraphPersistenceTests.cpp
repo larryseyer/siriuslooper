@@ -5,6 +5,7 @@
 #include "sirius/ChannelStrip.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <algorithm>
 #include <memory>
 #include <optional>
 
@@ -33,6 +34,7 @@ TEST_CASE ("InputMixer survives export -> serialize -> deserialize -> import", "
     source.setChannelMainOutToBus (ch, drums);
     source.setChannelSend (ch, reverb, 0.5f);
     auto* strip = static_cast<ChannelStrip<SignalType::Audio>*> (source.processingChainFor (ch));
+    REQUIRE (strip != nullptr);
     EffectChainEntry eq; eq.displayName = "eq";
     strip->setEffectChain (EffectChain{}.withAppended (eq));
 
@@ -45,10 +47,10 @@ TEST_CASE ("InputMixer survives export -> serialize -> deserialize -> import", "
     const auto reexported = loaded.exportGraphState();
     CHECK (reexported == original);
     // Insert chains specifically survived end-to-end (the user bus + the channel).
-    bool foundDrumsChain = false;
-    for (const auto& b : reexported.buses)
-        if (b.busId == drums.value()) { foundDrumsChain = b.inserts.size() == 1; }
-    CHECK (foundDrumsChain);
+    const auto drumsIt = std::find_if (reexported.buses.begin(), reexported.buses.end(),
+        [&] (const sirius::MixerBusState& b) { return b.busId == drums.value(); });
+    REQUIRE (drumsIt != reexported.buses.end());   // the user bus must survive
+    CHECK (drumsIt->inserts.size() == 1);          // its insert chain must survive
     REQUIRE (reexported.channels.size() == 1);
     CHECK (reexported.channels[0].inserts.size() == 1);
 }
