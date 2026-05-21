@@ -1594,6 +1594,14 @@ void MainComponent::rebuildInputStrips()
     {
         const auto chId = inputMixer_->addChannel (InputId (leftCh), SignalType::Audio);
         inputMixer_->setChannelInputSource (chId, leftCh, rightCh, stereo);
+        // Looper invariant — ≥1 channel must feed ≥1 tape at all times, or this is a
+        // mixer, not a looper. Input strips therefore default to capturing their
+        // processed signal to the primary tape (CommitToTape = what renderInputGraph
+        // delivers; the default main-out is already the primary tape). A channel MAY
+        // later be routed direct-to-output (TapeMode::NoTape) via the slice-4 picker,
+        // but enforcement must never let the count of channels-recording-to-tape reach
+        // zero (active floor-enforcement lands with that picker — see todo.md).
+        inputMixer_->setChannelTapeMode (chId, TapeMode::CommitToTape);
         inputStripChannelIds_.push_back (chId);
         inputStripPair_.push_back (pairIndex);
         infos.push_back ({ name, stereo });

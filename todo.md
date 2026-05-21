@@ -1,5 +1,19 @@
 # Sirius Looper — Deferred Items
 
+### 2026-05-21 — Slice 4: enforce the ≥1-channel→≥1-tape looper invariant + per-channel direct-out opt-out
+- Files: app/MainComponent.cpp (rebuildInputStrips, the slice-4 destination picker),
+  engine/src/InputMixer.cpp (route mutators).
+- What was deferred: slice 3 makes input strips default to TapeMode::CommitToTape (capture to the
+  primary tape) so the looper always has a live capture path. NOT yet built: (a) the per-channel
+  destination picker letting a user route a channel direct-to-output (TapeMode::NoTape) or to a
+  chosen tape; (b) the ACTIVE enforcement that refuses to let the count of channels-recording-to-a-
+  tape reach zero (≥1 channel → ≥1 tape ALWAYS, else it's a mixer not a looper — operator rule,
+  memory project_looper_at_least_one_tape_invariant).
+- Why deferred: the routing UI is slice 4; slice 3 scope is the capture mechanism + a sane default.
+- What's needed to finish: build the slice-4 picker; when a route change would drop the last
+  channel→tape path, refuse / keep ≥1 (and surface why). NonDestructive's dry+param-tape split is
+  a separate (wet-capture) concern, not this path.
+
 ### 2026-05-21 — Tape subsystem slice 3 (capture-to-disk / FLAC) deferrals
 - Files: audio/src/FlacTapeSink.cpp, audio/include/sirius/FlacTapeSink.h, app/MainComponent.cpp.
 - What was deferred (all intentional — slice-3 scope was "make routing record"):
