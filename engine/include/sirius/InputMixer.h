@@ -1,13 +1,16 @@
 #pragma once
 
+#include "sirius/Bus.h"
 #include "sirius/Channel.h"
 #include "sirius/ChannelDefaults.h"
 #include "sirius/InputDescriptor.h"
+#include "sirius/MixerGraph.h"
 #include "sirius/SignalType.h"
 #include "sirius/TapeMode.h"
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -33,6 +36,18 @@ class InputMixer
 public:
     InputMixer();
     ~InputMixer();
+
+    static constexpr int kMaxInputChannels = 32;
+    static constexpr int kMaxInputBuses    = 64;
+
+    BusId addBus (BusConfig config);
+    BusId addFxReturn (const std::string& name);
+
+    int     busCount()    const noexcept;
+    BusId   busIdAt (int index)   const noexcept;
+    BusKind busKindAt (int index) const noexcept;
+    bool    channelIsRegisteredInGraph (ChannelId) const noexcept;
+    bool    busMainOutIsTape (BusId) const noexcept;
 
     // Injected non-owning collaborators (set-once on the message thread).
     void setTapeWriter (TapeWriter* writer) noexcept;
@@ -123,6 +138,14 @@ private:
     std::unordered_map<std::int64_t, Channel> channels_;
     std::unordered_map<std::int64_t, ChannelInputSource> channelSources_;
     std::int64_t nextChannelId_ { 1 };
+
+    MixerGraph graph_ { { MixerTerminal::Tape, MixerTerminal::HardwareOutput } };
+    std::unordered_map<std::int64_t, MixerNodeId> channelNodeIds_;
+    std::vector<Bus>          buses_;
+    std::vector<MixerNodeId>  busNodeIds_;
+    std::int64_t              nextBusId_ { 1 };
+
+    MixerNodeId nodeForBus (BusId) const noexcept;
 
     TapeWriter* tapeWriter_ { nullptr };
     OverloadProtection* overload_ { nullptr };

@@ -30,6 +30,10 @@ InputMixer::InputMixer()
       scratchLeft_ (kMaxScratchSamples, 0.0f),
       scratchRight_ (kMaxScratchSamples, 0.0f)
 {
+    buses_.reserve (static_cast<std::size_t> (kMaxInputBuses));
+    busNodeIds_.reserve (static_cast<std::size_t> (kMaxInputBuses));
+    addFxReturn ("RVB"); // default Tape main-out for now; a later task routes these
+    addFxReturn ("DLY"); // to the hardware output (returns monitor, they don't capture).
 }
 
 InputMixer::~InputMixer() = default;
@@ -71,6 +75,7 @@ ChannelId InputMixer::addChannel (InputId source, SignalType type)
         mode = it->second.defaults.defaultTapeMode;
 
     channels_.emplace (id.value(), Channel (id, type, source, mode));
+    channelNodeIds_.emplace (id.value(), graph_.addNode (MixerNodeKind::Channel));
     return id;
 }
 
@@ -78,6 +83,11 @@ void InputMixer::removeChannel (ChannelId id)
 {
     channels_.erase (id.value());
     channelSources_.erase (id.value());
+    if (auto it = channelNodeIds_.find (id.value()); it != channelNodeIds_.end())
+    {
+        graph_.removeNode (it->second);
+        channelNodeIds_.erase (it);
+    }
 }
 
 void InputMixer::setChannelTapeMode (ChannelId id, TapeMode mode)
@@ -102,6 +112,59 @@ void InputMixer::setChannelInputSource (ChannelId id, int leftDeviceChannel,
 {
     channelSources_.insert_or_assign (
         id.value(), ChannelInputSource { leftDeviceChannel, rightDeviceChannel, stereo });
+}
+
+BusId InputMixer::addBus (BusConfig config)
+{
+    if (buses_.size() >= static_cast<std::size_t> (kMaxInputBuses))
+    {
+        jassertfalse; // fail loud — losing a routing node silently corrupts the graph
+        return BusId { 0 };
+    }
+    const BusId id { nextBusId_++ };
+    buses_.emplace_back (id, config);
+    const auto kind = (config.kind == BusKind::FxReturn) ? MixerNodeKind::FxReturn
+                                                         : MixerNodeKind::Bus;
+    busNodeIds_.push_back (graph_.addNode (kind)); // defaults main-out to primary (Tape)
+    return id;
+}
+
+BusId InputMixer::addFxReturn (const std::string& name)
+{
+    return addBus (BusConfig { 2, name, BusKind::FxReturn });
+}
+
+int InputMixer::busCount() const noexcept { return static_cast<int> (buses_.size()); }
+
+BusId InputMixer::busIdAt (int index) const noexcept
+{
+    if (index < 0 || index >= static_cast<int> (buses_.size())) return BusId { 0 };
+    return buses_[static_cast<std::size_t> (index)].id();
+}
+
+BusKind InputMixer::busKindAt (int index) const noexcept
+{
+    if (index < 0 || index >= static_cast<int> (buses_.size())) return BusKind::Bus;
+    return buses_[static_cast<std::size_t> (index)].config().kind;
+}
+
+MixerNodeId InputMixer::nodeForBus (BusId id) const noexcept
+{
+    for (std::size_t i = 0; i < buses_.size(); ++i)
+        if (buses_[i].id() == id) return busNodeIds_[i];
+    return MixerNodeId {};
+}
+
+bool InputMixer::busMainOutIsTape (BusId id) const noexcept
+{
+    const MixerNodeId node = nodeForBus (id);
+    return node.isValid()
+        && graph_.mainOutOf (node) == graph_.terminalNode (MixerTerminal::Tape);
+}
+
+bool InputMixer::channelIsRegisteredInGraph (ChannelId id) const noexcept
+{
+    return channelNodeIds_.find (id.value()) != channelNodeIds_.end();
 }
 
 void InputMixer::processDeviceInputs (const float* const* deviceIn,

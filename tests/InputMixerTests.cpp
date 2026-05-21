@@ -499,3 +499,36 @@ TEST_CASE ("processDeviceInputs safely skips a source whose device channel is ou
     CHECK (strip->peakLeft()  == Catch::Approx (0.0f));
     CHECK (strip->peakRight() == Catch::Approx (0.0f));
 }
+
+// =============================================================================
+// [input-routing] — Phase 3 Task 2: MixerGraph + bus/FX-return registry
+// =============================================================================
+
+TEST_CASE ("InputMixer constructs with Tape+HardwareOutput terminals and default RVB/DLY returns",
+           "[input-routing]")
+{
+    sirius::InputMixer mixer;
+    CHECK (mixer.busCount() == 2);
+    CHECK (mixer.busKindAt (0) == sirius::BusKind::FxReturn);
+    CHECK (mixer.busKindAt (1) == sirius::BusKind::FxReturn);
+}
+
+TEST_CASE ("InputMixer addBus registers a graph node defaulting its main-out to the tape terminal",
+           "[input-routing]")
+{
+    sirius::InputMixer mixer;
+    const auto bus = mixer.addBus (sirius::BusConfig { 2, "Drums", sirius::BusKind::Bus });
+    CHECK (bus.value() != 0);
+    CHECK (mixer.busCount() == 3); // RVB, DLY, Drums
+    CHECK (mixer.busMainOutIsTape (bus));
+}
+
+TEST_CASE ("InputMixer addChannel registers a Channel graph node; removeChannel drops it",
+           "[input-routing]")
+{
+    sirius::InputMixer mixer;
+    const auto ch = mixer.addChannel (sirius::InputId { 0 }, sirius::SignalType::Audio);
+    CHECK (mixer.channelIsRegisteredInGraph (ch));
+    mixer.removeChannel (ch);
+    CHECK_FALSE (mixer.channelIsRegisteredInGraph (ch));
+}
