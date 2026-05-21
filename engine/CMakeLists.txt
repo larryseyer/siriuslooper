@@ -28,7 +28,8 @@ add_library(SiriusEngine STATIC
     src/WetCaptureWriter.cpp
     src/NotificationBus.cpp
     src/SessionSnapshot.cpp
-    src/ConstituentValidator.cpp)
+    src/ConstituentValidator.cpp
+    src/MixerGraph.cpp)
 
 target_include_directories(SiriusEngine PUBLIC include)
 
