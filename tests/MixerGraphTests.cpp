@@ -338,3 +338,69 @@ TEST_CASE ("MixerGraph exposes its send edges for audio-thread traversal",
 
 static_assert (noexcept (std::declval<const MixerGraph&>().sendEdges()),
                "MixerGraph::sendEdges must be noexcept (audio-thread read)");
+
+TEST_CASE ("MixerGraph::addTerminal mints a new terminal node usable as a main-out dest",
+           "[mixer-graph][terminal]")
+{
+    MixerGraph g (MixerTerminal::Tape);          // primary tape terminal
+    const auto primaryTape = g.terminalNode();
+    const auto tape2 = g.addTerminal (MixerTerminal::Tape);
+
+    CHECK (tape2.isValid());
+    CHECK (tape2 != primaryTape);
+    CHECK (g.kindOf (tape2) == MixerNodeKind::Terminal);
+    CHECK (g.contains (tape2));
+
+    const auto ch = g.addNode (MixerNodeKind::Channel);
+    CHECK (g.mainOutOf (ch) == primaryTape);     // default still the primary
+    REQUIRE (g.setMainOut (ch, tape2));          // a second tape is a valid dest
+    CHECK (g.mainOutOf (ch) == tape2);
+}
+
+TEST_CASE ("MixerGraph evaluationOrder keeps ALL terminals last with >1 tape terminal",
+           "[mixer-graph][terminal]")
+{
+    MixerGraph g (MixerTerminal::Tape);
+    const auto tape2 = g.addTerminal (MixerTerminal::Tape);
+    const auto chA = g.addNode (MixerNodeKind::Channel);
+    const auto chB = g.addNode (MixerNodeKind::Channel);
+    REQUIRE (g.setMainOut (chB, tape2));
+
+    const auto& order = g.evaluationOrder();
+    const auto idx = [&order] (MixerNodeId id) {
+        for (std::size_t i = 0; i < order.size(); ++i) if (order[i] == id) return (int) i;
+        return -1;
+    };
+    REQUIRE (idx (g.terminalNode()) >= 0);
+    REQUIRE (idx (tape2) >= 0);
+    CHECK (idx (chA) < idx (g.terminalNode()));
+    CHECK (idx (chA) < idx (tape2));
+    CHECK (idx (chB) < idx (tape2));
+}
+
+TEST_CASE ("MixerGraph::removeTerminal reassigns orphaned main-outs to the primary and refuses the primary",
+           "[mixer-graph][terminal]")
+{
+    MixerGraph g (MixerTerminal::Tape);
+    const auto primaryTape = g.terminalNode();
+    const auto tape2 = g.addTerminal (MixerTerminal::Tape);
+    const auto ch = g.addNode (MixerNodeKind::Channel);
+    REQUIRE (g.setMainOut (ch, tape2));
+
+    SECTION ("removing a non-primary terminal succeeds and orphans fall back to primary")
+    {
+        CHECK (g.removeTerminal (tape2));
+        CHECK_FALSE (g.contains (tape2));
+        CHECK (g.mainOutOf (ch) == primaryTape);
+    }
+    SECTION ("removing the primary terminal is refused")
+    {
+        CHECK_FALSE (g.removeTerminal (primaryTape));
+        CHECK (g.contains (primaryTape));
+    }
+    SECTION ("removing an unknown / non-terminal id is refused")
+    {
+        CHECK_FALSE (g.removeTerminal (ch));            // a registered node, not a terminal
+        CHECK_FALSE (g.removeTerminal (MixerNodeId {})); // invalid
+    }
+}

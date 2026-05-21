@@ -95,6 +95,31 @@ void MixerGraph::removeNode (MixerNodeId node)
     recomputeOrder();
 }
 
+MixerNodeId MixerGraph::addTerminal (MixerTerminal kind)
+{
+    const MixerNodeId id { nextId_++ };
+    terminals_.push_back (TerminalNode { id, kind });
+    recomputeOrder();
+    return id;
+}
+
+bool MixerGraph::removeTerminal (MixerNodeId node)
+{
+    if (! node.isValid() || ! isTerminal (node)) return false;
+    if (node == terminals_.front().id)           return false; // primary is permanent
+
+    terminals_.erase (std::remove_if (terminals_.begin(), terminals_.end(),
+                                      [node] (const TerminalNode& t) { return t.id == node; }),
+                      terminals_.end());
+
+    // Orphaned main-outs fall back to the primary terminal (same policy as removeNode).
+    for (auto& n : nodes_)
+        if (n.mainOut == node) n.mainOut = terminals_.front().id;
+
+    recomputeOrder();
+    return true;
+}
+
 MixerNodeId MixerGraph::mainOutOf (MixerNodeId node) const noexcept
 {
     if (const Node* n = find (node)) return n->mainOut;

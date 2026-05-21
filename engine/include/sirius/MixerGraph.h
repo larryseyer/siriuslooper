@@ -14,7 +14,9 @@ namespace sirius
 /// have one Terminal node per kind).
 enum class MixerNodeKind { Channel, Bus, FxReturn, Terminal };
 
-/// Which terminal this graph drives — set at construction, never changes.
+/// A terminal kind. The primary terminal is fixed at construction; additional
+/// terminals (e.g. one Tape terminal per pooled tape on the input side) may be
+/// added and removed dynamically via addTerminal/removeTerminal.
 enum class MixerTerminal { Tape, HardwareOutput };
 
 /// Strong id for routing-graph nodes. 0 == invalid. Distinct from BusId /
@@ -73,6 +75,19 @@ public:
     bool        contains (MixerNodeId node) const noexcept;
     MixerNodeKind kindOf (MixerNodeId node) const noexcept; // Terminal for the terminal/unknown
     int         nodeCount() const noexcept; // excludes the implicit terminal
+
+    /// Mints an additional terminal node of the given kind and returns its id.
+    /// Terminals are sinks: no main-out, always last in evaluationOrder(). Used
+    /// by the input mixer to add a Tape terminal per pooled tape. Recomputes the
+    /// evaluation order. Message-thread only.
+    MixerNodeId addTerminal (MixerTerminal kind);
+
+    /// Removes a terminal node. Returns false (no change) if the id is unknown,
+    /// is not a terminal, or is the PRIMARY terminal (terminals_.front() — the
+    /// removeNode fallback must always exist). Any node whose main-out pointed at
+    /// the removed terminal falls back to the primary terminal. Recomputes the
+    /// evaluation order. Message-thread only.
+    bool removeTerminal (MixerNodeId node);
 
     /// Assigns node's single main-out. dest must be a Bus or the Terminal.
     /// Returns false (no change) if node is unknown/Terminal, dest is an invalid
