@@ -235,3 +235,40 @@ TEST_CASE ("Bus::setMuted silences the output (inline path)", "[bus][mute]")
     REQUIRE (l[0] == 0.0f);
     REQUIRE (r[0] == 0.0f);
 }
+
+TEST_CASE ("Bus peak reflects the post-fader signal (inline path)", "[bus][meter]")
+{
+    sirius::Bus bus (sirius::BusId { 1 }, sirius::BusConfig {});
+    bus.setGain (0.5f);
+
+    constexpr int kSamples = 8;
+    for (int s = 0; s < kSamples; ++s)
+    {
+        bus.mixBufferChannel (0)[s] = 0.8f;   // pre-fader 0.8
+        bus.mixBufferChannel (1)[s] = 0.4f;
+    }
+    std::vector<float> l (kSamples, 0.0f), r (kSamples, 0.0f);
+    float* out[2] = { l.data(), r.data() };
+    bus.process (out, 2, kSamples);
+
+    REQUIRE (bus.peakLeft()  == Catch::Approx (0.4f));   // 0.8 * 0.5
+    REQUIRE (bus.peakRight() == Catch::Approx (0.2f));   // 0.4 * 0.5
+}
+
+TEST_CASE ("Bus peak reads silence when muted", "[bus][meter][mute]")
+{
+    sirius::Bus bus (sirius::BusId { 1 }, sirius::BusConfig {});
+    bus.setMuted (true);
+    constexpr int kSamples = 8;
+    for (int s = 0; s < kSamples; ++s)
+    {
+        bus.mixBufferChannel (0)[s] = 0.9f;
+        bus.mixBufferChannel (1)[s] = 0.9f;
+    }
+    std::vector<float> l (kSamples, 0.0f), r (kSamples, 0.0f);
+    float* out[2] = { l.data(), r.data() };
+    bus.process (out, 2, kSamples);
+
+    REQUIRE (bus.peakLeft()  == 0.0f);
+    REQUIRE (bus.peakRight() == 0.0f);
+}

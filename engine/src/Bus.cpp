@@ -6,6 +6,7 @@
 #include <juce_core/juce_core.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <utility>
 
@@ -33,7 +34,9 @@ Bus::Bus (Bus&& other) noexcept
       mixBuffer_ (std::move (other.mixBuffer_)),
       processedBuffer_ (std::move (other.processedBuffer_)),
       gainLinear_ (other.gainLinear_.load (std::memory_order_relaxed)),
-      muted_ (other.muted_.load (std::memory_order_relaxed))
+      muted_ (other.muted_.load (std::memory_order_relaxed)),
+      peakLeft_ (other.peakLeft_.load (std::memory_order_relaxed)),
+      peakRight_ (other.peakRight_.load (std::memory_order_relaxed))
 {
 }
 
@@ -74,18 +77,27 @@ void Bus::process (float* const* output, int numChannels, int numSamples) const 
         const float inlineGain = muted_.load (std::memory_order_relaxed)
                                      ? 0.0f
                                      : gainLinear_.load (std::memory_order_relaxed);
+        float inlinePeak[kMaxBusChannelsHard] = { 0.0f, 0.0f };
         for (int c = 0; c < activeChannels; ++c)
         {
             float* const mix = mixBuffer_.data()
                              + static_cast<std::size_t> (c) * kMaxBusMixSamples;
 
-            if (output[c] != nullptr)
-                for (int s = 0; s < clampedSamples; ++s)
-                    output[c][s] += mix[s] * inlineGain;
+            float p = 0.0f;
+            for (int s = 0; s < clampedSamples; ++s)
+            {
+                const float v = mix[s] * inlineGain;
+                p = std::max (p, std::fabs (v));
+                if (output[c] != nullptr) output[c][s] += v;
+            }
+            inlinePeak[c] = p;
 
             std::memset (mix, 0,
                          static_cast<std::size_t> (clampedSamples) * sizeof (float));
         }
+        peakLeft_.store  (inlinePeak[0], std::memory_order_relaxed);
+        peakRight_.store (activeChannels > 1 ? inlinePeak[1] : inlinePeak[0],
+                          std::memory_order_relaxed);
         return;
     }
 
@@ -147,18 +159,27 @@ void Bus::process (float* const* output, int numChannels, int numSamples) const 
     const float chainGain = muted_.load (std::memory_order_relaxed)
                                 ? 0.0f
                                 : gainLinear_.load (std::memory_order_relaxed);
+    float chainPeak[kMaxBusChannelsHard] = { 0.0f, 0.0f };
     for (int c = 0; c < activeChannels; ++c)
     {
         const float* const proc = processedPtrs[c];
-        if (output[c] != nullptr)
-            for (int s = 0; s < clampedSamples; ++s)
-                output[c][s] += proc[s] * chainGain;
+        float p = 0.0f;
+        for (int s = 0; s < clampedSamples; ++s)
+        {
+            const float v = proc[s] * chainGain;
+            p = std::max (p, std::fabs (v));
+            if (output[c] != nullptr) output[c][s] += v;
+        }
+        chainPeak[c] = p;
 
         float* const mix = mixBuffer_.data()
                          + static_cast<std::size_t> (c) * kMaxBusMixSamples;
         std::memset (mix, 0,
                      static_cast<std::size_t> (clampedSamples) * sizeof (float));
     }
+    peakLeft_.store  (chainPeak[0], std::memory_order_relaxed);
+    peakRight_.store (activeChannels > 1 ? chainPeak[1] : chainPeak[0],
+                      std::memory_order_relaxed);
 }
 
 float* Bus::mixBufferChannel (int c) const noexcept

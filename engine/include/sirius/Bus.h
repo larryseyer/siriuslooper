@@ -106,6 +106,13 @@ public:
     void setMuted (bool m) noexcept { muted_.store (m, std::memory_order_relaxed); }
     bool muted() const noexcept     { return muted_.load (std::memory_order_relaxed); }
 
+    /// Post-fader peak level for each side of the last processed block, in
+    /// [0, ∞). Audio thread writes once per `process()`; the UI reads on its
+    /// timer. A mono bus reports its peak on both sides (dual-mono). Parity
+    /// with ChannelStrip<Audio>::peakLeft/peakRight.
+    float peakLeft()  const noexcept { return peakLeft_.load (std::memory_order_relaxed); }
+    float peakRight() const noexcept { return peakRight_.load (std::memory_order_relaxed); }
+
     /// Message-thread setter — copies the chain in. Set-once before the
     /// audio thread starts; mutating after start is a threading-contract
     /// violation (see class doc + continue.md constraint #6).
@@ -214,6 +221,11 @@ private:
     /// unity/unmuted → the inline path stays bit-for-bit the M5 body.
     std::atomic<float> gainLinear_ { 1.0f };
     std::atomic<bool>  muted_      { false };
+
+    /// Post-fader meter — written from the const `process` (the bus is logically
+    /// const there), so mutable. Audio-thread writes, UI reads.
+    mutable std::atomic<float> peakLeft_  { 0.0f };
+    mutable std::atomic<float> peakRight_ { 0.0f };
 };
 
 } // namespace sirius
