@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-20 (Input Mixer fully live: dual peak+LUFS meters, fader/mute/solo, universal mono/stereo toggle, mic fix — all operator-verified GOOD; next = pan + width detail panel)
+# Session Continuation — 2026-05-20 (Input Mixer pan+width detail panel now live + ChannelStrip stereo-width DSP — operator-verified GOOD; next = tape-output routing)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,26 +8,37 @@
 
 ---
 
-## RESUME HERE (2026-05-20 — Input Mixer fully live + operator-verified GOOD; next = pan + width detail panel)
+## RESUME HERE (2026-05-20 — Input Mixer pan+width detail panel live + operator-verified GOOD; next = tape-output routing)
 
-> ## ▶ START HERE: the Input Mixer's next slice = **pan + width detail panel**
+> ## ▶ START HERE: the Input Mixer's next slice = **tape-output routing**
 > The Input Mixer tab is **done and operator-verified ("good")**: OTTO-skinned
 > strips with the **dual peak+LUFS meter**, fader, mute, solo (solo-in-place),
-> and a **universal mono/stereo toggle** (stereo = 1 strip, mono = 2 strips, on
-> every input incl. the built-in mono mic; gesture-only — right-click / long-press).
-> macOS mic capture is fixed. **Do NOT re-litigate any of that.** The next
-> concrete work, in order:
->   1. **Pan + width detail panel.** `CompactFaderStrip` has no pan on its face;
->      pan/width is a detail-panel layer. Bind pan→`ChannelStrip<Audio>::setPan`
->      (already exists). **Width** is net-new on `ChannelStrip` (a stereo-width
->      control — small DSP addition, TDD it). Keep the mono/stereo toggle
->      gesture-only (no new strip/panel element — the iPhone strip is crowded).
->   2. **Tape-output routing** (the strip's hidden bottom region, `setOutputComboVisible(false)`
+> a **universal mono/stereo toggle** (gesture-only — right-click / long-press),
+> and now a **pan + width detail panel** (selected-strip OTTO model). macOS mic
+> capture is fixed. **Do NOT re-litigate any of that.** The next concrete work:
+>   1. **Tape-output routing** (the strip's hidden bottom region, `setOutputComboVisible(false)`
 >      today): route inputs → a user-selected number of tapes; pulls in
 >      `TapeWriter`/`TapeStore` wiring (store rooted at `<Sirius>/tapes`) and is
 >      where the two input dispatch paths unify (see todo.md item 4).
 > Full deferral list: `todo.md` (2026-05-20 "Input Mixer — deferred slices").
 > Design: `docs/design/mixer-design.md` (decision 8) + whitepaper §6.1/§6.2.
+>
+> ## Pan+width slice — what shipped this slice (`3e951ef`, on origin/master)
+> - **Engine (TDD):** `ChannelStrip<Audio>` gained `setWidth`/`width` (clamped
+>   `[0,2]`, default 1.0 = unity) + mid/side stereo-width DSP in `process()`,
+>   applied **after** pan, **before** peak/LUFS metering. The `width==1.0` unity
+>   case skips the M/S fold so the pan-only path stays byte-identical. +9
+>   `[channel-strip][width]` cases (full ctest 468/469; the 1 is the documented
+>   `MainComponentPluginEditorTests_NOT_BUILT`).
+> - **UI:** vendored OTTO `ChannelDetailPanWidTab.{h,cpp}` byte-faithfully into
+>   `ui/lookandfeel/components/` (rotary L&F `drawRotarySlider` was already
+>   vendored). `InputMixerPane` shows it in a fixed band **above** the strip row,
+>   hidden until a strip is **selected** (single body-click → `stripChannelSelected`
+>   → `onSelect`). Pan knob is industry-standard `[-1,+1]`, mapped to the engine's
+>   normalized `[0,1]` at the `MainComponent` boundary (`(pan+1)*0.5`); width
+>   passes through `[0,2]`. Selection is cleared + the panel hidden on
+>   `rebuildInputStrips()` (channel identities change). Mono/stereo toggle stays
+>   gesture-only — no new strip-face element.
 >
 > **Operator roadmap (remember across chats):** finish **Input Mixer** →
 > **Output Mixer** (mixdown console, one channel per phrase) → then **discuss
