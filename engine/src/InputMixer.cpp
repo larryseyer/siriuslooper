@@ -145,6 +145,14 @@ void InputMixer::setBusEffectChain (BusId id, EffectChain chain)
         }
 }
 
+Bus* InputMixer::busForId (BusId id) noexcept
+{
+    for (auto& bus : buses_)
+        if (bus.id() == id)
+            return &bus;
+    return nullptr;
+}
+
 MixerMainOut InputMixer::mainOutSnapshot (MixerNodeId node) const noexcept
 {
     const auto dest = graph_.mainOutOf (node);

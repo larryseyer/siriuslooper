@@ -72,6 +72,13 @@ public:
     /// with OutputMixer::setBusEffectChain). No-op if the BusId is unknown.
     void setBusEffectChain (BusId id, EffectChain chain);
 
+    /// Message-thread accessor — the live Bus for `id`, or nullptr if unknown.
+    /// Mirrors `processingChainFor(ChannelId)`. The Input Mixer UI uses this to
+    /// drive a bus/FX-return strip's fader/mute and read its peak/LUFS meter.
+    /// NOT for the audio thread (the bus is held by value in a reserved vector;
+    /// the pointer is stable for the bus's lifetime within this mixer).
+    Bus* busForId (BusId id) noexcept;
+
     /// Message-thread snapshot of the entire routing graph for persistence
     /// (routing-graph Phase 5). Reads buses, FX returns, per-node main-outs,
     /// sends, channel input sources, tape modes, and every node's insert chain.

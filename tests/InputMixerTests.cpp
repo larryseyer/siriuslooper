@@ -841,3 +841,21 @@ TEST_CASE ("InputMixer importGraphState of an empty snapshot keeps only the ctor
     const auto ch = mixer.addChannel (sirius::InputId (1), sirius::SignalType::Audio);
     CHECK (mixer.channelMainOut (ch) == sirius::InputMixer::MainOutDest::Tape);
 }
+
+TEST_CASE ("InputMixer::busForId returns the bus for a known id, nullptr otherwise",
+           "[input-mixer][bus-access]")
+{
+    sirius::InputMixer mixer;
+    const sirius::BusId id = mixer.addBus (sirius::BusConfig { 2, "Drum Bus", sirius::BusKind::Bus });
+
+    sirius::Bus* bus = mixer.busForId (id);
+    REQUIRE (bus != nullptr);
+    REQUIRE (bus->id() == id);
+    REQUIRE (bus->config().name == "Drum Bus");
+
+    // Round-trip a control through the accessor (what the UI does).
+    bus->setGain (0.3f);
+    REQUIRE (mixer.busForId (id)->gain() == Catch::Approx (0.3f));
+
+    REQUIRE (mixer.busForId (sirius::BusId { 9999 }) == nullptr);
+}
