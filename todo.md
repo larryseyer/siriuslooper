@@ -4,7 +4,12 @@
 - Files: engine/src/InputMixer.cpp (mainOutSnapshot), core/include/sirius/MixerGraphState.h
 - What was deferred: persisting WHICH tape a node's main-out targets. mainOutSnapshot
   records only MixerTerminalKind::Tape (no TapeId); a non-primary tape route round-trips
-  as the primary on load.
+  as the primary on load. ⚠ Sharper: mainOutSnapshot compares dest only against the
+  PRIMARY tape terminal, so calling exportGraphState() while any node is routed to a
+  non-primary tape hits the fall-through jassertfalse (debug trap; release returns a
+  corrupt MixerMainOut). exportGraphState is not yet wired into production, and no UI can
+  create a non-primary route until slice 4 — so this is latent, not live — but slice 5
+  must fix mainOutSnapshot before either lands.
 - Why deferred: per-node tape-terminal persistence is routing-spec slice 5, out of slice-2 scope.
 - What's needed to finish: add a tapeId field to MixerMainOut (Terminal kind) + serialize it;
   applyChannelMainOut/applyBusMainOut route to setChannelMainOutToTape(id, tapeId).
