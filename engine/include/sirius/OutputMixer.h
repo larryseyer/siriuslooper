@@ -181,7 +181,7 @@ private:
     /// bounds-check before indexing.
     std::size_t sendMatrixIndex (OutputChannelId channel, BusId bus) const noexcept;
 
-    MixerGraph                graph_ { MixerTerminal::Output };
+    MixerGraph                graph_ { MixerTerminal::HardwareOutput };
     std::vector<MixerNodeId>  channelNodeIds_; // parallel to channels_
     std::vector<MixerNodeId>  busNodeIds_;     // parallel to buses_ (index 0 = master)
 

@@ -13,7 +13,7 @@ namespace sirius
 enum class MixerNodeKind { Channel, Bus, FxReturn, Terminal };
 
 /// Which terminal this graph drives — set at construction, never changes.
-enum class MixerTerminal { Tape, Output };
+enum class MixerTerminal { Tape, HardwareOutput };
 
 /// Strong id for routing-graph nodes. 0 == invalid. Distinct from BusId /
 /// OutputChannelId: the graph is a topology layer above the DSP registries.

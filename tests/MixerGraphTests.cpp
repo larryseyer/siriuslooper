@@ -46,7 +46,7 @@ TEST_CASE ("MixerGraph constructs with an implicit terminal and no nodes",
 TEST_CASE ("MixerGraph::addNode registers distinct nodes; Terminal is rejected",
            "[mixer-graph][node-registry]")
 {
-    MixerGraph g (MixerTerminal::Output);
+    MixerGraph g (MixerTerminal::HardwareOutput);
     const auto ch  = g.addNode (MixerNodeKind::Channel);
     const auto bus = g.addNode (MixerNodeKind::Bus);
     const auto fx  = g.addNode (MixerNodeKind::FxReturn);
@@ -69,7 +69,7 @@ TEST_CASE ("MixerGraph::addNode registers distinct nodes; Terminal is rejected",
 TEST_CASE ("MixerGraph::removeNode drops the node, its main-out, and its sends",
            "[mixer-graph][node-registry]")
 {
-    MixerGraph g (MixerTerminal::Output);
+    MixerGraph g (MixerTerminal::HardwareOutput);
     const auto ch  = g.addNode (MixerNodeKind::Channel);
     const auto fx  = g.addNode (MixerNodeKind::FxReturn);
     CHECK (g.setSend (ch, fx, 0.5f));
@@ -84,7 +84,7 @@ TEST_CASE ("MixerGraph::removeNode drops the node, its main-out, and its sends",
 TEST_CASE ("MixerGraph main-out defaults to terminal and validates destination kind",
            "[mixer-graph][main-out]")
 {
-    MixerGraph g (MixerTerminal::Output);
+    MixerGraph g (MixerTerminal::HardwareOutput);
     const auto ch   = g.addNode (MixerNodeKind::Channel);
     const auto busA = g.addNode (MixerNodeKind::Bus);
     const auto fx   = g.addNode (MixerNodeKind::FxReturn);
@@ -118,7 +118,7 @@ TEST_CASE ("MixerGraph main-out defaults to terminal and validates destination k
 TEST_CASE ("MixerGraph rejects main-out assignments that would create a cycle",
            "[mixer-graph][cycle]")
 {
-    MixerGraph g (MixerTerminal::Output);
+    MixerGraph g (MixerTerminal::HardwareOutput);
     const auto busA = g.addNode (MixerNodeKind::Bus);
     const auto busB = g.addNode (MixerNodeKind::Bus);
 
@@ -139,7 +139,7 @@ TEST_CASE ("MixerGraph rejects main-out assignments that would create a cycle",
 TEST_CASE ("MixerGraph sends target FX returns only, clamp, and reject cycles",
            "[mixer-graph][sends]")
 {
-    MixerGraph g (MixerTerminal::Output);
+    MixerGraph g (MixerTerminal::HardwareOutput);
     const auto ch   = g.addNode (MixerNodeKind::Channel);
     const auto busA = g.addNode (MixerNodeKind::Bus);
     const auto fxA  = g.addNode (MixerNodeKind::FxReturn);
@@ -186,7 +186,7 @@ namespace
 TEST_CASE ("MixerGraph evaluation order: sources before destinations, terminal last",
            "[mixer-graph][evaluation-order]")
 {
-    MixerGraph g (MixerTerminal::Output);
+    MixerGraph g (MixerTerminal::HardwareOutput);
 
     SECTION ("default graph — all channels before the terminal")
     {
