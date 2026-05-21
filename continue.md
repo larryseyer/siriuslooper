@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-20 (mixer routing-graph **Phase 1 SHIPPED** on origin/master — engine routing-graph core + OutputMixer integration; next = Phase 2 input-side routing apparatus)
+# Session Continuation — 2026-05-20 (mixer routing model **EXPANDED + re-phased into 8 phases + a follow-on**; white paper + spec pushed; **no engine code this session**; next = **Phase 2 multi-terminal MixerGraph** via writing-plans → subagents in a fresh chat)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,9 +8,83 @@
 
 ---
 
-## RESUME HERE (2026-05-20 — routing-graph **Phase 1 shipped + pushed**; next = brainstorm→plan→execute **Phase 2** in a fresh chat)
+## RESUME HERE (2026-05-20 — routing design EXPANDED & re-phased; next = **Phase 2 multi-terminal MixerGraph** in a fresh chat)
 
-> ## ▶ START HERE: Phase 1 (engine routing-graph core) is on origin/master — next is **Phase 2**
+> ## ▶ START HERE: the routing-graph design is EXPANDED & LOCKED; build **Phase 2** next
+> This session was **design only — no engine code, no build/test impact** (docs
+> only). The mixer routing-graph spec
+> (`docs/superpowers/specs/2026-05-20-mixer-routing-graph-design.md`) was expanded
+> per operator direction and the implementation **re-decomposed into 8 phases +
+> a follow-on**. Pushed to origin/master: `2f25bb0` (white paper line-349 fix +
+> spec routing model) and the phase-breakdown/handoff revision (this commit).
+> **Do NOT re-brainstorm — the spec is locked.** Go straight to
+> `superpowers:writing-plans` for Phase 2, then `superpowers:subagent-driven-development`.
+>
+> **Design decisions locked this session (spec + memories — read them):**
+> - **The two mixers are TOTALLY separate consoles** — no shared state/buses/fx/
+>   logic. Input = hardware inputs → mix/treat → **tapes**. Output = phrases →
+>   mix/fx → **hardware outputs**. Mirror images. They reuse generic *types*
+>   (`MixerGraph`, `Bus`, `ChannelStrip`), each its OWN instances; **OutputMixer
+>   stays untouched** except the behavior-preserving multi-terminal `MixerGraph`
+>   generalization. (memory `project_two_mixers_totally_separate`.)
+> - **Per-channel destination picker** (bottom of strip): Input → **bus / tape /
+>   hardware output**; Output → **bus / hardware output** (never tape). Input
+>   **direct-to-output** = real-time monitoring *through* the channel's FX
+>   (distinct from the sub-ms raw direct layer). This **overturned** the old
+>   "Input Mixer NEVER routes to outputs" rule — spec amended + white paper line
+>   349 corrected. (memory `project_mixer_routing_destinations_and_plugins`.)
+> - **Inserts on EVERY node** (channel, bus, FX/RVB/DLY return), **up to 8 slots**.
+>   Each slot is a **union**: external **VST/CLAP** (M7 host) **or** a built-in
+>   **Sirius FX** (EQ/Comp/Rvb/Dly). Channels currently have NO insert chain and
+>   `EffectChain` has NO cap — both net-new.
+> - **Both mixers carry their own dedicated RVB + DLY returns.**
+> - Input-side `MixerGraph` needs **two terminal sinks** (Tape + HardwareOutput);
+>   output has one (master) — hence Phase 2 generalizes the single-terminal graph.
+>
+> **The 8 phases (full text + per-phase test coverage in the spec):**
+> 1. ✅ Engine routing-graph core (`MixerGraph` + OutputMixer) — SHIPPED (Phase 1).
+> 2. **Multi-terminal `MixerGraph`** (engine TDD) — **NEXT**. Typed sinks
+>    (Tape/HardwareOutput); OutputMixer behavior-preserved (re-prove its cases).
+> 3. Input routing apparatus (engine TDD) — its OWN graph/buses/returns(+RVB/DLY)/
+>    sends/traversal; main-out → bus/tape/output; absorbs tape-output routing.
+> 4. Per-node insert chains (engine+host TDD) — channels gain EffectChain+dispatch;
+>    8-slot cap everywhere; external VST/CLAP. (Built-in FX = follow-on.)
+> 5. Routing-graph persistence (TDD) — SessionFormat round-trip; pre-graph loads clean.
+> 6. Input Mixer UI: creation gesture + Bus/FXReturn strips + destination picker (operator-verified).
+> 7. Input Mixer UI: sends tab + insert management ≤8 (operator-verified).
+> 8. Output Mixer UI parity — gated on the output-mixer surface existing.
+> Follow-on (own spec): internal Sirius FX (EQ/Comp/Rvb/Dly, seeded by OTTO) +
+> the **union slot model**. "Make OUR FX available" lands here.
+>
+> **⛔ MANDATORY: every phase ends by updating THIS file (`continue.md`)** — what
+> it shipped (commits), what's verified (ctest count + clean-rebuild), and the
+> next phase + its first moves. A phase is NOT done until continue.md reflects it.
+> (Operator's explicit instruction this session; also `feedback_update_continue_md_every_session`.)
+>
+> **First moves for the next chat (Phase 2):**
+> 1. Sanity: `git status` clean; `git log --oneline -4` shows the doc commits on origin/master.
+> 2. Read the spec (Phase 2 section) + `engine/include/sirius/MixerGraph.{h,cpp}`
+>    (the single-terminal model to generalize) + `OutputMixer.cpp` Step 3-4 (how
+>    it consumes the terminal/master) so the change stays behavior-preserving.
+> 3. `superpowers:writing-plans` → `docs/superpowers/plans/2026-05-20-mixer-routing-graph-phase2.md`,
+>    then `superpowers:subagent-driven-development`. Engine TDD, no eyes-on.
+> 4. Acceptance: multi-terminal graph + OutputMixer regression-equivalence; full
+>    ctest stays green (baseline 478/479; the 1 = `MainComponentPluginEditorTests_NOT_BUILT`).
+>
+> **⚠ Carry-forward caveat (in todo.md, this session):** the white paper's
+> "always running / everything recorded" framing needs a caveat for a planned
+> **global enable/disable** (system OFF = not recording). `CaptureSession`
+> arm/disarm exists in `MainComponent` but may not be the intended global switch —
+> confirm + caveat later. Not part of the routing graph.
+>
+> **Operational facts (canonical app path, ctest baseline, OTTO read-only) are
+> unchanged this session — see the Phase-1 historical block immediately below.**
+
+---
+
+## HISTORICAL — routing-graph Phase 1 + input-mixer session (superseded 2026-05-20 by the re-phased routing design above)
+
+> ## ▶ Phase 1 (engine routing-graph core) is on origin/master
 > The whole **Phase 1** plan executed end-to-end via `superpowers:subagent-driven-development`
 > (8 tasks, all engine TDD, per-task spec + code-quality review, final holistic opus
 > review = "safe to push"). It is on **origin/master** (`58184d6..c04d911`, 11 commits).

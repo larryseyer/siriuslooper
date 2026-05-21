@@ -1,5 +1,25 @@
 # Sirius Looper — Deferred Items
 
+### 2026-05-20 — White-paper "always recording" caveat: global enable/disable
+- Files: docs/Sirius Looper Whitepaper V7.md (the "tape is the always-running
+  source of truth" / "everything the input mixer produces is captured to tape"
+  framing); app/MainComponent.cpp (existing CaptureSession arm/disarm, ~line
+  1688/1913).
+- What was deferred: the white paper states the tape is always running and
+  (in spirit) "everything is always recorded." That is not strictly true: a
+  **global enable/disable system** is planned — when the system is OFF we are
+  not recording at all. The white paper needs a caveat acknowledging the global
+  off state, the same way line 349 was corrected for routing.
+- Why deferred: FYI raised by the operator mid-design (mixer routing session);
+  the routing-graph work is the active line. This is a doc caveat + a feature
+  check, not part of the routing graph.
+- What's needed to finish: (1) confirm whether the existing `CaptureSession`
+  arm/disarm IS the intended global enable/disable or whether a separate
+  system-wide on/off must be built (operator said "if it is not already
+  implemented"); (2) once settled, add the caveat to the white paper's
+  always-running/always-recording framing. Related memory:
+  feedback_arm_disarm_is_required.
+
 ### 2026-05-20 — Pill 4-corner ICONS (OTTO parity)
 - Files: ui/src/TimelineView.cpp (pill drawing ~line 220+), ui/lookandfeel/ (OTTO
   uses the Phosphor icon font — assets/Fonts/Phosphor in OTTO).

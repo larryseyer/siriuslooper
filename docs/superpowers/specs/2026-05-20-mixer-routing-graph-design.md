@@ -222,30 +222,91 @@ already covers.
   Mixer surface itself is built (the engine model here is shared and ready). Per
   the operator roadmap (input mixer → output mixer), the input mixer drives first.
 
-## Proposed implementation phases (for writing-plans)
+## Implementation phases (for writing-plans)
 
-Each phase is independently buildable and reviewable. Engine phases are TDD;
-UI phases are operator-verified.
+Each phase is independently buildable, reviewable, and shippable on its own.
+Engine phases are headless TDD; UI phases are operator-verified. The two mixers
+are independent consoles (no shared state) — they reuse generic *types*
+(`MixerGraph`, `Bus`, `ChannelStrip`, `EffectChain`), each holding its own
+instances. The order is: engine foundation → input apparatus → inserts →
+persistence → input UI → output UI, with the internal-FX DSP as the explicit
+"right behind" follow-on.
 
-1. **Engine routing-graph core (shared substrate).** Bus kind (Bus vs FxReturn);
-   main-out-vs-sends split; flexible acyclic routing + topological evaluation
-   order; build on the OutputMixer substrate and factor the shared `MixerGraph`.
-   TDD: acyclic enforcement, send summing, main-out assignment, evaluation order,
-   stereo invariant, RT-safety static-asserts.
-2. **Input-side routing apparatus.** Add the shared substrate to `InputMixer`;
-   terminal = tape; channel main-out → bus/tape; sends → FX returns. Absorbs
-   tape-output routing. TDD.
-3. **UI: creation gesture + bus/FX-return strips + main-out picker (Input Mixer).**
-   Blank-area 3-option long-press menu; render Bus/FXReturn strips; re-enable +
-   populate the main-out combo. Operator-verified.
-4. **UI: Sends detail tab.** Vendor OTTO `ChannelDetailSendsTab`; wire per-strip
-   sends to FX returns in the detail panel. Operator-verified.
-5. **Persistence.** Serialize the graph into the session format; pre-graph
-   sessions load clean. TDD.
-6. **Output Mixer UI parity** (when the Output Mixer surface exists). Reuses the
-   shared engine model + the same strips/gesture/tabs. Operator-verified.
+**MANDATORY per-phase handoff.** Each phase runs in its own chat. The LAST step
+of every phase — after the work is committed and pushed — is to **update
+`continue.md`** so the next chat resumes from "read continue.md" alone: what the
+phase shipped (commits), what's verified (ctest count, clean-rebuild status), and
+which phase is next with its first concrete moves. A phase is not done until
+`continue.md` reflects it. (Reinforces the standing rule
+`feedback_update_continue_md_every_session`.)
 
-(Then the follow-on spec: OTTO RVB/DLY into FX returns.)
+**Phase 1 — Engine routing-graph core (shared `MixerGraph` type).** ✅ SHIPPED
+(origin/master). Bus-vs-FxReturn kind; main-out-vs-sends split; flexible acyclic
+routing + topological evaluation; `OutputMixer` integration. Single implicit
+terminal.
+
+**Phase 2 — Multi-terminal `MixerGraph`.** Engine, TDD. Generalize the graph from
+one implicit terminal to a set of **typed terminal sinks** (`Tape`,
+`HardwareOutput`). The Output Mixer's instance keeps a single `HardwareOutput`
+terminal — **behavior-preserving**, re-proven by its existing `[output-mixer]`/
+`[mixer-graph]` cases. This is the foundation the input side needs (it routes to
+*both* tape and hardware output). Cover: terminal-set registration, main-out to a
+chosen terminal, acyclic enforcement across multiple terminals, evaluation order
+with >1 terminal, OutputMixer regression-equivalence.
+
+**Phase 3 — Input-side routing apparatus.** Engine, TDD. `InputMixer` gains its
+**own** `MixerGraph` (tape + hardware-output terminals), **own** buses, **own** FX
+returns (including a **default RVB and DLY return**), **own** send matrix, and the
+RT-safe topological traversal — mirroring `OutputMixer`'s render but with source =
+device-input strips and a dual terminal. Main-out: channel → bus / tape / hardware
+output; bus / FX-return → bus / tape / output. Sends: channel|bus → FX return
+(post-fader default). **Absorbs the old "tape-output routing" slice** (channel →
+tape is just a main-out to the tape terminal). Output Mixer untouched. Cover:
+main-out one-destination across all three input destinations, send leveling/
+summing, cycle rejection, topo order, per-terminal delivery (tape capture vs
+hardware-output direct monitoring), stereo invariant, traversal RT-safety
+static-asserts, default-graph behavior-equivalence with today's per-channel tape
+write.
+
+**Phase 4 — Per-node insert chains.** Engine + host, TDD. Channels (both mixers)
+gain an `EffectChain` + `IEffectChainHost` dispatch exactly as `Bus` already has,
+so inserts run on **every** node, capped at **8 slots** (the cap applies to buses
+and returns too; `EffectChain` has no cap today). External **VST/CLAP** via the
+existing M7 out-of-process host. (Built-in Sirius FX as slot contents arrive in
+the follow-on — see below — so this phase ships no selectable-but-dead effects.)
+Cover: per-channel chain dispatch, 8-slot enforcement, bypass/reorder, RT-safety,
+behavior-equivalence for empty chains.
+
+**Phase 5 — Routing-graph persistence.** Engine + persistence, TDD. Serialize each
+mixer's buses, FX returns, main-out assignments, send levels, terminal
+assignments, and per-node insert chains into `SessionFormat`. Pre-graph sessions
+load clean (empty graph; channels default-routed to their terminal). Cover:
+round-trip equality, forward-compat load of pre-graph sessions, both mixers.
+
+**Phase 6 — Input Mixer UI: creation + routing.** Operator-verified. Blank-area
+long-press / right-click menu to create bus / FX-return nodes; render Bus and
+FXReturn `CompactFaderStrip`s (dual peak+LUFS meter); the **bottom-of-strip
+destination picker** (bus / tape / hardware output) wired to the engine main-out
+assignment, offering only acyclic destinations.
+
+**Phase 7 — Input Mixer UI: sends + inserts.** Operator-verified. Vendor OTTO
+`ChannelDetailSendsTab` (per-FX-return send levels for the selected strip); the
+**insert-chain management UI** (add / remove / reorder / bypass up to 8 slots;
+choose a VST/CLAP from the scanned list — built-in FX appear once the follow-on
+registers them).
+
+**Phase 8 — Output Mixer UI parity.** Operator-verified, **gated on the Output
+Mixer surface existing** (per the operator's input-first roadmap). Reuses the
+shared engine model + the same strips / creation gesture / detail tabs / picker
+(destinations: bus / hardware output).
+
+**Follow-on (its own spec, "right behind"): internal Sirius FX.** EQ, Compressor,
+Reverb, Delay — seeded by OTTO's `effects::PlayerIRConvolution` +
+`effects::PlayerDelay` — as **built-in effects**. Adds the **union insert-slot
+model** (an `EffectChainEntry` slot holds an external plugin **or** a built-in
+effect), their persistence, and the built-in-FX picker in the insert UI. This is
+where "make OUR FX available" lands; the phases above build the chains and slots
+those effects drop into.
 
 ## Testing strategy
 
