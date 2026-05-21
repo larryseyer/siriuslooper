@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-21 (routing **Phase 3 input-side routing apparatus SHIPPED** to origin/master via writing-plans → subagents; full ctest 495/496 green; next = **Phase 4 per-node insert chains** in a fresh chat)
+# Session Continuation — 2026-05-21 (routing **Phase 4 per-node insert chains SHIPPED** to origin/master via writing-plans → subagents; clean-rebuild full ctest 506/506 green; next = **Phase 5 routing-graph persistence** in a fresh chat)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,84 +8,90 @@
 
 ---
 
-## RESUME HERE (2026-05-21 — routing **Phase 3 SHIPPED**; next = **Phase 4 per-node insert chains** in a fresh chat)
+## RESUME HERE (2026-05-21 — routing **Phase 4 SHIPPED**; next = **Phase 5 routing-graph persistence** in a fresh chat)
 
-> ## ▶ START HERE: Phase 3 (input-side routing apparatus) is on origin/master; build **Phase 4** next
-> Phase 3 executed end-to-end via `superpowers:writing-plans` →
-> `superpowers:subagent-driven-development` (5 tasks, all engine TDD,
-> controller-verified each task: read the diff, ran the suites, validated scope).
-> On **origin/master** (`0a74cc8..893b9fd`, 5 feat commits). Full ctest **495/496**
-> green (the 1 non-pass = documented `MainComponentPluginEditorTests_NOT_BUILT`,
-> run separately by `bash/test-s7.sh`). **Do NOT re-do Phase 3.** Plan:
-> `docs/superpowers/plans/2026-05-20-mixer-routing-graph-phase3.md`.
+> ## ▶ START HERE: Phase 4 (per-node insert chains) is on origin/master; build **Phase 5** next
+> Phase 4 executed end-to-end via `superpowers:writing-plans` →
+> `superpowers:subagent-driven-development` (4 tasks, engine+core TDD; each task
+> controller-verified — spec-compliance review + code-quality review, fixes looped
+> back to the implementer). On **origin/master** (4 commits, see below). **Clean
+> `rm -rf build` rebuild green; full ctest 506/506** (test #506 = the documented
+> `MainComponentPluginEditorTests_NOT_BUILT` placeholder, run separately by
+> `bash/test-s7.sh`; test #281, an out-of-process supervisor SIGTERM test, is the
+> known transient flake — passed on rerun, untouched by Phase 4). **Do NOT re-do
+> Phase 4.** Plan: `docs/superpowers/plans/2026-05-20-mixer-routing-graph-phase4.md`.
 >
-> **What Phase 3 landed (all pushed):**
-> - `03a8361` `MixerGraph::sendEdges()` — public const-noexcept read view of the
->   send edges (made `SendEdge` public) so the input traversal can sum sources
->   into FX returns on the audio thread. OutputMixer unaffected.
-> - `0cbec44` **`InputMixer` gained its OWN routing registry** — `MixerGraph graph_
->   { { Tape, HardwareOutput } }`, `std::vector<Bus> buses_` + parallel
->   `busNodeIds_`, `channelNodeIds_` (ChannelId→node), `addBus`/`addFxReturn`,
->   `kMaxInputChannels=32`/`kMaxInputBuses=64`. Constructor auto-creates a default
->   **RVB** + **DLY** FX return. `addChannel`/`removeChannel` register/drop graph nodes.
-> - `244e3a3` **main-out + send API** — `MainOutDest { Tape, HardwareOutput, Bus }`;
->   `setChannelMainOutTo{Bus,HardwareOutput,Tape}`, `setBusMainOutTo*`,
->   `setChannelSend`/`setBusSend` (all delegate to `graph_`, which enforces
->   acyclicity + dest-kind). **Default RVB/DLY returns route to the hardware output**
->   (they MONITOR, they don't capture — a node routed to the tape terminal enqueues
->   every block, so an FX return defaulting to tape would write silent tape blocks).
->   Channels still default to tape (= capture); an operator-created bus defaults to tape.
-> - `7848c26` + `893b9fd` **`renderInputGraph(deviceIn, n, directOut, m, samples)`** —
->   the RT-safe traversal (noexcept, static_assert'd). Steps 1–2: per channel,
->   gather device inputs → `ChannelStrip` → route main-out (tape→`enqueueToTape`
->   stereo-interleaved / hardware-output→accumulate into directOut / bus→accumulate
->   into mix buffer) + sends (read from `graph_.sendEdges()`) into FX returns.
->   Step 3: walk `evaluationOrder()`, process each bus/FX-return (`Bus::process`)
->   into its destination (bus / tape enqueue / direct-out). `[input-routing]` = 11
->   cases; `[input-mixer]` total now 23 cases / 132 assertions.
+> **What Phase 4 landed (all pushed):**
+> - `41c7cb8` + `f7ebffa` **`EffectChain` 8-slot cap** (`core/.../EffectChain.{h,cpp}`).
+>   `static constexpr std::size_t kMaxSlots = 8` + `bool full()`; `withAppended`
+>   throws `std::length_error` at the cap (message derives the number from the
+>   constant — no magic number). Because the cap lives on the ONE shared chain type,
+>   it binds channels, buses, AND FX returns at once. `withReplaced/Removed/Moved`
+>   don't grow the chain, so only `withAppended` is guarded. +2 `[effect-chain][cap]`
+>   cases.
+> - `291a487` **`ChannelStrip<Audio>` gained set-once collaborators** (engine,
+>   header-only) — `setEffectChain`/`effectChain`, `setEffectChainHost(host, nodeKey)`/
+>   `effectChainHost`, private `effectChain_`/`host_`/`nodeKey_`. Mirrors `Bus` exactly,
+>   EXCEPT the host key is an explicit `setEffectChainHost` argument (Bus derives it
+>   from `id_`; a strip has no id, so the CALLER owns key-space allocation). `process`
+>   untouched this commit.
+> - `eac4d72` **`ChannelStrip<Audio>::process` dispatches inserts PRE-FADER** —
+>   `dispatchInserts(...)` runs each non-bypassed slot in ascending order via
+>   `host_->pumpSlot(nodeKey_, slot, channelData, channelData, min(n,2), samples)`,
+>   in-place, AFTER the mute early-return and BEFORE gain/pan/width/metering. So the
+>   post-fader meter reflects the post-insert signal, and a muted strip skips
+>   dispatch. Inert (byte-identical to pre-Phase-4) when no host is bound or every
+>   slot is empty/bypassed — same two-path structure as `Bus::process`. `noexcept`,
+>   allocation/lock/throw/IO-free (static_assert holds). +7 `[channel-strip][inserts]`
+>   cases (order, pre-fader, bypass, miss-dry, equivalence, mute, meter).
 >
-> **⚠ Scope (operator-confirmed via AskUserQuestion):** Phase 3 = **engine apparatus,
-> tested. NOT wired into the production audio path.** `AudioCallback`/`MainComponent`
-> still use the legacy `processBuffer` (per-device-channel tape) + `processDeviceInputs`
-> (metering). `renderInputGraph` is the substrate the **UI phases (P6/P7)** wire to
-> production — that migration + the bus-id-as-ChannelId tape identity + the
-> stereo-vs-mono tape payload reconciliation are in `todo.md` (2026-05-21 entries).
-> **OutputMixer was NOT touched** (the two mixers are TOTALLY separate consoles —
-> memory `project_two_mixers_totally_separate`; they reuse the generic
-> `MixerGraph`/`Bus` *types*, own instances). The input side reads send LEVELS from
-> the graph directly (no dense `sendMatrix_`) — this is how it "reconciles the
-> send-summing DSP" the spec asked for, and sidesteps the `nextChannelId_` churn a
-> dense-by-id matrix would suffer.
+> **⚠ Scope (matches the Phase-3 posture):** Phase 4 = **engine+core apparatus,
+> tested with a synchronous mock `IEffectChainHost`. NOT wired into production.** No
+> mixer calls `setEffectChainHost`; `InputMixer`/`OutputMixer`/`MainComponent` are
+> untouched; channels default to no host = the pre-Phase-4 path, byte-identical. The
+> existing M7 `OutOfProcessEffectChainHost` is reused **unchanged** (its `pumpSlot`/
+> `configureBus` key on an opaque `std::int64_t`, so a channel is just another key —
+> no host edits needed). Production wiring (a mixer owns a host, partitions the int64
+> key space so channel keys don't collide with bus keys, calls `configureBus` per
+> channel) lands with the **UI phases (P6/P7)** — see `todo.md` (2026-05-21 Phase 4
+> entry, items 1–6, including two review observations: muted strips stop pumping the
+> host → pipeline-refill latency on unmute; and the `pumpSlot` `busId` param name is
+> now a misnomer for channels).
 >
-> **NEXT = Phase 4: per-node insert chains.** Spec **locked**
-> (`docs/superpowers/specs/2026-05-20-mixer-routing-graph-design.md`, Phase 4
-> section ~lines 271-278) — **do NOT re-brainstorm.** Channels (BOTH mixers) gain
-> an `EffectChain` + `IEffectChainHost` dispatch exactly as `Bus` already has, so
-> inserts run on **every** node, **capped at 8 slots** (the cap applies to buses +
-> FX returns too; `EffectChain` has no cap today). External **VST/CLAP** via the
-> existing M7 out-of-process host. **Built-in Sirius FX as slot contents are the
-> follow-on** — Phase 4 ships NO selectable-but-dead effects. Engine + host, TDD.
+> **NEXT = Phase 5: routing-graph persistence.** Spec **locked**
+> (`docs/superpowers/specs/2026-05-20-mixer-routing-graph-design.md`, Phase 5 section
+> ~lines 280-284) — **do NOT re-brainstorm.** Serialize each mixer's buses, FX
+> returns, main-out assignments, send levels, terminal assignments, AND per-node
+> insert chains into `SessionFormat`. Pre-graph sessions must load clean (empty
+> graph; channels default-routed to their terminal). Engine + persistence, TDD.
 >
-> **First moves for the next chat (Phase 4):**
-> 1. Sanity: `git status` clean; `git log --oneline -6` shows `893b9fd` on origin/master.
-> 2. Read the spec Phase 4 section + `engine/include/sirius/Bus.h`/`Bus.cpp` (how a
->    bus already owns `EffectChain` + `IEffectChainHost` + runs `host_->pumpSlot`)
->    + `engine/include/sirius/EffectChain.h` (no cap today) + `ChannelStrip.h` (the
->    per-channel node that gains an insert chain) + the M7 out-of-process host seam.
-> 3. `superpowers:writing-plans` → `docs/superpowers/plans/2026-05-20-mixer-routing-graph-phase4.md`,
->    then `superpowers:subagent-driven-development`. Engine+host TDD, no operator eyes-on.
-> 4. Acceptance (per spec): per-channel chain dispatch, 8-slot enforcement
->    (buses/returns too), bypass/reorder, RT-safety, behavior-equivalence for empty chains.
+> **First moves for the next chat (Phase 5):**
+> 1. Sanity: `git status` clean; `git log --oneline -6` shows the Phase 4 tail
+>    (`eac4d72` newest of the 4) on origin/master.
+> 2. Read the spec Phase 5 section + `persistence/include/sirius/SessionFormat.h` +
+>    `persistence/src/SessionFormat.cpp` (how `EffectChain`/`EffectChainEntry` +
+>    buses already round-trip through JSON — M8 S1 added archivalMode/persistedSnapshot)
+>    + `tests/SessionFormatTests.cpp` + the `InputMixer`/`OutputMixer` graph state to
+>    serialize (`MixerGraph` nodes/edges, `buses_`, `busNodeIds_`, send levels,
+>    terminal/main-out assignments).
+> 3. `superpowers:writing-plans` → `docs/superpowers/plans/2026-05-20-mixer-routing-graph-phase5.md`,
+>    then `superpowers:subagent-driven-development`. Engine+persistence TDD, no operator eyes-on.
+> 4. Acceptance (per spec): round-trip equality (graph in == graph out) for BOTH
+>    mixers; forward-compat load of a pre-graph session (empty graph, channels at
+>    their terminal); per-node insert chains survive the round-trip.
 >
 > **The 8 phases (full text + per-phase test coverage in the spec):**
 > 1. ✅ Engine routing-graph core (`MixerGraph` + OutputMixer) — SHIPPED (Phase 1).
 > 2. ✅ Multi-terminal `MixerGraph` — SHIPPED (Phase 2).
-> 3. ✅ **Input routing apparatus** — SHIPPED (Phase 3, this session).
-> 4. **Per-node insert chains** (engine+host TDD) — **NEXT**. Channels gain
->    EffectChain+dispatch; 8-slot cap everywhere; external VST/CLAP. (Built-in FX = follow-on.)
-> 5. Routing-graph persistence (TDD) — SessionFormat round-trip; pre-graph loads clean.
+> 3. ✅ Input routing apparatus — SHIPPED (Phase 3).
+> 4. ✅ **Per-node insert chains** — SHIPPED (Phase 4, this session). `EffectChain`
+>    8-slot cap (binds all node kinds); `ChannelStrip<Audio>` EffectChain+pre-fader
+>    dispatch; reuses the unchanged int64-keyed M7 host. Apparatus only; not wired.
+> 5. **Routing-graph persistence** (engine+persistence TDD) — **NEXT**. SessionFormat
+>    round-trip of buses/returns/main-outs/sends/terminals/insert-chains; pre-graph loads clean.
 > 6. Input Mixer UI: creation gesture + Bus/FXReturn strips + destination picker (operator-verified).
-> 7. Input Mixer UI: sends tab + insert management ≤8 (operator-verified).
+> 7. Input Mixer UI: sends tab + insert management ≤8 (operator-verified). **This is where
+>    Phase 4's apparatus gets wired to production** (mixer owns a host, partitions the key space).
 > 8. Output Mixer UI parity — gated on the output-mixer surface existing.
 > Follow-on (own spec): internal Sirius FX (EQ/Comp/Rvb/Dly, seeded by OTTO) +
 > the **union slot model**. "Make OUR FX available" lands here.
@@ -106,8 +112,9 @@
 >   the old "Input Mixer NEVER routes to outputs" rule. (memory
 >   `project_mixer_routing_destinations_and_plugins`.)
 > - **Inserts on EVERY node**, **up to 8 slots**; each slot a **union** of external
->   VST/CLAP **or** built-in Sirius FX. Channels have NO insert chain today;
->   `EffectChain` has NO cap — both net-new in Phase 4.
+>   VST/CLAP **or** built-in Sirius FX. ✅ Phase 4 SHIPPED the channel insert chain +
+>   the 8-slot `EffectChain` cap (apparatus); the union-slot built-in-FX contents are
+>   the follow-on spec.
 > - **Both mixers carry their own dedicated RVB + DLY returns.**
 >
 > **⚠ Carry-forward caveat (in todo.md):** the white paper's "always running /
