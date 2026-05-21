@@ -122,3 +122,40 @@ TEST_CASE ("MixerGraph rejects main-out assignments that would create a cycle",
         CHECK (g.mainOutOf (busB) == g.terminalNode());
     }
 }
+
+TEST_CASE ("MixerGraph sends target FX returns only, clamp, and reject cycles",
+           "[mixer-graph][sends]")
+{
+    MixerGraph g (MixerTerminal::Output);
+    const auto ch   = g.addNode (MixerNodeKind::Channel);
+    const auto busA = g.addNode (MixerNodeKind::Bus);
+    const auto fxA  = g.addNode (MixerNodeKind::FxReturn);
+    const auto fxB  = g.addNode (MixerNodeKind::FxReturn);
+
+    SECTION ("channel -> FX return succeeds and stores the level")
+    {
+        CHECK (g.setSend (ch, fxA, 0.5f));
+        CHECK (g.sendLevel (ch, fxA) == 0.5f);
+    }
+    SECTION ("levels clamp to [0,1]")
+    {
+        CHECK (g.setSend (ch, fxA, 2.0f));
+        CHECK (g.sendLevel (ch, fxA) == 1.0f);
+        CHECK (g.setSend (ch, fxA, -1.0f)); // <=0 removes the edge
+        CHECK (g.sendLevel (ch, fxA) == 0.0f);
+    }
+    SECTION ("send to a Bus is rejected (not an FX return)")
+    {
+        CHECK_FALSE (g.setSend (ch, busA, 0.5f));
+    }
+    SECTION ("FX-return-sourced sends are rejected (v1: no FX-return sends)")
+    {
+        CHECK_FALSE (g.setSend (fxA, fxB, 0.5f));
+    }
+    SECTION ("a send that would close a cycle is rejected")
+    {
+        // fxA -> busA via main-out, then busA -> fxA via send would loop.
+        REQUIRE (g.setMainOut (fxA, busA));
+        CHECK_FALSE (g.setSend (busA, fxA, 0.5f));
+    }
+}
