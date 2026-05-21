@@ -29,18 +29,43 @@ mixer's main-out reaching its terminal.
 Four node kinds. Three of them (Channel, Bus, FX return) are user-visible strips;
 the terminal is implicit.
 
-- **Channel** — an input-source strip (Input Mixer) or a phrase strip (Output
-  Mixer). Has exactly one **main-out** and any number of leveled **sends**.
+- **Channel** — an input-source strip (Input Mixer; source = hardware input) or
+  a phrase strip (Output Mixer; source = phrase render). Has exactly one
+  **main-out** and any number of leveled **sends**. The main-out destination set
+  differs by mixer: an **Input** channel routes to a **bus, a tape, or a hardware
+  output** (RME-TotalMix direct-out); an **Output** channel routes to a **bus or
+  a hardware output** (never tape).
 - **Bus** — a sub-group. Its **input is channel (or bus) main-outs** routed into
   it. Carries an effect chain (insert FX — typically comp/EQ). Has its own sends.
   Has one main-out.
 - **FX return** — an aux return. Its **input is sends only** (never a direct
   main-out route). Carries an effect chain (typically RVB/DLY, but any plugin).
-  Has one main-out. (No sends from an FX return in v1 — see Open Items.)
-- **Terminal** — **tape** on the Input Mixer (capture console); **output·master**
-  on the Output Mixer (mixdown console). The Input Mixer NEVER routes to outputs
-  and NEVER takes a tape as input; the Output Mixer NEVER routes to tapes
-  (CLAUDE.md hard rule).
+  Has one main-out. (No sends from an FX return in v1 — see Open Items.) **Both
+  mixers carry their own dedicated RVB and DLY returns** (independent per
+  console), plus any operator-created returns.
+- **Terminal** — the Input Mixer has **two terminal sinks: tape (capture) and
+  hardware output (direct-out)**; the Output Mixer has **one: output·master**.
+  The Input Mixer can route a channel/bus straight to a hardware output (RME
+  direct-out) but still **NEVER takes a tape as input**; the Output Mixer **NEVER
+  routes to tape**. (This amends the earlier "Input Mixer never routes to outputs"
+  rule — see the white paper Part VI note. Stereo-only and "no tape as input"
+  remain hard rules.)
+
+**Per-node insert chains.** EVERY node — input/output channel, bus, and FX/RVB/DLY
+return — carries an insert chain of **up to 8 inserts**. This is NOT bus-only:
+every channel hosts inserts too. Each slot holds **either** a third-party
+**VST/CLAP plugin** (the existing M7 out-of-process host) **or** one of Sirius's
+**own built-in FX** (EQ, Compressor, Reverb, Delay, …). The insert-slot model is
+therefore a union — external hosted plugin OR internal Sirius effect — so an
+`EffectChainEntry` must be able to name an internal effect, not only a
+`PluginDescriptor`. Buses already own an `EffectChain` + `IEffectChainHost`;
+channels gain the same. The 8-slot cap is a deliberate, reasonable ceiling
+(`EffectChain` currently has no cap).
+
+The internal-FX **DSP** (the actual EQ/Comp/Rvb/Dly engines — Sirius's own,
+seeded by OTTO's reverb + delay) remains the follow-on effort; this spec
+establishes the unified insert-slot model and the 8-slot chain on every node so
+both external plugins and internal FX drop into the same slots.
 
 The defining distinction the operator drew: **buses get their input from channel
 outputs; FX returns get their input from sends.** Structurally a bus and an FX
@@ -180,9 +205,11 @@ already covers.
 
 - **In scope:** the full routing graph (nodes, main-out, sends, acyclic flexible
   routing, topo evaluation) on **both** mixers; the creation gesture; bus/FX-return
-  strips; the main-out routing picker; the Sends detail tab; persistence. FX
-  returns host the **existing** out-of-process plugin mechanism (M7), so any
-  reverb/delay plugin — internal-or-3rd-party — can be loaded immediately.
+  strips; the main-out routing picker; the Sends detail tab; persistence. The
+  **8-slot insert chain on every node** (channels, buses, returns) and its
+  **union slot model** (external VST/CLAP via the existing M7 host **or** an
+  internal Sirius effect). Any reverb/delay plugin — internal-or-3rd-party — can
+  be loaded immediately via the M7 host.
 - **Out of scope (own spec, "right behind"):** integrating **OTTO's reverb +
   delay** (`effects::PlayerIRConvolution`, `effects::PlayerDelay`) as Sirius's
   **internal** RVB/DLY available to drop into an FX return. The operator's
