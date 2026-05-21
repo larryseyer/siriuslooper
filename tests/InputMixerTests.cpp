@@ -794,3 +794,47 @@ TEST_CASE ("InputMixer exportGraphState reflects buses, routing, sends, inserts"
     CHECK (c.sends[0].level == 0.5f);
     CHECK (c.inserts.entries().size() == 1);
 }
+
+TEST_CASE ("InputMixer importGraphState round-trips an exported graph", "[input-mixer][persistence]")
+{
+    sirius::InputMixer source;
+    const sirius::InputDescriptor desc {
+        sirius::TapeId (1), sirius::InputKind::Audio, std::string ("In 1"),
+        std::optional<int> (0)
+    };
+    source.registerInput (sirius::InputId (1), desc);
+    const auto drums  = source.addBus (sirius::BusConfig { 2, "Drums", sirius::BusKind::Bus });
+    const auto reverb = source.addFxReturn ("Reverb");
+    sirius::EffectChainEntry comp; comp.displayName = "comp";
+    source.setBusEffectChain (drums, sirius::EffectChain{}.withAppended (comp));
+    const auto ch = source.addChannel (sirius::InputId (1), sirius::SignalType::Audio);
+    source.setChannelInputSource (ch, 2, 3, true);
+    source.setChannelTapeMode (ch, sirius::TapeMode::CommitToTape);
+    source.setChannelMainOutToBus (ch, drums);
+    source.setChannelSend (ch, reverb, 0.5f);
+
+    const auto exported = source.exportGraphState();
+
+    sirius::InputMixer loaded;
+    loaded.importGraphState (exported);
+
+    CHECK (loaded.exportGraphState() == exported);
+}
+
+TEST_CASE ("InputMixer importGraphState of an empty snapshot keeps only the ctor FX returns", "[input-mixer][persistence]")
+{
+    sirius::InputMixer mixer;
+    mixer.importGraphState (sirius::InputMixerGraphState{});
+
+    // The ctor seeds RVB (busId 1) + DLY (busId 2); an empty import adds no user
+    // buses and must not duplicate or rewind them — the pre-graph "loads clean" default.
+    CHECK (mixer.busCount() == 2);
+
+    const sirius::InputDescriptor desc {
+        sirius::TapeId (1), sirius::InputKind::Audio, std::string ("In 1"),
+        std::optional<int> (0)
+    };
+    mixer.registerInput (sirius::InputId (1), desc);
+    const auto ch = mixer.addChannel (sirius::InputId (1), sirius::SignalType::Audio);
+    CHECK (mixer.channelMainOut (ch) == sirius::InputMixer::MainOutDest::Tape);
+}

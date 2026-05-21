@@ -78,6 +78,13 @@ public:
     /// Message-thread only — never call from the audio thread.
     InputMixerGraphState exportGraphState() const;
 
+    /// Message-thread reconstruction of the routing graph from a snapshot.
+    /// Replays buses/channels with their persisted ids, then main-outs, sends,
+    /// and insert chains. Call on a freshly-constructed mixer; the ctor's RVB/DLY
+    /// FX returns are reused (not re-created) when the snapshot carries their ids.
+    /// Message-thread only.
+    void importGraphState (const InputMixerGraphState&);
+
     // Injected non-owning collaborators (set-once on the message thread).
     void setTapeWriter (TapeWriter* writer) noexcept;
     void setOverloadProtection (OverloadProtection* overload) noexcept;
@@ -188,6 +195,9 @@ private:
     MixerNodeId nodeForBus (BusId) const noexcept;
     MixerNodeId nodeForChannel (ChannelId) const noexcept;
     MainOutDest classifyMainOut (MixerNodeId dest) const noexcept;
+
+    void applyChannelMainOut (ChannelId, const MixerMainOut&);
+    void applyBusMainOut (BusId, const MixerMainOut&);
 
     MixerMainOut mainOutSnapshot (MixerNodeId node) const noexcept;
     std::vector<MixerSend> sendSnapshot (MixerNodeId node) const;

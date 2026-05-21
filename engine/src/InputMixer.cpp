@@ -166,8 +166,9 @@ MixerMainOut InputMixer::mainOutSnapshot (MixerNodeId node) const noexcept
         if (busNodeIds_[i] == dest)
         {
             out.busId = buses_[i].id().value();
-            break;
+            return out;
         }
+    jassertfalse; // graph invariant: dest is a Bus node absent from busNodeIds_
     return out;
 }
 
@@ -242,6 +243,74 @@ InputMixerGraphState InputMixer::exportGraphState() const
     state.nextBusId     = nextBusId_;
     state.nextChannelId = nextChannelId_;
     return state;
+}
+
+void InputMixer::importGraphState (const InputMixerGraphState& state)
+{
+    auto busExists = [this] (std::int64_t id)
+    {
+        for (const auto& bus : buses_) if (bus.id().value() == id) return true;
+        return false;
+    };
+
+    // 1. Buses / FX returns. The ctor pre-creates RVB (busId 1) + DLY (busId 2);
+    //    apply the snapshot's chain to an existing bus rather than re-creating it.
+    //    Create the rest with addBus, which mints the persisted (dense) busId.
+    for (const auto& b : state.buses)
+    {
+        if (! busExists (b.busId))
+        {
+            BusConfig config;
+            config.channelCount = b.channelCount;
+            config.name         = b.name;
+            config.kind         = b.kind == MixerBusKind::FxReturn ? BusKind::FxReturn : BusKind::Bus;
+            addBus (config); // mints b.busId (dense) and registers the graph node
+        }
+        setBusEffectChain (BusId (b.busId), b.inserts);
+    }
+
+    // 2. Channels — register with persisted ChannelIds (constructed directly so
+    //    removeChannel-induced id gaps round-trip). Mirror addChannel's internals.
+    for (const auto& c : state.channels)
+    {
+        const ChannelId id (c.channelId);
+        channels_.emplace (c.channelId,
+                           Channel (id, c.signalType, InputId (c.inputSourceId), c.tapeMode));
+        channelSources_[c.channelId] = { c.source.left, c.source.right, c.source.stereo };
+        channelNodeIds_[c.channelId] = graph_.addNode (MixerNodeKind::Channel);
+
+        if (c.signalType == SignalType::Audio)
+            if (auto* chain = channels_.at (c.channelId).processing.get())
+                static_cast<ChannelStrip<SignalType::Audio>*> (chain)->setEffectChain (c.inserts);
+    }
+
+    // 3. Apply main-outs (all nodes exist now, so no cycle false-positives).
+    for (const auto& b : state.buses)    applyBusMainOut (BusId (b.busId), b.mainOut);
+    for (const auto& c : state.channels) applyChannelMainOut (ChannelId (c.channelId), c.mainOut);
+
+    // 4. Apply sends.
+    for (const auto& b : state.buses)
+        for (const auto& s : b.sends) setBusSend (BusId (b.busId), BusId (s.busId), s.level);
+    for (const auto& c : state.channels)
+        for (const auto& s : c.sends) setChannelSend (ChannelId (c.channelId), BusId (s.busId), s.level);
+
+    // 5. Advance id counters — never rewind (the ctor already set nextBusId_ == 3).
+    nextBusId_     = std::max (nextBusId_, state.nextBusId);
+    nextChannelId_ = std::max (nextChannelId_, state.nextChannelId);
+}
+
+void InputMixer::applyChannelMainOut (ChannelId id, const MixerMainOut& m)
+{
+    if (m.kind == MixerMainOut::Kind::Bus)                    setChannelMainOutToBus (id, BusId (m.busId));
+    else if (m.terminal == MixerTerminalKind::HardwareOutput) setChannelMainOutToHardwareOutput (id);
+    else                                                      setChannelMainOutToTape (id);
+}
+
+void InputMixer::applyBusMainOut (BusId id, const MixerMainOut& m)
+{
+    if (m.kind == MixerMainOut::Kind::Bus)                    setBusMainOutToBus (id, BusId (m.busId));
+    else if (m.terminal == MixerTerminalKind::HardwareOutput) setBusMainOutToHardwareOutput (id);
+    else                                                      setBusMainOutToTape (id);
 }
 
 int InputMixer::busCount() const noexcept { return static_cast<int> (buses_.size()); }
