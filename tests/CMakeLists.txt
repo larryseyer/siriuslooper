@@ -32,6 +32,7 @@ add_executable(SiriusTests
     WetCaptureWriterTests.cpp
     EffectChainTests.cpp
     MixerGraphStateTests.cpp
+    MixerGraphPersistenceTests.cpp
     ParameterAutomationTests.cpp
     PluginScannerTests.cpp
     UndoStackTests.cpp

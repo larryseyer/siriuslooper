@@ -24,7 +24,7 @@ enum class PluginFormat
 /// in the host/ runtime, downstream of the conceptual-time engine.
 struct PluginDescriptor
 {
-    PluginFormat format;
+    PluginFormat format { PluginFormat::Vst3 };
     std::string  uniqueId;     ///< format-specific stable identifier (VST3 UID, AU subtype, etc.)
     std::string  version;      ///< format-reported version string; opaque, used for VersionPinning drift detection
     std::string  name;
