@@ -9,6 +9,7 @@
 #include "sirius/Promotion.h"
 #include "sirius/Rational.h"
 #include "sirius/RepetitionRules.h"
+#include "sirius/TapePool.h"
 #include "sirius/TapeReference.h"
 #include "sirius/TempoMap.h"
 
@@ -1012,6 +1013,46 @@ OutputMixerGraphState deserializeOutputMixerGraphState (const juce::String& json
     if (const auto n = optionalProperty (root, "nextBusId");     ! n.isVoid()) s.nextBusId = requireInt64 (n, "nextBusId");
     if (const auto n = optionalProperty (root, "nextChannelId"); ! n.isVoid()) s.nextChannelId = requireInt64 (n, "nextChannelId");
     return s;
+}
+
+juce::String serializeTapePool (const TapePool& pool)
+{
+    juce::Array<juce::var> tapeArr;
+    for (const auto& t : pool.tapes())
+    {
+        auto obj = makeObject();
+        obj->setProperty ("id",   juce::int64 (t.id.value()));
+        obj->setProperty ("name", juce::String (t.name));
+        tapeArr.add (objectVar (obj));
+    }
+    auto root = makeObject();
+    root->setProperty ("tapes", tapeArr);
+    return juce::JSON::toString (objectVar (root));
+}
+
+TapePool deserializeTapePool (const juce::String& json)
+{
+    juce::var parsed;
+    const auto result = juce::JSON::parse (json, parsed);
+    if (result.failed())
+        fail ("invalid tape pool JSON: " + result.getErrorMessage().toStdString());
+    if (! parsed.isObject())
+        fail ("tape pool document must be a JSON object");
+
+    const auto tapes = requireProperty (parsed, "tapes");
+    if (! tapes.isArray() || tapes.size() == 0)
+        fail ("tape pool must carry a non-empty tapes array");
+
+    std::vector<TapeDescriptor> descriptors;
+    descriptors.reserve (static_cast<std::size_t> (tapes.size()));
+    for (int i = 0; i < tapes.size(); ++i)
+    {
+        const auto& entry = tapes[i];
+        descriptors.push_back (TapeDescriptor {
+            TapeId (requireInt64 (requireProperty (entry, "id"), "tape.id")),
+            requireProperty (entry, "name").toString().toStdString() });
+    }
+    return TapePool (std::move (descriptors));
 }
 
 } // namespace sirius::persistence

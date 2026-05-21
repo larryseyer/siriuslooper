@@ -2,6 +2,7 @@
 
 #include "sirius/Constituent.h"
 #include "sirius/MixerGraphState.h"
+#include "sirius/TapePool.h"
 
 #include <juce_core/juce_core.h>
 
@@ -36,5 +37,18 @@ juce::String serializeMixerGraphState (const OutputMixerGraphState&);
 /// empty graph), so a pre-graph document loads clean.
 InputMixerGraphState  deserializeInputMixerGraphState  (const juce::String& json);
 OutputMixerGraphState deserializeOutputMixerGraphState (const juce::String& json);
+
+/// Serializes the project tape pool to a self-contained JSON document. Round-
+/// trips exactly through deserializeTapePool. Independent of the Constituent
+/// session document and the mixer-graph documents.
+juce::String serializeTapePool (const TapePool& pool);
+
+/// Reconstructs a tape pool from serializeTapePool's output. Throws
+/// std::runtime_error on a malformed document. A present-but-empty tapes array
+/// is rejected (the >=1 invariant is a load-time contract too). Callers loading
+/// a pre-tape-pool session construct a default TapePool() instead of calling
+/// this (forward-compat is the caller's responsibility, matching the mixer-graph
+/// convention).
+TapePool deserializeTapePool (const juce::String& json);
 
 } // namespace sirius::persistence

@@ -22,7 +22,8 @@ add_library(SiriusCore STATIC
     src/EffectChain.cpp
     src/SharedMemoryRegion.cpp
     src/Sha256.cpp
-    src/VersionPinningRecord.cpp)
+    src/VersionPinningRecord.cpp
+    src/TapePool.cpp)
 
 target_include_directories(SiriusCore PUBLIC include)
 
