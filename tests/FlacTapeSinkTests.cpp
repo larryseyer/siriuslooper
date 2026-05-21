@@ -77,3 +77,64 @@ TEST_CASE ("FlacTapeSink writes distinct tapes to distinct files in parallel", "
     CHECK (decodeFlac (dir.getChildFile ("tape-7.flac")).numSamples == 256);
     dir.deleteRecursively();
 }
+
+TEST_CASE ("FlacTapeSink closeTape finalizes a complete re-readable file mid-session", "[flac-tape-sink]")
+{
+    auto dir = makeTempTapesDir();
+    {
+        sirius::FlacTapeSink sink (dir, 48000.0, 256);
+        std::vector<float> l (480, 0.1f), r (480, -0.1f);
+        for (int block = 0; block < 3; ++block)
+            sink.deliverTapeBlock (sirius::TapeId { 2 }, l.data(), r.data(), 480);
+        sink.closeTape (sirius::TapeId { 2 });
+
+        // closeTape runs through the worker asynchronously; poll up to ~1s for the
+        // file to be finalized. Test-only polling — production code never polls.
+        const auto f = dir.getChildFile ("tape-2.flac");
+        bool found = false;
+        for (int attempt = 0; attempt < 200 && !found; ++attempt)
+        {
+            juce::Thread::sleep (5);
+            found = f.existsAsFile() && f.getSize() > 0;
+        }
+        REQUIRE (found);
+        CHECK (decodeFlac (f).numSamples == 480 * 3);
+    }
+    dir.deleteRecursively();
+}
+
+TEST_CASE ("FlacTapeSink dropped-block accounting increments when queue is full", "[flac-tape-sink]")
+{
+    auto dir = makeTempTapesDir();
+    {
+        // Capacity 1 forces queue-full on any rapid burst from the producer thread.
+        sirius::FlacTapeSink sink (dir, 48000.0, 1);
+        std::vector<float> l (480, 0.2f), r (480, -0.2f);
+        for (int i = 0; i < 5000; ++i)
+            sink.deliverTapeBlock (sirius::TapeId { 4 }, l.data(), r.data(), 480);
+        CHECK (sink.droppedBlockCount() > 0);
+    }
+    dir.deleteRecursively();
+}
+
+TEST_CASE ("FlacTapeSink rate-0 safety net: no file created, blocks safely dropped, no crash", "[flac-tape-sink]")
+{
+    // Verifies the writerFor() rate-0 safety net: if the sample rate is never set
+    // (stays 0.0), writerFor returns nullptr for every dequeued block, no writer
+    // is ever created, and the sink destructs cleanly (joins worker, drains queue).
+    // In production, setSampleRate MUST be called before capture begins; an unset
+    // rate drops all blocks rather than creating a malformed writer.
+    auto dir = makeTempTapesDir();
+    {
+        sirius::FlacTapeSink sink (dir, 0.0, 256);
+        std::vector<float> l (480, 0.3f), r (480, -0.3f);
+
+        // Deliver 4 blocks — all silently dropped (writerFor returns nullptr, sr <= 0).
+        for (int i = 0; i < 4; ++i)
+            sink.deliverTapeBlock (sirius::TapeId { 3 }, l.data(), r.data(), 480);
+    } // RAII: destructor joins the worker, which drains and finds rate still 0.
+
+    // No FLAC file should have been created.
+    CHECK (! dir.getChildFile ("tape-3.flac").existsAsFile());
+    dir.deleteRecursively();
+}
