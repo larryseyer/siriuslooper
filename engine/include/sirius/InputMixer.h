@@ -4,6 +4,7 @@
 #include "sirius/Channel.h"
 #include "sirius/ChannelDefaults.h"
 #include "sirius/InputDescriptor.h"
+#include "sirius/ITapeSink.h"
 #include "sirius/MixerGraph.h"
 #include "sirius/MixerGraphState.h"
 #include "sirius/SignalType.h"
@@ -129,6 +130,12 @@ public:
     /// so this preserves the audio-thread contract on `processBuffer`.
     void setNotificationBus (NotificationBus* bus) noexcept;
 
+    /// Injects the per-tape capture sink (tape subsystem slice 2). Set-once on
+    /// the message thread before the audio device starts; non-owning. When unset,
+    /// renderInputGraph drops tape-routed signal (no capture). Slice 3 binds a
+    /// real per-tape sink in MainComponent.
+    void setTapeSink (ITapeSink* sink) noexcept;
+
     // Input-layer registry --------------------------------------------------
     void registerInput (InputId, const InputDescriptor&);
     void setInputRawDirect (InputId, bool enabled);
@@ -240,14 +247,16 @@ private:
     std::vector<MixerSend> sendSnapshot (MixerNodeId node) const;
     const EffectChain* channelInsertChain (ChannelId) const noexcept;
 
-    void enqueueToTape (ChannelId, const float* left, const float* right, int numSamples) noexcept;
     void accumulateIntoBus (MixerNodeId busNode, const float* left, const float* right,
                             float level, int numSamples) noexcept;
+    void accumulateIntoTape (int slot, const float* left, const float* right,
+                             float level, int numSamples) noexcept;
 
     TapeWriter* tapeWriter_ { nullptr };
     OverloadProtection* overload_ { nullptr };
     sirius::persistence::TapeStore* tapeStore_ { nullptr };
     NotificationBus* notificationBus_ { nullptr };
+    ITapeSink* tapeSink_ { nullptr };
 
     // Audio-thread scratch — pre-allocated in the constructor (sized to
     // `kMaxScratchSamples`, defined at file-scope in InputMixer.cpp). M5
@@ -267,6 +276,15 @@ private:
     // path and the metering path never share a buffer.
     std::vector<float> scratchLeft_;
     std::vector<float> scratchRight_;
+
+    // Per-tape summing scratch for renderInputGraph — kMaxTapes rows of
+    // kMaxScratchSamples, pre-allocated in the constructor. Each pooled tape's
+    // slot accumulates every node routed to it; the touched slots are delivered
+    // once per block via tapeSink_. Indexed by tape-terminal slot
+    // (tapeTerminals_ order). RT-safe: never resized after construction.
+    std::vector<std::vector<float>> tapeMixLeft_;
+    std::vector<std::vector<float>> tapeMixRight_;
+    std::vector<char>               tapeTouched_;
 };
 
 } // namespace sirius

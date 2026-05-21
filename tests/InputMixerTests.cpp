@@ -10,6 +10,7 @@
 #include "sirius/Channel.h"
 #include "sirius/ChannelStrip.h"
 #include "sirius/InputMixer.h"
+#include "sirius/ITapeSink.h"
 #include "sirius/MixerGraphState.h"
 #include "sirius/NotificationBus.h"
 #include "sirius/OverloadProtection.h"
@@ -392,6 +393,35 @@ namespace
 {
     // Equal-power pan gain at centre (pan = 0.5): cos(0.5 * pi/2) = 0.70710678.
     constexpr float kCentrePanGain = 0.70710678f;
+
+    struct RecordingTapeSink : sirius::ITapeSink
+    {
+        struct Block { std::int64_t tapeId; std::vector<float> left, right; };
+        std::vector<Block> blocks;
+
+        void deliverTapeBlock (sirius::TapeId tape, const float* l, const float* r,
+                               int n) noexcept override
+        {
+            blocks.push_back ({ tape.value(),
+                                std::vector<float> (l, l + n),
+                                std::vector<float> (r, r + n) });
+        }
+
+        const Block* find (std::int64_t tapeId) const
+        {
+            for (const auto& b : blocks) if (b.tapeId == tapeId) return &b;
+            return nullptr;
+        }
+    };
+
+    sirius::ChannelId addStereoChannel (sirius::InputMixer& mixer, int leftDev, int rightDev)
+    {
+        using sirius::InputId; using sirius::SignalType;
+        const auto ch = mixer.addChannel (InputId { 1 }, SignalType::Audio);
+        mixer.setChannelTapeMode (ch, sirius::TapeMode::CommitToTape);
+        mixer.setChannelInputSource (ch, leftDev, rightDev, true);
+        return ch;
+    }
 }
 
 TEST_CASE ("processDeviceInputs meters a stereo source's L and R independently",
@@ -596,20 +626,15 @@ TEST_CASE ("InputMixer rejects a bus main-out assignment that would create a cyc
 // [input-routing][render] — Phase 3 Task 4: renderInputGraph channel delivery
 // =============================================================================
 
-TEST_CASE ("renderInputGraph: default-graph tape-routed channel enqueues its processed block",
+TEST_CASE ("renderInputGraph: default-graph tape-routed channel delivers its processed block to the tape sink",
            "[input-routing][render]")
 {
     using sirius::InputMixer; using sirius::InputId; using sirius::SignalType;
-    using sirius::TapeMode; using sirius::TapeWriter;
+    using sirius::TapeMode;
 
-    const auto tempDirJuce = juce::File::getSpecialLocation (juce::File::tempDirectory)
-        .getChildFile ("sirius-render-tape-" + juce::String (juce::Time::getMillisecondCounterHiRes()));
-    tempDirJuce.createDirectory();
-    const std::filesystem::path tempDir (tempDirJuce.getFullPathName().toStdString());
-
-    TapeWriter writer (tempDir, std::chrono::milliseconds (1), 64);
+    RecordingTapeSink sink;
     InputMixer mixer;
-    mixer.setTapeWriter (&writer);
+    mixer.setTapeSink (&sink);
 
     const auto ch = mixer.addChannel (InputId (0), SignalType::Audio);
     mixer.setChannelInputSource (ch, 0, 1, /*stereo*/ true);
@@ -623,28 +648,20 @@ TEST_CASE ("renderInputGraph: default-graph tape-routed channel enqueues its pro
 
     mixer.renderInputGraph (deviceIn, 2, directOut, 0, n);
 
-    const juce::File partial (juce::String (writer.flushChannel (ch).string()));
-    REQUIRE (partial.existsAsFile());
-    // One render → one message → n stereo frames interleaved float32.
-    CHECK (partial.getSize() == static_cast<juce::int64> (static_cast<std::size_t> (n) * 2 * sizeof (float)));
-
-    juce::File (juce::String (tempDir.string())).deleteRecursively();
+    const auto* b = sink.find (1);
+    REQUIRE (b != nullptr);
+    CHECK (b->left.size() == (std::size_t) n);
 }
 
 TEST_CASE ("renderInputGraph: a channel routed to the hardware output sums into direct-out, not tape",
            "[input-routing][render]")
 {
     using sirius::InputMixer; using sirius::InputId; using sirius::SignalType;
-    using sirius::TapeMode; using sirius::TapeWriter;
+    using sirius::TapeMode;
 
-    const auto tempDirJuce = juce::File::getSpecialLocation (juce::File::tempDirectory)
-        .getChildFile ("sirius-render-hw-" + juce::String (juce::Time::getMillisecondCounterHiRes()));
-    tempDirJuce.createDirectory();
-    const std::filesystem::path tempDir (tempDirJuce.getFullPathName().toStdString());
-
-    TapeWriter writer (tempDir, std::chrono::milliseconds (1000), 8);
+    RecordingTapeSink sink;
     InputMixer mixer;
-    mixer.setTapeWriter (&writer);
+    mixer.setTapeSink (&sink);
 
     const auto ch = mixer.addChannel (InputId (0), SignalType::Audio);
     mixer.setChannelInputSource (ch, 0, 1, true);
@@ -663,47 +680,9 @@ TEST_CASE ("renderInputGraph: a channel routed to the hardware output sums into 
     // a centred unity strip is ~0.707, not 1.0): signal reached direct-out, tape did not.
     CHECK (outL[0] != 0.0f);
     CHECK (outR[0] != 0.0f);
-    const juce::File partial (juce::String (
-        (tempDir / (std::to_string (ch.value()) + ".tape.partial")).string()));
-    CHECK_FALSE (partial.existsAsFile()); // routed to hardware output, not tape
-
-    juce::File (juce::String (tempDir.string())).deleteRecursively();
+    CHECK (sink.blocks.empty()); // routed to hardware output, not tape
 }
 
-TEST_CASE ("renderInputGraph: channel -> bus -> tape delivers the bus output to tape",
-           "[input-routing][render]")
-{
-    using sirius::InputMixer; using sirius::InputId; using sirius::SignalType; using sirius::TapeWriter;
-
-    const auto tempDirJuce = juce::File::getSpecialLocation (juce::File::tempDirectory)
-        .getChildFile ("sirius-render-bustape-" + juce::String (juce::Time::getMillisecondCounterHiRes()));
-    tempDirJuce.createDirectory();
-    const std::filesystem::path tempDir (tempDirJuce.getFullPathName().toStdString());
-
-    TapeWriter writer (tempDir, std::chrono::milliseconds (1), 16);
-    InputMixer mixer;
-    mixer.setTapeWriter (&writer);
-
-    const auto ch  = mixer.addChannel (InputId (0), SignalType::Audio);
-    mixer.setChannelInputSource (ch, 0, 1, true);
-    const auto bus = mixer.addBus (sirius::BusConfig { 2, "Drums", sirius::BusKind::Bus });
-    REQUIRE (mixer.setChannelMainOutToBus (ch, bus)); // channel -> bus
-    REQUIRE (mixer.setBusMainOutToTape (bus));        // bus -> tape
-
-    constexpr int n = 48;
-    std::vector<float> left (n, 0.5f), right (n, 0.5f);
-    const float* deviceIn[2] = { left.data(), right.data() };
-    float* directOut[2] = { nullptr, nullptr };
-
-    mixer.renderInputGraph (deviceIn, 2, directOut, 0, n);
-
-    // The bus enqueues under a ChannelId derived from its BusId (see implementation note).
-    const juce::File partial (juce::String (writer.flushChannel (sirius::ChannelId { bus.value() }).string()));
-    REQUIRE (partial.existsAsFile());
-    CHECK (partial.getSize() == static_cast<juce::int64> (static_cast<std::size_t> (n) * 2 * sizeof (float)));
-
-    juce::File (juce::String (tempDir.string())).deleteRecursively();
-}
 
 TEST_CASE ("renderInputGraph: a channel send reaches an FX return, which delivers to direct-out",
            "[input-routing][render]")
@@ -920,4 +899,127 @@ TEST_CASE ("InputMixer: a bus routes to a chosen tape via setBusMainOutToTape(Bu
     CHECK (mixer.busMainOutIsTape (bus));                 // routed to *a* tape
     CHECK (mixer.busMainOutIsTape (bus, TapeId { 2 }));
     CHECK_FALSE (mixer.busMainOutIsTape (bus, TapeId { 1 }));
+}
+
+// =============================================================================
+// [input-mixer][multi-tape][render] — tape subsystem slice 2: per-tape summing
+// and ITapeSink delivery in renderInputGraph
+// =============================================================================
+
+TEST_CASE ("renderInputGraph: a tape-routed channel is delivered to that tape via the sink",
+           "[input-mixer][multi-tape][render]")
+{
+    using sirius::InputMixer; using sirius::TapeId;
+    InputMixer mixer;
+    RecordingTapeSink sink;
+    mixer.setTapeSink (&sink);
+
+    const auto ch = addStereoChannel (mixer, 0, 1);
+    REQUIRE (mixer.setChannelMainOutToTape (ch)); // primary tape (1)
+
+    constexpr int n = 8;
+    std::vector<float> l (n, 0.5f), r (n, 0.25f);
+    const float* deviceIn[2] { l.data(), r.data() };
+    mixer.renderInputGraph (deviceIn, 2, nullptr, 0, n);
+
+    const auto* b = sink.find (1);
+    REQUIRE (b != nullptr);
+    REQUIRE (b->left.size() == (std::size_t) n);
+    // ChannelStrip applies equal-power pan gain at default centre (kCentrePanGain).
+    CHECK (b->left[0]  == Catch::Approx (0.5f  * kCentrePanGain).margin (1e-5f));
+    CHECK (b->right[0] == Catch::Approx (0.25f * kCentrePanGain).margin (1e-5f));
+    CHECK (sink.blocks.size() == 1);
+}
+
+TEST_CASE ("renderInputGraph: two channels on one tape SUM into a single delivery",
+           "[input-mixer][multi-tape][render]")
+{
+    using sirius::InputMixer;
+    InputMixer mixer;
+    RecordingTapeSink sink;
+    mixer.setTapeSink (&sink);
+
+    const auto chA = addStereoChannel (mixer, 0, 1);
+    const auto chB = addStereoChannel (mixer, 0, 1);
+    REQUIRE (mixer.setChannelMainOutToTape (chA));
+    REQUIRE (mixer.setChannelMainOutToTape (chB));
+
+    constexpr int n = 4;
+    std::vector<float> l (n, 0.3f), r (n, 0.1f);
+    const float* deviceIn[2] { l.data(), r.data() };
+    mixer.renderInputGraph (deviceIn, 2, nullptr, 0, n);
+
+    REQUIRE (sink.blocks.size() == 1);
+    const auto* b = sink.find (1);
+    REQUIRE (b != nullptr);
+    // Two channels each scaled by kCentrePanGain, then summed.
+    CHECK (b->left[0]  == Catch::Approx (0.3f * 2.0f * kCentrePanGain).margin (1e-5f));
+    CHECK (b->right[0] == Catch::Approx (0.1f * 2.0f * kCentrePanGain).margin (1e-5f));
+}
+
+TEST_CASE ("renderInputGraph: channels on distinct tapes record in parallel",
+           "[input-mixer][multi-tape][render]")
+{
+    using sirius::InputMixer; using sirius::TapeId;
+    InputMixer mixer;
+    RecordingTapeSink sink;
+    mixer.setTapeSink (&sink);
+    REQUIRE (mixer.addTape (TapeId { 2 }));
+
+    const auto chA = addStereoChannel (mixer, 0, 1);
+    const auto chB = addStereoChannel (mixer, 0, 1);
+    REQUIRE (mixer.setChannelMainOutToTape (chA, TapeId { 1 }));
+    REQUIRE (mixer.setChannelMainOutToTape (chB, TapeId { 2 }));
+
+    constexpr int n = 4;
+    std::vector<float> l (n, 0.4f), r (n, 0.4f);
+    const float* deviceIn[2] { l.data(), r.data() };
+    mixer.renderInputGraph (deviceIn, 2, nullptr, 0, n);
+
+    CHECK (sink.blocks.size() == 2);
+    REQUIRE (sink.find (1) != nullptr);
+    REQUIRE (sink.find (2) != nullptr);
+    // Each channel scaled by kCentrePanGain before delivery.
+    CHECK (sink.find (1)->left[0] == Catch::Approx (0.4f * kCentrePanGain).margin (1e-5f));
+    CHECK (sink.find (2)->left[0] == Catch::Approx (0.4f * kCentrePanGain).margin (1e-5f));
+}
+
+TEST_CASE ("renderInputGraph: channel -> bus -> tape delivers the bus output to the chosen tape",
+           "[input-mixer][multi-tape][render]")
+{
+    using sirius::InputMixer; using sirius::BusId; using sirius::BusConfig; using sirius::TapeId;
+    InputMixer mixer;
+    RecordingTapeSink sink;
+    mixer.setTapeSink (&sink);
+
+    const auto bus = mixer.addBus (BusConfig { 2, "Sub", sirius::BusKind::Bus });
+    const auto ch  = addStereoChannel (mixer, 0, 1);
+    REQUIRE (mixer.setChannelMainOutToBus (ch, bus));
+    REQUIRE (mixer.setBusMainOutToTape (bus));
+
+    constexpr int n = 4;
+    std::vector<float> l (n, 0.5f), r (n, 0.5f);
+    const float* deviceIn[2] { l.data(), r.data() };
+    mixer.renderInputGraph (deviceIn, 2, nullptr, 0, n);
+
+    const auto* b = sink.find (1);
+    REQUIRE (b != nullptr);
+    // Channel goes through ChannelStrip (kCentrePanGain at default centre pan),
+    // accumulates into bus, then bus.process at unity gain delivers to tape.
+    CHECK (b->left[0] == Catch::Approx (0.5f * kCentrePanGain).margin (1e-5f));
+}
+
+TEST_CASE ("renderInputGraph: with no sink bound, tape-routed signal is dropped without crashing",
+           "[input-mixer][multi-tape][render]")
+{
+    using sirius::InputMixer;
+    InputMixer mixer; // no setTapeSink
+    const auto ch = addStereoChannel (mixer, 0, 1);
+    REQUIRE (mixer.setChannelMainOutToTape (ch));
+
+    constexpr int n = 4;
+    std::vector<float> l (n, 0.5f), r (n, 0.5f);
+    const float* deviceIn[2] { l.data(), r.data() };
+    mixer.renderInputGraph (deviceIn, 2, nullptr, 0, n);
+    SUCCEED();
 }

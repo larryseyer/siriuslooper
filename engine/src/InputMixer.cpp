@@ -29,7 +29,10 @@ namespace sirius
 InputMixer::InputMixer()
     : processingScratch_ (kMaxScratchSamples, 0.0f),
       scratchLeft_ (kMaxScratchSamples, 0.0f),
-      scratchRight_ (kMaxScratchSamples, 0.0f)
+      scratchRight_ (kMaxScratchSamples, 0.0f),
+      tapeMixLeft_  (static_cast<std::size_t> (kMaxTapes), std::vector<float> (kMaxScratchSamples, 0.0f)),
+      tapeMixRight_ (static_cast<std::size_t> (kMaxTapes), std::vector<float> (kMaxScratchSamples, 0.0f)),
+      tapeTouched_  (static_cast<std::size_t> (kMaxTapes), 0)
 {
     buses_.reserve (static_cast<std::size_t> (kMaxInputBuses));
     busNodeIds_.reserve (static_cast<std::size_t> (kMaxInputBuses));
@@ -45,6 +48,7 @@ void InputMixer::setTapeWriter (TapeWriter* writer) noexcept       { tapeWriter_
 void InputMixer::setOverloadProtection (OverloadProtection* o) noexcept { overload_ = o; }
 void InputMixer::setTapeStore (sirius::persistence::TapeStore* store) noexcept { tapeStore_ = store; }
 void InputMixer::setNotificationBus (NotificationBus* bus) noexcept { notificationBus_ = bus; }
+void InputMixer::setTapeSink (ITapeSink* sink) noexcept { tapeSink_ = sink; }
 
 void InputMixer::registerInput (InputId id, const InputDescriptor& desc)
 {
@@ -581,29 +585,6 @@ ProcessingChain* InputMixer::processingChainFor (ChannelId id) noexcept
     return it->second.processing.get();
 }
 
-void InputMixer::enqueueToTape (ChannelId id, const float* left, const float* right,
-                                int numSamples) noexcept
-{
-    if (tapeWriter_ == nullptr) return;
-
-    constexpr int kMaxFrames = static_cast<int> (kMaxTapeWriteMessageBytes / (2 * sizeof (float)));
-    const int frames = std::min (numSamples, kMaxFrames);
-
-    TapeWriteMessage msg;
-    msg.id = id;
-    msg.lmcTime = Rational (0);
-    msg.payloadByteCount = static_cast<std::size_t> (frames) * 2 * sizeof (float);
-    float* out = reinterpret_cast<float*> (msg.samples.data());
-    for (int s = 0; s < frames; ++s) { out[2 * s] = left[s]; out[2 * s + 1] = right[s]; }
-
-    if (! tapeWriter_->tryEnqueue (msg))
-    {
-        if (notificationBus_ != nullptr)
-            notificationBus_->post (NotificationLevel::Warning, Category::CpuPressure,
-                                    "audio thread missed deadline — tape buffer dropped");
-        if (overload_ != nullptr) overload_->reportLoad (1.0);
-    }
-}
 
 void InputMixer::accumulateIntoBus (MixerNodeId busNode, const float* left, const float* right,
                                     float level, int numSamples) noexcept
@@ -619,6 +600,16 @@ void InputMixer::accumulateIntoBus (MixerNodeId busNode, const float* left, cons
     }
 }
 
+void InputMixer::accumulateIntoTape (int slot, const float* left, const float* right,
+                                     float level, int numSamples) noexcept
+{
+    if (slot < 0 || slot >= static_cast<int> (tapeMixLeft_.size())) return;
+    float* tl = tapeMixLeft_[static_cast<std::size_t> (slot)].data();
+    float* tr = tapeMixRight_[static_cast<std::size_t> (slot)].data();
+    for (int s = 0; s < numSamples; ++s) { tl[s] += left[s] * level; tr[s] += right[s] * level; }
+    tapeTouched_[static_cast<std::size_t> (slot)] = 1;
+}
+
 void InputMixer::renderInputGraph (const float* const* deviceIn, int numDeviceChannels,
                                    float* const* directOut, int numDirectOutChannels,
                                    int numSamples) noexcept
@@ -626,8 +617,16 @@ void InputMixer::renderInputGraph (const float* const* deviceIn, int numDeviceCh
     if (deviceIn == nullptr || numDeviceChannels <= 0 || numSamples <= 0) return;
     const int n = std::min (numSamples, static_cast<int> (kMaxScratchSamples));
 
-    const MixerNodeId tapeNode = graph_.terminalNode (MixerTerminal::Tape);
-    const MixerNodeId hwNode   = graph_.terminalNode (MixerTerminal::HardwareOutput);
+    const MixerNodeId hwNode = graph_.terminalNode (MixerTerminal::HardwareOutput);
+
+    // Zero only the active tape slots; clear their touched flags.
+    const std::size_t tapeSlots = tapeTerminals_.size();
+    for (std::size_t i = 0; i < tapeSlots; ++i)
+    {
+        std::memset (tapeMixLeft_[i].data(),  0, static_cast<std::size_t> (n) * sizeof (float));
+        std::memset (tapeMixRight_[i].data(), 0, static_cast<std::size_t> (n) * sizeof (float));
+        tapeTouched_[i] = 0;
+    }
 
     // ── Steps 1–2: per channel, gather → strip → route main-out + sends ──
     for (const auto& [chValue, source] : channelSources_)
@@ -653,11 +652,12 @@ void InputMixer::renderInputGraph (const float* const* deviceIn, int numDeviceCh
 
         const MixerNodeId chNode = nodeForChannel (channel.id);
         const MixerNodeId dest   = graph_.mainOutOf (chNode);
+        const int tapeSlot       = tapeSlotForNode (dest);
 
-        if (dest == tapeNode)
+        if (tapeSlot >= 0)
         {
             if (channel.tapeMode != TapeMode::NoTape)
-                enqueueToTape (channel.id, scratchLeft_.data(), scratchRight_.data(), n);
+                accumulateIntoTape (tapeSlot, scratchLeft_.data(), scratchRight_.data(), 1.0f, n);
         }
         else if (dest == hwNode)
         {
@@ -682,8 +682,6 @@ void InputMixer::renderInputGraph (const float* const* deviceIn, int numDeviceCh
     }
 
     // ── Step 3: process each bus / FX return into its main-out destination ──
-    // RT-safety: evaluationOrder() is a const& to a pre-built vector (no alloc);
-    // busNodeIds_ lookups are bounded linear scans; no graph mutators are called.
     for (const MixerNodeId nodeId : graph_.evaluationOrder())
     {
         std::size_t busIdx = busNodeIds_.size();
@@ -691,18 +689,17 @@ void InputMixer::renderInputGraph (const float* const* deviceIn, int numDeviceCh
             if (busNodeIds_[i] == nodeId) { busIdx = i; break; }
         if (busIdx >= busNodeIds_.size()) continue; // channel or terminal node
 
-        const Bus& bus         = buses_[busIdx];
-        const MixerNodeId dest  = graph_.mainOutOf (nodeId);
+        const Bus& bus        = buses_[busIdx];
+        const MixerNodeId dest = graph_.mainOutOf (nodeId);
+        const int tapeSlot     = tapeSlotForNode (dest);
 
-        if (dest == tapeNode)
+        if (tapeSlot >= 0)
         {
             std::memset (scratchLeft_.data(),  0, static_cast<std::size_t> (n) * sizeof (float));
             std::memset (scratchRight_.data(), 0, static_cast<std::size_t> (n) * sizeof (float));
             float* sc[2] { scratchLeft_.data(), scratchRight_.data() };
             bus.process (sc, 2, n);
-            if (tapeWriter_ != nullptr)
-                enqueueToTape (ChannelId { bus.id().value() },
-                               scratchLeft_.data(), scratchRight_.data(), n);
+            accumulateIntoTape (tapeSlot, scratchLeft_.data(), scratchRight_.data(), 1.0f, n);
         }
         else if (dest == hwNode)
         {
@@ -721,6 +718,14 @@ void InputMixer::renderInputGraph (const float* const* deviceIn, int numDeviceCh
             }
         }
     }
+
+    // ── Step 4: deliver each tape that received signal, summed, once. ──
+    if (tapeSink_ != nullptr)
+        for (std::size_t i = 0; i < tapeSlots; ++i)
+            if (tapeTouched_[i])
+                tapeSink_->deliverTapeBlock (TapeId { tapeTerminals_[i].tapeId },
+                                             tapeMixLeft_[i].data(),
+                                             tapeMixRight_[i].data(), n);
 }
 
 void InputMixer::finalizeChannel (ChannelId id)
