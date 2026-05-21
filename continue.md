@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-21 (**Bus-controls engine slice SHIPPED** — the Phase 6 prerequisite: `Bus` gains gain/mute/dual peak+LUFS meter + `InputMixer::busForId`. On origin/master via writing-plans → subagent-driven-development; clean-rebuild full ctest **531/532**; final holistic review = SAFE TO CONSIDER COMPLETE. Next = **Phase 6 Input Mixer UI** in a fresh chat)
+# Session Continuation — 2026-05-21 (**Tape subsystem DESIGNED + slice-1 plan READY** — discovered while prepping Phase 6 that "Add tape" has no engine support and the operator's real vision is a full project tape pool. Spec + slice-1 plan written this session; **NOTHING implemented yet**. Next = **implement slice 1 (tape pool model + persistence)** in a fresh chat. Phase 6 UI is now gated behind the tape subsystem.)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,7 +8,54 @@
 
 ---
 
-## RESUME HERE (2026-05-21 — **Bus-controls engine slice SHIPPED**; next = **Phase 6 Input Mixer UI** in a fresh chat)
+## RESUME HERE (2026-05-21 — **Tape subsystem designed; slice-1 plan ready**; next = **implement slice 1** in a fresh chat)
+
+> ## ▶ START HERE: implement the tape-subsystem **slice 1** (tape pool model + persistence)
+> Prepping Phase 6 surfaced that the creation menu's "Add tape" has **no engine
+> support** (the `MixerGraph` terminal set is fixed at construction; one `Tape`
+> terminal; no tape-creation path; production `TapeWriter` isn't even wired —
+> `MainComponent.cpp:1101`). The operator's intent is bigger than a menu item: a
+> **project tape pool** — a list/tab of tapes, **≥1 required, unbounded max**,
+> create-new-or-use-existing, surfaced in three views of ONE set (Tapes tab +
+> timeline arm/focus + Input Mixer routing). Grounded in whitepaper §5.2/§6.2 +
+> `docs/design/mixer-design.md` (41–43, 71–77, 112): any node (channel **or** bus)
+> routes its main-out to a **specific** tape; many nodes→one tape = summing; each→
+> its own = parallel tapes; channels may go bus-first. **Nothing is implemented
+> yet — this session produced the design + the first plan only.**
+>
+> **Two docs written + committed this session (read both):**
+> - **Spec:** `docs/superpowers/specs/2026-05-21-tape-subsystem-design.md` — the
+>   full model + the **4-slice decomposition**: (1) tape pool model + persistence
+>   [headless TDD], (2) multi-tape routing engine [headless TDD], (3) capture-to-
+>   disk wiring = "real recording", **explicitly sequenced in the path per the
+>   operator** [TDD + eyes-on], (4) Tapes UI [operator-verified]. Then the original
+>   mixer **Phase 6** (bus/FX-return strips) resumes with the tape model beneath it.
+> - **Slice-1 plan:** `docs/superpowers/plans/2026-05-21-tape-subsystem-slice1-pool.md`
+>   — 7 tasks, pure headless TDD. New `core/TapeDescriptor.h` + `core/TapePool.{h,cpp}`
+>   (≥1 invariant, monotonic ids, add/remove/rename, explicit-list ctor) + `SessionFormat`
+>   `serializeTapePool`/`deserializeTapePool` round-trip + `tests/TapePoolTests.cpp`.
+>   CMake is **explicit-list, not glob** — the plan edits `core/CMakeLists.txt:25`
+>   and `tests/CMakeLists.txt` (both spelled out).
+>
+> **First moves for the fresh chat (implement slice 1):**
+> 1. Sanity: `git status` clean; `git log --oneline -5` shows the spec + plan commits
+>    on origin/master (newest after `f7a849e`).
+> 2. Read the spec's "Slice 1 detail" + the slice-1 plan top-to-bottom.
+> 3. **brainstorming NOT needed** (design locked this session) → go straight to
+>    `superpowers:subagent-driven-development` (recommended) or
+>    `superpowers:executing-plans` on the slice-1 plan. Final acceptance for slice 1
+>    is the full ctest passing (was **531/532** at the bus-controls slice; this adds
+>    a `TapePoolTests` file — expect 9 new cases).
+> 4. Slice 1 is engine/persistence apparatus only — NO MainComponent/UI wiring (that's
+>    slice 4). Same "apparatus first" posture as the routing-graph phases.
+> 5. End by updating THIS file: slice 1 shipped (commits + new ctest count + clean-
+>    rebuild status), next = **slice 2 (multi-tape routing engine)** with its first moves.
+>
+> **⚠ Do NOT jump to Phase 6 UI or the bus/FX-return strips** — Phase 6's destination
+> picker depends on the tape model; the tape subsystem (slices 1→4) comes first, then
+> Phase 6 resumes. The bus-controls engine slice (below) is already on origin/master.
+
+## HISTORICAL — Bus-controls engine slice (superseded 2026-05-21 by the tape-subsystem design above; still on origin/master, do NOT re-do)
 
 > ## ▶ START HERE: the Phase 6 ENGINE PREREQUISITE is on origin/master; build the **Phase 6 UI** next
 > A discovery while prepping Phase 6: the spec says bus/FX-return strips get "fader/
