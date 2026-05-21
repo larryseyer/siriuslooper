@@ -532,3 +532,57 @@ TEST_CASE ("InputMixer addChannel registers a Channel graph node; removeChannel 
     mixer.removeChannel (ch);
     CHECK_FALSE (mixer.channelIsRegisteredInGraph (ch));
 }
+
+TEST_CASE ("InputMixer default RVB/DLY returns monitor the hardware output, not tape",
+           "[input-routing]")
+{
+    sirius::InputMixer mixer;
+    CHECK (mixer.busMainOut (mixer.busIdAt (0)) == sirius::InputMixer::MainOutDest::HardwareOutput);
+    CHECK (mixer.busMainOut (mixer.busIdAt (1)) == sirius::InputMixer::MainOutDest::HardwareOutput);
+}
+
+TEST_CASE ("InputMixer routes a channel main-out to a bus, the tape, or a hardware output",
+           "[input-routing]")
+{
+    sirius::InputMixer mixer;
+    const auto ch  = mixer.addChannel (sirius::InputId { 0 }, sirius::SignalType::Audio);
+    const auto bus = mixer.addBus (sirius::BusConfig { 2, "Drums", sirius::BusKind::Bus });
+
+    SECTION ("default is the tape terminal")
+    {
+        CHECK (mixer.channelMainOut (ch) == sirius::InputMixer::MainOutDest::Tape);
+    }
+    SECTION ("to a bus")
+    {
+        CHECK (mixer.setChannelMainOutToBus (ch, bus));
+        CHECK (mixer.channelMainOut (ch) == sirius::InputMixer::MainOutDest::Bus);
+    }
+    SECTION ("to the hardware output (RME direct-out monitoring)")
+    {
+        CHECK (mixer.setChannelMainOutToHardwareOutput (ch));
+        CHECK (mixer.channelMainOut (ch) == sirius::InputMixer::MainOutDest::HardwareOutput);
+    }
+}
+
+TEST_CASE ("InputMixer rejects a channel send to a non-FX-return and accepts one to an FX return",
+           "[input-routing]")
+{
+    sirius::InputMixer mixer;
+    const auto ch  = mixer.addChannel (sirius::InputId { 0 }, sirius::SignalType::Audio);
+    const auto bus = mixer.addBus (sirius::BusConfig { 2, "Drums", sirius::BusKind::Bus });
+    const auto rvb = mixer.addFxReturn ("RVB2");
+
+    CHECK_FALSE (mixer.setChannelSend (ch, bus, 0.5f)); // a Bus is not an FX return
+    CHECK (mixer.setChannelSend (ch, rvb, 0.5f));
+    CHECK (mixer.channelSendLevel (ch, rvb) == 0.5f);
+}
+
+TEST_CASE ("InputMixer rejects a bus main-out assignment that would create a cycle",
+           "[input-routing]")
+{
+    sirius::InputMixer mixer;
+    const auto a = mixer.addBus (sirius::BusConfig { 2, "A", sirius::BusKind::Bus });
+    const auto b = mixer.addBus (sirius::BusConfig { 2, "B", sirius::BusKind::Bus });
+    REQUIRE (mixer.setBusMainOutToBus (a, b)); // A -> B
+    CHECK_FALSE (mixer.setBusMainOutToBus (b, a)); // closing the loop is refused
+}

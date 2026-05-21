@@ -49,6 +49,24 @@ public:
     bool    channelIsRegisteredInGraph (ChannelId) const noexcept;
     bool    busMainOutIsTape (BusId) const noexcept;
 
+    /// Where a node's single full-level main-out goes. Tape = capture terminal
+    /// (primary/default); HardwareOutput = RME-TotalMix direct-out monitoring;
+    /// Bus = a subgroup. (Input channels never route to "master" — there is none.)
+    enum class MainOutDest { Tape, HardwareOutput, Bus };
+
+    bool setChannelMainOutToBus (ChannelId, BusId);
+    bool setChannelMainOutToHardwareOutput (ChannelId);
+    bool setChannelMainOutToTape (ChannelId);
+    bool setBusMainOutToBus (BusId from, BusId to);
+    bool setBusMainOutToHardwareOutput (BusId);
+    bool setBusMainOutToTape (BusId);
+    MainOutDest channelMainOut (ChannelId) const noexcept;
+    MainOutDest busMainOut (BusId) const noexcept;
+
+    bool  setChannelSend (ChannelId, BusId fxReturn, float level);
+    bool  setBusSend (BusId source, BusId fxReturn, float level);
+    float channelSendLevel (ChannelId, BusId fxReturn) const noexcept;
+
     // Injected non-owning collaborators (set-once on the message thread).
     void setTapeWriter (TapeWriter* writer) noexcept;
     void setOverloadProtection (OverloadProtection* overload) noexcept;
@@ -146,6 +164,8 @@ private:
     std::int64_t              nextBusId_ { 1 };
 
     MixerNodeId nodeForBus (BusId) const noexcept;
+    MixerNodeId nodeForChannel (ChannelId) const noexcept;
+    MainOutDest classifyMainOut (MixerNodeId dest) const noexcept;
 
     TapeWriter* tapeWriter_ { nullptr };
     OverloadProtection* overload_ { nullptr };

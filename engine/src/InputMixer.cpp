@@ -32,8 +32,8 @@ InputMixer::InputMixer()
 {
     buses_.reserve (static_cast<std::size_t> (kMaxInputBuses));
     busNodeIds_.reserve (static_cast<std::size_t> (kMaxInputBuses));
-    addFxReturn ("RVB"); // default Tape main-out for now; a later task routes these
-    addFxReturn ("DLY"); // to the hardware output (returns monitor, they don't capture).
+    setBusMainOutToHardwareOutput (addFxReturn ("RVB"));
+    setBusMainOutToHardwareOutput (addFxReturn ("DLY"));
 }
 
 InputMixer::~InputMixer() = default;
@@ -284,6 +284,43 @@ void InputMixer::processBuffer (ChannelId id,
             overload_->reportLoad (1.0);
     }
 }
+
+MixerNodeId InputMixer::nodeForChannel (ChannelId id) const noexcept
+{
+    if (auto it = channelNodeIds_.find (id.value()); it != channelNodeIds_.end())
+        return it->second;
+    return MixerNodeId {};
+}
+
+InputMixer::MainOutDest InputMixer::classifyMainOut (MixerNodeId dest) const noexcept
+{
+    if (dest == graph_.terminalNode (MixerTerminal::Tape))           return MainOutDest::Tape;
+    if (dest == graph_.terminalNode (MixerTerminal::HardwareOutput)) return MainOutDest::HardwareOutput;
+    return MainOutDest::Bus;
+}
+
+bool InputMixer::setChannelMainOutToBus (ChannelId ch, BusId bus)
+{ return graph_.setMainOut (nodeForChannel (ch), nodeForBus (bus)); }
+bool InputMixer::setChannelMainOutToHardwareOutput (ChannelId ch)
+{ return graph_.setMainOut (nodeForChannel (ch), graph_.terminalNode (MixerTerminal::HardwareOutput)); }
+bool InputMixer::setChannelMainOutToTape (ChannelId ch)
+{ return graph_.setMainOut (nodeForChannel (ch), graph_.terminalNode (MixerTerminal::Tape)); }
+bool InputMixer::setBusMainOutToBus (BusId from, BusId to)
+{ return graph_.setMainOut (nodeForBus (from), nodeForBus (to)); }
+bool InputMixer::setBusMainOutToHardwareOutput (BusId bus)
+{ return graph_.setMainOut (nodeForBus (bus), graph_.terminalNode (MixerTerminal::HardwareOutput)); }
+bool InputMixer::setBusMainOutToTape (BusId bus)
+{ return graph_.setMainOut (nodeForBus (bus), graph_.terminalNode (MixerTerminal::Tape)); }
+InputMixer::MainOutDest InputMixer::channelMainOut (ChannelId ch) const noexcept
+{ return classifyMainOut (graph_.mainOutOf (nodeForChannel (ch))); }
+InputMixer::MainOutDest InputMixer::busMainOut (BusId bus) const noexcept
+{ return classifyMainOut (graph_.mainOutOf (nodeForBus (bus))); }
+bool InputMixer::setChannelSend (ChannelId ch, BusId fxReturn, float level)
+{ return graph_.setSend (nodeForChannel (ch), nodeForBus (fxReturn), level); }
+bool InputMixer::setBusSend (BusId source, BusId fxReturn, float level)
+{ return graph_.setSend (nodeForBus (source), nodeForBus (fxReturn), level); }
+float InputMixer::channelSendLevel (ChannelId ch, BusId fxReturn) const noexcept
+{ return graph_.sendLevel (nodeForChannel (ch), nodeForBus (fxReturn)); }
 
 ProcessingChain* InputMixer::processingChainFor (ChannelId id) noexcept
 {
