@@ -1,5 +1,14 @@
 # Session Continuation — 2026-05-21 (**Tape subsystem slice 1 SHIPPED** — `TapePool` model + `SessionFormat` round-trip on origin/master, headless-TDD'd, reviewed clean. Next = **implement slice 2 (multi-tape routing engine)** in a fresh chat. Phase 6 UI stays gated behind slices 2→4.)
 
+> **SIDEBAR (2026-05-21, docs-only — does NOT change the slice-2 plan below):**
+> Documented **output-mixer parameter automation** per operator request. Snapshots-
+> over-continuous stance unchanged (WP §6.8). Made explicit: (1) **every** output-
+> channel parameter incl. hosted-plugin/insert params is automatable; (2) per-phrase
+> channel automation is **bound to the phrase Constituent**; (3) **copy/duplicate a
+> phrase → new independent automation** (copy-on-write). Edits: WP §6.6, §6.8, §9.7 +
+> `docs/design/mixer-design.md` Decision 10. **Design only — no engine work scoped.**
+> Resume point is still **slice 2** below.
+
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
 > project's auto-memory (`MEMORY.md` + `*.md` in the memory dir) are

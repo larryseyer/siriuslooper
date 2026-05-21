@@ -550,7 +550,7 @@ The tape is detailed fully in Part VIII. The signal-path summary: it is append-o
 
 The output mixer receives the Constituent hierarchy's rendered output and direct-layer signals, and produces output buffers (hardware or file). Its responsibilities:
 
-- **Per-Constituent channel strips.** Each active Constituent — loop, phrase, section — gets its own channel strip with gain, pan, EQ, dynamics. This is where the performer makes the moment-to-moment level and tonal decisions that constitute "the mix."
+- **Per-Constituent channel strips.** Each active Constituent — loop, phrase, section — gets its own channel strip with gain, pan, EQ, dynamics. This is where the performer makes the moment-to-moment level and tonal decisions that constitute "the mix." **Every parameter on the strip is automatable** — gain, pan, width, EQ, dynamics, send levels, and the parameters of any hosted plugin or built-in insert on the strip's insert chain. For a per-phrase channel, that automation is **bound to the phrase** (§6.8): it travels with the phrase Constituent through copies and arrangement, exactly as local effects do (§6.7).
 - **Direct-layer channels.** Signals routed via the direct layer arrive at their own channels in the output mixer, just like Constituent-rendered signals, and can be processed and routed alongside them.
 - **Buses and FX returns are distinct nodes, separated by what feeds them.** A **bus** (subgroup — drum bus, vocal bus) is fed by **channel outputs** and carries insert processing on the summed group, like a hardware console subgroup. An **FX return** is fed by **sends only** — never a direct route — and hosts the wet effects (reverb, delay, parallel compression) that channels and buses send to. The distinction is architectural: routed signal makes a bus, sent signal makes a return.
 - **Both mixers carry this, and the performer builds it live.** The same bus/FX-return/send structure exists on the input mixer too — there its outputs terminate at tape **or at a hardware output** (real-time monitoring through the channel's processing) rather than only at the master — and buses and FX returns **appear because the performer creates them on demand**, the same principle by which tapes appear because channels demand them. Each mixer carries its own dedicated **reverb and delay returns** (and any others the performer adds). The interaction model and engine design live in the mixer design docs.
@@ -600,12 +600,16 @@ MixSnapshot {
     transition_type             // cut, linear fade, curve
     transition_duration         // 0 for cut, otherwise length of fade
     input_mixer_state           // all input mixer values at this snapshot
-    output_mixer_state          // all output mixer values at this snapshot
+    output_mixer_state          // session-level node state (buses, FX returns,
+                                //   master); per-phrase channel state lives with
+                                //   the phrase Constituent, not here
     metadata                    // name (e.g., "verse mix"), notes, etc.
 }
 ```
 
 The snapshot system also gives the architecture mute groups, VCA-style group control, and recallable scenes as natural cases — they are all just snapshots that affect specific subsets of channels.
+
+**Per-phrase channel automation is bound to the phrase, not to the session.** Because the output mixer has one channel per phrase, that channel's mix state — every strip parameter *plus* the parameters of any plugin or built-in insert hosted on it — belongs to the phrase Constituent. Session-level nodes (buses, FX returns, master) are session-bound; the per-phrase channel is phrase-bound. This is what makes the automation **copy-on-write (§9.3)**: duplicating or copying a phrase clones its channel automation into a **new, independent instance**, and the copy's mix moves diverge freely from the original's — the same way local effects travel with a Constituent through copies (§6.7). Snapshots still recall the session scene at a position in conceptual time; for a phrase's channel, a snapshot recalls the values that live with *that phrase*, so a duplicated phrase carries its own automation rather than sharing the original's.
 
 ## 6.9 The mixers are themselves authorable
 
@@ -921,7 +925,7 @@ This is closer to how a screenwriter thinks about a scene than how a sound engin
 
 - **Save and load are trivial.** The Constituent graph serializes to kilobytes of INI or JSON. Tapes are heavy files addressed by ID.
 - **Effects are applied per-Constituent and are replaceable.** Changing the reverb on phrase 7 changes only phrase 7.
-- **Effect parameters are themselves automatable.** Parameter automation is data on a tape. Automation curves are Constituents over parameter tapes. The recursion holds at every level.
+- **Effect parameters are themselves automatable.** Parameter automation is data on a tape. Automation curves are Constituents over parameter tapes. The recursion holds at every level — including output-mixer channel-strip parameters and the parameters of any hosted plugin or built-in insert. Because this automation is a Constituent attached to the phrase, copy-on-write applies: duplicating a phrase yields a **new, independent copy** of its parameter automation (§6.8).
 - **Render is deterministic.** The same Constituent tree applied to the same tapes produces the same output, forever.
 
 ---

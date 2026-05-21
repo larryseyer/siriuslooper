@@ -130,6 +130,21 @@ bank of mono mics and stereo line sources share one console.
      plugins (UAD, FabFilter…) via the existing out-of-process host. This spec is
      the wiring; the OTTO RVB/DLY integration is the next.
 
+10. **Output-mixer automation model.** Every parameter on every output channel —
+    gain, pan, width, EQ, dynamics, send levels, **and the parameters of any
+    hosted plugin or built-in insert** — is automatable. Automation is via **mix
+    snapshots** (snapshots over continuous automation, WP §6.8), not continuous
+    curves.
+    - **Per-phrase channel automation is bound to the phrase Constituent** and
+      travels with it: **duplicating/copying a phrase produces a new, independent
+      copy** of that channel's automation, free to diverge from the original
+      (copy-on-write, WP §9.3 / §6.7).
+    - **Session-level nodes** (buses, FX returns, master) are **session-bound**,
+      not phrase-bound.
+    - Cross-ref WP §6.6, §6.8, §9.7. **Design only — no engine work scoped here;**
+      automation wiring follows the render-path and routing-graph phases already
+      queued.
+
 ## Engine reality (from the GUI seam audit)
 
 - Audio flows live today: device-in → `InputMixer` (gain/pan) → `Bus`/`OutputMixer`
