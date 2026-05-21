@@ -24,6 +24,7 @@ target_compile_features(SiriusAudio PUBLIC cxx_std_20)
 # inherits juce::AudioIODeviceCallback), so juce_audio_devices is PUBLIC.
 target_link_libraries(SiriusAudio
     PUBLIC  Sirius::Engine
-            juce::juce_audio_devices)
+            juce::juce_audio_devices
+            juce::juce_audio_formats)
 
 add_library(Sirius::Audio ALIAS SiriusAudio)
