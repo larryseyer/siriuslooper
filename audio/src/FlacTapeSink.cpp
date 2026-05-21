@@ -1,7 +1,5 @@
 #include "sirius/FlacTapeSink.h"
 
-#include <algorithm>
-
 namespace sirius
 {
 
