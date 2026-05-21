@@ -29,8 +29,48 @@ class LufsMeter
 public:
     LufsMeter() = default;
 
-    LufsMeter (const LufsMeter&) = delete;
+    // Copy stays deleted (the meter owns large filter-state buffers and is
+    // never duplicated). Move is enabled so an owning aggregate like Bus can
+    // live in a std::vector<Bus>; see
+    // docs/superpowers/plans/2026-05-21-mixer-bus-controls-engine.md.
+    // A defaulted move ctor would be implicitly deleted because std::atomic
+    // has no move ctor, so the three atomic output members are load()/store()'d
+    // manually — the same pattern Bus uses for its own atomics in Task 2.
+    LufsMeter (const LufsMeter&)            = delete;
     LufsMeter& operator= (const LufsMeter&) = delete;
+
+    LufsMeter (LufsMeter&& other) noexcept
+        : sampleRate_              (other.sampleRate_),
+          maxBlockSize_            (other.maxBlockSize_),
+          prepared_                (other.prepared_),
+          momentaryWindowSamples_ (other.momentaryWindowSamples_),
+          shortTermWindowSamples_ (other.shortTermWindowSamples_),
+          momentaryReadOffset_    (other.momentaryReadOffset_),
+          filteredL_               (std::move (other.filteredL_)),
+          filteredR_               (std::move (other.filteredR_)),
+          squaredSumBuffer_        (std::move (other.squaredSumBuffer_)),
+          bufferWritePos_          (other.bufferWritePos_),
+          integratedSumSquared_   (other.integratedSumSquared_),
+          integratedSampleCount_  (other.integratedSampleCount_),
+          preB0_ (other.preB0_), preB1_ (other.preB1_), preB2_ (other.preB2_),
+          preA1_ (other.preA1_), preA2_ (other.preA2_),
+          rlbB0_ (other.rlbB0_), rlbB1_ (other.rlbB1_), rlbB2_ (other.rlbB2_),
+          rlbA1_ (other.rlbA1_), rlbA2_ (other.rlbA2_),
+          preX1L_ (other.preX1L_), preX2L_ (other.preX2L_),
+          preY1L_ (other.preY1L_), preY2L_ (other.preY2L_),
+          preX1R_ (other.preX1R_), preX2R_ (other.preX2R_),
+          preY1R_ (other.preY1R_), preY2R_ (other.preY2R_),
+          rlbX1L_ (other.rlbX1L_), rlbX2L_ (other.rlbX2L_),
+          rlbY1L_ (other.rlbY1L_), rlbY2L_ (other.rlbY2L_),
+          rlbX1R_ (other.rlbX1R_), rlbX2R_ (other.rlbX2R_),
+          rlbY1R_ (other.rlbY1R_), rlbY2R_ (other.rlbY2R_),
+          momentary_  (other.momentary_.load  (std::memory_order_relaxed)),
+          shortTerm_  (other.shortTerm_.load  (std::memory_order_relaxed)),
+          integrated_ (other.integrated_.load (std::memory_order_relaxed))
+    {
+    }
+
+    LufsMeter& operator= (LufsMeter&&) noexcept = delete;
 
     /// Message-thread setup. Allocates working buffers sized to `maxBlockSize`
     /// and a 3 s circular buffer at `sampleRate`; computes the K-weighting

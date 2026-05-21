@@ -5,12 +5,15 @@
 #include "sirius/Bus.h"
 #include "sirius/Channel.h"
 #include "sirius/EffectChain.h"
+#include "sirius/LufsMeter.h"
 #include "sirius/PluginDescriptor.h"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
+#include <cmath>
+#include <type_traits>
 #include <utility>
 
 using sirius::Bus;
@@ -109,6 +112,34 @@ TEST_CASE ("Bus::process handles defensive guards without crashing",
     bus.process (nullChannels.data(), 2, 64);
     bus.process (nullChannels.data(), 0, 64);
     bus.process (nullChannels.data(), 2, 0);
+}
+
+TEST_CASE ("LufsMeter is move-constructible and a moved meter still measures", "[lufs][move]")
+{
+    static_assert (std::is_move_constructible_v<sirius::LufsMeter>,
+                   "LufsMeter must be movable so Bus can live in std::vector<Bus>");
+
+    constexpr double kSampleRate = 48000.0;
+    constexpr int    kBlock      = 512;
+
+    sirius::LufsMeter source;
+    source.prepare (kSampleRate, kBlock);
+
+    sirius::LufsMeter moved (std::move (source));   // move-construct after prepare()
+
+    // Feed a 1 kHz sine (NOT DC — K-weighting's high-pass would kill a constant);
+    // integrated loudness must rise above the -70 LUFS absolute gate, proving the
+    // moved-into meter is fully functional.
+    std::array<float, static_cast<std::size_t> (kBlock)> buf {};
+    double phase = 0.0;
+    const double inc = 2.0 * M_PI * 1000.0 / kSampleRate;
+    for (int i = 0; i < 300; ++i)
+    {
+        for (int n = 0; n < kBlock; ++n) { buf[static_cast<std::size_t> (n)] = 0.5f * static_cast<float> (std::sin (phase)); phase += inc; }
+        moved.process (buf.data(), buf.data(), kBlock);
+    }
+
+    REQUIRE (moved.getIntegrated() > -70.0f);
 }
 
 TEST_CASE ("BusConfig defaults to BusKind::Bus and carries FxReturn through a Bus",
