@@ -35,30 +35,6 @@ AudioCallback::AudioCallback (EngineConfig config) noexcept
 namespace
 {
 
-/// Step 2 — InputMixer dispatch. Hands each device input channel to the
-/// mixer as a byte view onto the live float buffer. Tape recording is
-/// independent of the monitoring gate, so this runs unconditionally when an
-/// InputMixer is attached. `processBuffer` is the M3 audio-thread surface;
-/// it gracefully no-ops on channels it hasn't been told about.
-void dispatchInputMixer (InputMixer*         mixer,
-                         const float* const* inputChannelData,
-                         int                 numInputChannels,
-                         int                 numSamples) noexcept
-{
-    if (mixer == nullptr) return;
-
-    const auto byteCount =
-        static_cast<std::size_t> (numSamples) * sizeof (float);
-
-    for (int ch = 0; ch < numInputChannels; ++ch)
-    {
-        const auto* samples = inputChannelData[ch];
-        if (samples == nullptr) continue;
-        const auto* bytes = reinterpret_cast<const std::byte*> (samples);
-        mixer->processBuffer (ChannelId (ch), bytes, byteCount);
-    }
-}
-
 /// Step 3 — DirectLayer routing. Populates pre-allocated scratch views and
 /// invokes `routeBuffers`. The scratch vectors are message-thread sized in
 /// `audioDeviceAboutToStart`; this function only writes through `[]`,
@@ -160,19 +136,16 @@ void AudioCallback::audioDeviceIOCallbackWithContext (
             std::memset (outputChannelData[ch], 0,
                          static_cast<std::size_t> (numSamples) * sizeof (float));
 
-    // Step 2: per-channel InputMixer dispatch. Runs regardless of the
-    // monitoring gate — tape recording is independent of monitoring.
-    dispatchInputMixer (inputMixer_,
-                        inputChannelData,
-                        numInputChannels,
-                        numSamples);
-
-    // Step 2b: Input Mixer strip processing + metering. Gathers each registered
-    // strip's 1–2 source device channels into a stereo block and runs its
-    // ChannelStrip, publishing post-fader peak meters the Input Mixer UI reads
-    // on its timer. No-op until the app registers strips (empty source map).
+    // Step 2: full input routing graph (tape subsystem slice 3). One pass does
+    // strip processing + per-strip peak/LUFS metering + graph routing + per-tape
+    // summing + ITapeSink delivery, superseding the M3 processBuffer path and the
+    // separate processDeviceInputs metering pass (which would double-process
+    // strips). Tape recording is independent of the monitoring gate. directOut is
+    // null/0: hardware-output routing is not active by default and DirectLayer
+    // (Step 3) owns monitoring.
     if (inputMixer_ != nullptr)
-        inputMixer_->processDeviceInputs (inputChannelData, numInputChannels, numSamples);
+        inputMixer_->renderInputGraph (inputChannelData, numInputChannels,
+                                       nullptr, 0, numSamples);
 
     // Step 3: DirectLayer routing. Gated by monitoringEnabled_ — direct
     // monitoring is where the feedback risk lives. Tape recording (step 2)

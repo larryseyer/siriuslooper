@@ -9,6 +9,8 @@
 //   * the sample-rate / buffer-size capture from `audioDeviceAboutToStart`;
 //   * the channel-count edge cases the engine relies on when more inputs
 //     than outputs (or vice versa) are wired through DirectLayer routes.
+//   * tape subsystem slice 3: the callback drives renderInputGraph, so a
+//     tape-routed channel reaches its ITapeSink in a real callback cycle.
 //
 // The callback is constructed standalone — no juce::AudioDeviceManager — so the
 // behaviour is exercised deterministically without touching a real device. For
@@ -19,7 +21,11 @@
 #include "sirius/DirectLayer.h"
 #include "sirius/EngineConfig.h"
 #include "sirius/InputMixer.h"
+#include "sirius/ITapeSink.h"
 #include "sirius/OutputMixer.h"
+#include "sirius/SignalType.h"
+#include "sirius/TapeId.h"
+#include "sirius/TapeMode.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -425,4 +431,63 @@ TEST_CASE ("AudioCallback elapsed-seconds resets to zero on device stop", "[audi
 
     cb.audioDeviceStopped();
     CHECK (cb.lastCallbackElapsedSec() == 0.0);
+}
+
+// =============================================================================
+// Tape subsystem slice 3: the callback drives renderInputGraph
+//
+// Before slice 3, the callback called processBuffer (M3 legacy path) + a
+// separate processDeviceInputs metering pass. Slice 3 replaces both with a
+// single renderInputGraph call. This test verifies the end-to-end path: a
+// tape-routed channel registered in InputMixer reaches its ITapeSink in an
+// actual audioDeviceIOCallbackWithContext cycle.
+// =============================================================================
+
+TEST_CASE ("AudioCallback drives renderInputGraph: a tape-routed channel reaches the sink",
+           "[audio-callback][render]")
+{
+    using sirius::SignalType;
+    using sirius::TapeId;
+    using sirius::TapeMode;
+
+    InputMixer mixer;
+    const auto ch = mixer.addChannel (InputId { 0 }, SignalType::Audio);
+    mixer.setChannelTapeMode (ch, TapeMode::CommitToTape);
+    mixer.setChannelInputSource (ch, 0, 1, /*stereo*/ true);
+    // Default main-out after addChannel is Tape (primary tape, TapeId 1);
+    // an explicit setChannelMainOutToTape call is not required but is
+    // harmless — we call it here to make the intent explicit for readers.
+    REQUIRE (mixer.setChannelMainOutToTape (ch));
+
+    struct Sink : sirius::ITapeSink {
+        bool         got    = false;
+        std::int64_t tapeId = -1;
+        void deliverTapeBlock (sirius::TapeId t, const float*, const float*,
+                               int n) noexcept override
+        {
+            got = (n > 0);
+            tapeId = t.value();
+        }
+    } sink;
+    mixer.setTapeSink (&sink);
+
+    AudioCallback cb { EngineConfig {} };
+    cb.setInputMixer (&mixer);
+
+    constexpr int n = 64;
+    Buffers in  (2, n);
+    Buffers out (2, n);
+
+    // Fill input with a non-zero signal so the strip has something to process.
+    for (int s = 0; s < n; ++s)
+    {
+        in.storage[0][static_cast<std::size_t> (s)] = 0.3f;
+        in.storage[1][static_cast<std::size_t> (s)] = 0.3f;
+    }
+
+    auto ctx = emptyContext();
+    cb.audioDeviceIOCallbackWithContext (in.readable(), 2, out.writable(), 2, n, ctx);
+
+    CHECK (sink.got);
+    CHECK (sink.tapeId == 1); // primary tape
 }
