@@ -3,7 +3,6 @@
 #include "sirius/Channel.h"
 #include "sirius/EffectChain.h"
 #include "sirius/IEffectChainHost.h"
-#include "sirius/LufsMeter.h"
 
 #include <atomic>
 #include <cstddef>
@@ -89,7 +88,7 @@ public:
     /// Move ctor — hand-written because the atomic members are not movable.
     /// `noexcept` so std::vector<Bus> uses it on (reserve-bounded, never-hit-at-
     /// runtime) reallocation rather than refusing to compile. Copies the atomic
-    /// values and moves the (move-only) loudness meter.
+    /// values (the post-fader meter member is added in Task 4).
     Bus (Bus&& other) noexcept;
     Bus& operator= (Bus&&)      = delete;
     Bus (const Bus&)            = delete;
