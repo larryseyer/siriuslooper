@@ -166,6 +166,9 @@ public:
     /// `TapeWriteMessage` and enqueues on the bound TapeWriter. On
     /// queue-full, calls `OverloadProtection::reportLoad(1.0)` and drops.
     /// No allocations, no locks, no I/O on this path.
+    /// NOTE: renderInputGraph is the live audio-callback entry point as of the
+    /// tape subsystem and supersedes this method for production capture/metering;
+    /// this method remains for direct unit testing of the strip path.
     void processBuffer (ChannelId, const std::byte* bytes, std::size_t byteCount) noexcept;
 
     /// Audio-thread strip processing + metering for the Input Mixer UI.
@@ -177,6 +180,9 @@ public:
     /// raw-monitor contract). Channels without a source descriptor — and any
     /// source whose device-channel index is outside [0, numDeviceChannels) —
     /// are skipped. No allocations, no locks, no I/O on this path.
+    /// NOTE: renderInputGraph is the live audio-callback entry point as of the
+    /// tape subsystem and supersedes this method for production capture/metering;
+    /// this method remains for direct unit testing of the strip path.
     void processDeviceInputs (const float* const* deviceIn,
                               int numDeviceChannels, int numSamples) noexcept;
 

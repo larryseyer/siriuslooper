@@ -615,6 +615,7 @@ void InputMixer::renderInputGraph (const float* const* deviceIn, int numDeviceCh
                                    int numSamples) noexcept
 {
     if (deviceIn == nullptr || numDeviceChannels <= 0 || numSamples <= 0) return;
+    jassert (directOut != nullptr || numDirectOutChannels == 0); // null ptr with non-zero count would deref
     const int n = std::min (numSamples, static_cast<int> (kMaxScratchSamples));
 
     const MixerNodeId hwNode = graph_.terminalNode (MixerTerminal::HardwareOutput);
