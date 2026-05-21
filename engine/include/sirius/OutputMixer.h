@@ -6,6 +6,7 @@
 #include "sirius/EffectChain.h"
 #include "sirius/IEffectChainHost.h"
 #include "sirius/MixerGraph.h"
+#include "sirius/MixerGraphState.h"
 #include "sirius/SignalType.h"
 
 #include <cstddef>
@@ -130,6 +131,17 @@ public:
     /// if either id is unknown. Primary use: tests + S3 audio-thread
     /// traversal that reads send levels into the mix.
     float sendLevelFor (OutputChannelId channel, BusId bus) const noexcept;
+
+    // Persistence (routing-graph Phase 5) -------------------------------------
+
+    /// Message-thread snapshot of the routing graph for persistence (Phase 5).
+    /// buses[0] is the master (BusId 0). Message-thread only.
+    OutputMixerGraphState exportGraphState() const;
+
+    /// Message-thread reconstruction from a snapshot. The master bus already
+    /// exists (ctor); its insert chain is applied, never re-added. Call on a
+    /// freshly-constructed mixer. Message-thread only.
+    void importGraphState (const OutputMixerGraphState&);
 
     // Mix snapshots (Constituent subtype — lands with the MixSnapshot work)
     // M6+: SnapshotId captureSnapshot (string name);

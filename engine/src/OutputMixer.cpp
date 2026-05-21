@@ -28,6 +28,30 @@ namespace
     constexpr int kStripChannelCount = 2;
     static_assert (kStripChannelCount == 2,
                    "OutputMixer per-channel scratch stride assumes stereo");
+
+    /// Classifies a bus node's graph main-out for the persistence snapshot.
+    /// Output buses route bus->bus (incl. ->master) only; the sole terminal
+    /// main-out belongs to the master. Returns Kind::Bus with the resolved
+    /// busId for everything else.
+    sirius::MixerMainOut busMainOutSnapshot (const sirius::MixerGraph& graph,
+                                             sirius::MixerNodeId node,
+                                             const std::vector<sirius::MixerNodeId>& busNodeIds,
+                                             const std::vector<sirius::Bus>& buses)
+    {
+        using namespace sirius;
+        const auto dest = graph.mainOutOf (node);
+        MixerMainOut out;
+        if (dest == graph.terminalNode (MixerTerminal::HardwareOutput))
+        {
+            out.kind = MixerMainOut::Kind::Terminal;
+            out.terminal = MixerTerminalKind::HardwareOutput;
+            return out;
+        }
+        out.kind = MixerMainOut::Kind::Bus;
+        for (std::size_t i = 0; i < busNodeIds.size(); ++i)
+            if (busNodeIds[i] == dest) { out.busId = buses[i].id().value(); break; }
+        return out;
+    }
 }
 
 OutputMixer::OutputMixer()
@@ -366,6 +390,94 @@ std::size_t OutputMixer::sendMatrixIndex (OutputChannelId channel, BusId bus) co
     const std::size_t row = static_cast<std::size_t> (channelValue - 1);
     const std::size_t col = static_cast<std::size_t> (busValue);
     return row * static_cast<std::size_t> (kMaxBuses) + col;
+}
+
+OutputMixerGraphState OutputMixer::exportGraphState() const
+{
+    OutputMixerGraphState state;
+
+    for (std::size_t i = 0; i < buses_.size(); ++i)
+    {
+        const auto& bus = buses_[i];
+        MixerBusState entry;
+        entry.busId        = bus.id().value();
+        entry.channelCount = bus.config().channelCount;
+        entry.name         = bus.config().name;
+        entry.kind         = bus.config().kind == BusKind::FxReturn
+                                ? MixerBusKind::FxReturn : MixerBusKind::Bus;
+        entry.mainOut      = busMainOutSnapshot (graph_, busNodeIds_[i], busNodeIds_, buses_);
+        entry.inserts      = bus.effectChain();
+        state.buses.push_back (std::move (entry));   // master is index 0 by construction
+    }
+
+    for (const auto& ce : channels_)
+    {
+        OutputChannelState entry;
+        entry.channelId  = ce.id.value();
+        entry.signalType = ce.signalType;
+        if (ce.strip != nullptr) entry.inserts = ce.strip->effectChain();
+        for (std::size_t b = 0; b < buses_.size(); ++b)
+        {
+            const auto busId = buses_[b].id();
+            const auto level = sendLevelFor (ce.id, busId);
+            // Always emit the master (BusId 0) send, even at 0: addChannel
+            // defaults it to 1.0, so a deliberately-zeroed master level must be
+            // persisted explicitly to survive import. Aux sends default to 0,
+            // so dropping their zeros is safe.
+            if (busId.value() == 0 || level > 0.0f)
+                entry.sends.push_back ({ busId.value(), level });
+        }
+        state.channels.push_back (std::move (entry));
+    }
+
+    state.nextBusId     = nextBusId_;
+    state.nextChannelId = nextOutputChannelId_;
+    return state;
+}
+
+void OutputMixer::importGraphState (const OutputMixerGraphState& state)
+{
+    auto busExists = [this] (std::int64_t id)
+    {
+        for (const auto& bus : buses_) if (bus.id().value() == id) return true;
+        return false;
+    };
+
+    // Master (BusId 0) already exists from the ctor; reuse it (apply inserts).
+    // Create the rest with addBus (dense ids reproduce the persisted busId).
+    for (const auto& b : state.buses)
+    {
+        if (! busExists (b.busId))
+        {
+            BusConfig config;
+            config.channelCount = b.channelCount;
+            config.name         = b.name;
+            config.kind         = b.kind == MixerBusKind::FxReturn ? BusKind::FxReturn : BusKind::Bus;
+            addBus (config);
+        }
+        setBusEffectChain (BusId (b.busId), b.inserts);
+    }
+
+    // Apply bus subgroup routing once all buses exist (master main-out is the
+    // terminal already; only Kind::Bus main-outs need routeBusToBus).
+    for (const auto& b : state.buses)
+        if (b.mainOut.kind == MixerMainOut::Kind::Bus)
+        {
+            const bool ok = routeBusToBus (BusId (b.busId), BusId (b.mainOut.busId));
+            jassert (ok); juce::ignoreUnused (ok);
+        }
+
+    for (const auto& c : state.channels)
+    {
+        const auto created = addChannel (c.signalType);
+        auto strip = std::make_unique<ChannelStrip<SignalType::Audio>>();
+        strip->setEffectChain (c.inserts);
+        setChannelStrip (created, std::move (strip));
+        for (const auto& s : c.sends) routeChannelToBus (created, BusId (s.busId), s.level);
+    }
+
+    nextBusId_           = std::max (nextBusId_, state.nextBusId);
+    nextOutputChannelId_ = std::max (nextOutputChannelId_, state.nextChannelId);
 }
 
 } // namespace sirius

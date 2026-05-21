@@ -10,6 +10,7 @@
 #include "sirius/Channel.h"
 #include "sirius/ChannelStrip.h"
 #include "sirius/EffectChain.h"
+#include "sirius/MixerGraphState.h"
 #include "sirius/OutputMixer.h"
 #include "sirius/PluginDescriptor.h"
 #include "sirius/SignalType.h"
@@ -538,4 +539,40 @@ TEST_CASE ("OutputMixer routeBusToBus rejects master-as-source and unknown buses
     // Out-of-range ids are rejected (no graph mutation, no crash).
     CHECK_FALSE (mixer.routeBusToBus (busA, BusId { 999 }));
     CHECK_FALSE (mixer.routeBusToBus (BusId { 999 }, busA));
+}
+
+TEST_CASE ("OutputMixer export/import round-trips buses, sends, subgroups, inserts", "[output-mixer][persistence]")
+{
+    sirius::OutputMixer source;
+    const auto aux = source.addBus (sirius::BusConfig { 2, "Aux", sirius::BusKind::Bus });
+    REQUIRE (source.routeBusToBus (aux, sirius::BusId (0)));   // aux -> master
+
+    sirius::EffectChainEntry comp; comp.displayName = "comp";
+    source.setBusEffectChain (aux, sirius::EffectChain{}.withAppended (comp));
+
+    const auto ch = source.addChannel (sirius::SignalType::Audio);
+    auto strip = std::make_unique<sirius::ChannelStrip<sirius::SignalType::Audio>>();
+    sirius::EffectChainEntry eq; eq.displayName = "eq";
+    strip->setEffectChain (sirius::EffectChain{}.withAppended (eq));
+    source.setChannelStrip (ch, std::move (strip));
+    source.routeChannelToBus (ch, sirius::BusId (0), 0.7f);    // non-default master level
+    source.routeChannelToBus (ch, aux, 0.4f);                 // send to aux
+
+    const auto exported = source.exportGraphState();
+    REQUIRE (exported.buses.size() == 2);              // master (0) + aux
+    CHECK (exported.buses[0].busId == 0);              // master first
+
+    sirius::OutputMixer loaded;
+    loaded.importGraphState (exported);
+    CHECK (loaded.exportGraphState() == exported);
+}
+
+TEST_CASE ("OutputMixer import of an empty snapshot keeps only the master bus", "[output-mixer][persistence]")
+{
+    sirius::OutputMixer mixer;
+    mixer.importGraphState (sirius::OutputMixerGraphState{});
+    const auto state = mixer.exportGraphState();
+    REQUIRE (state.buses.size() == 1);
+    CHECK (state.buses[0].busId == 0);
+    CHECK (state.channels.empty());
 }
