@@ -165,6 +165,9 @@ void OutputMixer::routeChannelToBus (OutputChannelId channel, BusId bus, float s
 
 bool OutputMixer::routeBusToBus (BusId from, BusId to)
 {
+    // Invariant: BusId values are dense and 0-based (master == BusId{0},
+    // addBus assigns sequentially), so BusId.value() indexes busNodeIds_
+    // directly. The bounds check below rejects any out-of-range id.
     const auto fi = static_cast<std::size_t> (from.value());
     const auto ti = static_cast<std::size_t> (to.value());
     if (fi >= busNodeIds_.size() || ti >= busNodeIds_.size()) return false;

@@ -27,10 +27,12 @@ namespace sirius
 /// traversal: (1) scratch-mix each registered output channel from its
 /// input source through its `ChannelStrip<Audio>`; (2) for each
 /// (channel, bus) send level > 0, accumulate the scaled scratch into the
-/// target bus's mixBuffer; (3) for each non-master bus in registration
-/// order, invoke `Bus::process` which (M5) accumulates the bus mixBuffer
-/// into the master bus's mixBuffer at unity; (4) the master bus writes
-/// its mixBuffer additively into the physical output channels.
+/// target bus's mixBuffer; (3) for each non-master bus in topological
+/// evaluation order (sources before destinations, from the routing graph),
+/// invoke `Bus::process` which routes the bus mixBuffer into its graph
+/// main-out destination — the master bus, a subgroup bus, or the terminal —
+/// at unity; (4) the master bus writes its mixBuffer additively into the
+/// physical output channels.
 ///
 /// M5 auto-registration policy: OutputMixer comes up EMPTY. MainComponent
 /// does not auto-register channels — operator UX for mixer config is
