@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-20 (mixer routing-graph spec approved → Phase 1 PLAN now written + 6-phase roadmap recorded — next = EXECUTE Phase 1 in a fresh chat via subagent-driven-development)
+# Session Continuation — 2026-05-20 (mixer routing-graph **Phase 1 SHIPPED** on origin/master — engine routing-graph core + OutputMixer integration; next = Phase 2 input-side routing apparatus)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,29 +8,56 @@
 
 ---
 
-## RESUME HERE (2026-05-20 — routing-graph Phase 1 PLAN written + 6-phase roadmap; next = EXECUTE Phase 1 in a fresh chat)
+## RESUME HERE (2026-05-20 — routing-graph **Phase 1 shipped + pushed**; next = brainstorm→plan→execute **Phase 2** in a fresh chat)
 
-> ## ▶ START HERE: the routing-graph **Phase 1 plan** is written — next is to **execute it**
-> The spec is approved and `superpowers:writing-plans` has run against it. The
-> **Phase 1 implementation plan** is committed at
-> **`docs/superpowers/plans/2026-05-20-mixer-routing-graph-phase1.md`** — read it
-> first, then execute it via **`superpowers:subagent-driven-development`** (8 tasks,
-> all engine TDD, no operator eyes-on for Phase 1). Do NOT re-brainstorm or
-> re-plan; the plan is self-contained with full per-step code.
+> ## ▶ START HERE: Phase 1 (engine routing-graph core) is on origin/master — next is **Phase 2**
+> The whole **Phase 1** plan executed end-to-end via `superpowers:subagent-driven-development`
+> (8 tasks, all engine TDD, per-task spec + code-quality review, final holistic opus
+> review = "safe to push"). It is on **origin/master** (`58184d6..c04d911`, 11 commits).
+> Clean `rm -rf build` rebuild green; full ctest **478/479** (the 1 = documented
+> `MainComponentPluginEditorTests_NOT_BUILT`, run separately by `bash/test-s7.sh`).
+> Do NOT re-do Phase 1. Plan: `docs/superpowers/plans/2026-05-20-mixer-routing-graph-phase1.md`.
 >
-> **Phase 1 = engine routing-graph core.** New JUCE-free `engine/.../MixerGraph.{h,cpp}`
-> (node model, main-out vs sends, acyclic enforcement via `reaches`, topological
-> `evaluationOrder` via Kahn) + a `BusKind` discriminator on `BusConfig` +
-> `OutputMixer` refactored to drive its bus processing order from `MixerGraph`
-> (behavior-preserving; enables bus→bus subgroups). **Scope nuance carried to
-> Phase 2:** the graph models send *topology*; send-level *summing DSP* stays in
-> `OutputMixer`'s `sendMatrix_` until Phase 2 reconciles it.
+> **What Phase 1 landed (all pushed):**
+> - `BusKind { Bus, FxReturn }` discriminator on `BusConfig` (`engine/.../Bus.h`).
+> - New JUCE-free **`engine/include/sirius/MixerGraph.{h,cpp}`** — node registry
+>   (Channel/Bus/FxReturn + one implicit Terminal), per-node single **main-out**,
+>   leveled **sends** into FX returns, acyclic enforcement (DFS `reaches` /
+>   `wouldMainOutCycle`), topological **`evaluationOrder()`** via Kahn. All mutators
+>   are message-thread only; `evaluationOrder()` is the sole audio-thread read
+>   (const noexcept, compile-asserted). 8 `[mixer-graph]` cases / 65 assertions.
+> - **`OutputMixer`** owns a `MixerGraph(MixerTerminal::Output)`, mirrors channel/bus
+>   registration into graph nodes, exposes `routeBusToBus(BusId,BusId)` (rejects
+>   master-as-source, unknown ids, cycles), and walks `evaluationOrder()` in
+>   `renderBuffer` Step 3 to process each non-master bus into its main-out
+>   destination (master / subgroup bus / terminal). **Behavior-preserving** for the
+>   default graph; **enables bus→bus subgroups**. `[output-mixer]` now 20 cases; the
+>   subgroup test uses a synchronous halving `IEffectChainHost` on busB so 0.25-vs-0.5
+>   genuinely proves audio traversed the subgroup (empirically fails without routing).
+>
+> **⚠ Phase 1 scope nuance carried INTO Phase 2 (do not forget):** `MixerGraph` models
+> send **topology** only; send-level **summing DSP** still flows through `OutputMixer`'s
+> existing `sendMatrix_`. **Phase 2 reconciles them** (sends drive FX-return summing on
+> both mixers). Forward-looking notes from the final review (not defects, address in P2):
+> a `busNodeId→busIdx` reverse lookup would remove the two O(n) scans in Step 3 once
+> per-node send work grows; `reaches` rebuilds vectors per call (matters if the UI
+> picker calls `wouldMainOutCycle` per mouse-move).
+>
+> **NEXT = Phase 2: input-side routing apparatus.** No plan written yet — run
+> `superpowers:brainstorming` against the spec
+> (`docs/superpowers/specs/2026-05-20-mixer-routing-graph-design.md`, Phase 2 section)
+> + the roadmap below, then `superpowers:writing-plans` →
+> `docs/superpowers/plans/2026-05-20-mixer-routing-graph-phase2.md`, then
+> `superpowers:subagent-driven-development`. Phase 2 = add the shared `MixerGraph`
+> substrate to **`InputMixer`** (terminal = **tape**; channel main-out → bus/tape;
+> sends → FX returns; **absorbs the old "tape-output routing" slice**) AND reconcile
+> the send-summing DSP. Engine TDD, no operator eyes-on.
 >
 > **Long-range roadmap (operator: "have a long range plan to finish the entire
 > thing… spread over several chats… keep continue updated").** Each phase = its own
 > plan (`docs/superpowers/plans/…-phaseN.md`) + (usually) its own chat:
-> - **P1** Engine routing-graph core (shared `MixerGraph`) — *plan written, ready to execute*
-> - **P2** Input-side routing apparatus (terminal=tape; channel→bus/tape; sends→FX returns; absorbs tape-output routing; reconciles send-summing DSP) — engine TDD
+> - **P1** Engine routing-graph core (shared `MixerGraph`) — ✅ **SHIPPED** (origin/master)
+> - **P2** Input-side routing apparatus (terminal=tape; channel→bus/tape; sends→FX returns; absorbs tape-output routing; reconciles send-summing DSP) — engine TDD — **NEXT**
 > - **P3** UI: blank-area creation gesture + Bus/FXReturn strips + main-out picker (Input Mixer) — operator-verified
 > - **P4** UI: Sends detail tab (vendor OTTO `ChannelDetailSendsTab`) — operator-verified
 > - **P5** Persistence: serialize the graph into `SessionFormat`; pre-graph sessions load clean — engine TDD
