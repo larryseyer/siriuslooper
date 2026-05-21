@@ -10,6 +10,7 @@
 #include "sirius/Channel.h"
 #include "sirius/ChannelStrip.h"
 #include "sirius/InputMixer.h"
+#include "sirius/MixerGraphState.h"
 #include "sirius/NotificationBus.h"
 #include "sirius/OverloadProtection.h"
 #include "sirius/TapeStore.h"
@@ -731,4 +732,65 @@ TEST_CASE ("renderInputGraph: a channel send reaches an FX return, which deliver
     // ONLY via send -> FX-return -> hardware-output.
     CHECK (outL[0] != 0.0f);
     CHECK (outR[0] != 0.0f);
+}
+
+TEST_CASE ("InputMixer exportGraphState reflects buses, routing, sends, inserts",
+           "[input-mixer][persistence]")
+{
+    // The InputMixer ctor pre-builds two FX returns (RVB busId 1, DLY busId 2),
+    // so the bus vector is [RVB, DLY, Drums, Reverb] and the snapshot reflects
+    // them all — exportGraphState mirrors the live mixer, ctor nodes included.
+    sirius::InputMixer mixer;
+    const sirius::InputDescriptor desc {
+        sirius::TapeId (1), sirius::InputKind::Audio, std::string ("In 1"),
+        std::optional<int> (0)
+    };
+    mixer.registerInput (sirius::InputId (1), desc);
+
+    const auto drums = mixer.addBus (sirius::BusConfig { 2, "Drums", sirius::BusKind::Bus });
+    const auto reverb = mixer.addFxReturn ("Reverb");
+
+    sirius::EffectChainEntry comp; comp.displayName = "comp";
+    mixer.setBusEffectChain (drums, sirius::EffectChain{}.withAppended (comp));
+
+    const auto ch = mixer.addChannel (sirius::InputId (1), sirius::SignalType::Audio);
+    mixer.setChannelInputSource (ch, 2, 3, true);
+    mixer.setChannelTapeMode (ch, sirius::TapeMode::CommitToTape);
+    mixer.setChannelMainOutToBus (ch, drums);
+    mixer.setChannelSend (ch, reverb, 0.5f);
+
+    auto* chain = mixer.processingChainFor (ch);
+    REQUIRE (chain != nullptr);
+    auto* strip = static_cast<sirius::ChannelStrip<sirius::SignalType::Audio>*> (chain);
+    sirius::EffectChainEntry eq; eq.displayName = "eq";
+    strip->setEffectChain (sirius::EffectChain{}.withAppended (eq));
+
+    const auto state = mixer.exportGraphState();
+
+    REQUIRE (state.buses.size() == 4);
+    CHECK (state.buses[0].kind == sirius::MixerBusKind::FxReturn); // RVB
+    CHECK (state.buses[1].kind == sirius::MixerBusKind::FxReturn); // DLY
+
+    const auto& drumsState = state.buses[2];
+    CHECK (drumsState.busId == drums.value());
+    CHECK (drumsState.name == "Drums");
+    CHECK (drumsState.kind == sirius::MixerBusKind::Bus);
+    CHECK (drumsState.inserts.entries().size() == 1);
+
+    const auto& reverbState = state.buses[3];
+    CHECK (reverbState.busId == reverb.value());
+    CHECK (reverbState.kind == sirius::MixerBusKind::FxReturn);
+
+    REQUIRE (state.channels.size() == 1);
+    const auto& c = state.channels[0];
+    CHECK (c.channelId == ch.value());
+    CHECK (c.inputSourceId == 1);
+    CHECK (c.source == sirius::MixerChannelSource { 2, 3, true });
+    CHECK (c.tapeMode == sirius::TapeMode::CommitToTape);
+    CHECK (c.mainOut.kind == sirius::MixerMainOut::Kind::Bus);
+    CHECK (c.mainOut.busId == drums.value());
+    REQUIRE (c.sends.size() == 1);
+    CHECK (c.sends[0].busId == reverb.value());
+    CHECK (c.sends[0].level == 0.5f);
+    CHECK (c.inserts.entries().size() == 1);
 }

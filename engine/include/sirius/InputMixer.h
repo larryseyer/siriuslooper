@@ -5,6 +5,7 @@
 #include "sirius/ChannelDefaults.h"
 #include "sirius/InputDescriptor.h"
 #include "sirius/MixerGraph.h"
+#include "sirius/MixerGraphState.h"
 #include "sirius/SignalType.h"
 #include "sirius/TapeMode.h"
 
@@ -66,6 +67,16 @@ public:
     bool  setChannelSend (ChannelId, BusId fxReturn, float level);
     bool  setBusSend (BusId source, BusId fxReturn, float level);
     float channelSendLevel (ChannelId, BusId fxReturn) const noexcept;
+
+    /// Message-thread setter — copies the chain into the named bus (parity
+    /// with OutputMixer::setBusEffectChain). No-op if the BusId is unknown.
+    void setBusEffectChain (BusId id, EffectChain chain);
+
+    /// Message-thread snapshot of the entire routing graph for persistence
+    /// (routing-graph Phase 5). Reads buses, FX returns, per-node main-outs,
+    /// sends, channel input sources, tape modes, and every node's insert chain.
+    /// Message-thread only — never call from the audio thread.
+    InputMixerGraphState exportGraphState() const;
 
     // Injected non-owning collaborators (set-once on the message thread).
     void setTapeWriter (TapeWriter* writer) noexcept;
@@ -177,6 +188,10 @@ private:
     MixerNodeId nodeForBus (BusId) const noexcept;
     MixerNodeId nodeForChannel (ChannelId) const noexcept;
     MainOutDest classifyMainOut (MixerNodeId dest) const noexcept;
+
+    MixerMainOut mainOutSnapshot (MixerNodeId node) const noexcept;
+    std::vector<MixerSend> sendSnapshot (MixerNodeId node) const;
+    const EffectChain* channelInsertChain (ChannelId) const noexcept;
 
     void enqueueToTape (ChannelId, const float* left, const float* right, int numSamples) noexcept;
     void accumulateIntoBus (MixerNodeId busNode, const float* left, const float* right,

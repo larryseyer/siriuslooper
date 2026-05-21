@@ -8,6 +8,7 @@
 
 #include <juce_core/juce_core.h>
 
+#include <algorithm>
 #include <cassert>
 #include <cstring>
 
@@ -132,6 +133,115 @@ BusId InputMixer::addBus (BusConfig config)
 BusId InputMixer::addFxReturn (const std::string& name)
 {
     return addBus (BusConfig { 2, name, BusKind::FxReturn });
+}
+
+void InputMixer::setBusEffectChain (BusId id, EffectChain chain)
+{
+    for (auto& bus : buses_)
+        if (bus.id() == id)
+        {
+            bus.setEffectChain (std::move (chain));
+            return;
+        }
+}
+
+MixerMainOut InputMixer::mainOutSnapshot (MixerNodeId node) const noexcept
+{
+    const auto dest = graph_.mainOutOf (node);
+    MixerMainOut out;
+    if (dest == graph_.terminalNode (MixerTerminal::Tape))
+    {
+        out.kind = MixerMainOut::Kind::Terminal;
+        out.terminal = MixerTerminalKind::Tape;
+        return out;
+    }
+    if (dest == graph_.terminalNode (MixerTerminal::HardwareOutput))
+    {
+        out.kind = MixerMainOut::Kind::Terminal;
+        out.terminal = MixerTerminalKind::HardwareOutput;
+        return out;
+    }
+    out.kind = MixerMainOut::Kind::Bus;
+    for (std::size_t i = 0; i < busNodeIds_.size(); ++i)
+        if (busNodeIds_[i] == dest)
+        {
+            out.busId = buses_[i].id().value();
+            break;
+        }
+    return out;
+}
+
+std::vector<MixerSend> InputMixer::sendSnapshot (MixerNodeId node) const
+{
+    std::vector<MixerSend> sends;
+    for (const auto& edge : graph_.sendEdges())
+        if (edge.source == node)
+            for (std::size_t i = 0; i < busNodeIds_.size(); ++i)
+                if (busNodeIds_[i] == edge.fxReturn)
+                {
+                    sends.push_back ({ buses_[i].id().value(), edge.level });
+                    break;
+                }
+    return sends;
+}
+
+const EffectChain* InputMixer::channelInsertChain (ChannelId id) const noexcept
+{
+    auto it = channels_.find (id.value());
+    if (it == channels_.end() || it->second.processing == nullptr)
+        return nullptr;
+    if (it->second.signalType != SignalType::Audio)
+        return nullptr;
+    auto* strip = static_cast<ChannelStrip<SignalType::Audio>*> (it->second.processing.get());
+    return &strip->effectChain();
+}
+
+InputMixerGraphState InputMixer::exportGraphState() const
+{
+    InputMixerGraphState state;
+
+    for (std::size_t i = 0; i < buses_.size(); ++i)
+    {
+        const auto& bus = buses_[i];
+        MixerBusState entry;
+        entry.busId        = bus.id().value();
+        entry.channelCount = bus.config().channelCount;
+        entry.name         = bus.config().name;
+        entry.kind         = bus.config().kind == BusKind::FxReturn
+                                ? MixerBusKind::FxReturn : MixerBusKind::Bus;
+        entry.mainOut      = mainOutSnapshot (busNodeIds_[i]);
+        entry.sends        = sendSnapshot (busNodeIds_[i]);
+        entry.inserts      = bus.effectChain();
+        state.buses.push_back (std::move (entry));
+    }
+
+    // channels_ is an unordered_map; export in ascending channel-id order so the
+    // snapshot (and its round-trip equality) is deterministic.
+    std::vector<std::int64_t> ids;
+    ids.reserve (channels_.size());
+    for (const auto& kv : channels_) ids.push_back (kv.first);
+    std::sort (ids.begin(), ids.end());
+
+    for (auto rawId : ids)
+    {
+        const auto& ch = channels_.at (rawId);
+        InputChannelState entry;
+        entry.channelId     = ch.id.value();
+        entry.signalType    = ch.signalType;
+        entry.inputSourceId = ch.source.value();
+        entry.tapeMode      = ch.tapeMode;
+        if (auto src = channelSources_.find (rawId); src != channelSources_.end())
+            entry.source = { src->second.left, src->second.right, src->second.stereo };
+        const auto node = channelNodeIds_.at (rawId);
+        entry.mainOut = mainOutSnapshot (node);
+        entry.sends   = sendSnapshot (node);
+        if (auto* chain = channelInsertChain (ch.id)) entry.inserts = *chain;
+        state.channels.push_back (std::move (entry));
+    }
+
+    state.nextBusId     = nextBusId_;
+    state.nextChannelId = nextChannelId_;
+    return state;
 }
 
 int InputMixer::busCount() const noexcept { return static_cast<int> (buses_.size()); }
