@@ -2,6 +2,7 @@
 
 #include "sirius/EffectChain.h"
 #include "sirius/Meter.h"
+#include "sirius/MixerGraphState.h"
 #include "sirius/Phrase.h"
 #include "sirius/PluginDescriptor.h"
 #include "sirius/Position.h"
@@ -709,6 +710,231 @@ namespace
         seen.insert ({ child->id().value(), child });
         return child;
     }
+
+    // --- mixer routing-graph snapshot (routing-graph Phase 5) -----------------
+
+    constexpr int currentMixerGraphVersion = 1;
+
+    const char* signalTypeToString (SignalType t) noexcept
+    {
+        switch (t)
+        {
+            case SignalType::Audio: return "Audio";
+            case SignalType::Midi:  return "Midi";
+            case SignalType::Video: return "Video";
+            case SignalType::File:  return "File";
+        }
+        return "Audio";
+    }
+    SignalType signalTypeFromString (const juce::String& s)
+    {
+        if (s == "Audio") return SignalType::Audio;
+        if (s == "Midi")  return SignalType::Midi;
+        if (s == "Video") return SignalType::Video;
+        if (s == "File")  return SignalType::File;
+        fail (("Unknown signalType: " + s).toStdString());
+        return SignalType::Audio;
+    }
+
+    const char* tapeModeToString (TapeMode m) noexcept
+    {
+        switch (m)
+        {
+            case TapeMode::CommitToTape:   return "CommitToTape";
+            case TapeMode::NonDestructive: return "NonDestructive";
+            case TapeMode::NoTape:         return "NoTape";
+        }
+        return "NoTape";
+    }
+    TapeMode tapeModeFromString (const juce::String& s)
+    {
+        if (s == "CommitToTape")   return TapeMode::CommitToTape;
+        if (s == "NonDestructive") return TapeMode::NonDestructive;
+        if (s == "NoTape")         return TapeMode::NoTape;
+        fail (("Unknown tapeMode: " + s).toStdString());
+        return TapeMode::NoTape;
+    }
+
+    const char* mixerBusKindToString (MixerBusKind k) noexcept
+    { return k == MixerBusKind::FxReturn ? "FxReturn" : "Bus"; }
+    MixerBusKind mixerBusKindFromString (const juce::String& s)
+    {
+        if (s == "FxReturn") return MixerBusKind::FxReturn;
+        if (s == "Bus")      return MixerBusKind::Bus;
+        fail (("Unknown busKind: " + s).toStdString());
+        return MixerBusKind::Bus;
+    }
+
+    const char* terminalKindToString (MixerTerminalKind k) noexcept
+    { return k == MixerTerminalKind::HardwareOutput ? "HardwareOutput" : "Tape"; }
+    MixerTerminalKind terminalKindFromString (const juce::String& s)
+    {
+        if (s == "HardwareOutput") return MixerTerminalKind::HardwareOutput;
+        if (s == "Tape")           return MixerTerminalKind::Tape;
+        fail (("Unknown terminal: " + s).toStdString());
+        return MixerTerminalKind::Tape;
+    }
+
+    juce::var mainOutToVar (const MixerMainOut& m)
+    {
+        auto obj = makeObject();
+        obj->setProperty ("kind", m.kind == MixerMainOut::Kind::Bus ? "Bus" : "Terminal");
+        if (m.kind == MixerMainOut::Kind::Bus)
+            obj->setProperty ("busId", juce::int64 (m.busId));
+        else
+            obj->setProperty ("terminal", terminalKindToString (m.terminal));
+        return objectVar (obj);
+    }
+    MixerMainOut mainOutFromVar (const juce::var& v)
+    {
+        MixerMainOut m;
+        const auto kind = requireProperty (v, "kind").toString();
+        if (kind == "Bus")
+        {
+            m.kind = MixerMainOut::Kind::Bus;
+            m.busId = requireInt64 (requireProperty (v, "busId"), "mainOut.busId");
+        }
+        else if (kind == "Terminal")
+        {
+            m.kind = MixerMainOut::Kind::Terminal;
+            m.terminal = terminalKindFromString (requireProperty (v, "terminal").toString());
+        }
+        else fail (("Unknown mainOut.kind: " + kind).toStdString());
+        return m;
+    }
+
+    juce::var sendsToVar (const std::vector<MixerSend>& sends)
+    {
+        juce::Array<juce::var> arr;
+        for (const auto& s : sends)
+        {
+            auto obj = makeObject();
+            obj->setProperty ("busId", juce::int64 (s.busId));
+            obj->setProperty ("level", double (s.level));
+            arr.add (objectVar (obj));
+        }
+        return arr;
+    }
+    std::vector<MixerSend> sendsFromVar (const juce::var& v)
+    {
+        std::vector<MixerSend> out;
+        if (v.isVoid()) return out;
+        if (! v.isArray()) fail ("sends must be an array");
+        for (int i = 0; i < v.size(); ++i)
+        {
+            MixerSend s;
+            s.busId = requireInt64 (requireProperty (v[i], "busId"), "send.busId");
+            s.level = float (double (requireProperty (v[i], "level")));
+            out.push_back (s);
+        }
+        return out;
+    }
+
+    juce::var busStateToVar (const MixerBusState& b)
+    {
+        auto obj = makeObject();
+        obj->setProperty ("busId",        juce::int64 (b.busId));
+        obj->setProperty ("channelCount", b.channelCount);
+        obj->setProperty ("name",         juce::String (b.name));
+        obj->setProperty ("kind",         mixerBusKindToString (b.kind));
+        obj->setProperty ("mainOut",      mainOutToVar (b.mainOut));
+        obj->setProperty ("sends",        sendsToVar (b.sends));
+        obj->setProperty ("inserts",      effectChainToVar (b.inserts));
+        return objectVar (obj);
+    }
+    MixerBusState busStateFromVar (const juce::var& v)
+    {
+        MixerBusState b;
+        b.busId        = requireInt64 (requireProperty (v, "busId"), "bus.busId");
+        b.channelCount = requireInt (requireProperty (v, "channelCount"), "bus.channelCount");
+        b.name         = requireProperty (v, "name").toString().toStdString();
+        b.kind         = mixerBusKindFromString (requireProperty (v, "kind").toString());
+        b.mainOut      = mainOutFromVar (requireProperty (v, "mainOut"));
+        b.sends        = sendsFromVar (optionalProperty (v, "sends"));
+        b.inserts      = effectChainFromVar (requireProperty (v, "inserts"));
+        return b;
+    }
+
+    juce::var inputChannelToVar (const InputChannelState& c)
+    {
+        auto src = makeObject();
+        src->setProperty ("left",   c.source.left);
+        src->setProperty ("right",  c.source.right);
+        src->setProperty ("stereo", c.source.stereo);
+        auto obj = makeObject();
+        obj->setProperty ("channelId",     juce::int64 (c.channelId));
+        obj->setProperty ("signalType",    signalTypeToString (c.signalType));
+        obj->setProperty ("inputSourceId", juce::int64 (c.inputSourceId));
+        obj->setProperty ("source",        objectVar (src));
+        obj->setProperty ("tapeMode",      tapeModeToString (c.tapeMode));
+        obj->setProperty ("mainOut",       mainOutToVar (c.mainOut));
+        obj->setProperty ("sends",         sendsToVar (c.sends));
+        obj->setProperty ("inserts",       effectChainToVar (c.inserts));
+        return objectVar (obj);
+    }
+    InputChannelState inputChannelFromVar (const juce::var& v)
+    {
+        InputChannelState c;
+        c.channelId     = requireInt64 (requireProperty (v, "channelId"), "channel.channelId");
+        c.signalType    = signalTypeFromString (requireProperty (v, "signalType").toString());
+        c.inputSourceId = requireInt64 (requireProperty (v, "inputSourceId"), "channel.inputSourceId");
+        const auto src  = requireProperty (v, "source");
+        c.source.left   = requireInt (requireProperty (src, "left"),  "source.left");
+        c.source.right  = requireInt (requireProperty (src, "right"), "source.right");
+        c.source.stereo = bool (requireProperty (src, "stereo"));
+        c.tapeMode      = tapeModeFromString (requireProperty (v, "tapeMode").toString());
+        c.mainOut       = mainOutFromVar (requireProperty (v, "mainOut"));
+        c.sends         = sendsFromVar (optionalProperty (v, "sends"));
+        c.inserts       = effectChainFromVar (requireProperty (v, "inserts"));
+        return c;
+    }
+
+    juce::var outputChannelToVar (const OutputChannelState& c)
+    {
+        auto obj = makeObject();
+        obj->setProperty ("channelId",  juce::int64 (c.channelId));
+        obj->setProperty ("signalType", signalTypeToString (c.signalType));
+        obj->setProperty ("sends",      sendsToVar (c.sends));
+        obj->setProperty ("inserts",    effectChainToVar (c.inserts));
+        return objectVar (obj);
+    }
+    OutputChannelState outputChannelFromVar (const juce::var& v)
+    {
+        OutputChannelState c;
+        c.channelId  = requireInt64 (requireProperty (v, "channelId"), "channel.channelId");
+        c.signalType = signalTypeFromString (requireProperty (v, "signalType").toString());
+        c.sends      = sendsFromVar (optionalProperty (v, "sends"));
+        c.inserts    = effectChainFromVar (requireProperty (v, "inserts"));
+        return c;
+    }
+
+    template <typename BusVec, typename ChannelVec, typename ChannelToVar>
+    juce::String serializeMixerDoc (const BusVec& buses, const ChannelVec& channels,
+                                    std::int64_t nextBusId, std::int64_t nextChannelId,
+                                    ChannelToVar channelToVar)
+    {
+        juce::Array<juce::var> busArr;
+        for (const auto& b : buses) busArr.add (busStateToVar (b));
+        juce::Array<juce::var> chArr;
+        for (const auto& c : channels) chArr.add (channelToVar (c));
+        auto root = makeObject();
+        root->setProperty ("version",       currentMixerGraphVersion);
+        root->setProperty ("buses",         busArr);
+        root->setProperty ("channels",      chArr);
+        root->setProperty ("nextBusId",     juce::int64 (nextBusId));
+        root->setProperty ("nextChannelId", juce::int64 (nextChannelId));
+        return juce::JSON::toString (objectVar (root));
+    }
+
+    juce::var parseMixerDoc (const juce::String& json)
+    {
+        const auto parsed = juce::JSON::parse (json);
+        if (! parsed.isObject()) fail ("mixer graph document must be a JSON object");
+        const auto version = requireInt (requireProperty (parsed, "version"), "version");
+        if (version != currentMixerGraphVersion)
+            fail ("unsupported mixer graph version: " + std::to_string (version));
+        return parsed;
+    }
 }
 
 juce::String serializeSession (const Constituent& root)
@@ -745,6 +971,44 @@ std::shared_ptr<const Constituent> deserializeSession (const juce::String& json)
     promotion::enforceSharedInstancesAreShared (*root);
 
     return root;
+}
+
+juce::String serializeMixerGraphState (const InputMixerGraphState& s)
+{
+    return serializeMixerDoc (s.buses, s.channels, s.nextBusId, s.nextChannelId,
+                              [] (const InputChannelState& c) { return inputChannelToVar (c); });
+}
+
+juce::String serializeMixerGraphState (const OutputMixerGraphState& s)
+{
+    return serializeMixerDoc (s.buses, s.channels, s.nextBusId, s.nextChannelId,
+                              [] (const OutputChannelState& c) { return outputChannelToVar (c); });
+}
+
+InputMixerGraphState deserializeInputMixerGraphState (const juce::String& json)
+{
+    const auto root = parseMixerDoc (json);
+    InputMixerGraphState s;
+    if (const auto buses = optionalProperty (root, "buses"); buses.isArray())
+        for (int i = 0; i < buses.size(); ++i) s.buses.push_back (busStateFromVar (buses[i]));
+    if (const auto chans = optionalProperty (root, "channels"); chans.isArray())
+        for (int i = 0; i < chans.size(); ++i) s.channels.push_back (inputChannelFromVar (chans[i]));
+    if (const auto n = optionalProperty (root, "nextBusId");     ! n.isVoid()) s.nextBusId = requireInt64 (n, "nextBusId");
+    if (const auto n = optionalProperty (root, "nextChannelId"); ! n.isVoid()) s.nextChannelId = requireInt64 (n, "nextChannelId");
+    return s;
+}
+
+OutputMixerGraphState deserializeOutputMixerGraphState (const juce::String& json)
+{
+    const auto root = parseMixerDoc (json);
+    OutputMixerGraphState s;
+    if (const auto buses = optionalProperty (root, "buses"); buses.isArray())
+        for (int i = 0; i < buses.size(); ++i) s.buses.push_back (busStateFromVar (buses[i]));
+    if (const auto chans = optionalProperty (root, "channels"); chans.isArray())
+        for (int i = 0; i < chans.size(); ++i) s.channels.push_back (outputChannelFromVar (chans[i]));
+    if (const auto n = optionalProperty (root, "nextBusId");     ! n.isVoid()) s.nextBusId = requireInt64 (n, "nextBusId");
+    if (const auto n = optionalProperty (root, "nextChannelId"); ! n.isVoid()) s.nextChannelId = requireInt64 (n, "nextChannelId");
+    return s;
 }
 
 } // namespace sirius::persistence

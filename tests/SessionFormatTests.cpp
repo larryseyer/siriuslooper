@@ -10,6 +10,7 @@
 #include "sirius/Constituent.h"
 #include "sirius/ConstituentId.h"
 #include "sirius/Meter.h"
+#include "sirius/MixerGraphState.h"
 #include "sirius/Phrase.h"
 #include "sirius/Position.h"
 #include "sirius/Promotion.h"
@@ -365,4 +366,78 @@ TEST_CASE ("a v2 document with two full objects sharing an id fails loud",
     })");
     CHECK_THROWS_AS (sirius::persistence::deserializeSession (json),
                      std::logic_error);
+}
+
+namespace
+{
+    sirius::InputMixerGraphState sampleInputState()
+    {
+        using namespace sirius;
+        InputMixerGraphState s;
+        MixerBusState bus; bus.busId = 1; bus.channelCount = 2; bus.name = "Drums";
+        bus.kind = MixerBusKind::Bus;
+        bus.mainOut.kind = MixerMainOut::Kind::Terminal; bus.mainOut.terminal = MixerTerminalKind::Tape;
+        EffectChainEntry comp; comp.displayName = "comp"; comp.bypassed = true;
+        bus.inserts = EffectChain{}.withAppended (comp);
+        s.buses.push_back (bus);
+        MixerBusState rev; rev.busId = 2; rev.name = "Reverb"; rev.kind = MixerBusKind::FxReturn;
+        rev.mainOut.kind = MixerMainOut::Kind::Terminal; rev.mainOut.terminal = MixerTerminalKind::Tape;
+        s.buses.push_back (rev);
+        InputChannelState ch; ch.channelId = 5; ch.signalType = SignalType::Audio; ch.inputSourceId = 1;
+        ch.source = { 2, 3, true }; ch.tapeMode = TapeMode::CommitToTape;
+        ch.mainOut.kind = MixerMainOut::Kind::Bus; ch.mainOut.busId = 1;
+        ch.sends.push_back ({ 2, 0.5f });
+        EffectChainEntry eq; eq.displayName = "eq";
+        ch.inserts = EffectChain{}.withAppended (eq);
+        s.channels.push_back (ch);
+        s.nextBusId = 3; s.nextChannelId = 6;
+        return s;
+    }
+}
+
+TEST_CASE ("InputMixerGraphState round-trips through JSON", "[sessionformat]")
+{
+    const auto original = sampleInputState();
+    const auto json     = sirius::persistence::serializeMixerGraphState (original);
+    const auto restored = sirius::persistence::deserializeInputMixerGraphState (json);
+    CHECK (restored == original);
+    // Byte-stable: serialize -> deserialize -> serialize yields identical JSON.
+    CHECK (sirius::persistence::serializeMixerGraphState (restored) == json);
+}
+
+TEST_CASE ("OutputMixerGraphState round-trips through JSON", "[sessionformat]")
+{
+    using namespace sirius;
+    OutputMixerGraphState s;
+    MixerBusState master; master.busId = 0; master.name = "Master";
+    master.mainOut.kind = MixerMainOut::Kind::Terminal; master.mainOut.terminal = MixerTerminalKind::HardwareOutput;
+    s.buses.push_back (master);
+    OutputChannelState ch; ch.channelId = 1; ch.sends.push_back ({ 0, 1.0f });
+    s.channels.push_back (ch);
+    s.nextBusId = 1; s.nextChannelId = 2;
+
+    const auto json     = sirius::persistence::serializeMixerGraphState (s);
+    const auto restored = sirius::persistence::deserializeOutputMixerGraphState (json);
+    CHECK (restored == s);
+}
+
+TEST_CASE ("a pre-graph (empty) mixer document deserializes to defaults", "[sessionformat]")
+{
+    // A document carrying only a version and empty arrays — what a forward
+    // session that never populated the graph would write.
+    const sirius::InputMixerGraphState empty;
+    const auto json     = sirius::persistence::serializeMixerGraphState (empty);
+    const auto restored = sirius::persistence::deserializeInputMixerGraphState (json);
+    CHECK (restored.buses.empty());
+    CHECK (restored.channels.empty());
+    CHECK (restored.nextBusId == 1);
+    CHECK (restored.nextChannelId == 1);
+}
+
+TEST_CASE ("malformed mixer-graph JSON is rejected with a hard error", "[sessionformat]")
+{
+    CHECK_THROWS_AS (sirius::persistence::deserializeInputMixerGraphState ("{not json}"),
+                     std::runtime_error);
+    CHECK_THROWS_AS (sirius::persistence::deserializeInputMixerGraphState ("[1,2,3]"),
+                     std::runtime_error);
 }
