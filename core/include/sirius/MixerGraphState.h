@@ -4,6 +4,7 @@
 #include "sirius/SignalType.h"
 #include "sirius/TapeMode.h"
 
+#include <bit>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -42,7 +43,13 @@ struct MixerSend
     float        level { 0.0f };
 
     bool operator== (const MixerSend& o) const noexcept
-    { return busId == o.busId && level == o.level; }
+    {
+        // level is a stored snapshot value; exact equality is the round-trip
+        // contract (float -> JSON -> float is lossless). Compare raw bits to
+        // make that intent explicit and silence -Wfloat-equal.
+        return busId == o.busId
+            && std::bit_cast<std::uint32_t> (level) == std::bit_cast<std::uint32_t> (o.level);
+    }
     bool operator!= (const MixerSend& o) const noexcept { return ! (*this == o); }
 };
 
@@ -58,13 +65,17 @@ struct MixerChannelSource
     bool operator!= (const MixerChannelSource& o) const noexcept { return ! (*this == o); }
 };
 
+/// Default bus width — Sirius audio is stereo-only (white paper §6.1), so a
+/// bus defaults to a stereo pair. Mirrors engine BusConfig::channelCount.
+inline constexpr int kDefaultBusChannelCount = 2;
+
 /// One bus or FX return: identity, config, graph main-out, sends, insert chain.
 /// Shared by both mixers. On the output side, buses[0] is the master (busId 0)
 /// and bus sends are empty (output routing uses main-out + the channel matrix).
 struct MixerBusState
 {
     std::int64_t           busId        { 0 };
-    int                    channelCount { 2 };
+    int                    channelCount { kDefaultBusChannelCount };
     std::string            name;
     MixerBusKind           kind         { MixerBusKind::Bus };
     MixerMainOut           mainOut;

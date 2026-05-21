@@ -72,4 +72,11 @@ TEST_CASE ("OutputMixerGraphState equality and per-field inequality", "[mixergra
     SECTION ("send")    { auto b = a; b.channels[0].sends[0].level = 0.3f; CHECK (a != b); }
     SECTION ("master name") { auto b = a; b.buses[0].name = "M"; CHECK (a != b); }
     SECTION ("nextChannelId") { auto b = a; b.nextChannelId = 9; CHECK (a != b); }
+    SECTION ("master busId")     { auto b = a; b.buses[0].busId = 9;                          CHECK (a != b); }
+    SECTION ("master kind")      { auto b = a; b.buses[0].kind = MixerBusKind::FxReturn;       CHECK (a != b); }
+    SECTION ("master mainOut")   { auto b = a; b.buses[0].mainOut.terminal = MixerTerminalKind::Tape; CHECK (a != b); }
+    SECTION ("master inserts")   { auto b = a; b.buses[0].inserts = EffectChain{}.withAppended (makeEntry ("x")); CHECK (a != b); }
+    SECTION ("channel signalType") { auto b = a; b.channels[0].signalType = SignalType::Midi;  CHECK (a != b); }
+    SECTION ("channel inserts")  { auto b = a; b.channels[0].inserts = EffectChain{}.withAppended (makeEntry ("y")); CHECK (a != b); }
+    SECTION ("nextBusId")        { auto b = a; b.nextBusId = 9;                                CHECK (a != b); }
 }
