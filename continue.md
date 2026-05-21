@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-20 (mixer routing model **EXPANDED + re-phased into 8 phases + a follow-on**; white paper + spec pushed; **no engine code this session**; next = **Phase 2 multi-terminal MixerGraph** via writing-plans → subagents in a fresh chat)
+# Session Continuation — 2026-05-20 (routing **Phase 2 multi-terminal MixerGraph SHIPPED** to origin/master via writing-plans → subagents; full ctest 483/484 green; next = **Phase 3 input-side routing apparatus** in a fresh chat)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,45 +8,77 @@
 
 ---
 
-## RESUME HERE (2026-05-20 — routing design EXPANDED & re-phased; next = **Phase 2 multi-terminal MixerGraph** in a fresh chat)
+## RESUME HERE (2026-05-20 — routing **Phase 2 SHIPPED**; next = **Phase 3 input-side routing apparatus** in a fresh chat)
 
-> ## ▶ START HERE: the routing-graph design is EXPANDED & LOCKED; build **Phase 2** next
-> This session was **design only — no engine code, no build/test impact** (docs
-> only). The mixer routing-graph spec
-> (`docs/superpowers/specs/2026-05-20-mixer-routing-graph-design.md`) was expanded
-> per operator direction and the implementation **re-decomposed into 8 phases +
-> a follow-on**. Pushed to origin/master: `2f25bb0` (white paper line-349 fix +
-> spec routing model) and the phase-breakdown/handoff revision (this commit).
-> **Do NOT re-brainstorm — the spec is locked.** Go straight to
-> `superpowers:writing-plans` for Phase 2, then `superpowers:subagent-driven-development`.
+> ## ▶ START HERE: Phase 2 (multi-terminal `MixerGraph`) is on origin/master; build **Phase 3** next
+> Phase 2 executed end-to-end this session via `superpowers:writing-plans` →
+> `superpowers:subagent-driven-development` (2 tasks: enum rename, then the
+> multi-terminal generalization; each TDD, controller-verified). On
+> **origin/master** (`b6f638c..8429224`, 2 commits). Full ctest **483/484** green
+> (the 1 non-pass = documented `MainComponentPluginEditorTests_NOT_BUILT`, run
+> separately by `bash/test-s7.sh`). **Do NOT re-do Phase 2.** Plan:
+> `docs/superpowers/plans/2026-05-20-mixer-routing-graph-phase2.md`.
 >
-> **Design decisions locked this session (spec + memories — read them):**
-> - **The two mixers are TOTALLY separate consoles** — no shared state/buses/fx/
->   logic. Input = hardware inputs → mix/treat → **tapes**. Output = phrases →
->   mix/fx → **hardware outputs**. Mirror images. They reuse generic *types*
->   (`MixerGraph`, `Bus`, `ChannelStrip`), each its OWN instances; **OutputMixer
->   stays untouched** except the behavior-preserving multi-terminal `MixerGraph`
->   generalization. (memory `project_two_mixers_totally_separate`.)
-> - **Per-channel destination picker** (bottom of strip): Input → **bus / tape /
->   hardware output**; Output → **bus / hardware output** (never tape). Input
->   **direct-to-output** = real-time monitoring *through* the channel's FX
->   (distinct from the sub-ms raw direct layer). This **overturned** the old
->   "Input Mixer NEVER routes to outputs" rule — spec amended + white paper line
->   349 corrected. (memory `project_mixer_routing_destinations_and_plugins`.)
-> - **Inserts on EVERY node** (channel, bus, FX/RVB/DLY return), **up to 8 slots**.
->   Each slot is a **union**: external **VST/CLAP** (M7 host) **or** a built-in
->   **Sirius FX** (EQ/Comp/Rvb/Dly). Channels currently have NO insert chain and
->   `EffectChain` has NO cap — both net-new.
-> - **Both mixers carry their own dedicated RVB + DLY returns.**
-> - Input-side `MixerGraph` needs **two terminal sinks** (Tape + HardwareOutput);
->   output has one (master) — hence Phase 2 generalizes the single-terminal graph.
+> **What Phase 2 landed (both pushed):**
+> - `4981453` **rename** `MixerTerminal::Output` → `HardwareOutput` (spec vocabulary;
+>   behavior-preserving; touched `MixerGraph.h`, `OutputMixer.h`, `MixerGraphTests.cpp`).
+> - `8429224` **`MixerGraph` now holds a typed terminal SET.** `enum MixerTerminal
+>   { Tape, HardwareOutput }`; the single `terminal_`/`terminalId_` became
+>   `std::vector<TerminalNode> terminals_` (`[0]` = **primary** = zero-config default
+>   main-out + removeNode fallback). New `explicit MixerGraph(std::initializer_list<
+>   MixerTerminal>)` ctor (the single-`MixerTerminal` ctor delegates to it), new
+>   `terminalNode(MixerTerminal kind)` accessor, new private `isTerminal(id)`. The
+>   no-arg `terminalNode()`/`terminal()` return the primary, so **OutputMixer +
+>   every Phase-1 test are byte-for-byte behavior-identical** (re-proven: `[output-mixer]`
+>   20 cases / 1209 assertions still green). `[mixer-graph]` now 12 cases / 91
+>   assertions (+4 `[multi-terminal]`).
+> - **⚠ `recomputeOrder` was restructured (deviation from the plan, intentional &
+>   verified):** plain Kahn emits an *unreferenced* terminal early (in-degree 0),
+>   which violates "terminals last" once there is >1 terminal. Fix: seed terminals
+>   out of the Kahn queue (drain only non-terminal nodes), then **append all
+>   terminals in declaration order** at the end. Preserves single-terminal ordering;
+>   keeps every id present; `evaluationOrder()` stays `const noexcept` (RT static_assert holds).
+>
+> **NEXT = Phase 3: input-side routing apparatus.** No plan written yet. Spec is
+> **locked** (`docs/superpowers/specs/2026-05-20-mixer-routing-graph-design.md`,
+> Phase 3 section, ~lines 257-269) — **do NOT re-brainstorm.** Go straight to
+> `superpowers:writing-plans` → `docs/superpowers/plans/2026-05-20-mixer-routing-graph-phase3.md`,
+> then `superpowers:subagent-driven-development`. Engine TDD, no operator eyes-on.
+>
+> **What Phase 3 builds (from the locked spec):** `InputMixer` gains its **OWN**
+> `MixerGraph({ Tape, HardwareOutput })` (Tape = primary, so channels default-record
+> to tape), its **own** buses, its **own** FX returns (incl. a **default RVB + DLY
+> return**), its **own** send matrix, and the RT-safe topological traversal —
+> mirroring `OutputMixer`'s render but with source = device-input strips and a
+> **dual terminal**. Main-out: channel → bus / tape / hardware output; bus/FX-return
+> → bus / tape / output. Sends: channel|bus → FX return (post-fader default).
+> **Absorbs the old "tape-output routing" slice** (channel → tape = a main-out to
+> the tape terminal). **OutputMixer stays untouched** (the two mixers are TOTALLY
+> separate consoles — memory `project_two_mixers_totally_separate`; reuse the
+> generic `MixerGraph`/`Bus` *types*, never shared instances). **Reconcile the
+> send-summing DSP** (Phase-1 carry-forward: `MixerGraph` models send *topology*;
+> level-summing still flows through `OutputMixer`'s `sendMatrix_` — Phase 3 wires
+> FX-return summing on the input side; revisit the output side's matrix coupling).
+>
+> **First moves for the next chat (Phase 3):**
+> 1. Sanity: `git status` clean; `git log --oneline -3` shows `8429224` on origin/master.
+> 2. Read the spec Phase 3 section + `engine/include/sirius/InputMixer.{h,cpp}`
+>    (today's per-channel `processDeviceInputs` + tape write — the seam Phase 3
+>    routes through the graph) + `OutputMixer.cpp` Step 3 (the traversal pattern to
+>    mirror) + `MixerGraph.h` (now multi-terminal, ready for `{Tape, HardwareOutput}`).
+> 3. `superpowers:writing-plans`, then `superpowers:subagent-driven-development`.
+> 4. Acceptance (per spec): main-out across all 3 input destinations, send
+>    leveling/summing, cycle rejection, topo order, per-terminal delivery (tape
+>    capture vs hardware-output direct monitoring), stereo invariant, traversal
+>    RT-safety static-asserts, default-graph equivalence with today's per-channel
+>    tape write. Full ctest stays green (baseline now **483/484**).
 >
 > **The 8 phases (full text + per-phase test coverage in the spec):**
 > 1. ✅ Engine routing-graph core (`MixerGraph` + OutputMixer) — SHIPPED (Phase 1).
-> 2. **Multi-terminal `MixerGraph`** (engine TDD) — **NEXT**. Typed sinks
->    (Tape/HardwareOutput); OutputMixer behavior-preserved (re-prove its cases).
-> 3. Input routing apparatus (engine TDD) — its OWN graph/buses/returns(+RVB/DLY)/
->    sends/traversal; main-out → bus/tape/output; absorbs tape-output routing.
+> 2. ✅ **Multi-terminal `MixerGraph`** — SHIPPED (Phase 2, this session).
+> 3. **Input routing apparatus** (engine TDD) — **NEXT**. Its OWN graph/buses/
+>    returns(+RVB/DLY)/sends/traversal; main-out → bus/tape/output; absorbs
+>    tape-output routing; reconciles send-summing DSP.
 > 4. Per-node insert chains (engine+host TDD) — channels gain EffectChain+dispatch;
 >    8-slot cap everywhere; external VST/CLAP. (Built-in FX = follow-on.)
 > 5. Routing-graph persistence (TDD) — SessionFormat round-trip; pre-graph loads clean.
@@ -57,32 +89,37 @@
 > the **union slot model**. "Make OUR FX available" lands here.
 >
 > **⛔ MANDATORY: every phase ends by updating THIS file (`continue.md`)** — what
-> it shipped (commits), what's verified (ctest count + clean-rebuild), and the
-> next phase + its first moves. A phase is NOT done until continue.md reflects it.
-> (Operator's explicit instruction this session; also `feedback_update_continue_md_every_session`.)
+> it shipped (commits), what's verified (ctest count), and the next phase + its
+> first moves. A phase is NOT done until continue.md reflects it. (Operator's
+> explicit instruction; also `feedback_update_continue_md_every_session`.)
 >
-> **First moves for the next chat (Phase 2):**
-> 1. Sanity: `git status` clean; `git log --oneline -4` shows the doc commits on origin/master.
-> 2. Read the spec (Phase 2 section) + `engine/include/sirius/MixerGraph.{h,cpp}`
->    (the single-terminal model to generalize) + `OutputMixer.cpp` Step 3-4 (how
->    it consumes the terminal/master) so the change stays behavior-preserving.
-> 3. `superpowers:writing-plans` → `docs/superpowers/plans/2026-05-20-mixer-routing-graph-phase2.md`,
->    then `superpowers:subagent-driven-development`. Engine TDD, no eyes-on.
-> 4. Acceptance: multi-terminal graph + OutputMixer regression-equivalence; full
->    ctest stays green (baseline 478/479; the 1 = `MainComponentPluginEditorTests_NOT_BUILT`).
+> **Design decisions locked (spec + memories — read them):**
+> - **The two mixers are TOTALLY separate consoles** — no shared state/buses/fx/
+>   logic. Input = hardware inputs → mix/treat → **tapes**. Output = phrases →
+>   mix/fx → **hardware outputs**. Mirror images; reuse generic *types*, own
+>   instances. (memory `project_two_mixers_totally_separate`.)
+> - **Per-channel destination picker** (bottom of strip): Input → **bus / tape /
+>   hardware output**; Output → **bus / hardware output** (never tape). Input
+>   direct-to-output = monitoring *through* the channel's FX. This **overturned**
+>   the old "Input Mixer NEVER routes to outputs" rule. (memory
+>   `project_mixer_routing_destinations_and_plugins`.)
+> - **Inserts on EVERY node**, **up to 8 slots**; each slot a **union** of external
+>   VST/CLAP **or** built-in Sirius FX. Channels have NO insert chain today;
+>   `EffectChain` has NO cap — both net-new in Phase 4.
+> - **Both mixers carry their own dedicated RVB + DLY returns.**
 >
-> **⚠ Carry-forward caveat (in todo.md, this session):** the white paper's
-> "always running / everything recorded" framing needs a caveat for a planned
-> **global enable/disable** (system OFF = not recording). `CaptureSession`
-> arm/disarm exists in `MainComponent` but may not be the intended global switch —
-> confirm + caveat later. Not part of the routing graph.
+> **⚠ Carry-forward caveat (in todo.md):** the white paper's "always running /
+> everything recorded" framing needs a caveat for a planned **global
+> enable/disable** (system OFF = not recording). `CaptureSession` arm/disarm exists
+> in `MainComponent` but may not be the intended global switch — confirm + caveat
+> later. Not part of the routing graph.
 >
-> **Operational facts (canonical app path, ctest baseline, OTTO read-only) are
-> unchanged this session — see the Phase-1 historical block immediately below.**
+> **Operational facts (canonical app path, OTTO read-only) are unchanged — see the
+> Phase-1 historical block immediately below.**
 
 ---
 
-## HISTORICAL — routing-graph Phase 1 + input-mixer session (superseded 2026-05-20 by the re-phased routing design above)
+## HISTORICAL — routing-graph Phase 1 + input-mixer session (superseded 2026-05-20 by Phase 2 above)
 
 > ## ▶ Phase 1 (engine routing-graph core) is on origin/master
 > The whole **Phase 1** plan executed end-to-end via `superpowers:subagent-driven-development`
