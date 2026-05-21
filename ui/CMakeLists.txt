@@ -43,7 +43,8 @@ juce_add_binary_data(SiriusBinaryData
 add_library(SiriusLookAndFeel STATIC
     lookandfeel/OTTOLookAndFeel.cpp
     lookandfeel/components/FaderMeter.cpp
-    lookandfeel/components/CompactFaderStrip.cpp)
+    lookandfeel/components/CompactFaderStrip.cpp
+    lookandfeel/components/ChannelDetailPanWidTab.cpp)
 
 target_include_directories(SiriusLookAndFeel PUBLIC lookandfeel)
 

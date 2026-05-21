@@ -1,5 +1,6 @@
 #include "MainComponent.h"
 
+#include "components/ChannelDetailPanWidTab.h"
 #include "components/CompactFaderStrip.h"
 #include "sirius/CalibrationStore.h"
 #include "sirius/ConstituentValidator.h"
@@ -422,9 +423,19 @@ private:
 // =============================================================================
 class MainComponent::InputMixerPane final : public juce::Component,
                                             public otto::ui::CompactFaderStripListener,
+                                            public otto::ui::ChannelDetailPanWidTabListener,
                                             private juce::Timer
 {
 public:
+    InputMixerPane()
+    {
+        // The pan/width detail panel sits above the strip row, hidden until a
+        // strip is selected (OTTO's selected-strip model). It owns the two
+        // rotary knobs; its value changes relay back out via onPan/onWidth.
+        detailPanel_.addListener (this);
+        addChildComponent (detailPanel_);
+    }
+
     /// One strip's display state: its name and whether its source pair is in
     /// stereo mode (drives the Split/Collapse menu wording). Stereo = one strip;
     /// mono = two strips (the pair's L and R halves).
@@ -436,6 +447,25 @@ public:
     std::function<void (int idx, bool soloed)>      onSolo;
     /// Right-click "Split to two mono channels" / "Collapse to stereo" (RME).
     std::function<void (int idx)>                   onToggleStereoMono;
+    /// A strip was selected — MainComponent reads its pan/width and calls
+    /// showDetailFor() to populate + reveal the detail panel.
+    std::function<void (int idx)>                   onSelect;
+    /// Detail-panel pan knob moved. `pan` is industry-standard [-1, +1].
+    std::function<void (int idx, float pan)>        onPan;
+    /// Detail-panel width knob moved. `width` is [0, 2] (1 = unity stereo).
+    std::function<void (int idx, float width)>      onWidth;
+
+    /// Populates the detail panel with `idx`'s current values and reveals it.
+    /// `panMinus1to1` is the knob-domain pan ([-1, +1]); `width` is [0, 2].
+    void showDetailFor (int idx, float panMinus1to1, float width)
+    {
+        if (idx < 0 || idx >= stripCount()) return;
+        detailPanel_.setChannel (idx, otto::ui::ChannelType::Instrument);
+        detailPanel_.setPan (panMinus1to1);   // dontSendNotification inside the tab
+        detailPanel_.setWidth (width);
+        detailPanel_.setVisible (true);
+        resized();
+    }
 
     /// Rebuilds the row from `infos` (one CompactFaderStrip each). The pane
     /// listens for each strip's right-click via addMouseListener so the
@@ -444,6 +474,10 @@ public:
     {
         strips_.clear();
         stripStereo_.clear();
+        // Channel identities change on a rebuild, so the prior selection no
+        // longer maps to a strip — drop it and hide the detail panel.
+        selectedStrip_ = -1;
+        detailPanel_.setVisible (false);
         for (int i = 0; i < static_cast<int> (infos.size()); ++i)
         {
             auto strip = std::make_unique<otto::ui::CompactFaderStrip> (
@@ -507,11 +541,20 @@ public:
 
     void resized() override
     {
+        constexpr int kGap = 6;
+        auto area = getLocalBounds().reduced (kGap);
+
+        // The detail panel (when a strip is selected) takes a fixed band across
+        // the top; the strip row fills the remainder below it.
+        if (detailPanel_.isVisible())
+        {
+            detailPanel_.setBounds (area.removeFromTop (kDetailHeight));
+            area.removeFromTop (kGap);
+        }
+
         // Left-to-right row of fixed-width strips. A few strips fit a typical
         // window; wide input counts get a horizontal Viewport in a later slice.
         constexpr int kStripW = otto::ui::CompactFaderStrip::kStripWidth;
-        constexpr int kGap    = 6;
-        auto area = getLocalBounds().reduced (kGap);
         for (auto& strip : strips_)
         {
             strip->setBounds (area.removeFromLeft (kStripW));
@@ -538,11 +581,24 @@ public:
     {
         for (int i = 0; i < stripCount(); ++i)
             strips_[static_cast<std::size_t> (i)]->setSelected (i == idx);
+        selectedStrip_ = idx;
+        if (onSelect) onSelect (idx);   // MainComponent loads + reveals the panel
+    }
+
+    // --- ChannelDetailPanWidTabListener (the pan/width knobs) ---
+    void panWidTabPanChanged (int, otto::ui::ChannelType, float pan) override
+    {
+        if (onPan && selectedStrip_ >= 0) onPan (selectedStrip_, pan);
+    }
+    void panWidTabWidthChanged (int, otto::ui::ChannelType, float width) override
+    {
+        if (onWidth && selectedStrip_ >= 0) onWidth (selectedStrip_, width);
     }
 
 private:
     static constexpr int kLongPressMs              = 500;
     static constexpr int kLongPressMoveTolerancePx = 8;
+    static constexpr int kDetailHeight             = 180;
 
     void timerCallback() override
     {
@@ -578,6 +634,8 @@ private:
 
     std::vector<std::unique_ptr<otto::ui::CompactFaderStrip>> strips_;
     std::vector<bool>                                         stripStereo_;
+    otto::ui::ChannelDetailPanWidTab                          detailPanel_;
+    int                                                       selectedStrip_ { -1 };
     int                                                       longPressIdx_ { -1 };
     juce::Point<int>                                          longPressScreenPos_;
 };
@@ -1199,6 +1257,22 @@ MainComponent::MainComponent()
             recomputeInputStripMutes();
         };
         inputMixerPane_->onToggleStereoMono = [this] (int idx) { toggleInputPairStereo (idx); };
+        // Selection reveals the detail panel loaded with the strip's current
+        // values. The engine pan is normalized [0,1] (0.5 = center); the knob is
+        // industry-standard [-1,+1], so map both ways at the boundary.
+        inputMixerPane_->onSelect = [this] (int idx)
+        {
+            if (auto* s = inputStripAt (idx))
+                inputMixerPane_->showDetailFor (idx, s->pan() * 2.0f - 1.0f, s->width());
+        };
+        inputMixerPane_->onPan = [this] (int idx, float pan)
+        {
+            if (auto* s = inputStripAt (idx)) s->setPan ((pan + 1.0f) * 0.5f);
+        };
+        inputMixerPane_->onWidth = [this] (int idx, float width)
+        {
+            if (auto* s = inputStripAt (idx)) s->setWidth (width);
+        };
         tabs_.addTab ("Input Mixer", juce::Colours::black, inputMixerPane_.get(), false);
 
         rebuildInputStrips();

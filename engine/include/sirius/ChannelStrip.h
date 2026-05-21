@@ -69,8 +69,19 @@ public:
         panNormalized_.store (std::clamp (normalized, 0.0f, 1.0f), std::memory_order_relaxed);
     }
 
-    float gain() const noexcept { return gainLinear_.load (std::memory_order_relaxed); }
-    float pan()  const noexcept { return panNormalized_.load (std::memory_order_relaxed); }
+    /// Message-thread setter — stereo width via mid/side. `w` is clamped to
+    /// [0, 2] (0 = mono-collapse, 1 = unchanged, 2 = double-wide), matching
+    /// OTTO's MixerChannel width. Clamping in the setter (like `setPan`) keeps
+    /// the audio-thread side-gain finite. Applied after pan, on the stereo path
+    /// only — a mono buffer has no stereo field to widen.
+    void setWidth (float w) noexcept
+    {
+        width_.store (std::clamp (w, 0.0f, 2.0f), std::memory_order_relaxed);
+    }
+
+    float gain()  const noexcept { return gainLinear_.load (std::memory_order_relaxed); }
+    float pan()   const noexcept { return panNormalized_.load (std::memory_order_relaxed); }
+    float width() const noexcept { return width_.load (std::memory_order_relaxed); }
 
     /// Message-thread mute setter. A muted strip emits silence and reports zero
     /// meters. `relaxed` for the same reason as gain/pan — an independent scalar
@@ -167,13 +178,29 @@ public:
         float* const right = channelData[1];
         if (left == nullptr || right == nullptr) return;
 
+        // Stereo width via mid/side, applied after pan. At w=1 the fold is the
+        // identity (mid+side = L, mid-side = R), so the unity case skips it —
+        // the pan-only output stays byte-identical and there is no per-sample
+        // cost. The branch is on a value constant across the block.
+        const float w = width_.load (std::memory_order_relaxed);
+        const bool applyWidth = (w != 1.0f);
+
         float peakL = 0.0f, peakR = 0.0f;
         for (int s = 0; s < numSamples; ++s)
         {
-            left[s]  *= leftGain;
-            right[s] *= rightGain;
-            peakL = std::max (peakL, std::fabs (left[s]));
-            peakR = std::max (peakR, std::fabs (right[s]));
+            float l = left[s]  * leftGain;
+            float r = right[s] * rightGain;
+            if (applyWidth)
+            {
+                const float mid  = (l + r) * 0.5f;
+                const float side = (l - r) * 0.5f * w;
+                l = mid + side;
+                r = mid - side;
+            }
+            left[s]  = l;
+            right[s] = r;
+            peakL = std::max (peakL, std::fabs (l));
+            peakR = std::max (peakR, std::fabs (r));
         }
         peakLeft_.store  (peakL, std::memory_order_relaxed);
         peakRight_.store (peakR, std::memory_order_relaxed);
@@ -183,6 +210,7 @@ public:
 private:
     std::atomic<float> gainLinear_;
     std::atomic<float> panNormalized_;
+    std::atomic<float> width_ { 1.0f };
     std::atomic<bool>  muted_ { false };
     // Metering is written from the const `process` (the strip is logically const
     // there), so the peak atomics + loudness meter are mutable. Audio-thread

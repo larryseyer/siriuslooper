@@ -126,6 +126,174 @@ TEST_CASE ("ChannelStrip<Audio> ignores pan on a mono buffer (gain only)",
     for (float v : mono) CHECK (v == Catch::Approx (2.0f));
 }
 
+// =============================================================================
+// [width] — stereo width (mid/side) control. Net-new in the pan+width detail
+// panel slice (OTTO MixerChannel parity): width 0 = mono-collapse, 1 = unity
+// (the side signal is untouched), 2 = double-wide. Width is applied AFTER the
+// equal-power pan, so every expectation below folds in the pan gain.
+// =============================================================================
+
+TEST_CASE ("ChannelStrip<Audio> defaults to unity width 1.0 and clamps the setter to [0, 2]",
+           "[channel-strip][width]")
+{
+    AudioStrip strip;
+    CHECK (strip.width() == Catch::Approx (1.0f));   // unity by default — no stereo change
+
+    strip.setWidth (-1.0f);
+    CHECK (strip.width() == Catch::Approx (0.0f));    // a stray caller cannot drive width negative
+
+    strip.setWidth (5.0f);
+    CHECK (strip.width() == Catch::Approx (2.0f));    // clamped to the double-wide ceiling
+}
+
+TEST_CASE ("ChannelStrip<Audio> width=1.0 leaves the panned block byte-identical to pan-only",
+           "[channel-strip][width]")
+{
+    // Why: the unity fast-path must not perturb the existing pan DSP. Same input,
+    // same pan, width left at its 1.0 default → the pan-only expectation holds.
+    AudioStrip strip;
+    strip.setPan (0.5f);          // equal-power center
+    // width stays 1.0 (default)
+
+    std::array<float, 4> left, right;
+    left.fill (1.0f);
+    right.fill (0.5f);
+    float* channelData[2] { left.data(), right.data() };
+
+    strip.process (channelData, 2, static_cast<int> (left.size()));
+
+    const float centerGain = std::cos (sirius::kHalfPi * 0.5f); // ~0.7071
+    for (float v : left)  CHECK (v == Catch::Approx (1.0f * centerGain));
+    for (float v : right) CHECK (v == Catch::Approx (0.5f * centerGain));
+}
+
+TEST_CASE ("ChannelStrip<Audio> width=0.0 collapses a side-only signal to silence",
+           "[channel-strip][width]")
+{
+    // Why: width 0 keeps only the mid (L+R)/2. An anti-phase pair (pure side) is
+    // exactly what mono-collapse must null. Pan is centered so leftGain==rightGain.
+    AudioStrip strip;
+    strip.setPan  (0.5f);
+    strip.setWidth (0.0f);
+
+    std::array<float, 4> left, right;
+    left.fill  ( 1.0f);
+    right.fill (-1.0f);   // anti-phase → mid = 0
+    float* channelData[2] { left.data(), right.data() };
+
+    strip.process (channelData, 2, static_cast<int> (left.size()));
+
+    for (float v : left)  CHECK (v == Catch::Approx (0.0f).margin (1e-6f));
+    for (float v : right) CHECK (v == Catch::Approx (0.0f).margin (1e-6f));
+}
+
+TEST_CASE ("ChannelStrip<Audio> width=2.0 doubles the side component",
+           "[channel-strip][width]")
+{
+    // Why: width 2 must amplify the side (L-R)/2 by 2 while preserving the mid.
+    // Input is hard-content-left/silent-right (post equal-power center pan).
+    AudioStrip strip;
+    strip.setPan  (0.5f);
+    strip.setWidth (2.0f);
+
+    std::array<float, 4> left, right;
+    left.fill  (1.0f);
+    right.fill (0.0f);
+    float* channelData[2] { left.data(), right.data() };
+
+    strip.process (channelData, 2, static_cast<int> (left.size()));
+
+    const float cg = std::cos (sirius::kHalfPi * 0.5f); // center pan gain ~0.7071
+    const float l  = cg, r = 0.0f;                       // post-pan
+    const float mid = (l + r) * 0.5f;
+    const float side = (l - r) * 0.5f * 2.0f;
+    for (float v : left)  CHECK (v == Catch::Approx (mid + side));
+    for (float v : right) CHECK (v == Catch::Approx (mid - side));
+}
+
+TEST_CASE ("ChannelStrip<Audio> width composes with gain and pan",
+           "[channel-strip][width]")
+{
+    // Why: width is the last stereo stage — gain and pan must apply first, then
+    // the mid/side fold. gain 2 × center pan, then width 0 collapses to the mid.
+    AudioStrip strip;
+    strip.setGain  (2.0f);
+    strip.setPan   (0.5f);
+    strip.setWidth (0.0f);
+
+    std::array<float, 4> left, right;
+    left.fill  (1.0f);
+    right.fill (0.0f);
+    float* channelData[2] { left.data(), right.data() };
+
+    strip.process (channelData, 2, static_cast<int> (left.size()));
+
+    const float postPanLeft = 2.0f * std::cos (sirius::kHalfPi * 0.5f); // gain×panL
+    const float mid = postPanLeft * 0.5f;                                // (l+0)/2
+    for (float v : left)  CHECK (v == Catch::Approx (mid));
+    for (float v : right) CHECK (v == Catch::Approx (mid));
+}
+
+TEST_CASE ("ChannelStrip<Audio> mute silences output regardless of width",
+           "[channel-strip][width][mute]")
+{
+    // Why: the mute early-return precedes the width stage; width must not be able
+    // to resurrect a muted channel.
+    AudioStrip strip;
+    strip.setMuted (true);
+    strip.setWidth (2.0f);
+
+    std::array<float, 4> left, right;
+    left.fill  (0.7f);
+    right.fill (-0.7f);
+    float* channelData[2] { left.data(), right.data() };
+
+    strip.process (channelData, 2, static_cast<int> (left.size()));
+
+    for (float v : left)  CHECK (v == Catch::Approx (0.0f).margin (1e-6f));
+    for (float v : right) CHECK (v == Catch::Approx (0.0f).margin (1e-6f));
+    CHECK (strip.peakLeft()  == Catch::Approx (0.0f).margin (1e-6f));
+    CHECK (strip.peakRight() == Catch::Approx (0.0f).margin (1e-6f));
+}
+
+TEST_CASE ("ChannelStrip<Audio> peak meters reflect the post-width signal",
+           "[channel-strip][width][meter]")
+{
+    // Why: metering taps the final L/R, so a width change must move the peaks.
+    AudioStrip strip;
+    strip.setPan   (0.5f);
+    strip.setWidth (2.0f);
+
+    std::array<float, 3> left  { 1.0f, 1.0f, 1.0f };
+    std::array<float, 3> right { 0.0f, 0.0f, 0.0f };
+    float* channelData[2] { left.data(), right.data() };
+
+    strip.process (channelData, 2, 3);
+
+    const float cg = std::cos (sirius::kHalfPi * 0.5f);
+    const float mid = cg * 0.5f, side = cg * 0.5f * 2.0f;
+    CHECK (strip.peakLeft()  == Catch::Approx (std::fabs (mid + side)));
+    CHECK (strip.peakRight() == Catch::Approx (std::fabs (mid - side)));
+}
+
+TEST_CASE ("ChannelStrip<Audio> ignores width on a mono buffer",
+           "[channel-strip][width]")
+{
+    // Why: a mono buffer has no stereo field; width is a no-op (gain only),
+    // exactly as pan is ignored on the mono path.
+    AudioStrip strip;
+    strip.setGain  (2.0f);
+    strip.setWidth (0.0f);   // would collapse stereo, but there is no side here
+
+    std::array<float, 4> mono;
+    mono.fill (1.0f);
+    float* channelData[1] { mono.data() };
+
+    strip.process (channelData, 1, static_cast<int> (mono.size()));
+
+    for (float v : mono) CHECK (v == Catch::Approx (2.0f));
+}
+
 TEST_CASE ("ChannelStrip<Audio> defaults to un-muted with zero meters",
            "[channel-strip][mute][meter]")
 {
