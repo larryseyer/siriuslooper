@@ -11,6 +11,11 @@ using sirius::MixerNodeId;
 using sirius::MixerNodeKind;
 using sirius::MixerTerminal;
 
+// Compile-time invariant — evaluationOrder() is the only audio-thread read
+// surface and MUST be noexcept (RT-safety contract §6).
+static_assert (noexcept (std::declval<const MixerGraph&>().evaluationOrder()),
+               "MixerGraph::evaluationOrder must be noexcept (RT-safety contract §6)");
+
 TEST_CASE ("MixerNodeId validity + equality", "[mixer-graph][node-registry]")
 {
     CHECK_FALSE (MixerNodeId {}.isValid());
@@ -157,5 +162,62 @@ TEST_CASE ("MixerGraph sends target FX returns only, clamp, and reject cycles",
         // fxA -> busA via main-out, then busA -> fxA via send would loop.
         REQUIRE (g.setMainOut (fxA, busA));
         CHECK_FALSE (g.setSend (busA, fxA, 0.5f));
+    }
+}
+
+namespace
+{
+    int posOf (const std::vector<MixerNodeId>& order, MixerNodeId id)
+    {
+        for (std::size_t i = 0; i < order.size(); ++i)
+            if (order[i] == id) return static_cast<int> (i);
+        return -1;
+    }
+}
+
+TEST_CASE ("MixerGraph evaluation order: sources before destinations, terminal last",
+           "[mixer-graph][evaluation-order]")
+{
+    MixerGraph g (MixerTerminal::Output);
+
+    SECTION ("default graph — all channels before the terminal")
+    {
+        const auto c1 = g.addNode (MixerNodeKind::Channel);
+        const auto c2 = g.addNode (MixerNodeKind::Channel);
+        const auto c3 = g.addNode (MixerNodeKind::Channel);
+        const auto& order = g.evaluationOrder();
+        const int t = posOf (order, g.terminalNode());
+        REQUIRE (t >= 0);
+        CHECK (posOf (order, c1) < t);
+        CHECK (posOf (order, c2) < t);
+        CHECK (posOf (order, c3) < t);
+        CHECK (t == static_cast<int> (order.size()) - 1); // terminal last
+    }
+
+    SECTION ("subgroup chain — chan before busA before busB before terminal")
+    {
+        const auto ch   = g.addNode (MixerNodeKind::Channel);
+        const auto busA = g.addNode (MixerNodeKind::Bus);
+        const auto busB = g.addNode (MixerNodeKind::Bus);
+        REQUIRE (g.setMainOut (ch,   busA));
+        REQUIRE (g.setMainOut (busA, busB));
+        REQUIRE (g.setMainOut (busB, g.terminalNode()));
+        const auto& order = g.evaluationOrder();
+        CHECK (posOf (order, ch)   < posOf (order, busA));
+        CHECK (posOf (order, busA) < posOf (order, busB));
+        CHECK (posOf (order, busB) < posOf (order, g.terminalNode()));
+    }
+
+    SECTION ("send fan-in — both sources before the FX return before the terminal")
+    {
+        const auto ch   = g.addNode (MixerNodeKind::Channel);
+        const auto busA = g.addNode (MixerNodeKind::Bus);
+        const auto fx   = g.addNode (MixerNodeKind::FxReturn);
+        REQUIRE (g.setSend (ch,   fx, 0.4f));
+        REQUIRE (g.setSend (busA, fx, 0.6f));
+        const auto& order = g.evaluationOrder();
+        CHECK (posOf (order, ch)   < posOf (order, fx));
+        CHECK (posOf (order, busA) < posOf (order, fx));
+        CHECK (posOf (order, fx)   < posOf (order, g.terminalNode()));
     }
 }
