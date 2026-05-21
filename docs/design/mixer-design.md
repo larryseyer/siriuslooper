@@ -98,6 +98,38 @@ bank of mono mics and stereo line sources share one console.
    that channel's source channels into a stereo block before
    `ChannelStrip<Audio>::process` (a single channel is dual-mono'd to both sides).
 
+9. **The routing graph: buses, FX returns, sends — dynamically created, both
+   mixers.** Full build detail:
+   `docs/superpowers/specs/2026-05-20-mixer-routing-graph-design.md`.
+   - **Bus vs FX return are distinct nodes, by input source.** A **bus** receives
+     **channel (or bus) main-outs** routed into it — a subgroup — and carries
+     insert FX (comp/EQ). An **FX return** receives **sends only** (never a direct
+     route) and hosts RVB/DLY/plugins — the aux return. Both are a summing node +
+     an effect chain + one main-out; they differ only in how signal arrives and in
+     typical contents. (Operator: "buses get inputs from channels; FX returns get
+     inputs from sends.")
+   - **Two signal movements.** **Main-out** (one per node) is a routing assignment
+     → a bus or the terminal (tape on input, output·master on output), defaulting
+     to the terminal. **Sends** (many, leveled, **post-fader** default) tap
+     channels/buses → FX returns only.
+   - **Flexible, acyclic, defaults to terminal.** A bus/FX-return main-out is
+     re-assignable into another bus (subgroups-of-subgroups, parallel chains); the
+     destination picker is **acyclic-enforced**. Most nodes default straight to the
+     terminal — "flexible, but defaults to what most people use."
+   - **Performer creates them live.** A **blank-area long-press** (extends the
+     existing per-strip long-press infra) opens a three-option menu — Input Mixer:
+     *Add bus / Add FX return / Add tape*; Output Mixer: *Add bus / Add FX return /
+     Add output*. Buses, FX returns, and destinations are unbounded.
+   - **Both mixers, shared engine substrate.** Reuses `OutputMixer`'s bus + dense
+     send matrix + `Bus`(effect-chain); the input side gets the same substrate
+     net-new (terminal = tape). A per-bus **kind** flag (Bus vs FxReturn) and a
+     main-out-vs-sends split are the core additions; evaluation order is a
+     topological sort recomputed on the message thread.
+   - **FX-return contents:** an effect chain — Sirius **internal** RVB/DLY (OTTO's
+     reverb + delay, a **follow-on spec** right behind this one) **or** 3rd-party
+     plugins (UAD, FabFilter…) via the existing out-of-process host. This spec is
+     the wiring; the OTTO RVB/DLY integration is the next.
+
 ## Engine reality (from the GUI seam audit)
 
 - Audio flows live today: device-in → `InputMixer` (gain/pan) → `Bus`/`OutputMixer`
@@ -130,9 +162,12 @@ bank of mono mics and stereo line sources share one console.
 
 ## Still open / to confirm while building
 
-1. Aux/FX send buses (OTTO reverb/delay-style returns): when do they land relative
-   to the core strips? (The input→tape "combine" and output stereo-bus/master are
-   distinct from FX-return buses.)
+1. ~~Aux/FX send buses (OTTO reverb/delay-style returns): when do they land?~~
+   RESOLVED (decision 9 + spec `2026-05-20-mixer-routing-graph-design.md`): they
+   land as the dynamically-created routing graph — buses (channel-fed) and FX
+   returns (send-fed) on both mixers, built live via the blank-area long-press
+   menu. Sequenced as its own multi-phase build after the pan/width slice; the
+   internal RVB/DLY (OTTO's) integration follows right behind as a separate spec.
 2. Output Mixer meters: built now, go live when the render path is wired (accepted)
    — confirm no interim minimal render path is wanted.
 3. Tape-capture wiring: routing inputs→tapes requires wiring `TapeWriter`/

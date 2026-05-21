@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-20 (Input Mixer pan+width detail panel now live + ChannelStrip stereo-width DSP — operator-verified GOOD; next = tape-output routing)
+# Session Continuation — 2026-05-20 (pan+width detail panel shipped; then mixer routing-graph SPEC written + approved — next = writing-plans against the spec, multi-phase build in a fresh chat)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,20 +8,41 @@
 
 ---
 
-## RESUME HERE (2026-05-20 — Input Mixer pan+width detail panel live + operator-verified GOOD; next = tape-output routing)
+## RESUME HERE (2026-05-20 — mixer routing-graph spec WRITTEN + approved; next = run writing-plans against it, multi-phase build in a fresh chat)
 
-> ## ▶ START HERE: the Input Mixer's next slice = **tape-output routing**
-> The Input Mixer tab is **done and operator-verified ("good")**: OTTO-skinned
-> strips with the **dual peak+LUFS meter**, fader, mute, solo (solo-in-place),
-> a **universal mono/stereo toggle** (gesture-only — right-click / long-press),
-> and now a **pan + width detail panel** (selected-strip OTTO model). macOS mic
-> capture is fixed. **Do NOT re-litigate any of that.** The next concrete work:
->   1. **Tape-output routing** (the strip's hidden bottom region, `setOutputComboVisible(false)`
->      today): route inputs → a user-selected number of tapes; pulls in
->      `TapeWriter`/`TapeStore` wiring (store rooted at `<Sirius>/tapes`) and is
->      where the two input dispatch paths unify (see todo.md item 4).
-> Full deferral list: `todo.md` (2026-05-20 "Input Mixer — deferred slices").
-> Design: `docs/design/mixer-design.md` (decision 8) + whitepaper §6.1/§6.2.
+> ## ▶ START HERE: the mixer **routing-graph** spec is written — next is `writing-plans`
+> A full brainstorm landed the **unified mixer routing graph** design, approved by
+> the operator. The spec is committed at
+> **`docs/superpowers/specs/2026-05-20-mixer-routing-graph-design.md`** — read it
+> first. The next move is **`superpowers:writing-plans` against that spec**, then
+> implement **phase by phase** (the spec lists 6 phases). Do NOT re-brainstorm; the
+> spec is self-contained and the design decisions are locked.
+>
+> **What the routing graph is (decided):** **buses** (fed by channel main-outs;
+> insert FX) and **FX returns** (fed by sends only; host RVB/DLY/plugins) are
+> distinct nodes; **main-out** (one per node → bus or terminal) vs **sends** (many,
+> leveled, post-fader → FX returns); **flexible acyclic** routing that **defaults to
+> the terminal**; created live via a **blank-area long-press 3-option menu**
+> (Input: bus/FX-return/tape; Output: bus/FX-return/output); both mixers share one
+> engine substrate (reuse `OutputMixer`'s bus + send matrix + `Bus`; input side
+> net-new, terminal = tape). **This absorbs the old "tape-output routing" slice**
+> (it's phase 2: channel main-out → tape). FX-return contents host the existing
+> plugin mechanism for now.
+>
+> **Follow-on spec, right behind:** integrate **OTTO's reverb (`PlayerIRConvolution`)
+> + delay (`PlayerDelay`)** as Sirius's internal RVB/DLY droppable into an FX return
+> (operator: "use OTTO's rvb and dly… wiring first, then follow right behind").
+> Brainstorm→spec when the wiring phases are landing.
+>
+> **Doc-tier rule (operator asked this session, now explicit):** white paper = the
+> "why"/enduring architecture (no mechanism); `docs/design/mixer-design.md` = the
+> decided model (decisions that could've gone another way); `docs/superpowers/specs/`
+> = how we build it (APIs, files, phases, tests). Test: *true regardless of
+> implementation* → white paper; *a decision* → design doc; *an API/file/phase* →
+> spec. The routing graph is split across all three accordingly.
+>
+> Full deferral list: `todo.md`. Design: decision 9 in `docs/design/mixer-design.md`
+> + whitepaper §6.6 (refined this session) + the spec.
 >
 > ## Pan+width slice — what shipped this slice (`3e951ef`, on origin/master)
 > - **Engine (TDD):** `ChannelStrip<Audio>` gained `setWidth`/`width` (clamped
