@@ -40,7 +40,13 @@ void FlacTapeSink::closeTape (TapeId id)
     msg.kind = MessageKind::CloseTape;
     msg.tapeId = id.value();
     if (! queue_.push (msg))
+    {
+        // droppedBlocks_ conflates audio-block drops and tape-close drops (known
+        // minor; a separate counter is deferred). More importantly: a dropped
+        // CloseTape leaves the writer open indefinitely — file-integrity risk.
         droppedBlocks_.fetch_add (1, std::memory_order_relaxed);
+        jassertfalse; // tape-close request dropped (queue full) — writer left open
+    }
     wakeCv_.notify_all();
 }
 
@@ -142,7 +148,13 @@ juce::AudioFormatWriter* FlacTapeSink::writerFor (std::int64_t tapeId)
     {
         juce::Logger::writeToLog ("FlacTapeSink: FLAC writer create failed for tape "
                                   + juce::String (tapeId));
-        // streamBase still owned here — unique_ptr destructs it cleanly.
+        // createWriterFor unconditionally nulls streamBase via std::exchange before
+        // returning nullptr, so this path is reached with an already-released pointer.
+        // JUCE's FlacAudioFormatWriter unique_ptr overload leaks the FileOutputStream
+        // on encoder-init failure (a JUCE bug, not ours) — but this path is
+        // effectively unreachable given a valid open stream + valid params.
+        // Do NOT add a manual delete here: that would double-free on the success
+        // path's exchange semantics.
         return nullptr;
     }
 

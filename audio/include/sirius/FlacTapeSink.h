@@ -79,7 +79,13 @@ private:
         std::int64_t tapeId { 0 };
         int numFrames { 0 };
         // Interleaved L,R,L,R… so a single copy fills it.
-        std::array<float, static_cast<std::size_t> (kFlacSinkMaxFramesPerMessage) * 2> samples {};
+        // Not zero-initialised: deliverTapeBlock fills exactly [0, numFrames*2) before
+        // push; writeAudio only reads that range. Skipping zero-init saves 32 KB per
+        // audio block on the hot path.
+        // Note: CloseTape control messages carry this 32 KB payload unused — a
+        // deliberate trade-off to keep the queue element a single trivially-copyable
+        // POD rather than a tagged variant on the SPSC path.
+        std::array<float, static_cast<std::size_t> (kFlacSinkMaxFramesPerMessage) * 2> samples;
     };
 
     void workerLoop();
