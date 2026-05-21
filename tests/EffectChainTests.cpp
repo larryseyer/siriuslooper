@@ -155,3 +155,36 @@ TEST_CASE ("a Constituent without effect chain stays absent through round-trip",
         sirius::persistence::serializeSession (c));
     CHECK_FALSE (round->hasEffectChain());
 }
+
+TEST_CASE ("EffectChain caps at kMaxSlots (8) appended slots", "[effect-chain][cap]")
+{
+    EffectChain chain;
+    REQUIRE (EffectChain::kMaxSlots == 8u);
+
+    for (std::size_t i = 0; i < EffectChain::kMaxSlots; ++i)
+    {
+        CHECK_FALSE (chain.full());
+        chain = chain.withAppended (makeEntry ("fx", "Fx"));
+    }
+
+    CHECK (chain.size() == EffectChain::kMaxSlots);
+    CHECK (chain.full());
+    CHECK_THROWS_AS (chain.withAppended (makeEntry ("over", "Over")), std::length_error);
+}
+
+TEST_CASE ("EffectChain at the cap still allows replace / remove / move", "[effect-chain][cap]")
+{
+    EffectChain chain;
+    for (std::size_t i = 0; i < EffectChain::kMaxSlots; ++i)
+        chain = chain.withAppended (makeEntry ("fx", "Fx"));
+    REQUIRE (chain.full());
+
+    // Non-growing edits are unaffected by the cap.
+    CHECK_NOTHROW (chain.withReplaced (0, makeEntry ("repl", "Repl")));
+    CHECK_NOTHROW (chain.withMoved (0, 7));
+
+    // Removing drops below the cap and re-enables append.
+    const EffectChain shortened = chain.withRemoved (0);
+    CHECK_FALSE (shortened.full());
+    CHECK_NOTHROW (shortened.withAppended (makeEntry ("again", "Again")));
+}

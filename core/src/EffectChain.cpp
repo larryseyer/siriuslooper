@@ -15,6 +15,9 @@ const EffectChainEntry& EffectChain::at (std::size_t index) const
 
 EffectChain EffectChain::withAppended (EffectChainEntry entry) const
 {
+    if (entries_.size() >= kMaxSlots)
+        throw std::length_error ("EffectChain: cannot append past kMaxSlots (8)");
+
     EffectChain next (*this);
     next.entries_.push_back (std::move (entry));
     return next;

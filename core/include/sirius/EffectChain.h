@@ -54,6 +54,17 @@ class EffectChain
 public:
     EffectChain() = default;
 
+    /// Hard per-node insert-slot ceiling (routing-graph Phase 4). The cap
+    /// lives on this shared type, so it binds every node that owns a chain —
+    /// channels, buses, and FX returns alike. `withAppended` throws
+    /// std::length_error when the chain is already at this size.
+    static constexpr std::size_t kMaxSlots = 8;
+
+    /// True when the chain holds `kMaxSlots` entries — no further append is
+    /// possible. UI callers check this before offering "add a slot" so the
+    /// cap is not enforced via exception-as-control-flow.
+    bool full() const noexcept { return entries_.size() >= kMaxSlots; }
+
     bool        empty()      const noexcept { return entries_.empty(); }
     std::size_t size()       const noexcept { return entries_.size(); }
     const std::vector<EffectChainEntry>& entries() const noexcept { return entries_; }
