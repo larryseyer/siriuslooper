@@ -5,6 +5,7 @@
 #include "sirius/ChannelStrip.h"
 #include "sirius/EffectChain.h"
 #include "sirius/IEffectChainHost.h"
+#include "sirius/MixerGraph.h"
 #include "sirius/SignalType.h"
 
 #include <cstddef>
@@ -117,6 +118,12 @@ public:
     /// is unknown.
     void routeChannelToBus (OutputChannelId channel, BusId bus, float sendLevel);
 
+    /// Routes a bus's main-out into another bus (subgroup) via the routing
+    /// graph. Returns false if either id is unknown or the assignment would
+    /// create a cycle (delegates to MixerGraph::setMainOut). Default main-out
+    /// for an aux bus is the master.
+    bool routeBusToBus (BusId from, BusId to);
+
     /// Message-thread accessor for the send-level matrix entry. Returns 0
     /// if either id is unknown. Primary use: tests + S3 audio-thread
     /// traversal that reads send levels into the mix.
@@ -171,6 +178,10 @@ private:
     /// either id is past the corresponding ceiling — callers must
     /// bounds-check before indexing.
     std::size_t sendMatrixIndex (OutputChannelId channel, BusId bus) const noexcept;
+
+    MixerGraph                graph_ { MixerTerminal::Output };
+    std::vector<MixerNodeId>  channelNodeIds_; // parallel to channels_
+    std::vector<MixerNodeId>  busNodeIds_;     // parallel to buses_ (index 0 = master)
 
     std::vector<ChannelEntry> channels_;
     std::vector<Bus>          buses_;

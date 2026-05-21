@@ -459,3 +459,32 @@ TEST_CASE ("OutputMixer::renderBuffer 32-channel x 8-bus RT smoke",
     constexpr double kBudgetSec = 0.001;
     CHECK (maxElapsedSec < kBudgetSec);
 }
+
+TEST_CASE ("OutputMixer bus->bus subgroup routes through the parent bus",
+           "[output-mixer][subgroup]")
+{
+    OutputMixer mixer;
+    const auto ch   = mixer.addChannel (SignalType::Audio);
+    const auto busA = mixer.addBus (BusConfig { 2, "A" });
+    const auto busB = mixer.addBus (BusConfig { 2, "B" });
+
+    // Zero the default master direct send so the channel only flows through
+    // the subgroup path: ch -> busA -> busB -> master -> output.
+    mixer.routeChannelToBus (ch, BusId { 0 }, 0.0f);
+    // Route the channel's send fully into busA, and subgroup busA -> busB.
+    mixer.routeChannelToBus (ch, busA, 1.0f);
+    REQUIRE (mixer.routeBusToBus (busA, busB)); // new thin accessor over MixerGraph
+
+    // One sample of input on channel index 0 (ch.value()-1 == 0).
+    std::array<float, 4> in;  in.fill (0.5f);
+    std::array<float, 4> out; out.fill (0.0f);
+    const float* inPtrs[1]  = { in.data() };
+    float*       outPtrs[2] = { out.data(), nullptr };
+
+    mixer.renderBuffer (inPtrs, 1, outPtrs, 1,
+                        static_cast<int> (in.size()));
+
+    // The signal flowed ch -> busA -> busB -> master -> output (unity throughout),
+    // so the output carries the channel signal (no double-count, no drop).
+    for (float v : out) CHECK (v == Catch::Approx (0.5f));
+}
