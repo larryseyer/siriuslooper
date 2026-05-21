@@ -58,8 +58,18 @@ std::uint64_t FlacTapeSink::droppedBlockCount() const noexcept
 void FlacTapeSink::deliverTapeBlock (TapeId tape, const float* left, const float* right,
                                      int numSamples) noexcept
 {
-    const int n = std::min (numSamples, kFlacSinkMaxFramesPerMessage);
-    if (n <= 0 || left == nullptr || right == nullptr) return;
+    if (numSamples <= 0 || left == nullptr || right == nullptr) return;
+    // Oversized blocks must not be silently half-recorded. Real device buffers are
+    // far below this ceiling; tripping it means a contract/sizing mismatch (e.g. a
+    // device block larger than kFlacSinkMaxFramesPerMessage). Drop the whole block
+    // loudly rather than truncate it.
+    if (numSamples > kFlacSinkMaxFramesPerMessage)
+    {
+        jassertfalse;
+        droppedBlocks_.fetch_add (1, std::memory_order_relaxed);
+        return;
+    }
+    const int n = numSamples;
 
     Message msg;
     msg.kind = MessageKind::Audio;

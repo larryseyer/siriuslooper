@@ -1240,12 +1240,9 @@ MainComponent::MainComponent()
     // default (RME convention). rebuildInputStrips() registers the engine
     // channels + builds the pane strips from inputPairs_; the right-click
     // split/collapse toggle flips a pair between one stereo strip and two
-    // mono-source strips. processDeviceInputs (Step 2b in the audio callback)
-    // runs each strip and publishes its peak meters. NOTE: the legacy
-    // per-device-channel tape dispatch (dispatchInputMixer) also keys on these
-    // ChannelIds, harmlessly — the strips are NoTape, so it runs the strip and
-    // early-returns, and processDeviceInputs runs afterward so the meters are
-    // authoritative. The two paths unify when tape-output routing lands (todo.md).
+    // mono-source strips. renderInputGraph (AudioCallback Step 2) is now the
+    // single live input path — strip processing, metering, routing, and tape
+    // delivery all run in one pass.
     {
         int numInputs = 0;
         if (auto* dev = audioDeviceManager_.getCurrentAudioDevice())

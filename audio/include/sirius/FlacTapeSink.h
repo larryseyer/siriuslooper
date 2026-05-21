@@ -20,9 +20,11 @@ namespace sirius
 {
 
 /// Per-message ceiling on the inline stereo payload. 4096 stereo float32 frames
-/// (32 KB) covers any realistic audio block; renderInputGraph already clamps a
-/// block to kMaxScratchSamples, which is <= this. A POD message so the audio
-/// thread constructs it on the stack and the SPSC queue value-copies it.
+/// (32 KB) covers any realistic audio block. This is the per-message frame
+/// capacity; blocks exceeding it are dropped loudly in deliverTapeBlock (a
+/// contract violation that does not occur with realistic device buffer sizes,
+/// which are far smaller). A POD message so the audio thread constructs it on
+/// the stack and the SPSC queue value-copies it.
 inline constexpr int kFlacSinkMaxFramesPerMessage = 4096;
 
 /// Real, RT-safe ITapeSink: writes one append-only FLAC stream per TapeId on a
@@ -61,6 +63,12 @@ public:
     /// Message-thread: enqueue an ordered request to finalize and close tape
     /// `id`'s FLAC writer. No-op if the tape has no open writer. Used by tape
     /// removal (slice 4) and explicit teardown.
+    ///
+    /// ⚠ SINGLE-PRODUCER QUEUE: deliverTapeBlock (audio thread) is the queue's
+    /// producer. The caller MUST run closeTape only while the audio callback is
+    /// detached (bracket it with AudioDeviceManager remove/addAudioCallback, as
+    /// slice 4 does) — otherwise two threads push concurrently to a
+    /// single-producer SPSC queue, corrupting it.
     void closeTape (TapeId id);
 
     /// Diagnostics (message thread): blocks dropped because the queue was full.
