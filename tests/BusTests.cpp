@@ -126,6 +126,7 @@ TEST_CASE ("LufsMeter is move-constructible and a moved meter still measures", "
     source.prepare (kSampleRate, kBlock);
 
     sirius::LufsMeter moved (std::move (source));   // move-construct after prepare()
+    // `source` is now in a moved-from (unspecified) state — not used again below.
 
     // Feed a 1 kHz sine (NOT DC — K-weighting's high-pass would kill a constant);
     // integrated loudness must rise above the -70 LUFS absolute gate, proving the
@@ -135,7 +136,11 @@ TEST_CASE ("LufsMeter is move-constructible and a moved meter still measures", "
     const double inc = 2.0 * M_PI * 1000.0 / kSampleRate;
     for (int i = 0; i < 300; ++i)
     {
-        for (int n = 0; n < kBlock; ++n) { buf[static_cast<std::size_t> (n)] = 0.5f * static_cast<float> (std::sin (phase)); phase += inc; }
+        for (int n = 0; n < kBlock; ++n)
+        {
+            buf[static_cast<std::size_t> (n)] = 0.5f * static_cast<float> (std::sin (phase));
+            phase += inc;
+        }
         moved.process (buf.data(), buf.data(), kBlock);
     }
 
