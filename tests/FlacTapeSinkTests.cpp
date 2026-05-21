@@ -6,7 +6,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
-#include <cmath>
 #include <vector>
 
 namespace
@@ -34,9 +33,10 @@ DecodedFlac decodeFlac (const juce::File& f)
     out.sampleRate  = reader->sampleRate;
     juce::AudioBuffer<float> buf (out.numChannels, static_cast<int> (out.numSamples));
     reader->read (&buf, 0, static_cast<int> (out.numSamples), 0, true, true);
-    out.left.assign (buf.getReadPointer (0), buf.getReadPointer (0) + out.numSamples);
+    const auto nSamples = static_cast<std::size_t> (out.numSamples);
+    out.left.assign (buf.getReadPointer (0), buf.getReadPointer (0) + nSamples);
     if (out.numChannels > 1)
-        out.right.assign (buf.getReadPointer (1), buf.getReadPointer (1) + out.numSamples);
+        out.right.assign (buf.getReadPointer (1), buf.getReadPointer (1) + nSamples);
     return out;
 }
 } // namespace
@@ -47,8 +47,8 @@ TEST_CASE ("FlacTapeSink writes one growing FLAC per delivered tape", "[flac-tap
     {
         sirius::FlacTapeSink sink (dir, 48000.0, 256);
         std::vector<float> l (480), r (480);
-        for (int i = 0; i < 480; ++i) { l[i] = static_cast<float> (i) / 480.0f * 0.5f;
-                                        r[i] = -l[i]; }
+        for (std::size_t i = 0; i < 480; ++i) { l[i] = static_cast<float> (i) / 480.0f * 0.5f;
+                                             r[i] = -l[i]; }
         for (int block = 0; block < 4; ++block)
             sink.deliverTapeBlock (sirius::TapeId { 1 }, l.data(), r.data(), 480);
     }
@@ -56,7 +56,7 @@ TEST_CASE ("FlacTapeSink writes one growing FLAC per delivered tape", "[flac-tap
     REQUIRE (f.existsAsFile());
     const auto decoded = decodeFlac (f);
     CHECK (decoded.numChannels == 2);
-    CHECK (decoded.sampleRate == 48000.0);
+    CHECK_THAT (decoded.sampleRate, Catch::Matchers::WithinAbs (48000.0, 0.5));
     CHECK (decoded.numSamples == 480 * 4);
     CHECK_THAT (decoded.left[10], Catch::Matchers::WithinAbs (10.0f / 480.0f * 0.5f, 1.0e-4f));
     CHECK_THAT (decoded.right[10], Catch::Matchers::WithinAbs (-10.0f / 480.0f * 0.5f, 1.0e-4f));

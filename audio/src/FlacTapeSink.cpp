@@ -83,14 +83,15 @@ void FlacTapeSink::workerLoop()
             });
         }
         drainQueue();
-        for (auto& [id, ot] : writers_)   // periodic durability flush
-        {
-            // AudioFormatWriter owns the stream; flush via the writer's output.
-            // writeFromFloatArrays flushes implicitly on the underlying stream
-            // each drain pass — no direct stream access needed here.
-            (void) id;
-            (void) ot;
-        }
+        // Periodic durability flush: push already-emitted FLAC frames to disk.
+        // rawStream is a non-owning observer of the FileOutputStream the writer
+        // holds; it remains valid for the writer's lifetime.
+        // Flush granularity is bounded by the FLAC encoder's block size
+        // (~85 ms at 48 kHz) — flushing the FileOutputStream pushes
+        // already-emitted frames to disk; forcing sub-block emission requires
+        // direct libFLAC access (deferred). This is the honest durability bound.
+        for (auto& [id, ot] : writers_)
+            if (ot.rawStream != nullptr) ot.rawStream->flush();
     }
 }
 
@@ -121,6 +122,12 @@ juce::AudioFormatWriter* FlacTapeSink::writerFor (std::int64_t tapeId)
         return nullptr;
     }
 
+    // Capture a non-owning raw pointer BEFORE transferring ownership to the
+    // writer. The pointer remains valid for the writer's lifetime because the
+    // writer is the sole owner of the same underlying object. Used for the
+    // periodic durability flush in workerLoop (see below).
+    juce::FileOutputStream* rawStream = stream.get();
+
     // The new JUCE API takes a std::unique_ptr<OutputStream>& — on success it
     // exchanges the pointer out (writer owns it); on failure the unique_ptr
     // still holds the stream (no leak, no double-free). Cast FileOutputStream
@@ -140,7 +147,7 @@ juce::AudioFormatWriter* FlacTapeSink::writerFor (std::int64_t tapeId)
     }
 
     auto* w = writer.get();
-    writers_.emplace (tapeId, OpenTape { std::move (writer) });
+    writers_.emplace (tapeId, OpenTape { std::move (writer), rawStream });
     return w;
 }
 

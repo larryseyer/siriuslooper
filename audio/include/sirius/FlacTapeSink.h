@@ -103,6 +103,10 @@ private:
     struct OpenTape
     {
         std::unique_ptr<juce::AudioFormatWriter> writer;
+        /// Non-owning observer of the FileOutputStream the writer holds.
+        /// Captured before unique_ptr ownership is transferred to the writer;
+        /// valid for the writer's lifetime. Used for periodic durability flush.
+        juce::FileOutputStream* rawStream { nullptr };
     };
     std::unordered_map<std::int64_t, OpenTape> writers_;
 };
