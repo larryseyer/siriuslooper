@@ -1497,6 +1497,17 @@ void MainComponent::timerCallback()
         overloadProtection_.reportLoad (elapsed / budget);
     }
 
+    // Tape slice 3 — keep the FLAC sink tracking the live device sample rate.
+    // The rate is otherwise latched once during construction (rebuildInputStrips),
+    // which can run BEFORE audioDeviceAboutToStart has set currentSampleRate_ — a
+    // 0 there makes the sink's lazy writer drop every block (no file). Refreshing
+    // on this 30 Hz tick guarantees the sink sees the real rate within ~33 ms of
+    // the device starting (or changing); setSampleRate is an idempotent atomic
+    // store and only affects writers created AFTER it, so this never rewrites an
+    // open tape's header.
+    if (flacTapeSink_ != nullptr && rate > 0.0)
+        flacTapeSink_->setSampleRate (rate);
+
     // M6 Sessions 2+3 — drain the engine→UI truthfulness channel on the same
     // 30 Hz cadence as the diagnostics refresh, append drained entries onto
     // the rolling history deque, trim the front to `kNotificationHistorySize`
