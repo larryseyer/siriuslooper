@@ -10,6 +10,7 @@
 #include "sirius/DirectLayer.h"
 #include "sirius/EngineConfig.h"
 #include "sirius/InputDescriptor.h"
+#include "sirius/FlacTapeSink.h"
 #include "sirius/InputMixer.h"
 #include "sirius/LatencyBudget.h"
 #include "sirius/Lmc.h"
@@ -171,6 +172,12 @@ private:
     std::unique_ptr<InputMixer>           inputMixer_;
     std::unique_ptr<OutputMixer>          outputMixer_;
     std::unique_ptr<DirectLayer>          directLayer_;
+    // Tape slice 3 — declared before audioCallback_ so the sink outlives the
+    // callback: the callback's last audio delivery (via InputMixer→ITapeSink)
+    // must land before the sink's worker thread drains and finalises the files.
+    // The destructor's explicit removeAudioCallback is the primary guard; this
+    // ordering is a belt-and-suspenders invariant.
+    std::unique_ptr<sirius::FlacTapeSink> flacTapeSink_;
     std::unique_ptr<AudioCallback>        audioCallback_;
     juce::String                          audioDeviceLastError_;
 

@@ -52,6 +52,16 @@ namespace
             .getChildFile ("calibration.json");
     }
 
+    /// Tape slice 3 — root directory for per-tape FLAC files. Mirrors the
+    /// calibration sidecar location pattern: under app-support, never inside
+    /// a session document, so recordings survive session moves.
+    juce::File tapesDirectory()
+    {
+        return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+            .getChildFile ("Sirius Looper")
+            .getChildFile ("tapes");
+    }
+
     /// The playhead slider works in sixteenths of an LMC second so its value
     /// converts to an exact Rational — the engine still never sees a double.
     constexpr int ticksPerSecond = 16;
@@ -1083,6 +1093,15 @@ MainComponent::MainComponent()
     notificationDrainBuffer_.reserve (kCategoryCount * NotificationBus::kRingCapacity);
     inputMixer_->setNotificationBus (notificationBus_.get());
 
+    // Tape subsystem slice 3 — bind the live per-tape FLAC recorder. Sample rate
+    // is set from the device setup (and on device change) below; 256 queue slots
+    // cover the worst-case touched-tapes-per-block burst with headroom.
+    flacTapeSink_ = std::make_unique<sirius::FlacTapeSink> (
+        tapesDirectory(),
+        audioDeviceManager_.getAudioDeviceSetup().sampleRate,
+        256);
+    inputMixer_->setTapeSink (flacTapeSink_.get());
+
     audioCallback_   = std::make_unique<AudioCallback> (engineConfig_);
     audioCallback_->setLmc (lmc_.get());
     audioCallback_->setInputMixer  (inputMixer_.get());
@@ -1175,6 +1194,13 @@ MainComponent::MainComponent()
     if (deviceInitError.isNotEmpty())
         audioDeviceLastError_ = deviceInitError;
     audioDeviceManager_.addAudioCallback (audioCallback_.get());
+
+    // Tape slice 3 — update the sink with the device's actual sample rate now
+    // that the device is open. The sink was constructed with whatever
+    // getAudioDeviceSetup returned before initialise (often 0); this call
+    // guarantees the worker sees a non-zero rate before the first audio block.
+    if (flacTapeSink_ != nullptr)
+        flacTapeSink_->setSampleRate (audioDeviceManager_.getAudioDeviceSetup().sampleRate);
 
     // --- Performance tab ---
     tabs_.addTab ("Performance", juce::Colours::black, &performanceView_, false);
@@ -1624,6 +1650,12 @@ void MainComponent::rebuildInputStrips()
     for (int i = 0; i < static_cast<int> (inputStripChannelIds_.size()); ++i)
         if (auto* s = inputStripAt (i))
             s->prepare (sampleRate, kInputLufsMaxBlock);
+
+    // Tape slice 3 — propagate any sample-rate change to the FLAC sink while
+    // the callback is detached (the sink header requires this on the message
+    // thread, before audio starts or between removeAudioCallback/addAudioCallback).
+    if (flacTapeSink_ != nullptr)
+        flacTapeSink_->setSampleRate (sampleRate);
 
     audioDeviceManager_.addAudioCallback (audioCallback_.get());
 }
