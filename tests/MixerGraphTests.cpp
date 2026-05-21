@@ -404,3 +404,13 @@ TEST_CASE ("MixerGraph::removeTerminal reassigns orphaned main-outs to the prima
         CHECK_FALSE (g.removeTerminal (MixerNodeId {})); // invalid
     }
 }
+
+TEST_CASE ("MixerGraph::addTerminal returns an invalid id at the node ceiling",
+           "[mixer-graph][terminal]")
+{
+    MixerGraph g (MixerTerminal::Tape);
+    // Fill to the ceiling: the ctor seeded 1 terminal, so kMaxNodes-1 more fit.
+    for (int i = 0; i < MixerGraph::kMaxNodes - 1; ++i)
+        REQUIRE (g.addTerminal (MixerTerminal::Tape).isValid());
+    CHECK_FALSE (g.addTerminal (MixerTerminal::Tape).isValid()); // ceiling hit
+}

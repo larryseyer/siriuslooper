@@ -9,8 +9,8 @@ MixerGraph::MixerGraph (std::initializer_list<MixerTerminal> terminals)
 {
     nodes_.reserve (kMaxNodes);
     sends_.reserve (kMaxNodes);
-    order_.reserve (static_cast<std::size_t> (kMaxNodes) + terminals.size());
-    terminals_.reserve (terminals.size());
+    order_.reserve (static_cast<std::size_t> (kMaxNodes) * 2);
+    terminals_.reserve (kMaxNodes);
     for (const MixerTerminal kind : terminals)
         terminals_.push_back (TerminalNode { MixerNodeId { nextId_++ }, kind });
     recomputeOrder();
@@ -97,6 +97,7 @@ void MixerGraph::removeNode (MixerNodeId node)
 
 MixerNodeId MixerGraph::addTerminal (MixerTerminal kind)
 {
+    if (static_cast<int> (terminals_.size()) >= kMaxNodes) return MixerNodeId {};
     const MixerNodeId id { nextId_++ };
     terminals_.push_back (TerminalNode { id, kind });
     recomputeOrder();

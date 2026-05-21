@@ -63,8 +63,11 @@ public:
     MixerTerminal terminal()     const noexcept { return terminals_.front().kind; }
     MixerNodeId   terminalNode() const noexcept { return terminals_.front().id; }
 
-    /// The Terminal node id for a given kind, or an invalid id if this graph has
-    /// no terminal of that kind.
+    /// The Terminal node id for the FIRST terminal of the given kind (the
+    /// primary, if multiple terminals of that kind exist), or an invalid id if
+    /// this graph has no terminal of that kind. Callers adding secondary
+    /// terminals via addTerminal() must retain the returned MixerNodeId — this
+    /// method does not distinguish same-kind terminals.
     MixerNodeId   terminalNode (MixerTerminal kind) const noexcept;
 
     /// Registers a Channel / Bus / FxReturn node. Its main-out defaults to the
