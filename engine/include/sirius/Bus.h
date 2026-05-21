@@ -3,7 +3,9 @@
 #include "sirius/Channel.h"
 #include "sirius/EffectChain.h"
 #include "sirius/IEffectChainHost.h"
+#include "sirius/LufsMeter.h"
 
+#include <atomic>
 #include <cstddef>
 #include <string>
 #include <utility>
@@ -83,6 +85,27 @@ public:
 
     BusId           id()      const noexcept { return id_; }
     const BusConfig& config() const noexcept { return config_; }
+
+    /// Move ctor — hand-written because the atomic members are not movable.
+    /// `noexcept` so std::vector<Bus> uses it on (reserve-bounded, never-hit-at-
+    /// runtime) reallocation rather than refusing to compile. Copies the atomic
+    /// values and moves the (move-only) loudness meter.
+    Bus (Bus&& other) noexcept;
+    Bus& operator= (Bus&&)      = delete;
+    Bus (const Bus&)            = delete;
+    Bus& operator= (const Bus&) = delete;
+
+    /// Message-thread setter — post-effects fader gain (linear, default 1.0 =
+    /// unity). Published via atomic; the audio thread loads it once per
+    /// `process()`. Parity with ChannelStrip<Audio>::setGain.
+    void  setGain (float linear) noexcept { gainLinear_.store (linear, std::memory_order_relaxed); }
+    float gain() const noexcept           { return gainLinear_.load (std::memory_order_relaxed); }
+
+    /// Message-thread setter — mute. When true, `process` contributes silence
+    /// to the output and the meter reads silence. Solo is mixer-level policy
+    /// (the UI maps solo to an effective mute), exactly as for channel strips.
+    void setMuted (bool m) noexcept { muted_.store (m, std::memory_order_relaxed); }
+    bool muted() const noexcept     { return muted_.load (std::memory_order_relaxed); }
 
     /// Message-thread setter — copies the chain in. Set-once before the
     /// audio thread starts; mutating after start is a threading-contract
@@ -186,6 +209,12 @@ private:
     /// `mixBuffer_` is — `process()` is `const noexcept` but the
     /// scratch is implementation detail the audio thread owns end-to-end.
     mutable std::vector<float> processedBuffer_;
+
+    /// Post-effects fader gain + mute (routing-graph Phase 6 prerequisite).
+    /// Message-thread writes, audio-thread reads once per `process()`. Default
+    /// unity/unmuted → the inline path stays bit-for-bit the M5 body.
+    std::atomic<float> gainLinear_ { 1.0f };
+    std::atomic<bool>  muted_      { false };
 };
 
 } // namespace sirius

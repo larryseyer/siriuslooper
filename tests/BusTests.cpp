@@ -15,6 +15,7 @@
 #include <cmath>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 using sirius::Bus;
 using sirius::BusConfig;
@@ -167,4 +168,70 @@ TEST_CASE ("BusConfig defaults to BusKind::Bus and carries FxReturn through a Bu
         CHECK (bus.config().kind == BusKind::FxReturn);
         CHECK (bus.config().channelCount == 2);
     }
+}
+
+TEST_CASE ("Bus is movable (std::vector<Bus> requirement) and move preserves gain/mute",
+           "[bus][move]")
+{
+    static_assert (std::is_move_constructible_v<sirius::Bus>,
+                   "Bus must be MoveInsertable for std::vector<Bus>");
+
+    sirius::Bus source (sirius::BusId { 7 }, sirius::BusConfig {});
+    source.setGain (0.25f);
+    source.setMuted (true);
+
+    sirius::Bus moved (std::move (source));
+    REQUIRE (moved.id().value() == 7);
+    REQUIRE (moved.gain()  == 0.25f);
+    REQUIRE (moved.muted() == true);
+}
+
+TEST_CASE ("Bus default gain is unity and unmuted (inline path stays bit-identical)",
+           "[bus][gain]")
+{
+    sirius::Bus bus (sirius::BusId { 1 }, sirius::BusConfig {});
+    REQUIRE (bus.gain()  == 1.0f);
+    REQUIRE (bus.muted() == false);
+
+    constexpr int kSamples = 4;
+    bus.mixBufferChannel (0)[0] = 0.5f;
+    bus.mixBufferChannel (1)[0] = 0.5f;
+
+    std::vector<float> l (kSamples, 0.0f), r (kSamples, 0.0f);
+    float* out[2] = { l.data(), r.data() };
+    bus.process (out, 2, kSamples);
+    REQUIRE (l[0] == 0.5f);
+    REQUIRE (r[0] == 0.5f);
+}
+
+TEST_CASE ("Bus::setGain scales the output (inline path)", "[bus][gain]")
+{
+    sirius::Bus bus (sirius::BusId { 1 }, sirius::BusConfig {});
+    bus.setGain (0.5f);
+
+    constexpr int kSamples = 4;
+    bus.mixBufferChannel (0)[0] = 0.8f;
+    bus.mixBufferChannel (1)[0] = 0.8f;
+
+    std::vector<float> l (kSamples, 0.0f), r (kSamples, 0.0f);
+    float* out[2] = { l.data(), r.data() };
+    bus.process (out, 2, kSamples);
+    REQUIRE (l[0] == Catch::Approx (0.4f));
+    REQUIRE (r[0] == Catch::Approx (0.4f));
+}
+
+TEST_CASE ("Bus::setMuted silences the output (inline path)", "[bus][mute]")
+{
+    sirius::Bus bus (sirius::BusId { 1 }, sirius::BusConfig {});
+    bus.setMuted (true);
+
+    constexpr int kSamples = 4;
+    bus.mixBufferChannel (0)[0] = 0.9f;
+    bus.mixBufferChannel (1)[0] = 0.9f;
+
+    std::vector<float> l (kSamples, 0.0f), r (kSamples, 0.0f);
+    float* out[2] = { l.data(), r.data() };
+    bus.process (out, 2, kSamples);
+    REQUIRE (l[0] == 0.0f);
+    REQUIRE (r[0] == 0.0f);
 }

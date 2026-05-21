@@ -23,6 +23,20 @@ Bus::Bus (BusId id, BusConfig config)
     jassert (config_.channelCount >= 1 && config_.channelCount <= kMaxBusChannelsHard);
 }
 
+Bus::Bus (Bus&& other) noexcept
+    : id_ (other.id_),
+      config_ (std::move (other.config_)),
+      effectChain_ (std::move (other.effectChain_)),
+      host_ (other.host_),
+      wetSink_ (other.wetSink_),
+      wetCaptureId_ (other.wetCaptureId_),
+      mixBuffer_ (std::move (other.mixBuffer_)),
+      processedBuffer_ (std::move (other.processedBuffer_)),
+      gainLinear_ (other.gainLinear_.load (std::memory_order_relaxed)),
+      muted_ (other.muted_.load (std::memory_order_relaxed))
+{
+}
+
 void Bus::process (float* const* output, int numChannels, int numSamples) const noexcept
 {
     // M7 S3 body. Two paths:
@@ -55,15 +69,19 @@ void Bus::process (float* const* output, int numChannels, int numSamples) const 
 
     if (! hasActiveSlot)
     {
-        // Inline path — identical to the M5 Session 3 body.
+        // Inline path — bit-for-bit equivalent to M5 Session 3 at default
+        // gain 1.0 / unmuted. Gain and mute are loaded once per buffer.
+        const float inlineGain = muted_.load (std::memory_order_relaxed)
+                                     ? 0.0f
+                                     : gainLinear_.load (std::memory_order_relaxed);
         for (int c = 0; c < activeChannels; ++c)
         {
-            if (output[c] == nullptr) continue;
             float* const mix = mixBuffer_.data()
                              + static_cast<std::size_t> (c) * kMaxBusMixSamples;
 
-            for (int s = 0; s < clampedSamples; ++s)
-                output[c][s] += mix[s];
+            if (output[c] != nullptr)
+                for (int s = 0; s < clampedSamples; ++s)
+                    output[c][s] += mix[s] * inlineGain;
 
             std::memset (mix, 0,
                          static_cast<std::size_t> (clampedSamples) * sizeof (float));
@@ -123,15 +141,18 @@ void Bus::process (float* const* output, int numChannels, int numSamples) const 
                                         wetPtrs, activeChannels, clampedSamples);
     }
 
-    // Additively accumulate processedBuffer_ into output, then zero
-    // mixBuffer_ for the next buffer (same shape as the inline path).
+    // Additively accumulate processedBuffer_ into output (post-fader gain +
+    // mute applied here; wet capture above reads pre-fader per M8 S4 semantics),
+    // then zero mixBuffer_ for the next buffer (same shape as the inline path).
+    const float chainGain = muted_.load (std::memory_order_relaxed)
+                                ? 0.0f
+                                : gainLinear_.load (std::memory_order_relaxed);
     for (int c = 0; c < activeChannels; ++c)
     {
-        if (output[c] == nullptr) continue;
-
         const float* const proc = processedPtrs[c];
-        for (int s = 0; s < clampedSamples; ++s)
-            output[c][s] += proc[s];
+        if (output[c] != nullptr)
+            for (int s = 0; s < clampedSamples; ++s)
+                output[c][s] += proc[s] * chainGain;
 
         float* const mix = mixBuffer_.data()
                          + static_cast<std::size_t> (c) * kMaxBusMixSamples;
