@@ -123,6 +123,17 @@ public:
     void processDeviceInputs (const float* const* deviceIn,
                               int numDeviceChannels, int numSamples) noexcept;
 
+    /// Audio-thread render of the full input routing graph. Gathers each channel's
+    /// device source through its ChannelStrip, routes each node's main-out to its
+    /// destination (bus mix buffer / tape enqueue / direct-out) and its sends into
+    /// FX returns, walking the graph's topological evaluation order. Tape delivery
+    /// enqueues a stereo-interleaved TapeWriteMessage; hardware-output delivery
+    /// accumulates into directOut. RT-safe: no alloc, no locks, no I/O, noexcept.
+    /// directOut may be null / 0 channels when no hardware-output route is active.
+    void renderInputGraph (const float* const* deviceIn, int numDeviceChannels,
+                           float* const* directOut, int numDirectOutChannels,
+                           int numSamples) noexcept;
+
     // Finalize a channel's recording — Session 3 wires the full flow.
     void finalizeChannel (ChannelId);
 
@@ -166,6 +177,10 @@ private:
     MixerNodeId nodeForBus (BusId) const noexcept;
     MixerNodeId nodeForChannel (ChannelId) const noexcept;
     MainOutDest classifyMainOut (MixerNodeId dest) const noexcept;
+
+    void enqueueToTape (ChannelId, const float* left, const float* right, int numSamples) noexcept;
+    void accumulateIntoBus (MixerNodeId busNode, const float* left, const float* right,
+                            float level, int numSamples) noexcept;
 
     TapeWriter* tapeWriter_ { nullptr };
     OverloadProtection* overload_ { nullptr };

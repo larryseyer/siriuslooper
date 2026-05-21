@@ -329,6 +329,109 @@ ProcessingChain* InputMixer::processingChainFor (ChannelId id) noexcept
     return it->second.processing.get();
 }
 
+void InputMixer::enqueueToTape (ChannelId id, const float* left, const float* right,
+                                int numSamples) noexcept
+{
+    if (tapeWriter_ == nullptr) return;
+
+    constexpr int kMaxFrames = static_cast<int> (kMaxTapeWriteMessageBytes / (2 * sizeof (float)));
+    const int frames = std::min (numSamples, kMaxFrames);
+
+    TapeWriteMessage msg;
+    msg.id = id;
+    msg.lmcTime = Rational (0);
+    msg.payloadByteCount = static_cast<std::size_t> (frames) * 2 * sizeof (float);
+    float* out = reinterpret_cast<float*> (msg.samples.data());
+    for (int s = 0; s < frames; ++s) { out[2 * s] = left[s]; out[2 * s + 1] = right[s]; }
+
+    if (! tapeWriter_->tryEnqueue (msg))
+    {
+        if (notificationBus_ != nullptr)
+            notificationBus_->post (NotificationLevel::Warning, Category::CpuPressure,
+                                    "audio thread missed deadline — tape buffer dropped");
+        if (overload_ != nullptr) overload_->reportLoad (1.0);
+    }
+}
+
+void InputMixer::accumulateIntoBus (MixerNodeId busNode, const float* left, const float* right,
+                                    float level, int numSamples) noexcept
+{
+    for (std::size_t i = 0; i < busNodeIds_.size(); ++i)
+    {
+        if (busNodeIds_[i] != busNode) continue;
+        float* bl = buses_[i].mixBufferChannel (0);
+        float* br = buses_[i].mixBufferChannel (1);
+        if (bl == nullptr || br == nullptr) return;
+        for (int s = 0; s < numSamples; ++s) { bl[s] += left[s] * level; br[s] += right[s] * level; }
+        return;
+    }
+}
+
+void InputMixer::renderInputGraph (const float* const* deviceIn, int numDeviceChannels,
+                                   float* const* directOut, int numDirectOutChannels,
+                                   int numSamples) noexcept
+{
+    if (deviceIn == nullptr || numDeviceChannels <= 0 || numSamples <= 0) return;
+    const int n = std::min (numSamples, static_cast<int> (kMaxScratchSamples));
+
+    const MixerNodeId tapeNode = graph_.terminalNode (MixerTerminal::Tape);
+    const MixerNodeId hwNode   = graph_.terminalNode (MixerTerminal::HardwareOutput);
+
+    // ── Steps 1–2: per channel, gather → strip → route main-out + sends ──
+    for (const auto& [chValue, source] : channelSources_)
+    {
+        auto chIt = channels_.find (chValue);
+        if (chIt == channels_.end()) continue;
+        const auto& channel = chIt->second;
+        if (channel.signalType != SignalType::Audio || channel.processing == nullptr) continue;
+
+        const int leftCh  = source.left;
+        const int rightCh = source.stereo ? source.right : source.left;
+        if (leftCh  < 0 || leftCh  >= numDeviceChannels) continue;
+        if (rightCh < 0 || rightCh >= numDeviceChannels) continue;
+        if (deviceIn[leftCh] == nullptr || deviceIn[rightCh] == nullptr) continue;
+
+        const auto byteCount = static_cast<std::size_t> (n) * sizeof (float);
+        std::memcpy (scratchLeft_.data(),  deviceIn[leftCh],  byteCount);
+        std::memcpy (scratchRight_.data(), deviceIn[rightCh], byteCount);
+
+        float* stereo[2] { scratchLeft_.data(), scratchRight_.data() };
+        auto* strip = static_cast<ChannelStrip<SignalType::Audio>*> (channel.processing.get());
+        strip->process (stereo, 2, n); // also updates peak/LUFS meters
+
+        const MixerNodeId chNode = nodeForChannel (channel.id);
+        const MixerNodeId dest   = graph_.mainOutOf (chNode);
+
+        if (dest == tapeNode)
+        {
+            if (channel.tapeMode != TapeMode::NoTape)
+                enqueueToTape (channel.id, scratchLeft_.data(), scratchRight_.data(), n);
+        }
+        else if (dest == hwNode)
+        {
+            for (int c = 0; c < std::min (numDirectOutChannels, 2); ++c)
+            {
+                float* o = directOut[c];
+                if (o == nullptr) continue;
+                const float* src = (c == 0) ? scratchLeft_.data() : scratchRight_.data();
+                for (int s = 0; s < n; ++s) o[s] += src[s];
+            }
+        }
+        else // a bus
+        {
+            accumulateIntoBus (dest, scratchLeft_.data(), scratchRight_.data(), 1.0f, n);
+        }
+
+        for (const auto& e : graph_.sendEdges())
+        {
+            if (e.source != chNode) continue;
+            accumulateIntoBus (e.fxReturn, scratchLeft_.data(), scratchRight_.data(), e.level, n);
+        }
+    }
+
+    // Step 3 (bus / FX-return processing) is added in Task 5.
+}
+
 void InputMixer::finalizeChannel (ChannelId id)
 {
     if (tapeWriter_ == nullptr || tapeStore_ == nullptr) return;

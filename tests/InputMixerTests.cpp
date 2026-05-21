@@ -586,3 +586,81 @@ TEST_CASE ("InputMixer rejects a bus main-out assignment that would create a cyc
     REQUIRE (mixer.setBusMainOutToBus (a, b)); // A -> B
     CHECK_FALSE (mixer.setBusMainOutToBus (b, a)); // closing the loop is refused
 }
+
+// =============================================================================
+// [input-routing][render] — Phase 3 Task 4: renderInputGraph channel delivery
+// =============================================================================
+
+TEST_CASE ("renderInputGraph: default-graph tape-routed channel enqueues its processed block",
+           "[input-routing][render]")
+{
+    using sirius::InputMixer; using sirius::InputId; using sirius::SignalType;
+    using sirius::TapeMode; using sirius::TapeWriter;
+
+    const auto tempDirJuce = juce::File::getSpecialLocation (juce::File::tempDirectory)
+        .getChildFile ("sirius-render-tape-" + juce::String (juce::Time::getMillisecondCounterHiRes()));
+    tempDirJuce.createDirectory();
+    const std::filesystem::path tempDir (tempDirJuce.getFullPathName().toStdString());
+
+    TapeWriter writer (tempDir, std::chrono::milliseconds (1), 64);
+    InputMixer mixer;
+    mixer.setTapeWriter (&writer);
+
+    const auto ch = mixer.addChannel (InputId (0), SignalType::Audio);
+    mixer.setChannelInputSource (ch, 0, 1, /*stereo*/ true);
+    mixer.setChannelTapeMode (ch, TapeMode::CommitToTape);
+    // default main-out = Tape terminal — no routing call needed.
+
+    constexpr int n = 64;
+    std::vector<float> left (n, 0.5f), right (n, 0.25f);
+    const float* deviceIn[2] = { left.data(), right.data() };
+    float* directOut[2] = { nullptr, nullptr };
+
+    mixer.renderInputGraph (deviceIn, 2, directOut, 0, n);
+
+    const juce::File partial (juce::String (writer.flushChannel (ch).string()));
+    REQUIRE (partial.existsAsFile());
+    // One render → one message → n stereo frames interleaved float32.
+    CHECK (partial.getSize() == static_cast<juce::int64> (static_cast<std::size_t> (n) * 2 * sizeof (float)));
+
+    juce::File (juce::String (tempDir.string())).deleteRecursively();
+}
+
+TEST_CASE ("renderInputGraph: a channel routed to the hardware output sums into direct-out, not tape",
+           "[input-routing][render]")
+{
+    using sirius::InputMixer; using sirius::InputId; using sirius::SignalType;
+    using sirius::TapeMode; using sirius::TapeWriter;
+
+    const auto tempDirJuce = juce::File::getSpecialLocation (juce::File::tempDirectory)
+        .getChildFile ("sirius-render-hw-" + juce::String (juce::Time::getMillisecondCounterHiRes()));
+    tempDirJuce.createDirectory();
+    const std::filesystem::path tempDir (tempDirJuce.getFullPathName().toStdString());
+
+    TapeWriter writer (tempDir, std::chrono::milliseconds (1000), 8);
+    InputMixer mixer;
+    mixer.setTapeWriter (&writer);
+
+    const auto ch = mixer.addChannel (InputId (0), SignalType::Audio);
+    mixer.setChannelInputSource (ch, 0, 1, true);
+    mixer.setChannelTapeMode (ch, TapeMode::CommitToTape);
+    REQUIRE (mixer.setChannelMainOutToHardwareOutput (ch)); // direct-out, NOT tape
+
+    constexpr int n = 32;
+    std::vector<float> left (n, 0.5f), right (n, 0.5f);
+    std::vector<float> outL (n, 0.0f), outR (n, 0.0f);
+    const float* deviceIn[2] = { left.data(), right.data() };
+    float* directOut[2] = { outL.data(), outR.data() };
+
+    mixer.renderInputGraph (deviceIn, 2, directOut, 2, n);
+
+    // Assert ROUTING, not exact DSP (the strip applies an equal-power pan law, so
+    // a centred unity strip is ~0.707, not 1.0): signal reached direct-out, tape did not.
+    CHECK (outL[0] != 0.0f);
+    CHECK (outR[0] != 0.0f);
+    const juce::File partial (juce::String (
+        (tempDir / (std::to_string (ch.value()) + ".tape.partial")).string()));
+    CHECK_FALSE (partial.existsAsFile()); // routed to hardware output, not tape
+
+    juce::File (juce::String (tempDir.string())).deleteRecursively();
+}
