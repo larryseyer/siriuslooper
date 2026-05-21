@@ -3,6 +3,7 @@
 #include "sirius/Channel.h"
 #include "sirius/EffectChain.h"
 #include "sirius/IEffectChainHost.h"
+#include "sirius/LufsMeter.h"
 
 #include <atomic>
 #include <cstddef>
@@ -112,6 +113,16 @@ public:
     /// with ChannelStrip<Audio>::peakLeft/peakRight.
     float peakLeft()  const noexcept { return peakLeft_.load (std::memory_order_relaxed); }
     float peakRight() const noexcept { return peakRight_.load (std::memory_order_relaxed); }
+
+    /// Message-thread (off the audio thread) — prepares the loudness meter for
+    /// the device sample rate / max block. Until called, the meter no-ops:
+    /// `lufsIntegrated()` reads the silence floor and `process` skips the LUFS
+    /// work. Parity with ChannelStrip<Audio>::prepare.
+    void prepare (double sampleRate, int maxBlockSize) { lufsMeter_.prepare (sampleRate, maxBlockSize); }
+
+    /// Integrated EBU R128 loudness (LUFS) — the LUFS half of the dual meter.
+    /// UI reads on its timer.
+    float lufsIntegrated() const noexcept { return lufsMeter_.getIntegrated(); }
 
     /// Message-thread setter — copies the chain in. Set-once before the
     /// audio thread starts; mutating after start is a threading-contract
@@ -226,6 +237,10 @@ private:
     /// const there), so mutable. Audio-thread writes, UI reads.
     mutable std::atomic<float> peakLeft_  { 0.0f };
     mutable std::atomic<float> peakRight_ { 0.0f };
+
+    /// LUFS half of the dual meter (OTTO parity). Fed the post-fader signal;
+    /// self-no-ops until prepare() runs. Mutable because `process` is const.
+    mutable LufsMeter lufsMeter_;
 };
 
 } // namespace sirius

@@ -36,7 +36,8 @@ Bus::Bus (Bus&& other) noexcept
       gainLinear_ (other.gainLinear_.load (std::memory_order_relaxed)),
       muted_ (other.muted_.load (std::memory_order_relaxed)),
       peakLeft_ (other.peakLeft_.load (std::memory_order_relaxed)),
-      peakRight_ (other.peakRight_.load (std::memory_order_relaxed))
+      peakRight_ (other.peakRight_.load (std::memory_order_relaxed)),
+      lufsMeter_ (std::move (other.lufsMeter_))
 {
 }
 
@@ -82,22 +83,30 @@ void Bus::process (float* const* output, int numChannels, int numSamples) const 
         {
             float* const mix = mixBuffer_.data()
                              + static_cast<std::size_t> (c) * kMaxBusMixSamples;
-
             float p = 0.0f;
             for (int s = 0; s < clampedSamples; ++s)
             {
                 const float v = mix[s] * inlineGain;
+                mix[s] = v;                              // post-fader, in place for the LUFS feed
                 p = std::max (p, std::fabs (v));
                 if (output[c] != nullptr) output[c][s] += v;
             }
             inlinePeak[c] = p;
-
-            std::memset (mix, 0,
-                         static_cast<std::size_t> (clampedSamples) * sizeof (float));
         }
         peakLeft_.store  (inlinePeak[0], std::memory_order_relaxed);
         peakRight_.store (activeChannels > 1 ? inlinePeak[1] : inlinePeak[0],
                           std::memory_order_relaxed);
+
+        {
+            const float* const lufsL = mixBuffer_.data();
+            const float* const lufsR = activeChannels > 1
+                                           ? mixBuffer_.data() + kMaxBusMixSamples
+                                           : lufsL;
+            lufsMeter_.process (lufsL, lufsR, clampedSamples);   // mono → dual-mono
+        }
+        for (int c = 0; c < activeChannels; ++c)
+            std::memset (mixBuffer_.data() + static_cast<std::size_t> (c) * kMaxBusMixSamples,
+                         0, static_cast<std::size_t> (clampedSamples) * sizeof (float));
         return;
     }
 
@@ -162,11 +171,12 @@ void Bus::process (float* const* output, int numChannels, int numSamples) const 
     float chainPeak[kMaxBusChannelsHard] = { 0.0f, 0.0f };
     for (int c = 0; c < activeChannels; ++c)
     {
-        const float* const proc = processedPtrs[c];
+        float* const proc = processedPtrs[c];
         float p = 0.0f;
         for (int s = 0; s < clampedSamples; ++s)
         {
             const float v = proc[s] * chainGain;
+            proc[s] = v;                                 // post-fader, in place for the LUFS feed
             p = std::max (p, std::fabs (v));
             if (output[c] != nullptr) output[c][s] += v;
         }
@@ -180,6 +190,11 @@ void Bus::process (float* const* output, int numChannels, int numSamples) const 
     peakLeft_.store  (chainPeak[0], std::memory_order_relaxed);
     peakRight_.store (activeChannels > 1 ? chainPeak[1] : chainPeak[0],
                       std::memory_order_relaxed);
+    {
+        const float* const lufsL = processedPtrs[0];
+        const float* const lufsR = activeChannels > 1 ? processedPtrs[1] : lufsL;
+        if (lufsL != nullptr) lufsMeter_.process (lufsL, lufsR, clampedSamples);
+    }
 }
 
 float* Bus::mixBufferChannel (int c) const noexcept

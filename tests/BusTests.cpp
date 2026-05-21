@@ -11,6 +11,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <type_traits>
@@ -284,4 +285,49 @@ TEST_CASE ("Bus peak reads silence when muted", "[bus][meter][mute]")
     bus.process (out, 2, kSamples);
     REQUIRE (bus.peakLeft()  == 0.0f);
     REQUIRE (bus.peakRight() == 0.0f);
+}
+
+TEST_CASE ("Bus LUFS reads silence floor before prepare()", "[bus][lufs]")
+{
+    sirius::Bus bus (sirius::BusId { 1 }, sirius::BusConfig {});
+    constexpr int kSamples = 64;
+    for (int s = 0; s < kSamples; ++s)
+    {
+        bus.mixBufferChannel (0)[s] = 0.5f;
+        bus.mixBufferChannel (1)[s] = 0.5f;
+    }
+    std::vector<float> l (kSamples, 0.0f), r (kSamples, 0.0f);
+    float* out[2] = { l.data(), r.data() };
+    bus.process (out, 2, kSamples);
+
+    // Un-prepared meter self-no-ops → integrated stays at the silence floor.
+    REQUIRE (bus.lufsIntegrated() <= -70.0f);
+}
+
+TEST_CASE ("Bus LUFS rises with a 1 kHz post-fader signal after prepare()", "[bus][lufs]")
+{
+    sirius::Bus bus (sirius::BusId { 1 }, sirius::BusConfig {});
+    constexpr double kSampleRate = 48000.0;
+    constexpr int    kBlock      = 512;
+    bus.prepare (kSampleRate, kBlock);
+
+    std::vector<float> l (kBlock, 0.0f), r (kBlock, 0.0f);
+    float* out[2] = { l.data(), r.data() };
+    double phase = 0.0;
+    const double inc = 2.0 * M_PI * 1000.0 / kSampleRate;
+    for (int i = 0; i < 300; ++i)   // ~3.2 s — past the integration ramp
+    {
+        // 1 kHz sine, NOT DC — K-weighting's high-pass would kill a constant.
+        for (int s = 0; s < kBlock; ++s)
+        {
+            const float v = 0.5f * static_cast<float> (std::sin (phase));
+            phase += inc;
+            bus.mixBufferChannel (0)[s] = v;
+            bus.mixBufferChannel (1)[s] = v;
+        }
+        std::fill (l.begin(), l.end(), 0.0f);
+        std::fill (r.begin(), r.end(), 0.0f);
+        bus.process (out, 2, kBlock);
+    }
+    REQUIRE (bus.lufsIntegrated() > -70.0f);
 }
