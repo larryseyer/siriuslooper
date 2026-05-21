@@ -441,3 +441,25 @@ TEST_CASE ("malformed mixer-graph JSON is rejected with a hard error", "[session
     CHECK_THROWS_AS (sirius::persistence::deserializeInputMixerGraphState ("[1,2,3]"),
                      std::runtime_error);
 }
+
+TEST_CASE ("a pre-graph mixer document missing all graph keys loads as defaults", "[sessionformat]")
+{
+    // A forward-compat document: version present, but none of the graph keys —
+    // exactly what a session predating the routing graph would carry. The
+    // optionalProperty reads must default everything to an empty graph.
+    auto obj = juce::DynamicObject::Ptr { new juce::DynamicObject() };
+    obj->setProperty ("version", 1);
+    const auto json = juce::JSON::toString (juce::var (obj.get()));
+
+    const auto in = sirius::persistence::deserializeInputMixerGraphState (json);
+    CHECK (in.buses.empty());
+    CHECK (in.channels.empty());
+    CHECK (in.nextBusId == 1);
+    CHECK (in.nextChannelId == 1);
+
+    const auto out = sirius::persistence::deserializeOutputMixerGraphState (json);
+    CHECK (out.buses.empty());
+    CHECK (out.channels.empty());
+    CHECK (out.nextBusId == 1);
+    CHECK (out.nextChannelId == 1);
+}

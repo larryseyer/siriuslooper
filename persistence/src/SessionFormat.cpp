@@ -928,7 +928,10 @@ namespace
 
     juce::var parseMixerDoc (const juce::String& json)
     {
-        const auto parsed = juce::JSON::parse (json);
+        juce::var parsed;
+        const auto result = juce::JSON::parse (json, parsed);
+        if (result.failed())
+            fail ("invalid mixer graph JSON: " + result.getErrorMessage().toStdString());
         if (! parsed.isObject()) fail ("mixer graph document must be a JSON object");
         const auto version = requireInt (requireProperty (parsed, "version"), "version");
         if (version != currentMixerGraphVersion)
