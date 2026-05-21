@@ -174,6 +174,12 @@ public:
             return;
         }
 
+        // Routing-graph Phase 4 — inserts run pre-fader (before gain/pan/
+        // width) so the post-fader meter reflects the post-insert signal.
+        // Inert (byte-identical to the pre-Phase-4 body) when no host is
+        // bound or every slot is empty/bypassed.
+        dispatchInserts (channelData, numChannels, numSamples);
+
         const float g = gainLinear_.load (std::memory_order_relaxed);
 
         if (numChannels == 1)
@@ -255,6 +261,41 @@ private:
     EffectChain       effectChain_;
     IEffectChainHost* host_    { nullptr };
     std::int64_t      nodeKey_ { 0 };
+
+    /// Stereo invariant — inserts dispatch at most two channels.
+    static constexpr int kMaxInsertChannels = 2;
+
+    /// Audio-thread per-channel insert dispatch (routing-graph Phase 4).
+    /// Runs each non-bypassed slot in ascending index order, in-place on
+    /// `channelData` (in == out; the host contractually reads all input
+    /// before writing any output). Early-out — and therefore byte-identical
+    /// to the pre-Phase-4 body — when no host is bound or every slot is
+    /// empty/bypassed. `noexcept`, allocation-free, lock-free: it only reads
+    /// `host_`/`nodeKey_`/`effectChain_` (message-thread set-once) and calls
+    /// the host's `noexcept` `pumpSlot`.
+    void dispatchInserts (float* const* channelData, int numChannels,
+                          int numSamples) const noexcept
+    {
+        if (host_ == nullptr) return;
+
+        const auto& entries = effectChain_.entries();
+        bool hasActiveSlot = false;
+        for (const auto& e : entries)
+            if (! e.bypassed) { hasActiveSlot = true; break; }
+        if (! hasActiveSlot) return;
+
+        const int insertChannels = std::min (numChannels, kMaxInsertChannels);
+        for (std::size_t slotIdx = 0; slotIdx < entries.size(); ++slotIdx)
+        {
+            if (entries[slotIdx].bypassed) continue;
+            // In-place: in and out both point at the caller's buffer. On a
+            // miss (false), pumpSlot leaves channelData unchanged — the dry
+            // signal carries to the next slot / the fader (1-buffer-delay).
+            (void) host_->pumpSlot (nodeKey_, slotIdx,
+                                    channelData, channelData,
+                                    insertChannels, numSamples);
+        }
+    }
 };
 
 /// MIDI specialization — stub until M9 wires real UMP processing. Matches the

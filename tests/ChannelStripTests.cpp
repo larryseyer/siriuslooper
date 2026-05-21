@@ -20,7 +20,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <utility>
-#include <vector>
 
 using sirius::ChannelStrip;
 using sirius::FileChain;
@@ -416,6 +415,51 @@ namespace
         }
         return strip.lufsIntegrated();
     }
+
+    // Applies a different non-commuting op per slot index, proving dispatch
+    // visits slots in ascending index order: slot 0 adds 1.0, slot 1 doubles.
+    // (in+1)*2 != in*2+1, so the asserted value pins the order.
+    struct SlotAwareHost : sirius::IEffectChainHost
+    {
+        bool pumpSlot (std::int64_t nodeKey, std::size_t slotIndex,
+                       const float* const* in, float* const* out,
+                       int numChannels, int numSamples) noexcept override
+        {
+            lastNodeKey = nodeKey;
+            for (int c = 0; c < numChannels; ++c)
+                for (int s = 0; s < numSamples; ++s)
+                    out[c][s] = (slotIndex == 0) ? in[c][s] + 1.0f
+                                                 : in[c][s] * 2.0f;
+            return true;
+        }
+        std::int64_t lastNodeKey { -1 };
+    };
+
+    // Always reports a miss — leaves `out` untouched (the pipelined 1-buffer
+    // "dry on miss" case). Records that it was reached.
+    struct MissHost : sirius::IEffectChainHost
+    {
+        bool pumpSlot (std::int64_t, std::size_t, const float* const*,
+                       float* const*, int, int) noexcept override
+        {
+            ++calls;
+            return false;
+        }
+        int calls { 0 };
+    };
+
+    sirius::EffectChain chainOf (std::size_t activeSlots, std::size_t bypassedAtIndex = 999)
+    {
+        sirius::EffectChain chain;
+        for (std::size_t i = 0; i < activeSlots; ++i)
+        {
+            sirius::EffectChainEntry e;
+            e.descriptor.name = "Fx";
+            e.bypassed = (i == bypassedAtIndex);
+            chain = chain.withAppended (e);
+        }
+        return chain;
+    }
 }
 
 TEST_CASE ("ChannelStrip<Audio> reports integrated loudness above the gate for a "
@@ -484,4 +528,147 @@ TEST_CASE ("ChannelStrip<Audio> stores a set-once effect chain + host + node key
 
     strip.setEffectChainHost (&host, 42);
     CHECK (strip.effectChainHost() == &host);
+}
+
+TEST_CASE ("ChannelStrip<Audio> dispatches inserts pre-fader, in ascending slot order",
+           "[channel-strip][inserts]")
+{
+    AudioStrip strip;
+    strip.setGain (1.0f);
+    SlotAwareHost host;
+    strip.setEffectChainHost (&host, 7);
+    strip.setEffectChain (chainOf (2));   // slot 0 (+1) then slot 1 (x2)
+
+    // Mono buffer so pan does not enter — isolates insert + gain.
+    std::array<float, 4> mono { 1.0f, 1.0f, 1.0f, 1.0f };
+    float* chans[1] = { mono.data() };
+    strip.process (chans, 1, 4);
+
+    // (1 + 1) * 2 = 4.0, then gain 1.0. Reversed order would be (1*2)+1 = 3.0.
+    for (float v : mono) CHECK (v == Catch::Approx (4.0f));
+    CHECK (host.lastNodeKey == 7);        // node key forwarded verbatim
+}
+
+TEST_CASE ("ChannelStrip<Audio> inserts run pre-fader (gain applied after the chain)",
+           "[channel-strip][inserts]")
+{
+    AudioStrip strip;
+    strip.setGain (0.5f);
+    SlotAwareHost host;
+    strip.setEffectChainHost (&host, 1);
+    strip.setEffectChain (chainOf (1));   // slot 0 (+1) only
+
+    std::array<float, 2> mono { 1.0f, 1.0f };
+    float* chans[1] = { mono.data() };
+    strip.process (chans, 1, 2);
+
+    // Pre-fader: (1 + 1) * 0.5 = 1.0. Post-fader would be (1*0.5)+1 = 1.5.
+    for (float v : mono) CHECK (v == Catch::Approx (1.0f));
+}
+
+TEST_CASE ("ChannelStrip<Audio> skips bypassed insert slots", "[channel-strip][inserts]")
+{
+    AudioStrip strip;
+    strip.setGain (1.0f);
+    SlotAwareHost host;
+    strip.setEffectChainHost (&host, 1);
+    strip.setEffectChain (chainOf (2, /*bypassedAtIndex*/ 0)); // slot 0 bypassed, slot 1 (x2)
+
+    std::array<float, 2> mono { 1.0f, 1.0f };
+    float* chans[1] = { mono.data() };
+    strip.process (chans, 1, 2);
+
+    // Only slot 1 (x2) runs: 1.0 * 2 = 2.0. If slot 0 ran it would be (1+1)*2=4.
+    for (float v : mono) CHECK (v == Catch::Approx (2.0f));
+}
+
+TEST_CASE ("ChannelStrip<Audio> a pumpSlot miss leaves the dry signal unchanged",
+           "[channel-strip][inserts]")
+{
+    AudioStrip strip;
+    strip.setGain (1.0f);
+    MissHost host;
+    strip.setEffectChainHost (&host, 1);
+    strip.setEffectChain (chainOf (1));
+
+    std::array<float, 2> mono { 0.3f, 0.3f };
+    float* chans[1] = { mono.data() };
+    strip.process (chans, 1, 2);
+
+    CHECK (host.calls == 1);                          // the slot WAS dispatched
+    for (float v : mono) CHECK (v == Catch::Approx (0.3f)); // miss => dry carries
+}
+
+TEST_CASE ("ChannelStrip<Audio> behavior-equivalent to gain-only when no host / empty / all-bypassed",
+           "[channel-strip][inserts]")
+{
+    SlotAwareHost host;
+
+    // (a) host bound but chain empty.
+    {
+        AudioStrip strip;
+        strip.setGain (2.0f);
+        strip.setEffectChainHost (&host, 1);          // empty chain
+        std::array<float, 2> mono { 0.25f, 0.25f };
+        float* chans[1] = { mono.data() };
+        strip.process (chans, 1, 2);
+        for (float v : mono) CHECK (v == Catch::Approx (0.5f)); // gain only
+    }
+
+    // (b) chain present but all slots bypassed.
+    {
+        AudioStrip strip;
+        strip.setGain (2.0f);
+        strip.setEffectChainHost (&host, 1);
+        strip.setEffectChain (chainOf (1, /*bypassedAtIndex*/ 0));
+        std::array<float, 2> mono { 0.25f, 0.25f };
+        float* chans[1] = { mono.data() };
+        strip.process (chans, 1, 2);
+        for (float v : mono) CHECK (v == Catch::Approx (0.5f)); // gain only
+    }
+
+    // (c) chain present but no host bound.
+    {
+        AudioStrip strip;
+        strip.setGain (2.0f);
+        strip.setEffectChain (chainOf (1));           // no setEffectChainHost
+        std::array<float, 2> mono { 0.25f, 0.25f };
+        float* chans[1] = { mono.data() };
+        strip.process (chans, 1, 2);
+        for (float v : mono) CHECK (v == Catch::Approx (0.5f)); // gain only
+    }
+}
+
+TEST_CASE ("ChannelStrip<Audio> a muted strip skips inserts entirely", "[channel-strip][inserts]")
+{
+    AudioStrip strip;
+    strip.setMuted (true);
+    MissHost host;
+    strip.setEffectChainHost (&host, 1);
+    strip.setEffectChain (chainOf (1));
+
+    std::array<float, 2> mono { 1.0f, 1.0f };
+    float* chans[1] = { mono.data() };
+    strip.process (chans, 1, 2);
+
+    CHECK (host.calls == 0);                          // muted => no dispatch
+    for (float v : mono) CHECK (v == Catch::Approx (0.0f));
+}
+
+TEST_CASE ("ChannelStrip<Audio> meter reflects the post-insert, post-fader signal",
+           "[channel-strip][inserts]")
+{
+    AudioStrip strip;
+    strip.setGain (1.0f);
+    SlotAwareHost host;
+    strip.setEffectChainHost (&host, 1);
+    strip.setEffectChain (chainOf (1));               // slot 0 (+1)
+
+    std::array<float, 2> mono { 0.5f, 0.5f };
+    float* chans[1] = { mono.data() };
+    strip.process (chans, 1, 2);
+
+    // 0.5 + 1 = 1.5; gain 1.0; mono => same peak on both meter sides.
+    CHECK (strip.peakLeft()  == Catch::Approx (1.5f));
+    CHECK (strip.peakRight() == Catch::Approx (1.5f));
 }
