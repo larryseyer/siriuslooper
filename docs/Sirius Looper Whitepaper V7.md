@@ -806,7 +806,7 @@ Three reasonable strategies for tape storage:
 - **Lossless compressed** (FLAC for audio, intra-frame codec for video): roughly half the storage cost, with decompression overhead at read time
 - **Tiered**: uncompressed in the retroactive ring (RAM), lossless on disk during the live session, optional offline archival compression on session close
 
-The tier system (Part XV) chooses among these at startup based on measured hardware capability.
+The tier system (Part XV) chooses among these at startup based on measured hardware capability. The **tiered** strategy is the committed default: the retroactive ring stays uncompressed in RAM for instant reach-back, while the live on-disk tape is **lossless-compressed**, and content-addressing is an archival step taken only once a tape stops growing (at session close). Lossless-on-disk is not merely a space optimization — on constrained and mobile targets, where an always-running tape would otherwise consume roughly a gigabyte per hour per source, it is what makes always-running capture feasible at all.
 
 ### 8.6 Tapes are local
 

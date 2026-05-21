@@ -113,13 +113,38 @@ to record per-node tape-terminal assignments by `TapeId`.
 ### Slice 3 — Capture-to-disk wiring (headless TDD + operator eyes-on) — **"real recording"; explicitly in the path**
 
 Wire the production capture path so routing a node to tape X **actually records**
-into tape X. Construct and own `TapeWriter`(s) in `MainComponent` (absent today),
-one capture sink per pooled tape, writing per-tape partials and finalizing into the
-content-addressed `TapeStore` under `<Sirius>/tapes`; establish the `TapeId →
-content` manifest seam (deferred until now). This is the slice that turns the
-routing model from apparatus into behavior. Sequenced **immediately** behind
-slices 1–2 (operator constraint: the plan must put real recording in the path,
-not strand the routing model).
+into tape X. Construct and own a per-tape capture path in `MainComponent` (absent
+today) implementing `ITapeSink`: one append-only **FLAC** stream per pooled tape,
+written to `<Sirius>/tapes/<tapeId>.flac` and **flushed continuously** (whitepaper
+§8.5 "lossless on disk during the live session", §17.8 continuous flush). This is
+the slice that turns the routing model from apparatus into behavior. Sequenced
+**immediately** behind slices 1–2 (operator constraint: the plan must put real
+recording in the path, not strand the routing model).
+
+**On-disk format model (decided 2026-05-21 — whitepaper §8.5/§8.3/§17.8):**
+- **RAM** capture is uncompressed PCM (the retroactive ring, §8.4) — instant
+  reach-back, never compressed.
+- **Disk, live** is append-only **FLAC** per `TapeId`. The audio thread enqueues
+  raw float PCM to the SPSC queue (unchanged, RT-safe); the **worker/flush thread
+  FLAC-encodes** — zero audio-thread cost. FLAC's per-frame CRC + sync codes are
+  exactly §17.8's "self-delimiting checksummed records", so a crash truncates only
+  the partial trailing frame. FLAC is **required** (not an optimization) because of
+  storage limits on constrained / mobile (iOS) targets — an always-running PCM tape
+  is ~0.5–1.4 GB/hr/tape.
+- **A tape is immutable and part of the project from the instant bytes flow.**
+  There is **no DAW-style "finalize / seal the take" event.** Arm/disarm and mark
+  in/out create Constituents; they do not stop the tape (§8.4).
+- **SHA-256 content-addressing + the `TapeId → contentHash` manifest are a
+  session-close archival step (§8.5 "optional offline archival compression on
+  session close") and are DEFERRED out of slice 3.** A content hash can only be
+  computed once the file stops growing, and the always-running tape only stops at
+  session close. Live tapes are identified on disk by `TapeId` (filename); the
+  content-addressed `TapeStore` is the archival form, paired with the deferred
+  M8 S7–8 tape-rotation/reachability work. (NOTE: the existing
+  `InputMixer::finalizeChannel` → `TapeStore::store` per-channel path predates this
+  decision and is NOT the slice-3 live path.)
+- Archival render target must be **CAF or RF64/WAV64**, never classic WAV (4 GB
+  cap) — only relevant at the deferred export stage.
 
 ### Slice 4 — Tapes UI (operator-verified)
 
