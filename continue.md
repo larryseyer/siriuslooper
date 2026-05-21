@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-21 (routing **Phase 4 per-node insert chains SHIPPED** to origin/master via writing-plans → subagents; clean-rebuild full ctest 506/506 green; next = **Phase 5 routing-graph persistence** in a fresh chat)
+# Session Continuation — 2026-05-21 (routing **Phase 5 routing-graph persistence SHIPPED** to origin/master via writing-plans → subagent-driven-development; clean-rebuild full ctest 521/522 green; next = **Phase 6 Input Mixer UI** in a fresh chat)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,90 +8,98 @@
 
 ---
 
-## RESUME HERE (2026-05-21 — routing **Phase 4 SHIPPED**; next = **Phase 5 routing-graph persistence** in a fresh chat)
+## RESUME HERE (2026-05-21 — routing **Phase 5 SHIPPED**; next = **Phase 6 Input Mixer UI** in a fresh chat)
 
-> ## ▶ START HERE: Phase 4 (per-node insert chains) is on origin/master; build **Phase 5** next
-> Phase 4 executed end-to-end via `superpowers:writing-plans` →
-> `superpowers:subagent-driven-development` (4 tasks, engine+core TDD; each task
-> controller-verified — spec-compliance review + code-quality review, fixes looped
-> back to the implementer). On **origin/master** (4 commits, see below). **Clean
-> `rm -rf build` rebuild green; full ctest 506/506** (test #506 = the documented
+> ## ▶ START HERE: Phase 5 (routing-graph persistence) is on origin/master; build **Phase 6** next
+> Phase 5 executed end-to-end via `superpowers:writing-plans` →
+> `superpowers:subagent-driven-development` (6 tasks, engine+core+persistence TDD;
+> each task controller-verified — spec-compliance review + code-quality review +
+> a final holistic opus review = "SAFE TO CONSIDER COMPLETE"; fixes looped back to
+> the implementer). On **origin/master** (11 commits `8ea30f1..b66ee08`). **Clean
+> `rm -rf build` rebuild green; full ctest 521/522** (test #522 = the documented
 > `MainComponentPluginEditorTests_NOT_BUILT` placeholder, run separately by
-> `bash/test-s7.sh`; test #281, an out-of-process supervisor SIGTERM test, is the
-> known transient flake — passed on rerun, untouched by Phase 4). **Do NOT re-do
-> Phase 4.** Plan: `docs/superpowers/plans/2026-05-20-mixer-routing-graph-phase4.md`.
+> `bash/test-s7.sh`; the OutOfProcess SIGTERM flake did not fire this run). **Do NOT
+> re-do Phase 5.** Plan: `docs/superpowers/plans/2026-05-20-mixer-routing-graph-phase5.md`.
 >
-> **What Phase 4 landed (all pushed):**
-> - `41c7cb8` + `f7ebffa` **`EffectChain` 8-slot cap** (`core/.../EffectChain.{h,cpp}`).
->   `static constexpr std::size_t kMaxSlots = 8` + `bool full()`; `withAppended`
->   throws `std::length_error` at the cap (message derives the number from the
->   constant — no magic number). Because the cap lives on the ONE shared chain type,
->   it binds channels, buses, AND FX returns at once. `withReplaced/Removed/Moved`
->   don't grow the chain, so only `withAppended` is guarded. +2 `[effect-chain][cap]`
->   cases.
-> - `291a487` **`ChannelStrip<Audio>` gained set-once collaborators** (engine,
->   header-only) — `setEffectChain`/`effectChain`, `setEffectChainHost(host, nodeKey)`/
->   `effectChainHost`, private `effectChain_`/`host_`/`nodeKey_`. Mirrors `Bus` exactly,
->   EXCEPT the host key is an explicit `setEffectChainHost` argument (Bus derives it
->   from `id_`; a strip has no id, so the CALLER owns key-space allocation). `process`
->   untouched this commit.
-> - `eac4d72` **`ChannelStrip<Audio>::process` dispatches inserts PRE-FADER** —
->   `dispatchInserts(...)` runs each non-bypassed slot in ascending order via
->   `host_->pumpSlot(nodeKey_, slot, channelData, channelData, min(n,2), samples)`,
->   in-place, AFTER the mute early-return and BEFORE gain/pan/width/metering. So the
->   post-fader meter reflects the post-insert signal, and a muted strip skips
->   dispatch. Inert (byte-identical to pre-Phase-4) when no host is bound or every
->   slot is empty/bypassed — same two-path structure as `Bus::process`. `noexcept`,
->   allocation/lock/throw/IO-free (static_assert holds). +7 `[channel-strip][inserts]`
->   cases (order, pre-fader, bypass, miss-dry, equivalence, mute, meter).
+> **What Phase 5 landed (all pushed):**
+> - `8ea30f1` + `60ac27c` **core snapshot type** `core/include/sirius/MixerGraphState.h`
+>   — JUCE-free, engine-free POD: `InputMixerGraphState`/`OutputMixerGraphState` with
+>   shared sub-structs (`MixerBusState`, `InputChannelState`/`OutputChannelState`,
+>   `MixerMainOut`, `MixerSend`, `MixerChannelSource`), mirror enums `MixerBusKind`/
+>   `MixerTerminalKind`, `kDefaultBusChannelCount`, and `operator==` everywhere (sends
+>   compare `level` by `std::bit_cast` raw bits — exact round-trip contract, silences
+>   `-Wfloat-equal`). This is the **layering seam**: lives in `core` so the engine can
+>   translate live↔snapshot and persistence can serialize snapshot↔JSON without a cycle
+>   (persistence links ONLY `Sirius::Core`, never engine).
+> - `8914729`/`be4982c`/`753c91c` **`InputMixer` export/import** (members, direct
+>   private access) + `setBusEffectChain`. `exportGraphState()`/`importGraphState()`.
+>   Import REUSES the ctor-seeded RVB(busId 1)/DLY(busId 2) FX returns (skip-existing,
+>   not re-create); constructs channels with persisted ids (survives removeChannel gaps);
+>   `std::max` on id counters (never rewinds the ctor's `nextBusId_==3`); fail-loud
+>   (`jassert`) on rejected graph edges.
+> - `a4acb14`/`c2cc8cc` **`OutputMixer` export/import** — mirror; reuses ctor master
+>   (BusId 0), guards strip creation on `signalType==Audio`, always emits the master
+>   (BusId 0) send even at 0 (addChannel defaults it to 1.0, so a zeroed master must
+>   persist explicitly). Free-function `busMainOutSnapshot` (the two consoles are
+>   deliberately separate — shared *types* only, no shared logic).
+> - `54292be`/`9e461de` **`SessionFormat` serialize/deserialize** —
+>   `serializeMixerGraphState(...)` (2 overloads) + `deserializeInputMixerGraphState`/
+>   `deserializeOutputMixerGraphState`. In `SessionFormat.cpp`, reuse the existing
+>   anon-namespace helpers + `effectChainToVar`/`effectChainFromVar` verbatim. Forward-
+>   compat via `optionalProperty` (missing graph keys → ctor defaults); `parseMixerDoc`
+>   reports the real JSON parse error. The existing `serializeSession(Constituent)` API
+>   + tests are byte-for-byte untouched.
+> - `0b81bb5`/`b66ee08` **end-to-end integration tests** (`tests/MixerGraphPersistenceTests.cpp`,
+>   `[sessionformat][mixer]`) — both mixers export→serialize→deserialize→import→re-export
+>   equality, insert-chain survival, pre-graph forward-compat. **Surfaced + fixed a latent
+>   UB bug:** `core/include/sirius/PluginDescriptor.h` had `PluginFormat format;` with no
+>   initializer (indeterminate enum in any default-constructed descriptor) → one-line fix
+>   `PluginFormat format { PluginFormat::Vst3 }`.
 >
-> **⚠ Scope (matches the Phase-3 posture):** Phase 4 = **engine+core apparatus,
-> tested with a synchronous mock `IEffectChainHost`. NOT wired into production.** No
-> mixer calls `setEffectChainHost`; `InputMixer`/`OutputMixer`/`MainComponent` are
-> untouched; channels default to no host = the pre-Phase-4 path, byte-identical. The
-> existing M7 `OutOfProcessEffectChainHost` is reused **unchanged** (its `pumpSlot`/
-> `configureBus` key on an opaque `std::int64_t`, so a channel is just another key —
-> no host edits needed). Production wiring (a mixer owns a host, partitions the int64
-> key space so channel keys don't collide with bus keys, calls `configureBus` per
-> channel) lands with the **UI phases (P6/P7)** — see `todo.md` (2026-05-21 Phase 4
-> entry, items 1–6, including two review observations: muted strips stop pumping the
-> host → pipeline-refill latency on unmute; and the `pumpSlot` `busId` param name is
-> now a misnomer for channels).
+> **⚠ Scope (matches the Phase-3/4 posture):** Phase 5 = **engine+persistence apparatus,
+> tested. NOT wired into `MainComponent`'s session save/load.** No production code writes
+> these graph sections to the on-disk session file yet — that wiring lands with the UI
+> phases (P6/P7), same as Phase 4's host wiring. The four serialize/deserialize functions
+> + export/import members exist and are fully tested, but `MainComponent` doesn't call them.
 >
-> **NEXT = Phase 5: routing-graph persistence.** Spec **locked**
-> (`docs/superpowers/specs/2026-05-20-mixer-routing-graph-design.md`, Phase 5 section
-> ~lines 280-284) — **do NOT re-brainstorm.** Serialize each mixer's buses, FX
-> returns, main-out assignments, send levels, terminal assignments, AND per-node
-> insert chains into `SessionFormat`. Pre-graph sessions must load clean (empty
-> graph; channels default-routed to their terminal). Engine + persistence, TDD.
+> **NEXT = Phase 6: Input Mixer UI** (operator-verified, NOT headless). Spec **locked**
+> (`docs/superpowers/specs/2026-05-20-mixer-routing-graph-design.md`, Phase 6) — **do NOT
+> re-brainstorm.** Blank-area creation gesture (long-press 3-option menu: bus / FX-return /
+> tape) + Bus/FXReturn strips in `InputMixerPane` + per-channel destination picker (bottom
+> of strip: bus / tape / hardware output). This is the FIRST phase that touches the GUI, so
+> it is **operator-verified, not unit-tested** — build the .app, clean `rm -rf build` first.
 >
-> **First moves for the next chat (Phase 5):**
-> 1. Sanity: `git status` clean; `git log --oneline -6` shows the Phase 4 tail
->    (`eac4d72` newest of the 4) on origin/master.
-> 2. Read the spec Phase 5 section + `persistence/include/sirius/SessionFormat.h` +
->    `persistence/src/SessionFormat.cpp` (how `EffectChain`/`EffectChainEntry` +
->    buses already round-trip through JSON — M8 S1 added archivalMode/persistedSnapshot)
->    + `tests/SessionFormatTests.cpp` + the `InputMixer`/`OutputMixer` graph state to
->    serialize (`MixerGraph` nodes/edges, `buses_`, `busNodeIds_`, send levels,
->    terminal/main-out assignments).
-> 3. `superpowers:writing-plans` → `docs/superpowers/plans/2026-05-20-mixer-routing-graph-phase5.md`,
->    then `superpowers:subagent-driven-development`. Engine+persistence TDD, no operator eyes-on.
-> 4. Acceptance (per spec): round-trip equality (graph in == graph out) for BOTH
->    mixers; forward-compat load of a pre-graph session (empty graph, channels at
->    their terminal); per-node insert chains survive the round-trip.
+> **First moves for the next chat (Phase 6):**
+> 1. Sanity: `git status` clean; `git log --oneline -12` shows the Phase 5 tail
+>    (`b66ee08` newest of the 11) on origin/master.
+> 2. Read the spec Phase 6 section + `app/MainComponent.cpp` `InputMixerPane` (the
+>    `CompactFaderStrip` row, `rebuildInputStrips`, the existing right-click/long-press
+>    gesture plumbing for the mono/stereo toggle — reuse that gesture pattern) + the
+>    vendored OTTO L&F components in `ui/lookandfeel/` + the InputMixer routing API now
+>    available (`addBus`/`addFxReturn`/`setChannelMainOutTo*`/`setChannelSend`).
+> 3. `superpowers:brainstorming` is NOT needed (spec locked); go `superpowers:writing-plans`
+>    → `docs/superpowers/plans/2026-05-20-mixer-routing-graph-phase6.md`, then
+>    `superpowers:subagent-driven-development` — BUT GUI work is **operator-verified**, so
+>    the final acceptance is the operator eyes-on the .app, not a unit test. Build + launch
+>    `build/app/SiriusLooper_artefacts/Release/Sirius Looper.app` for the operator to confirm.
+> 4. **This is also where Phase 4's insert apparatus + Phase 5's persistence get wired to
+>    production** per the roadmap (P7): a mixer owns an `IEffectChainHost`, partitions the
+>    int64 key space, and `MainComponent` save/load calls `serialize/deserializeMixerGraphState`.
 >
 > **The 8 phases (full text + per-phase test coverage in the spec):**
 > 1. ✅ Engine routing-graph core (`MixerGraph` + OutputMixer) — SHIPPED (Phase 1).
 > 2. ✅ Multi-terminal `MixerGraph` — SHIPPED (Phase 2).
 > 3. ✅ Input routing apparatus — SHIPPED (Phase 3).
-> 4. ✅ **Per-node insert chains** — SHIPPED (Phase 4, this session). `EffectChain`
->    8-slot cap (binds all node kinds); `ChannelStrip<Audio>` EffectChain+pre-fader
->    dispatch; reuses the unchanged int64-keyed M7 host. Apparatus only; not wired.
-> 5. **Routing-graph persistence** (engine+persistence TDD) — **NEXT**. SessionFormat
->    round-trip of buses/returns/main-outs/sends/terminals/insert-chains; pre-graph loads clean.
-> 6. Input Mixer UI: creation gesture + Bus/FXReturn strips + destination picker (operator-verified).
-> 7. Input Mixer UI: sends tab + insert management ≤8 (operator-verified). **This is where
->    Phase 4's apparatus gets wired to production** (mixer owns a host, partitions the key space).
+> 4. ✅ Per-node insert chains — SHIPPED (Phase 4). EffectChain 8-slot cap; ChannelStrip
+>    pre-fader dispatch; reuses the int64-keyed M7 host. Apparatus only; not wired.
+> 5. ✅ **Routing-graph persistence** — SHIPPED (Phase 5, this session). `core` snapshot
+>    type + InputMixer/OutputMixer export/import + SessionFormat serialize/deserialize;
+>    round-trip equality both mixers, forward-compat, insert chains survive. Apparatus only;
+>    NOT wired into MainComponent save/load (P6/P7).
+> 6. **Input Mixer UI**: creation gesture + Bus/FXReturn strips + destination picker
+>    (operator-verified) — **NEXT**.
+> 7. Input Mixer UI: sends tab + insert management ≤8 (operator-verified). **Where Phase 4's
+>    insert apparatus + Phase 5's persistence get wired to production.**
 > 8. Output Mixer UI parity — gated on the output-mixer surface existing.
 > Follow-on (own spec): internal Sirius FX (EQ/Comp/Rvb/Dly, seeded by OTTO) +
 > the **union slot model**. "Make OUR FX available" lands here.

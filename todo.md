@@ -1706,3 +1706,15 @@ assets before public launch:
 - What was deferred: `InputMixer::importGraphState` duplicates the channel-registration steps that `addChannel` performs — it emplaces into `channels_`, assigns `channelNodeIds_[id] = graph_.addNode(MixerNodeKind::Channel)`, and seeds the `ChannelInputSource`. A future private seam `registerChannelWithId(ChannelId, SignalType, InputId, TapeMode)` shared by both `addChannel` and `importGraphState` would prevent the two paths from silently diverging if channel registration ever gains side effects (e.g. notification, metering registration, collaborator callback).
 - Why deferred: current code is correct under the "call on a freshly-constructed mixer" precondition; duplication is not a bug today. Non-blocking.
 - What's needed to finish: extract the 3-line registration body into a private `registerChannelWithId(ChannelId, SignalType, InputId, TapeMode)` helper; call it from both `addChannel` (which mints the id from `nextChannelId_`) and `importGraphState` (which uses the persisted id). Add a `setChannelInputSource` call in `registerChannelWithId` if it can absorb the source-map init cleanly.
+
+### [2026-05-21] - Routing Phase 5 (final review) — guard bus-id reproduction when bus removal lands
+- Files: `engine/src/InputMixer.cpp` (importGraphState bus loop), `engine/src/OutputMixer.cpp` (importGraphState bus loop).
+- What was deferred: both `importGraphState` paths reproduce a persisted `busId` by calling `addBus` (which mints `nextBusId_++`), relying on the invariant that bus ids are dense-ascending because NEITHER mixer has a `removeBus`. There is no runtime assert that the minted id equals the snapshot's `b.busId`.
+- Why deferred: correct today (no bus removal exists, so ids are always dense and export iterates `buses_` in order). YAGNI — adding the guard now is speculative.
+- What's needed to finish: if/when a `removeBus` (with id gaps) is added to either mixer, add `const auto minted = addBus(config); jassert(minted.value() == b.busId);` (or remap persisted→live ids the way channels are handled) so main-out/send references can't silently corrupt.
+
+### [2026-05-21] - Routing Phase 5 (final review) — OutputMixer import discards persisted channel ids
+- Files: `engine/src/OutputMixer.cpp` (importGraphState channel loop).
+- What was deferred: `OutputMixer::importGraphState` calls `addChannel(c.signalType)` (mints a fresh sequential id, ignores `c.channelId`), unlike `InputMixer` which constructs channels with their persisted id to survive `removeChannel` gaps. Round-trips correctly today only because OutputMixer has no channel removal (dense 1..N reproduces).
+- Why deferred: correct today (no output-channel removal). Latent inconsistency, not a current bug.
+- What's needed to finish: when OutputMixer gains channel removal, construct channels with their persisted id (mirror InputMixer) so send-matrix rows keyed by channel id round-trip correctly. A one-line comment at the `addChannel` call documenting the "no removal ⇒ ids reproduce" reliance would mark it in the meantime.
