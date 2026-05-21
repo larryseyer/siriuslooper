@@ -67,3 +67,37 @@ TEST_CASE ("MixerGraph::removeNode drops the node, its main-out, and its sends",
     CHECK (g.sendLevel (ch, fx) == 0.0f); // edge gone with the node
     CHECK (g.mainOutOf (ch) == g.terminalNode()); // unaffected
 }
+
+TEST_CASE ("MixerGraph main-out defaults to terminal and validates destination kind",
+           "[mixer-graph][main-out]")
+{
+    MixerGraph g (MixerTerminal::Output);
+    const auto ch   = g.addNode (MixerNodeKind::Channel);
+    const auto busA = g.addNode (MixerNodeKind::Bus);
+    const auto fx   = g.addNode (MixerNodeKind::FxReturn);
+
+    SECTION ("new node main-out defaults to terminal")
+    {
+        CHECK (g.mainOutOf (ch) == g.terminalNode());
+    }
+    SECTION ("main-out to a Bus succeeds")
+    {
+        CHECK (g.setMainOut (ch, busA));
+        CHECK (g.mainOutOf (ch) == busA);
+    }
+    SECTION ("main-out to a Channel is rejected and leaves main-out unchanged")
+    {
+        const auto ch2 = g.addNode (MixerNodeKind::Channel);
+        CHECK_FALSE (g.setMainOut (ch, ch2));
+        CHECK (g.mainOutOf (ch) == g.terminalNode());
+    }
+    SECTION ("main-out to an FxReturn is rejected (FX returns are send-fed)")
+    {
+        CHECK_FALSE (g.setMainOut (ch, fx));
+        CHECK (g.mainOutOf (ch) == g.terminalNode());
+    }
+    SECTION ("the terminal cannot be given a main-out")
+    {
+        CHECK_FALSE (g.setMainOut (g.terminalNode(), busA));
+    }
+}
