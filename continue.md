@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-22 (**Tape slice 3 SIGNED OFF** — live FLAC capture verified by the operator; the −58 dBFS file was a benign unfinalized/quiet-ambient artifact and the fader-default attenuation theory was disproven by code analysis. **Phase 0 DONE**: the I/O-ownership + direct-layer architecture is locked (`docs/superpowers/specs/2026-05-22-io-ownership-and-direct-layer-design.md`), whitepaper §5.2/§6.6 amended, memories refreshed. **NEXT = the tape-UI slice** via `writing-plans` → `subagent-driven-development`. Plan + long-range path below.)
+# Session Continuation — 2026-05-22 (**Tape-UI slice SHIPPED** — all 7 tasks on origin/master `e3d5c71..bbe82fc` via subagent-driven-development with per-task spec+code-quality review and a final holistic opus review. Tapes tab + per-channel tape picker + blank-area Add-tape gesture + TapePool ownership/ops/persistence. Clean `rm -rf build` rebuild green; full ctest baseline (567 pass, 1 documented Not-Run). Operator launched + eyes-on. **Holistic review caught + fixed 2 Criticals** (picker route-edit was an unbracketed audio-thread topology race → now bracketed; primary-tape removal could desync pool↔mixer → now refused at 3 layers). **NEXT = P6 Input Mixer UI** (bus/FX-return strips) — the tape-UI gate is now lifted. Long-range path below.)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -65,48 +65,49 @@
 
 ## RESUME HERE (2026-05-22 — slice 3 signed off; Phase 0 architecture locked; NEXT = the tape-UI slice)
 
-> ## ▶ STEP 1 (do this FIRST): EXECUTE the tape-UI implementation plan
-> Phase 0 (design capture) is DONE and **committed/pushed** (`a77e261`). The full **implementation
-> plan is WRITTEN** at `docs/superpowers/plans/2026-05-22-tape-ui-slice.md` (7 tasks, real test code,
-> exact file/line targets) — brainstorming AND writing-plans are both complete. Go STRAIGHT to
-> `superpowers:subagent-driven-development` and execute it task-by-task, **T1 first** (each task ends
-> with a commit + push per `feedback_subagents_push_to_master`; never `--amend` a pushed task commit).
-> Higher-level approved plan: `~/.claude/plans/read-continue-and-proceed-graceful-otter.md`.
-> Architecture (the "why"): `docs/superpowers/specs/2026-05-22-io-ownership-and-direct-layer-design.md`.
-> GUI tasks (T5–T7) = operator-verified (not unit-tested); engine/wiring (T1–T4) = headless TDD.
+> ## ▶ STEP 1 (do this FIRST): brainstorm/plan **P6 — Input Mixer UI** (the tape-UI gate is lifted)
+> The tape-UI slice is **SHIPPED** (`e3d5c71..bbe82fc`, 7 tasks + per-task review fixes + a final
+> holistic opus review). Plan that drove it: `docs/superpowers/plans/2026-05-22-tape-ui-slice.md`.
+> What landed: `MixerMainOut` carries `TapeId` (non-primary routes export — T1); `MainComponent` owns
+> `TapePool` + `mirrorTapePool` (`engine/include/sirius/TapePoolMirror.h` — T2); `addTape`/`renameTape`/
+> `removeTape` keep pool↔mixer↔sink consistent with audio-callback bracketing + `closeTape` inside it
+> (T3); session persists the pool in a `{"sirius_version":1,"session":...,"pool":...}` envelope, old
+> files default-load (T4); a **Tapes tab** (create/rename/remove, ≥1 floor + primary protected,
+> dropped-block diagnostics — T5); a **per-strip tape destination picker** (tapes-only popup — T6);
+> a **blank-area right-click/long-press "Add tape" gesture** (T7). Tape auto-naming centralized in
+> `MainComponent::addNextTape()`.
 >
-> **The tape-UI slice = 7 tasks** (built to the canonical model — tape destinations ONLY, no
-> direct/hardware-output option in the picker):
-> - **T1 (engine, TDD):** fix `InputMixer::mainOutSnapshot` (`engine/src/InputMixer.cpp:~162`) so a
->   channel routed to a NON-primary tape no longer trips `jassertfalse` (~185); add `TapeId` to
->   `MixerMainOut` (`core/include/sirius/MixerGraphState.h`); back-compat serialize (missing→primary)
->   in `persistence/src/SessionFormat.cpp`. (This is the latent routing-slice-5 bug, now in scope.)
-> - **T2 (wiring, TDD):** add `TapePool tapePool_` to `MainComponent`; on init mirror `pool.tapes()`
->   beyond `primary()` into `inputMixer_->addTape(...)`. Extract a testable mirror free function
->   (`tests/TapePoolMirrorTests.cpp`, register in `tests/CMakeLists.txt`).
-> - **T3 (wiring, TDD):** `add`/`rename`/`remove` ops keeping TapePool↔InputMixer↔FlacTapeSink
->   consistent. `remove` BRACKETED by `removeAudioCallback`/`addAudioCallback` (pattern at
->   `MainComponent.cpp:1595/1676`): route dependent channels to primary, `flacTapeSink_->closeTape(id)`
->   INSIDE the bracket (SPSC single-producer), `inputMixer_->removeTape(id)`, `tapePool_.remove(id)`
->   (refuses below 1), auto-disarm if armed.
-> - **T4 (wiring, TDD):** persist the pool via `serializeTapePool`/`deserializeTapePool` in
->   `chooseFileAndSave`/`chooseFileAndLoad`; re-run the T2 mirror on load inside the bracket;
->   pre-pool sessions → default `TapePool()`. Depends on T1.
-> - **T5 (GUI):** new "Tapes" tab after "Input Mixer"; list of `tapePool_.tapes()`; create / inline-
->   rename / remove (**Remove DISABLED at count==1** = ≥1 pool floor); surface
->   `flacTapeSink_->droppedBlockCount()` diagnostics on the 30 Hz timer.
-> - **T6 (GUI):** per-channel destination picker beneath each Input-Mixer strip — own control in
->   `InputMixerPane` (do NOT re-enable `CompactFaderStrip`'s combo); shows current tape (via
->   `channelMainOutIsTape`); `PopupMenu` of **the pooled tapes only** → `setChannelMainOutToTape(ch,tape)`.
-> - **T7 (GUI):** extend `InputMixerPane::mouseDown` (~510) so right-click / 500 ms long-press on BLANK
->   area (`stripIndexOf==-1`, currently early-returns) opens "Add tape / use existing".
+> **Holistic review found + fixed 2 Criticals the per-task reviews couldn't see** (cross-file):
+> (1) the T6 picker route-edit was unbracketed but `setChannelMainOutToTape`→`MixerGraph::setMainOut`
+> →`recomputeOrder()` rebuilds the `order_` vector the audio thread reads via `evaluationOrder()` — a
+> live data race; now bracketed like `removeTape` (`bbaa557`). (2) `TapePool::remove` only guarded the
+> ≥1 floor while `InputMixer::removeTape` rejects the primary `TapeId{1}` → removing the primary at
+> count≥2 desynced pool↔mixer and closed the primary writer; now refused at 3 layers — `MainComponent::
+> removeTape` early-guard, `TapePool::remove`, and the Tapes-tab Remove button disabled on the primary
+> row (`bbe82fc`).
 >
-> **First moves:** `git status` should be clean (Phase 0 + the implementation plan are committed/pushed).
-> Read the implementation plan in full, then invoke `superpowers:subagent-driven-development` and
-> dispatch T1. The plan already cites every file/line it touches (`InputMixer.cpp:162/316`,
-> `MixerGraphState.h:26`, `MainComponent.cpp` ~1096/1265/1299/1469/1589/2089) and includes the real
-> test code; implementers read the surrounding code as needed. The 7-task summary below is a quick
-> reference — the plan file is the executable source of truth.
+> **Honest carry-forward (todo.md, holistic-review Important):** the per-channel tape ROUTES the picker
+> sets are **not yet written to the session file** — T4 persists the *pool* (which tapes exist), and T1
+> made routes *exportable* (`exportGraphState` round-trips `tapeId`, unit-proven), but `MainComponent`
+> save/load never calls `serialize/deserializeMixerGraphState`. Wiring that is roadmap **P7**, not a
+> tape-UI regression (InputMixer routing was never in the session). Do NOT claim routes round-trip yet.
+>
+> **NEXT = P6 Input Mixer UI** (operator-verified, not headless). The bus-controls ENGINE prerequisite
+> is already on origin/master (historical block below). P6 = blank-area creation gesture EXTENDED to
+> **Add bus / Add FX return** (the tape path is now wired — extend the same `InputMixerPane` gesture);
+> **Bus/FXReturn strips** (`CompactFaderStrip` with `ChannelType::Bus`/`FXReturn`, wired to
+> `bus->setGain/setMuted/peakLeft/peakRight/lufsIntegrated` via `InputMixer::busForId`, on the 30 Hz
+> timer; ctor already seeds RVB busId 1 / DLY busId 2 returns); and a per-channel **bus** destination
+> picker (the tape picker from T6 is the pattern to mirror). Spec is **locked**
+> (`docs/superpowers/specs/2026-05-20-mixer-routing-graph-design.md` Phase 6 + "UI design") — do NOT
+> re-brainstorm; go `superpowers:writing-plans` → `subagent-driven-development`, operator eyes-on the
+> .app as final acceptance. ⚠ Do NOT re-enable `CompactFaderStrip`'s output combo (OTTO hardware-pairs
+> model); render pickers as `InputMixerPane`'s own controls (as T6 did).
+>
+> **First moves:** `git status` clean (`bbe82fc` newest, +docs commit). Read the Phase 6 spec section,
+> `InputMixerPane` (now includes the T6 picker + T7 gesture — mirror those patterns), and the
+> `InputMixer` bus API (`addBus`/`addFxReturn`/`busCount`/`busIdAt`/`busKindAt`/`busForId`). Clean
+> `rm -rf build` before operator eyes-on.
 
 > ## THE CANONICAL I/O MODEL (locked 2026-05-22 — `project_io_ownership_direct_layer`)
 > **Input mixer = sole owner of physical INPUTS. Output mixer = sole owner of physical OUTPUTS.**

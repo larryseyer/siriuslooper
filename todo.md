@@ -1,5 +1,22 @@
 # Sirius Looper — Deferred Items
 
+### 2026-05-22 — per-channel tape ROUTES are not yet written to the session file (tape-UI slice; holistic-review Important finding)
+- Files: app/MainComponent.cpp (chooseFileAndSave/chooseFileAndLoad), persistence (serialize/deserializeMixerGraphState already exist + tested).
+- What was deferred: the tape-UI slice persists the **TapePool** (which tapes exist) in the session
+  envelope (T4), and T1 made non-primary tape routes **exportable** (`exportGraphState()` round-trips
+  `MixerMainOut.tapeId`, proven by MixerGraphPersistenceTests). But `MainComponent` save/load never
+  calls `serialize/deserializeMixerGraphState`, so the per-channel destinations the operator picks
+  with the T6 picker are NOT saved — on reload every channel falls back to the freshly-mirrored
+  graph default (primary). This is PRE-EXISTING (InputMixer routing was never in the MainComponent
+  session) — the slice did not regress it — but the slice's framing implies a route round-trip that
+  does not exist end-to-end yet.
+- Why deferred: wiring full mixer-graph state into production save/load is roadmap **P7** ("wire
+  P4/P5 apparatus into production save/load"), not the tape-UI slice's scope (T4 = pool only).
+- What's needed to finish (P7): embed `inputMixer_->exportGraphState()` in the save envelope and
+  `importGraphState(...)` on load (AFTER the pool re-mirror, so referenced tape ids exist), plus the
+  OutputMixer equivalent. The serialize/deserialize functions + export/import members are already
+  built and unit-tested; only the MainComponent call sites are missing.
+
 ### 2026-05-22 — input→output bridge slice: ≥1-channel→≥1-tape enforcement + per-channel direct-out opt-out (MOVED here from "slice 4")
 - Files: app/MainComponent.cpp (the destination picker), engine/src/InputMixer.cpp (route mutators).
 - What was deferred: (a) letting a channel opt OUT of tape (TapeMode::NoTape → the direct layer to
