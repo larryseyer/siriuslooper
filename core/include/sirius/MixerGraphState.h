@@ -32,7 +32,12 @@ struct MixerMainOut
     std::int64_t      busId    { 0 };                       // valid when kind == Bus
 
     bool operator== (const MixerMainOut& o) const noexcept
-    { return kind == o.kind && terminal == o.terminal && tapeId == o.tapeId && busId == o.busId; }
+    {
+        if (kind != o.kind || terminal != o.terminal || busId != o.busId)
+            return false;
+        const bool isTape = (kind == Kind::Terminal && terminal == MixerTerminalKind::Tape);
+        return ! isTape || tapeId == o.tapeId;
+    }
     bool operator!= (const MixerMainOut& o) const noexcept { return ! (*this == o); }
 };
 
