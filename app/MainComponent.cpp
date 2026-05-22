@@ -606,6 +606,7 @@ public:
         busStrips_.clear();
         busDestButtons_.clear();
         busStripDests_.clear();
+        busChoices_.clear();
         // No selection/detail state to reset — bus strips have no detail panel in P6.
         for (int i = 0; i < static_cast<int> (infos.size()); ++i)
         {
