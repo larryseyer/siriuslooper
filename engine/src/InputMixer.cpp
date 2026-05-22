@@ -261,28 +261,27 @@ InputMixerGraphState InputMixer::exportGraphState() const
 
 void InputMixer::importGraphState (const InputMixerGraphState& state)
 {
-    auto busExists = [this] (std::int64_t id)
+    // 1. Buses / FX returns. The header contract requires a freshly-constructed
+    //    mixer, so no bus from the snapshot should already exist. addBus mints
+    //    monotonically from nextBusId_ = 1 and the snapshot's `buses` are
+    //    serialized in insertion order (= id-ascending), so replay produces busIds
+    //    that match the snapshot exactly. Assert the precondition rather than
+    //    silently skip-then-apply-chain to a colliding bus: that path would
+    //    desync subsequent main-outs/sends/channels which all assume the
+    //    snapshot's id space.
+    [[maybe_unused]] const auto busExists = [this] (std::int64_t id)
     {
         for (const auto& bus : buses_) if (bus.id().value() == id) return true;
         return false;
     };
-
-    // 1. Buses / FX returns. A freshly-constructed mixer holds zero buses
-    //    (minimal-defaults rule), so every persisted bus is minted here via addBus,
-    //    which assigns the snapshot's dense busId. The busExists guard is kept as
-    //    defense-in-depth — no live path currently reaches importGraphState on a
-    //    non-empty mixer (removeBus does not exist), but the guard keeps the loop
-    //    correct should an in-place reimport API land later.
     for (const auto& b : state.buses)
     {
-        if (! busExists (b.busId))
-        {
-            BusConfig config;
-            config.channelCount = b.channelCount;
-            config.name         = b.name;
-            config.kind         = b.kind == MixerBusKind::FxReturn ? BusKind::FxReturn : BusKind::Bus;
-            addBus (config); // mints b.busId (dense) and registers the graph node
-        }
+        jassert (! busExists (b.busId));
+        BusConfig config;
+        config.channelCount = b.channelCount;
+        config.name         = b.name;
+        config.kind         = b.kind == MixerBusKind::FxReturn ? BusKind::FxReturn : BusKind::Bus;
+        addBus (config); // mints b.busId (dense) and registers the graph node
         setBusEffectChain (BusId (b.busId), b.inserts);
     }
 

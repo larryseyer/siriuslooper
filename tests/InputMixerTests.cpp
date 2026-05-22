@@ -546,6 +546,8 @@ TEST_CASE ("InputMixer constructs with Tape+HardwareOutput terminals and zero bu
 {
     sirius::InputMixer mixer;
     CHECK (mixer.busCount() == 0);
+    CHECK (mixer.tapeCount() == 1);                          // primary tape terminal
+    CHECK (mixer.hasTape (sirius::TapeId (1)));              // permanent default
 }
 
 TEST_CASE ("InputMixer addBus registers a graph node defaulting its main-out to the tape terminal",
