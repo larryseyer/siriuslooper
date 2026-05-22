@@ -8,38 +8,17 @@
 
 ---
 
-## ⏩ DO THIS FIRST (interrupt, 2026-05-22) — LUFS meters: integrated → short-term, THEN return to P6b Task B
+## ✅ DONE (interrupt, 2026-05-22) — LUFS meters now read short-term (3 s), not integrated
 
-> **A small, self-contained meter fix jumps the queue, then we resume P6b Task B below.**
-> Mirror of an OTTO fix: the mixer dual-meters feed the UI the **integrated** LUFS value
-> (cumulative, EBU-gated — barely moves, never self-zeroes), making the live LUFS readout
-> look stuck. Switch the UI feed to the **short-term** (3 s) window, which tracks the
-> signal and self-zeroes to silence when audio stops. **No DSP/audio-thread change** —
-> `LufsMeter` already computes all three windows; this is purely "which window the UI reads."
->
-> **Full plan:** `~/.claude/plans/another-claude-is-working-linked-valley.md`. Verified
-> compatible with P6 (the bus strips reuse the same `setBusStripLufs` feed — no new sites).
-> **Edits (small, mechanical):**
-> - Engine (not vendored): add `lufsShortTerm()` to `ChannelStrip.h` (after :112) and
->   `Bus.h` (after :125), returning `lufsMeter_.getShortTerm()`; fix the now-stale "UI reads
->   lufsIntegrated() on its timer" doc comments. Keep `lufsIntegrated()` (canonical EBU
->   measurement, still under test in `BusTests`/`ChannelStripTests`).
-> - UI feed (`app/MainComponent.cpp`): the two `refreshInputMixer` sites (`setStripLufs`
->   ~:2043, `setBusStripLufs` ~:2051) → call `lufsShortTerm()`.
-> - Vendored OTTO meter (mirror OTTO's renamed post-fix form, byte-faithful): `FaderMeter`
->   `setLUFSIntegrated`→`setLUFS`, member `lufsIntegrated_`→`lufsTarget_`, readout `"L-I"`→
->   `"L-S"` (both branches); `CompactFaderStrip.cpp:297` caller updated.
-> - Silence floor already correct (`FaderMeter::setLUFS` clamps via `jlimit` to `kLUFSMin
->   −60` → renders `-inf`); Sirius renders the input mixer continuously so short-term
->   self-zeroes with no UI idle special-casing. No `kLUFSMin` change needed.
-> - Tests: only fix the stale comment at `ChannelStripTests.cpp:390`; no logic change
->   (integrated behavior unchanged → `BusTests` untouched).
->
-> **Verify:** `cmake --build build --target SiriusTests && ctest --test-dir build` (baseline
-> holds), then clean `rm -rf build` rebuild + operator eyes-on (LUFS bar tracks live signal,
-> reads `"L-S …"`, falls to `"L-S  -inf"` ~3 s after silence; no `"L-I"` remains). Commit +
-> push. **Then immediately RETURN to "▶ STEP 1: EXECUTE P6b Task B" below — that is the
-> resumption point.**
+> **SHIPPED + operator eyes-on CONFIRMED** ("the meter works correctly now"). Commit
+> `b9f02cd` on origin/master. Mixer dual-meters now feed the UI the **short-term** (3 s)
+> LUFS window instead of the integrated value, so the live readout tracks the signal and
+> self-zeroes to silence. No DSP/audio-thread change. Engine gained `lufsShortTerm()` on
+> `ChannelStrip`/`Bus` (`lufsIntegrated()` kept as the canonical EBU value, still under
+> test); vendored `FaderMeter` renamed `setLUFS`/`lufsTarget_` and readout `L-I`→`L-S`
+> (byte-faithful to OTTO's fixed form); `CompactFaderStrip` caller updated. ctest 569/570
+> (1 documented Not-Run); clean `rm -rf build` rebuild green.
+> **Resume point: "▶ STEP 1: EXECUTE P6b Task B" below.**
 
 ---
 
