@@ -492,6 +492,10 @@ public:
     /// empty pane). MainComponent creates a pooled tape (T3 addTape). The pane
     /// owns no pool/mixer state — it only relays the intent.
     std::function<void()>                              onAddTape;
+    /// Blank-pane-area "Add bus" / "Add FX return" gestures. MainComponent
+    /// creates the engine node (bracketed) and rebuilds the bus-strip row.
+    std::function<void()>                              onAddBus;
+    std::function<void()>                              onAddFxReturn;
 
     /// A bus/FX-return strip's fader/mute/solo changed (busIdx = index into the
     /// pane's bus-strip row, parallel to MainComponent::busStripIds_).
@@ -792,7 +796,9 @@ private:
     void showBlankAreaMenu (juce::Point<int> screenPos)
     {
         juce::PopupMenu menu;
-        menu.addItem ("Add tape", [this] { if (onAddTape) onAddTape(); });
+        menu.addItem ("Add bus",       [this] { if (onAddBus)       onAddBus(); });
+        menu.addItem ("Add FX return", [this] { if (onAddFxReturn) onAddFxReturn(); });
+        menu.addItem ("Add tape",      [this] { if (onAddTape)      onAddTape(); });
         menu.showMenuAsync (juce::PopupMenu::Options{}.withTargetScreenArea (
             juce::Rectangle<int> (screenPos.x, screenPos.y, 1, 1)));
     }
@@ -1688,6 +1694,26 @@ MainComponent::MainComponent()
             // Bus solo is not yet an engine concept on the input side; reflect it
             // on the strip only (no-op on the mix) until a bus-solo slice lands.
             juce::ignoreUnused (busIdx, soloed);
+        };
+        inputMixerPane_->onAddBus = [this]
+        {
+            if (inputMixer_->busCount() >= sirius::InputMixer::kMaxInputBuses) return;
+            audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+            inputMixer_->addBus (sirius::BusConfig{ /*channelCount*/ 2,
+                                 "Bus " + std::to_string (inputMixer_->busCount() + 1),
+                                 sirius::BusKind::Bus });
+            audioDeviceManager_.addAudioCallback (audioCallback_.get());
+            rebuildBusStrips();
+            refreshInputDestinations();   // a new bus is a new channel destination
+        };
+        inputMixerPane_->onAddFxReturn = [this]
+        {
+            if (inputMixer_->busCount() >= sirius::InputMixer::kMaxInputBuses) return;
+            audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+            inputMixer_->addFxReturn ("FX " + std::to_string (inputMixer_->busCount() + 1));
+            audioDeviceManager_.addAudioCallback (audioCallback_.get());
+            rebuildBusStrips();
+            refreshInputDestinations();
         };
         tabs_.addTab ("Input Mixer", juce::Colours::black, inputMixerPane_.get(), false);
 
