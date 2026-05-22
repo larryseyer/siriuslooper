@@ -8,6 +8,60 @@
 
 ---
 
+## ⭐ DO FIRST (added 2026-05-22) — fold in the "Energy Arrangement" design
+
+> **This is a PLANNING/INTEGRATION task, not an engineering reorder.** A brainstorming
+> session designed **Energy Arrangement**. It is NOT yet a repo spec. Before the next big
+> design step, fold it into the master long-range path and write its spec — sequenced where
+> its dependencies allow (its Mix Scenes ride on the Output Mixer / snapshot API, so it lands
+> at/after **P8 Output Mixer UI**, NOT ahead of the tape line). **Do not implement yet. Do not
+> edit the RESUME-HERE / tape-UI block below — that stays the active engineering line.**
+>
+> **Full design:** `~/.claude/plans/this-will-be-a-merry-rabin.md`. Four parts:
+> 1. **Transport** — native to Sirius, **mastered by the LMC** (LMC = honest time *source*; a
+>    transport is the musical layer on top). Vendor OTTO's transport *design* (`TransportState`,
+>    `SongTimelinePlayer`) but rebase position on the LMC (`seconds × tempo → beats`). Bundled
+>    OTTO **slaves** to Sirius via host→plugin transport sync — never the reverse (that would
+>    pull OTTO's `double` clock into the exact-`Rational` spine).
+> 2. **Pills = phrases** — the pill timeline is an arrangement view of phrase/section
+>    Constituents; label from `PhraseMetadata::role` (already holds verse/chorus/fill); each
+>    pill also carries an **energy level 1–7**.
+> 3. **Mix Scenes** — an energy level = an **Output Mixer scene (snapshot)**. Up to **7 named
+>    scenes/song** (Asleep…Energetic, OTTO-parity). Built on the already-commented
+>    `captureSnapshot`/`recallSnapshot(TransitionType,Duration)` API in `engine/.../OutputMixer.h`,
+>    serializing the existing `OutputMixerGraphState` (`core/include/sirius/MixerGraphState.h`).
+> 4. **Morph engine (Output Mixer ONLY)** — the "transition area": **continuous params crossfade**
+>    (gain dB / pan / width / send / bus gain) across a **per-boundary adjustable zone ending on
+>    the incoming pill's downbeat** (default 1 bar, 0 = hard cut); **topology snaps** at that
+>    downbeat (routing edges, plugin add/remove, mute/solo — cannot interpolate); plugin-insert
+>    params snap (per-plugin morph deferred). **Input Mixer untouched.**
+>
+> **Why energy ≠ OTTO's energy:** OTTO's energy is a MIDI-generation modulator
+> (timing/velocity/swing) — that mechanism does NOT transfer to an audio looper; in Sirius,
+> energy *means* "which mix scene." **Decided forks (do not relitigate):** 7 fixed named scenes
+> (not continuous, not per-pill freeform); Output Mixer only; LMC stays master; OTTO slaves.
+> **First move when picked up:** read the design file + the long-range path, then (brainstorming
+> already done) `superpowers:writing-plans` → a repo spec in `docs/superpowers/specs/`, slotted
+> after the Output Mixer surface exists.
+>
+> **Conflict check (2026-05-22, verified against docs): NO violations.** Mix Scenes + morph
+> *realize already-documented architecture* — WP **§6.8** + glossary already define "Mix snapshot"
+> as a **Constituent** with "recallable scenes" + "interpolated transitions," and
+> `engine/.../OutputMixer.h:146` already stubs `captureSnapshot`/`recallSnapshot` as M6+ work.
+> Constraints to honor (not violations): (a) **`RT_SAFETY_CONTRACT`** — recall lock-free, per-block
+> crossfade `noexcept`/pre-allocated/bounded (mirror `Bus::process`); (b) keep transport position
+> in **`Rational`** internally, floatify only at the OTTO/audio boundary; (c) Output-only morph is a
+> *deliberate narrowing* of WP §6.8 (which spans both mixers) — a scope choice, not a conflict;
+> (d) morph must not bypass the output mixer (io-ownership: it is sole owner of outputs).
+>
+> **Docs to update WHEN this lands (not now):** the snapshot/scene/interpolation FOUNDATION is
+> ALREADY in WP §6.8 — the net-new doc work is narrower: the **energy 1–7 layer + energy↔scene
+> binding, the transport-on-LMC design, and OTTO slaving** → white paper (the *why*) + website
+> mirror; `docs/design/` (the *decided model* — 7 scenes, Output-only morph, crossfade-vs-snap);
+> the spec; the operator user guide.
+
+---
+
 ## RESUME HERE (2026-05-22 — slice 3 signed off; Phase 0 architecture locked; NEXT = the tape-UI slice)
 
 > ## ▶ STEP 1 (do this FIRST): EXECUTE the tape-UI implementation plan
