@@ -15,7 +15,21 @@ TEST_CASE ("mirrorTapePool registers every non-primary pool tape in the mixer", 
     sirius::mirrorTapePool (pool, mixer);
 
     CHECK (mixer.tapeCount() == 3);
-    CHECK (mixer.hasTape (sirius::TapeId { 1 }));
+    CHECK (mixer.hasTape (pool.primary()));
     CHECK (mixer.hasTape (drums));
     CHECK (mixer.hasTape (vox));
+}
+
+TEST_CASE ("mirrorTapePool is idempotent — second call does not double-count", "[tape-pool][mirror]")
+{
+    sirius::TapePool pool;
+    pool.add ("A");
+    pool.add ("B");
+
+    sirius::InputMixer mixer;
+    sirius::mirrorTapePool (pool, mixer);
+    const int afterFirst = mixer.tapeCount();
+
+    sirius::mirrorTapePool (pool, mixer); // second call — must be a no-op
+    CHECK (mixer.tapeCount() == afterFirst);
 }
