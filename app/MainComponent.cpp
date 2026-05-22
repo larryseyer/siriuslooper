@@ -505,6 +505,9 @@ public:
     std::function<void (int busIdx, float gainLinear)> onBusGain;
     std::function<void (int busIdx, bool muted)>       onBusMute;
     std::function<void (int busIdx, bool soloed)>      onBusSolo;
+    /// A destination was chosen from bus strip `busIdx`'s picker. MainComponent
+    /// applies the matching bus main-out edit (tape / plain bus / hardware out).
+    std::function<void (int busIdx, DestChoice dest)>  onBusDestinationChosen;
 
     /// Populates the detail panel with `idx`'s current values and reveals it.
     /// `panMinus1to1` is the knob-domain pan ([-1, +1]); `width` is [0, 2].
@@ -576,13 +579,33 @@ public:
         }
     }
 
+    /// Pushes the bus-row destination state. Unlike the channel picker, each bus
+    /// has its OWN choice list (`perBusChoices[i]`) — cycle-excluded targets
+    /// differ per bus — alongside its current destination (`perBus[i]`). Both are
+    /// parallel to the strips set by setBusStrips.
+    void setBusDestinations (const std::vector<std::vector<DestChoice>>& perBusChoices,
+                             const std::vector<StripDest>& perBus)
+    {
+        busChoices_ = perBusChoices;
+        jassert (static_cast<int> (perBus.size()) == busStripCount());
+        for (int i = 0; i < busStripCount() && i < static_cast<int> (perBus.size()); ++i)
+        {
+            busStripDests_[static_cast<std::size_t> (i)] = perBus[static_cast<std::size_t> (i)];
+            const auto& label = perBus[static_cast<std::size_t> (i)].currentName;
+            busDestButtons_[static_cast<std::size_t> (i)]->setButtonText (label.isEmpty() ? "—" : label);
+        }
+    }
+
     /// Rebuilds the bus/FX-return strip row from `infos`. Each becomes a
     /// CompactFaderStrip typed Bus or FXReturn. Unlike channel strips these are
     /// NOT given addMouseListener (no pane gesture applies) — only addListener
-    /// for fader/mute/solo. No destination picker button is created.
+    /// for fader/mute/solo. Each gets its own destination picker button beneath
+    /// it (a bus/FX-return output routes to a tape, a plain bus, or direct out).
     void setBusStrips (const std::vector<BusInfo>& infos)
     {
         busStrips_.clear();
+        busDestButtons_.clear();
+        busStripDests_.clear();
         // No selection/detail state to reset — bus strips have no detail panel in P6.
         for (int i = 0; i < static_cast<int> (infos.size()); ++i)
         {
@@ -595,6 +618,14 @@ public:
             strip->addListener (this);               // fader/mute/solo only
             addAndMakeVisible (*strip);
             busStrips_.push_back (std::move (strip));
+
+            auto button = std::make_unique<juce::TextButton>();
+            button->setButtonText ("—");
+            const int idx = i;
+            button->onClick = [this, idx] { showBusDestinationMenu (idx); };
+            addAndMakeVisible (*button);
+            busDestButtons_.push_back (std::move (button));
+            busStripDests_.push_back ({});
         }
         resized();
     }
@@ -711,13 +742,19 @@ public:
         }
 
         // Bus / FX-return strips sit to the right of the channel strips, after a
-        // wider divider gap. They have no picker row beneath them.
+        // wider divider gap. Each gets a picker button in the same bottom band as
+        // the channel pickers (pickerRow has tracked the column cursor in lock-step).
         if (busStripCount() > 0)
-            area.removeFromLeft (kGroupDividerW);   // visual divider between the two groups
+        {
+            area.removeFromLeft (kGroupDividerW);       // visual divider between the two groups
+            pickerRow.removeFromLeft (kGroupDividerW);  // keep the picker band column-aligned
+        }
         for (int i = 0; i < busStripCount(); ++i)
         {
             busStrips_[static_cast<std::size_t> (i)]->setBounds (area.removeFromLeft (kStripW));
+            busDestButtons_[static_cast<std::size_t> (i)]->setBounds (pickerRow.removeFromLeft (kStripW));
             area.removeFromLeft (kGap);
+            pickerRow.removeFromLeft (kGap);
         }
     }
 
@@ -828,6 +865,28 @@ private:
             destButtons_[static_cast<std::size_t> (idx)].get()));
     }
 
+    /// Builds + shows bus strip `idx`'s destination menu from its OWN choice list
+    /// (busChoices_[idx]; cycle-excluded targets differ per bus). Selecting fires
+    /// onBusDestinationChosen with the chosen DestChoice.
+    void showBusDestinationMenu (int idx)
+    {
+        if (idx < 0 || idx >= busStripCount()) return;
+        if (idx >= static_cast<int> (busChoices_.size())) return;
+        const auto& choices = busChoices_[static_cast<std::size_t> (idx)];
+        if (choices.empty()) return;
+        const auto& cur = busStripDests_[static_cast<std::size_t> (idx)];
+        juce::PopupMenu menu;
+        for (const auto& choice : choices)
+        {
+            const bool ticked = choice.kind == cur.currentKind && choice.id == cur.currentId;
+            const DestChoice d = choice;
+            menu.addItem (choice.name, /*enabled*/ true, ticked,
+                          [this, idx, d] { if (onBusDestinationChosen) onBusDestinationChosen (idx, d); });
+        }
+        menu.showMenuAsync (juce::PopupMenu::Options{}.withTargetComponent (
+            busDestButtons_[static_cast<std::size_t> (idx)].get()));
+    }
+
     /// Maps a mouse event's source component back to a strip index (the event
     /// component may be a nested child of the strip), or -1 if it is none.
     [[nodiscard]] int stripIndexOf (juce::Component* c) const
@@ -853,9 +912,14 @@ private:
 
     /// Bus + FX-return strips — a SECOND row to the right of the channel strips.
     /// Kept separate so channel-strip gestures/pickers/selection stay untouched.
-    /// These get fader/mute/solo + meter only (no destination picker, no detail
-    /// panel) in P6; their index space is independent of the channel strips.
+    /// These get fader/mute/solo + meter + their own destination picker (no detail
+    /// panel); their index space is independent of the channel strips.
     std::vector<std::unique_ptr<otto::ui::CompactFaderStrip>> busStrips_;
+    std::vector<std::unique_ptr<juce::TextButton>>            busDestButtons_;
+    std::vector<StripDest>                                    busStripDests_;
+    /// Per-bus choice lists (cycle-excluded targets differ per bus, so unlike the
+    /// channel picker this is NOT one shared list).
+    std::vector<std::vector<DestChoice>>                      busChoices_;
 };
 
 // =============================================================================
@@ -1689,6 +1753,28 @@ MainComponent::MainComponent()
             audioDeviceManager_.addAudioCallback (audioCallback_.get());
             refreshInputMixer();
         };
+        // Bus-row routing — same TOPOLOGY-mutation bracket as the channel picker
+        // above (setBusMainOutTo* -> MixerGraph::setMainOut -> recomputeOrder()).
+        inputMixerPane_->onBusDestinationChosen = [this] (int busIdx, InputMixerPane::DestChoice dest)
+        {
+            if (busIdx < 0 || busIdx >= static_cast<int> (busStripIds_.size())) return;
+            const auto busId = busStripIds_[static_cast<std::size_t> (busIdx)];
+            audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+            switch (dest.kind)
+            {
+                case InputMixerPane::DestKind::Tape:
+                    inputMixer_->setBusMainOutToTape (busId, sirius::TapeId (dest.id));
+                    break;
+                case InputMixerPane::DestKind::Bus:
+                    inputMixer_->setBusMainOutToBus (busId, sirius::BusId (dest.id));
+                    break;
+                case InputMixerPane::DestKind::HardwareOutput:
+                    inputMixer_->setBusMainOutToHardwareOutput (busId);
+                    break;
+            }
+            audioDeviceManager_.addAudioCallback (audioCallback_.get());
+            refreshInputMixer();
+        };
         // Blank-area "Add tape" gesture — same creation path + auto-name as the
         // Tapes-tab "New tape" button (T5), so both surfaces stay consistent.
         inputMixerPane_->onAddTape = [this] { addNextTape(); };
@@ -2101,13 +2187,16 @@ void MainComponent::refreshInputDestinations()
                     }
                 break;
             case sirius::InputMixer::MainOutDest::Bus:
-                // channelMainOut == Bus, but the engine exposes no "which bus"
-                // accessor (only MainOutDest + the tape-specific query), so the
-                // specific bus cannot be ticked back in P6 — label generically.
-                // Exact bus tick-back is a P7 nicety (needs channelMainOutBus()).
-                dest.currentKind = Pane::DestKind::Bus;
-                dest.currentName = "Bus";
+            {
+                const auto bid = inputMixer_->channelMainOutBus (chId);
+                if (auto* bus = inputMixer_->busForId (bid))
+                {
+                    dest.currentKind = Pane::DestKind::Bus;
+                    dest.currentId   = bid.value();
+                    dest.currentName = juce::String (bus->config().name);
+                }
                 break;
+            }
             case sirius::InputMixer::MainOutDest::HardwareOutput:
                 dest.currentKind = Pane::DestKind::HardwareOutput;
                 dest.currentId   = 0;
@@ -2117,6 +2206,70 @@ void MainComponent::refreshInputDestinations()
         perStrip.push_back (std::move (dest));
     }
     inputMixerPane_->setDestinations (choices, perStrip);
+
+    // Bus-row pickers. Each bus/FX-return strip can route its output to a pooled
+    // tape, another PLAIN bus, or direct out. The choice list is built PER BUS:
+    // feedback-cycle targets (and the bus itself) are filtered out, so the lists
+    // differ between buses. FX returns are excluded as targets (send-only).
+    std::vector<std::vector<Pane::DestChoice>> busChoices;
+    std::vector<Pane::StripDest>               busDests;
+    busChoices.reserve (busStripIds_.size());
+    busDests.reserve (busStripIds_.size());
+    for (const auto& busId : busStripIds_)
+    {
+        std::vector<Pane::DestChoice> choicesForBus;
+        for (const auto& t : tapePool_.tapes())
+            choicesForBus.push_back (Pane::DestChoice { Pane::DestKind::Tape, t.id.value(), juce::String (t.name) });
+        for (int i = 0; i < inputMixer_->busCount(); ++i)
+        {
+            if (inputMixer_->busKindAt (i) != sirius::BusKind::Bus)
+                continue;   // FX returns are send-only, not main-out destinations
+            const auto target = inputMixer_->busIdAt (i);
+            if (target.value() == busId.value())
+                continue;   // a bus cannot route to itself
+            if (inputMixer_->busMainOutToBusWouldCycle (busId, target))
+                continue;   // omit targets that would close a feedback cycle
+            if (auto* bus = inputMixer_->busForId (target))
+                choicesForBus.push_back (Pane::DestChoice { Pane::DestKind::Bus,
+                                                            target.value(),
+                                                            juce::String (bus->config().name) });
+        }
+        choicesForBus.push_back (Pane::DestChoice { Pane::DestKind::HardwareOutput, 0, "Direct out" });
+        busChoices.push_back (std::move (choicesForBus));
+
+        Pane::StripDest dest;
+        switch (inputMixer_->busMainOut (busId))
+        {
+            case sirius::InputMixer::MainOutDest::Tape:
+                for (const auto& t : tapePool_.tapes())
+                    if (inputMixer_->busMainOutIsTape (busId, t.id))
+                    {
+                        dest.currentKind = Pane::DestKind::Tape;
+                        dest.currentId   = t.id.value();
+                        dest.currentName = juce::String (t.name);
+                        break;
+                    }
+                break;
+            case sirius::InputMixer::MainOutDest::Bus:
+            {
+                const auto bid = inputMixer_->busMainOutBus (busId);
+                if (auto* bus = inputMixer_->busForId (bid))
+                {
+                    dest.currentKind = Pane::DestKind::Bus;
+                    dest.currentId   = bid.value();
+                    dest.currentName = juce::String (bus->config().name);
+                }
+                break;
+            }
+            case sirius::InputMixer::MainOutDest::HardwareOutput:
+                dest.currentKind = Pane::DestKind::HardwareOutput;
+                dest.currentId   = 0;
+                dest.currentName = "Direct out";
+                break;
+        }
+        busDests.push_back (std::move (dest));
+    }
+    inputMixerPane_->setBusDestinations (busChoices, busDests);
 }
 
 void MainComponent::rebuildInputStrips()
