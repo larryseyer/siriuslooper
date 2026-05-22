@@ -484,6 +484,10 @@ public:
     /// A tape was chosen from strip `idx`'s destination picker — route the
     /// channel's main output to that tape. MainComponent applies the graph edit.
     std::function<void (int idx, sirius::TapeId tape)> onDestinationChosen;
+    /// Blank-pane-area "Add tape" gesture fired (right-click / long-press on
+    /// empty pane). MainComponent creates a pooled tape (T3 addTape). The pane
+    /// owns no pool/mixer state — it only relays the intent.
+    std::function<void()>                              onAddTape;
 
     /// Populates the detail panel with `idx`'s current values and reveals it.
     /// `panMinus1to1` is the knob-domain pan ([-1, +1]); `width` is [0, 2].
@@ -561,8 +565,23 @@ public:
     void mouseDown (const juce::MouseEvent& e) override
     {
         const int idx = stripIndexOf (e.eventComponent);
-        if (idx < 0) return;
 
+        if (idx < 0)                          // empty pane area — the "Add tape" surface
+        {
+            if (e.mods.isPopupMenu())         // desktop right-click — fire now
+            {
+                showBlankAreaMenu (e.getScreenPosition());
+                return;
+            }
+            // Touch / left press — arm the long-press with the blank sentinel.
+            longPressBlank_     = true;
+            longPressIdx_       = -1;
+            longPressScreenPos_ = e.getScreenPosition();
+            startTimer (kLongPressMs);
+            return;
+        }
+
+        longPressBlank_ = false;             // a strip gesture — clear any blank intent
         if (e.mods.isPopupMenu())            // desktop right-click — fire now
         {
             showToggleMenu (idx, e.getScreenPosition());
@@ -577,10 +596,13 @@ public:
     void mouseDrag (const juce::MouseEvent& e) override
     {
         if (isTimerRunning() && e.getDistanceFromDragStart() > kLongPressMoveTolerancePx)
+        {
             stopTimer();                     // it's a fader drag, not a long-press
+            longPressBlank_ = false;
+        }
     }
 
-    void mouseUp (const juce::MouseEvent&) override { stopTimer(); }
+    void mouseUp (const juce::MouseEvent&) override { stopTimer(); longPressBlank_ = false; }
 
     [[nodiscard]] int stripCount() const noexcept { return static_cast<int> (strips_.size()); }
 
@@ -672,6 +694,12 @@ private:
     void timerCallback() override
     {
         stopTimer();                         // one-shot
+        if (longPressBlank_)
+        {
+            longPressBlank_ = false;
+            showBlankAreaMenu (longPressScreenPos_);
+            return;
+        }
         if (longPressIdx_ >= 0 && longPressIdx_ < stripCount())
             showToggleMenu (longPressIdx_, longPressScreenPos_);
     }
@@ -685,6 +713,17 @@ private:
         const bool stereo = stripStereo_[static_cast<std::size_t> (idx)];
         menu.addItem (stereo ? "Split to two mono channels" : "Collapse to stereo",
                       [this, idx] { if (onToggleStereoMono) onToggleStereoMono (idx); });
+        menu.showMenuAsync (juce::PopupMenu::Options{}.withTargetScreenArea (
+            juce::Rectangle<int> (screenPos.x, screenPos.y, 1, 1)));
+    }
+
+    /// Builds + shows the blank-area menu (right-click / long-press on empty
+    /// pane). One item, "Add tape", relays out via onAddTape — MainComponent
+    /// creates the pooled tape. `screenPos` targets both mouse and touch.
+    void showBlankAreaMenu (juce::Point<int> screenPos)
+    {
+        juce::PopupMenu menu;
+        menu.addItem ("Add tape", [this] { if (onAddTape) onAddTape(); });
         menu.showMenuAsync (juce::PopupMenu::Options{}.withTargetScreenArea (
             juce::Rectangle<int> (screenPos.x, screenPos.y, 1, 1)));
     }
@@ -728,6 +767,7 @@ private:
     otto::ui::ChannelDetailPanWidTab                          detailPanel_;
     int                                                       selectedStrip_ { -1 };
     int                                                       longPressIdx_ { -1 };
+    bool                                                      longPressBlank_ { false };
     juce::Point<int>                                          longPressScreenPos_;
 };
 
@@ -1540,6 +1580,12 @@ MainComponent::MainComponent()
                 inputMixer_->setChannelMainOutToTape (
                     inputStripChannelIds_[static_cast<std::size_t> (idx)], tape);
             refreshInputMixer();
+        };
+        // Blank-area "Add tape" gesture — same creation path + auto-name as the
+        // Tapes-tab "New tape" button (T5), so both surfaces stay consistent.
+        inputMixerPane_->onAddTape = [this]
+        {
+            addTape ("Tape " + juce::String (tapePool_.count() + 1));
         };
         tabs_.addTab ("Input Mixer", juce::Colours::black, inputMixerPane_.get(), false);
 
