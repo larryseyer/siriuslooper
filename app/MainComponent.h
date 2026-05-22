@@ -254,6 +254,13 @@ private:
     // ChannelId; meters read the strip's post-fader peaks on the 30 Hz timer.
     class InputMixerPane;
     std::unique_ptr<InputMixerPane> inputMixerPane_;
+
+    // --- Tapes tab (tape-UI T5 — operator-facing tape-pool management:
+    // list + create/rename/remove with a >=1 floor, plus the dropped-block
+    // capture-overflow diagnostic). All mutation relays through the T3 pool
+    // methods (addTape/renameTape/removeTape). ---
+    class TapesPane;
+    std::unique_ptr<TapesPane>      tapesPane_;
     /// One source pair per stereo pair of device inputs. `stereo` true → one
     /// stereo strip; false → two mono-source strips (RME split). `leftCh`/
     /// `rightCh` are device channel indices.

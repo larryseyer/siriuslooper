@@ -658,6 +658,149 @@ private:
 };
 
 // =============================================================================
+// TapesPane — the Tapes tab: an operator-facing management surface for the
+// project tape pool (one of the few places tape internals are deliberately
+// exposed — names + create/rename/remove). Pure presentation + intent relay:
+// it never touches tapePool_/inputMixer_ directly; every mutation goes out
+// through onCreate/onRename/onRemove to the MainComponent T3 methods, which own
+// pool/mixer/sink consistency. MainComponent pushes the tape list in via
+// setTapes() and the capture-overflow diagnostic in via setDroppedBlocks() on
+// its 30 Hz timer. A non-zero dropped-block count means the FLAC capture writer
+// could not keep up — visible here as a warning rather than a silent failure.
+// =============================================================================
+class MainComponent::TapesPane final : public juce::Component
+{
+public:
+    /// One pool entry's display state: the tape's id and current name.
+    struct TapeInfo { sirius::TapeId id; juce::String name; };
+
+    // Intent relays. Set by MainComponent; wired to the T3 pool methods.
+    std::function<void()>                              onCreate;
+    std::function<void (sirius::TapeId, juce::String)> onRename;
+    std::function<void (sirius::TapeId)>               onRemove;
+
+    TapesPane()
+    {
+        title_.setText ("Tapes", juce::dontSendNotification);
+        title_.setColour (juce::Label::textColourId, otto::Colours::textPrimary);
+        title_.setFont (juce::Font (juce::FontOptions (18.0f, juce::Font::bold)));
+        addAndMakeVisible (title_);
+
+        newButton_.setButtonText ("New tape");
+        newButton_.onClick = [this] { if (onCreate) onCreate(); };
+        addAndMakeVisible (newButton_);
+
+        dropped_.setColour (juce::Label::textColourId, otto::Colours::textSecondary);
+        dropped_.setJustificationType (juce::Justification::centredRight);
+        addAndMakeVisible (dropped_);
+    }
+
+    /// Rebuilds the row list from `infos` (one Row each). Remove is disabled
+    /// when only one tape remains so the >=1 pool floor is unbreakable from
+    /// the UI (TapePool/MainComponent also refuse below it).
+    void setTapes (const std::vector<TapeInfo>& infos)
+    {
+        rows_.clear();
+        const bool canRemove = infos.size() > 1;
+        for (const auto& info : infos)
+        {
+            auto row = std::make_unique<Row> (info.id, info.name, canRemove);
+            row->onRename = [this] (sirius::TapeId id, juce::String n)
+            {
+                if (onRename) onRename (id, n);
+            };
+            row->onRemove = [this] (sirius::TapeId id) { if (onRemove) onRemove (id); };
+            addAndMakeVisible (*row);
+            rows_.push_back (std::move (row));
+        }
+        resized();
+    }
+
+    /// Capture-overflow diagnostic. Non-zero = the FLAC writer dropped blocks
+    /// (the audio thread out-ran the disk worker) — surfaced, never hidden.
+    void setDroppedBlocks (std::uint64_t count)
+    {
+        dropped_.setText (count == 0
+                              ? juce::String ("Dropped capture blocks: 0")
+                              : "Dropped capture blocks: " + juce::String (count) + "  (capture overflow)",
+                          juce::dontSendNotification);
+        dropped_.setColour (juce::Label::textColourId,
+                            count == 0 ? otto::Colours::textSecondary : otto::Colours::error);
+    }
+
+    void resized() override
+    {
+        constexpr int kGap = 6, kHeaderH = 32, kRowH = 34;
+        auto area = getLocalBounds().reduced (kGap);
+
+        auto header = area.removeFromTop (kHeaderH);
+        newButton_.setBounds (header.removeFromRight (110));
+        header.removeFromRight (kGap);
+        title_.setBounds (header.removeFromLeft (120));
+        dropped_.setBounds (header);                 // remaining middle band, right-justified
+        area.removeFromTop (kGap);
+
+        for (auto& row : rows_)
+        {
+            row->setBounds (area.removeFromTop (kRowH));
+            area.removeFromTop (kGap);
+        }
+    }
+
+    void paint (juce::Graphics& g) override { g.fillAll (otto::Colours::bg2); }
+
+private:
+    // One tape's row: an editable name field (commits on return / focus-loss)
+    // and a Remove button (disabled at the >=1 floor). Stateless beyond its id.
+    class Row final : public juce::Component
+    {
+    public:
+        std::function<void (sirius::TapeId, juce::String)> onRename;
+        std::function<void (sirius::TapeId)>               onRemove;
+
+        Row (sirius::TapeId id, const juce::String& name, bool canRemove) : id_ (id)
+        {
+            name_.setText (name, juce::dontSendNotification);
+            name_.setColour (juce::TextEditor::backgroundColourId, otto::Colours::bg3);
+            name_.setColour (juce::TextEditor::textColourId, otto::Colours::textPrimary);
+            name_.onReturnKey   = [this] { commitName(); };
+            name_.onFocusLost   = [this] { commitName(); };
+            addAndMakeVisible (name_);
+
+            remove_.setButtonText ("Remove");
+            remove_.setEnabled (canRemove);
+            remove_.onClick = [this] { if (onRemove) onRemove (id_); };
+            addAndMakeVisible (remove_);
+        }
+
+        void resized() override
+        {
+            constexpr int kGap = 6;
+            auto area = getLocalBounds();
+            remove_.setBounds (area.removeFromRight (90));
+            area.removeFromRight (kGap);
+            name_.setBounds (area);
+        }
+
+    private:
+        void commitName()
+        {
+            const auto trimmed = name_.getText().trim();
+            if (trimmed.isNotEmpty() && onRename) onRename (id_, trimmed);
+        }
+
+        sirius::TapeId   id_;
+        juce::TextEditor name_;
+        juce::TextButton remove_;
+    };
+
+    juce::Label                            title_;
+    juce::TextButton                       newButton_;
+    juce::Label                            dropped_;
+    std::vector<std::unique_ptr<Row>>      rows_;
+};
+
+// =============================================================================
 // CaptureBanner — transient on-screen confirmation for a Mark Out gesture.
 // Painted on top of the tabbed content so the performer's eyes don't have to
 // drop to the diagnostics row to know the loop landed (white paper 14.5 —
@@ -1312,6 +1455,26 @@ MainComponent::MainComponent()
         rebuildInputStrips();
     }
 
+    // --- Tapes tab (tape-UI T5 — the operator-facing tape-pool management
+    // surface). Every gesture relays out to the T3 pool methods, which keep
+    // pool/mixer/sink consistent and call refreshTapesPane() to push the new
+    // list back. ---
+    {
+        tapesPane_ = std::make_unique<TapesPane>();
+        tapesPane_->onCreate = [this]
+        {
+            addTape ("Tape " + juce::String (tapePool_.count() + 1));
+        };
+        tapesPane_->onRename = [this] (sirius::TapeId id, juce::String name)
+        {
+            renameTape (id, name);
+        };
+        tapesPane_->onRemove = [this] (sirius::TapeId id) { removeTape (id); };
+        tabs_.addTab ("Tapes", juce::Colours::black, tapesPane_.get(), false);
+
+        refreshTapesPane();
+    }
+
     // --- Plugins tab ---
     pluginsPane_ = std::make_unique<PluginsPane>();
     pluginsPane_->scanButton_.onClick = [this] { chooseFolderAndScan(); };
@@ -1518,6 +1681,12 @@ void MainComponent::timerCallback()
     // open tape's header.
     if (flacTapeSink_ != nullptr && rate > 0.0)
         flacTapeSink_->setSampleRate (rate);
+
+    // tape-UI T5 — surface the capture-overflow diagnostic on the Tapes tab.
+    // droppedBlockCount() is a monotonic counter the FLAC sink bumps when the
+    // audio thread out-runs the disk worker; non-zero means lost capture.
+    if (tapesPane_ != nullptr && flacTapeSink_ != nullptr)
+        tapesPane_->setDroppedBlocks (flacTapeSink_->droppedBlockCount());
 
     // M6 Sessions 2+3 — drain the engine→UI truthfulness channel on the same
     // 30 Hz cadence as the diagnostics refresh, append drained entries onto
@@ -1813,7 +1982,12 @@ void MainComponent::removeTape (sirius::TapeId id)
 
 void MainComponent::refreshTapesPane()
 {
-    // body filled in tape-UI T5
+    if (tapesPane_ == nullptr) return;
+    std::vector<TapesPane::TapeInfo> infos;
+    infos.reserve (tapePool_.tapes().size());
+    for (const auto& t : tapePool_.tapes())
+        infos.push_back ({ t.id, juce::String (t.name) });
+    tapesPane_->setTapes (infos);
 }
 
 void MainComponent::refreshDiagnostics()
