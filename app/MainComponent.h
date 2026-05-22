@@ -78,6 +78,12 @@ public:
     void mouseDown (const juce::MouseEvent& e) override;
     void mouseUp   (const juce::MouseEvent& e) override;
 
+    // --- tape pool management (tape-UI T3) ---
+    void addTape    (juce::String name);
+    void renameTape (sirius::TapeId id, juce::String name);
+    void removeTape (sirius::TapeId id);
+    void refreshTapesPane();  // body filled in tape-UI T5
+
 private:
     void timerCallback() override;
 

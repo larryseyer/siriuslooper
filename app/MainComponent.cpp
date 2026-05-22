@@ -1753,6 +1753,52 @@ void MainComponent::setFocused (TapeId tape)
     refreshDiagnostics();
 }
 
+// --- tape pool management (tape-UI T3) ---
+
+void MainComponent::addTape (juce::String name)
+{
+    const auto id = tapePool_.add (name.toStdString());
+    audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+    inputMixer_->addTape (id);
+    audioDeviceManager_.addAudioCallback (audioCallback_.get());
+    refreshTapesPane();
+}
+
+void MainComponent::renameTape (sirius::TapeId id, juce::String name)
+{
+    tapePool_.rename (id, name.toStdString());   // pool-only; no engine/sink effect
+    refreshTapesPane();
+}
+
+void MainComponent::removeTape (sirius::TapeId id)
+{
+    if (tapePool_.count() <= 1) return;          // >=1 pool floor (TapePool also refuses)
+
+    audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+    // Route any channel that targeted this tape back to the primary tape.
+    for (const auto& chId : inputStripChannelIds_)
+        if (inputMixer_->channelMainOutIsTape (chId, id))
+            inputMixer_->setChannelMainOutToTape (chId);   // primary
+    flacTapeSink_->closeTape (id);               // SPSC: inside the bracket only
+    inputMixer_->removeTape (id);
+    audioDeviceManager_.addAudioCallback (audioCallback_.get());
+
+    tapePool_.remove (id);
+
+    // Auto-disarm: mirror toggleArm's disarm path for the removed tape.
+    armedTapeIds_.erase (id.value());
+    if (armedTapeIds_.empty() && captureSession_.isArmed())
+        captureSession_.disarm();
+
+    refreshTapesPane();
+    refreshTimeline();
+}
+
+void MainComponent::refreshTapesPane()
+{
+    // body filled in tape-UI T5
+}
+
 void MainComponent::refreshDiagnostics()
 {
     juce::String tierLine;
