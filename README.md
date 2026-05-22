@@ -73,9 +73,9 @@ Requires CMake 3.22+, a C++20 toolchain, and Ninja. Vendored dependencies
 
 | File | Purpose |
 | --- | --- |
-| [`docs/Sirius Looper Whitepaper V2.md`](docs/Sirius%20Looper%20Whitepaper%20V2.md) | Canonical "why": architecture, conceptual time, design philosophy. **Start here.** |
+| [`docs/Sirius Looper Whitepaper V7.md`](docs/Sirius%20Looper%20Whitepaper%20V7.md) | Canonical "why": architecture, conceptual time, design philosophy. **Start here.** |
 | [`docs/Sirius Looper User Guide.md`](docs/Sirius%20Looper%20User%20Guide.md) | Operator-facing "how": gestures, workflows, glossary. |
-| [`docs/Sirius Looper Whitepaper V1.md`](docs/Sirius%20Looper%20Whitepaper%20V1.md) | Historical predecessor. V2 supersedes it; kept for reference. |
+| [`docs/archive/`](docs/archive/) | Superseded whitepaper drafts (V1–V6), kept for history; not maintained. |
 | [`continue.md`](continue.md) | Rolling session handoff: what's working, what's next. |
 | [`todo.md`](todo.md) | Permanent design backlog and deferred work. |
 

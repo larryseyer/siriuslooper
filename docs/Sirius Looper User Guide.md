@@ -5,7 +5,7 @@ something you can actually do with Sirius. Read in order if you're new;
 jump to the chapter you need otherwise.
 
 For the conceptual model, design philosophy, and architectural rationale,
-see the white paper at `Sirius Looper Whitepaper V2.md` (same folder).
+see the white paper at `Sirius Looper Whitepaper V7.md` (same folder).
 The white paper says *why* the system works the way it does. This guide
 says *how* to make music with it.
 
