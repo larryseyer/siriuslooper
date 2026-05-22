@@ -120,8 +120,13 @@ public:
     /// work. Parity with ChannelStrip<Audio>::prepare.
     void prepare (double sampleRate, int maxBlockSize) { lufsMeter_.prepare (sampleRate, maxBlockSize); }
 
-    /// Integrated EBU R128 loudness (LUFS) — the LUFS half of the dual meter.
-    /// UI reads on its timer.
+    /// Short-term loudness (LUFS, 3 s window) — the LUFS half of the dual
+    /// meter. This is what the UI reads on its timer: it tracks the live signal
+    /// and self-zeroes to silence when audio stops.
+    float lufsShortTerm() const noexcept { return lufsMeter_.getShortTerm(); }
+
+    /// Integrated EBU R128 loudness (LUFS) — the canonical cumulative
+    /// measurement. Used by tests/diagnostics, not the live meter feed.
     float lufsIntegrated() const noexcept { return lufsMeter_.getIntegrated(); }
 
     /// Message-thread setter — copies the chain in. Set-once before the

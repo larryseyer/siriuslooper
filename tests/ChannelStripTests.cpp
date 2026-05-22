@@ -387,7 +387,8 @@ TEST_CASE ("ChannelStrip Midi / Video / File stubs construct and report SignalTy
 // =============================================================================
 // [lufs] — per-channel EBU R128 loudness, the LUFS half of the dual OTTO-style
 // channel meter. Every audio channel carries it (ChannelStrip<Audio>); the UI
-// reads lufsIntegrated() on its timer.
+// reads lufsShortTerm() on its timer. These tests verify the integrated
+// measurement (the canonical EBU value), which the engine computes alongside it.
 // =============================================================================
 
 namespace

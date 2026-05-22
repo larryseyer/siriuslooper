@@ -86,8 +86,8 @@ void FaderMeter::setPeakLevels(float leftDb, float rightDb) {
     if (peakRightDb_ >= kClipThreshold) clipRight_ = true;
 }
 
-void FaderMeter::setLUFSIntegrated(float lufs) {
-    lufsIntegrated_ = juce::jlimit(kLUFSMin, kLUFSMax, lufs);
+void FaderMeter::setLUFS(float lufs) {
+    lufsTarget_ = juce::jlimit(kLUFSMin, kLUFSMax, lufs);
 }
 
 void FaderMeter::resetClip() {
@@ -154,11 +154,11 @@ void FaderMeter::timerCallback() {
 
     // LUFS decay (slower)
     float lufsDecay = (deltaMs / 500.0f) * (kLUFSMax - kLUFSMin);
-    if (displayLufs_ > lufsIntegrated_) {
-        displayLufs_ = juce::jmax(lufsIntegrated_, displayLufs_ - lufsDecay);
+    if (displayLufs_ > lufsTarget_) {
+        displayLufs_ = juce::jmax(lufsTarget_, displayLufs_ - lufsDecay);
         needsRepaint = true;
-    } else if (displayLufs_ < lufsIntegrated_) {
-        displayLufs_ = lufsIntegrated_;
+    } else if (displayLufs_ < lufsTarget_) {
+        displayLufs_ = lufsTarget_;
         needsRepaint = true;
     }
 
@@ -625,9 +625,9 @@ void FaderMeter::paintLUFSReadout(juce::Graphics& g, juce::Rectangle<float> boun
 
     juce::String lufsStr;
     if (displayLufs <= kLUFSMin + 1.0f)
-        lufsStr = "L-I  -inf";
+        lufsStr = "L-S  -inf";
     else
-        lufsStr = "L-I  " + juce::String(displayLufs, 1);
+        lufsStr = "L-S  " + juce::String(displayLufs, 1);
 
     g.drawText(lufsStr, bounds, juce::Justification::centred);
 }

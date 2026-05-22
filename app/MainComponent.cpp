@@ -2040,7 +2040,7 @@ void MainComponent::refreshInputMixer()
         {
             inputMixerPane_->setStripLevelDb (i, linToDb (s->peakLeft()),
                                               linToDb (s->peakRight()));
-            inputMixerPane_->setStripLufs (i, s->lufsIntegrated());
+            inputMixerPane_->setStripLufs (i, s->lufsShortTerm());
         }
 
     for (int i = 0; i < static_cast<int> (busStripIds_.size()); ++i)
@@ -2048,7 +2048,7 @@ void MainComponent::refreshInputMixer()
         {
             inputMixerPane_->setBusStripLevelDb (i, linToDb (bus->peakLeft()),
                                                  linToDb (bus->peakRight()));
-            inputMixerPane_->setBusStripLufs (i, bus->lufsIntegrated());
+            inputMixerPane_->setBusStripLufs (i, bus->lufsShortTerm());
         }
 
     refreshInputDestinations();

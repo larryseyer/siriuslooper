@@ -107,8 +107,15 @@ public:
     /// `lufsIntegrated()` reads silence and `process` skips the loudness work.
     void prepare (double sampleRate, int maxBlockSize) { lufsMeter_.prepare (sampleRate, maxBlockSize); }
 
-    /// Integrated loudness (LUFS) of the post-fader signal, for the dual
-    /// peak+LUFS channel meter (OTTO parity). UI reads on its timer.
+    /// Short-term loudness (LUFS, 3 s window) of the post-fader signal — the
+    /// LUFS half of the dual peak+LUFS channel meter (OTTO parity). This is
+    /// what the UI meter reads on its timer: it tracks the live signal and
+    /// self-zeroes to silence when audio stops.
+    float lufsShortTerm() const noexcept { return lufsMeter_.getShortTerm(); }
+
+    /// Integrated loudness (LUFS) of the post-fader signal — the canonical EBU
+    /// R128 measurement (cumulative since reset). Used by tests/diagnostics,
+    /// not the live meter feed.
     float lufsIntegrated() const noexcept { return lufsMeter_.getIntegrated(); }
 
     /// Message-thread setter — copies the insert chain in (routing-graph

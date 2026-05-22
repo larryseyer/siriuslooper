@@ -76,8 +76,8 @@ public:
     // Stereo peak meter levels
     void setPeakLevels(float leftDb, float rightDb);
 
-    // LUFS integrated loudness
-    void setLUFSIntegrated(float lufs);
+    // LUFS short-term loudness (3 s window)
+    void setLUFS(float lufs);
 
     // Clip control
     void resetClip();
@@ -123,12 +123,12 @@ public:
     // =========================================================================
     // Shared LUFS-paint helpers (UIPOL-04)
     // =========================================================================
-    // The integrated-LUFS bar + readout and their colour zones are shared with
+    // The short-term-LUFS bar + readout and their colour zones are shared with
     // LevelMeter's horizontal master-meter overlay so both converge on a single
     // implementation (no duplicate paint code per Bug 33). The helpers are pure
     // functions of (graphics, bounds, value); they read no instance state.
 
-    // LUFS display range (-60 to 0 dB integrated). Exposed so callers using
+    // LUFS display range (-60 to 0 dB short-term). Exposed so callers using
     // these helpers can write a meaningful "silence" floor.
     static constexpr float kLUFSMin = -60.0f;
     static constexpr float kLUFSMax = 0.0f;
@@ -137,7 +137,7 @@ public:
     static void paintLUFSBar(juce::Graphics& g, juce::Rectangle<float> bounds,
                              float levelLufs);
 
-    // Draw the integrated LUFS numeric readout (e.g., "L-I  -14.3" or "L-I  -inf").
+    // Draw the short-term LUFS numeric readout (e.g., "L-S  -14.3" or "L-S  -inf").
     static void paintLUFSReadout(juce::Graphics& g, juce::Rectangle<float> bounds,
                                  float displayLufs);
 
@@ -318,7 +318,7 @@ private:
     // Target levels (from audio thread)
     float peakLeftDb_ = kMinDb;
     float peakRightDb_ = kMinDb;
-    float lufsIntegrated_ = kLUFSMin;
+    float lufsTarget_ = kLUFSMin;
 
     // Display levels (smoothed)
     float displayPeakLeft_ = kMinDb;

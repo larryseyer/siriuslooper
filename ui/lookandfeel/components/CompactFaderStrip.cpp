@@ -294,7 +294,7 @@ void CompactFaderStrip::setLevel(float leftDb, float rightDb) {
 
 void CompactFaderStrip::setLUFSLevel(float lufs) {
     if (faderMeter_)
-        faderMeter_->setLUFSIntegrated(lufs);
+        faderMeter_->setLUFS(lufs);
 }
 
 // =============================================================================
