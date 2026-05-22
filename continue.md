@@ -15,7 +15,26 @@
 > engine change). Holistic-review Minor logged in todo.md (stale picker label after removeTape —
 > pre-existing, affects channel picker too, one-line fix).
 >
-> **▶ NEXT = P7 — Input Mixer Sends tab + insert mgmt ≤8 + wire P4/P5 persistence into save/load.**
+> ## ⚠ NEW RULE (operator, 2026-05-22) — MINIMAL DEFAULT MIXERS
+> A fresh session contains **only** channels matching the active physical I/O — **no
+> buses, no FX returns, no RVB/DLY seeded**. The performer adds returns/buses on
+> demand (the existing P6 blank-area gesture already supports this), and the upcoming
+> **preset** system will recall common configurations in one gesture. The software
+> does not assume which signal-flow the performer wants. Docs UPDATED this turn:
+> whitepaper V7 §6.1 (added §6.1.1 paragraph), routing-graph spec
+> (`docs/superpowers/specs/2026-05-20-mixer-routing-graph-design.md`), memory
+> `project_minimal_default_mixers` (NEW) + `project_mixer_routing_destinations_and_plugins`
+> (amended). **Code state:** `InputMixer` ctor at `engine/src/InputMixer.cpp:41-42`
+> STILL seeds `addFxReturn("RVB")` + `addFxReturn("DLY")` in violation of the rule —
+> queued in `todo.md` as its own slice (touches engine ctor + Phase-5 persistence
+> import + tests; recommend running it AHEAD of P7 so P7's Sends-tab UI doesn't
+> bake-in an assumption that RVB/DLY always exist). OutputMixer already starts empty.
+>
+> **▶ NEXT (revised) = remove the ctor RVB/DLY seed, THEN P7.**
+> The original NEXT was P7; the minimal-defaults rule changes ordering — do the
+> ctor-seed removal first so P7 starts from a correct baseline. Old NEXT preserved below.
+>
+> **▶ NEXT (original, run AFTER the seed removal) = P7 — Input Mixer Sends tab + insert mgmt ≤8 + wire P4/P5 persistence into save/load.**
 > P6 + P6b are the complete Input Mixer routing surface (strips, create gestures, channel + bus
 > destination pickers, all routable). P7 is the counterpart to excluding FX returns from main-out:
 > per-channel SEND levels INTO the RVB/DLY returns (the Sends tab), plus insert-chain management

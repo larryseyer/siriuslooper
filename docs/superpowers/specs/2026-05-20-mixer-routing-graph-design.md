@@ -40,9 +40,13 @@ the terminal is implicit.
   Has one main-out.
 - **FX return** — an aux return. Its **input is sends only** (never a direct
   main-out route). Carries an effect chain (typically RVB/DLY, but any plugin).
-  Has one main-out. (No sends from an FX return in v1 — see Open Items.) **Both
-  mixers carry their own dedicated RVB and DLY returns** (independent per
-  console), plus any operator-created returns.
+  Has one main-out. (No sends from an FX return in v1 — see Open Items.)
+  **Returns are NOT seeded by default — the performer creates them on demand**
+  (blank-area "Add FX return" gesture). The upcoming **preset** system will
+  recall common configurations (e.g. a band-style template with RVB+DLY
+  returns) in one gesture; out of the box, both mixers start with channels
+  only, matching the active physical I/O. The software does not assume which
+  signal-flow the performer wants.
 - **Terminal** — the Input Mixer has **two terminal sinks: tape (capture) and
   hardware output (direct-out)**; the Output Mixer has **one: output·master**.
   The Input Mixer can route a channel/bus straight to a hardware output (RME
@@ -256,7 +260,9 @@ with >1 terminal, OutputMixer regression-equivalence.
 
 **Phase 3 — Input-side routing apparatus.** Engine, TDD. `InputMixer` gains its
 **own** `MixerGraph` (tape + hardware-output terminals), **own** buses, **own** FX
-returns (including a **default RVB and DLY return**), **own** send matrix, and the
+returns (**none seeded by default** — the historical RVB+DLY ctor-seed contradicts
+the minimal-defaults rule and is queued for removal; see todo.md), **own** send
+matrix, and the
 RT-safe topological traversal — mirroring `OutputMixer`'s render but with source =
 device-input strips and a dual terminal. Main-out: channel → bus / tape / hardware
 output; bus / FX-return → bus / tape / output. Sends: channel|bus → FX return
