@@ -30,6 +30,12 @@ namespace sirius
 
 namespace
 {
+    /// Session-file envelope schema version. The envelope is a thin wrapper
+    /// (written/read only here) carrying the session and tape-pool documents;
+    /// it is distinct from SessionFormat's session/mixer-graph versions. Bumped
+    /// only when the envelope's own layout changes.
+    constexpr int kSessionEnvelopeVersion = 1;
+
     /// Small local Timer subclass — Sirius's vendored JUCE has no
     /// FunctionTimer. Holds a captured callable and invokes it on each
     /// timerCallback. The long-press detector uses startTimer(ms) once and
@@ -2182,7 +2188,7 @@ void MainComponent::chooseFileAndSave()
             // itself is forward-compat (unknown top-level keys are ignored on
             // load). Pre-envelope files are still loadable — see chooseFileAndLoad.
             auto envelope = juce::DynamicObject::Ptr { new juce::DynamicObject() };
-            envelope->setProperty ("sirius_version", 1);
+            envelope->setProperty ("sirius_version", kSessionEnvelopeVersion);
             envelope->setProperty ("session",        sessionJson);
             envelope->setProperty ("pool",           poolJson);
             const auto fileText = juce::JSON::toString (juce::var (envelope.get()));
@@ -2222,6 +2228,9 @@ void MainComponent::chooseFileAndLoad()
                     && envelope.getDynamicObject()->hasProperty ("sirius_version"))
                 {
                     sessionJson = envelope.getProperty ("session", {}).toString();
+                    if (sessionJson.isEmpty())
+                        throw std::runtime_error (
+                            "session envelope is missing a valid 'session' document");
                     const auto poolStr = envelope.getProperty ("pool", {}).toString();
                     if (poolStr.isNotEmpty())
                         loadedPool = persistence::deserializeTapePool (poolStr);
@@ -2274,21 +2283,16 @@ void MainComponent::chooseFileAndLoad()
                 // Re-mirror the loaded tape pool into the InputMixer. The audio
                 // thread reads the mixer's tape-terminal list on the hot path, so
                 // all mutation happens inside the removeAudioCallback bracket.
-                // Sequencing: remove old non-primary terminals first (rerouting
-                // any channel that pointed at them to the primary terminal), then
-                // assign the loaded pool and add the new tapes. This order ensures
-                // terminals that are being referenced are valid throughout.
+                // Sequencing: remove old non-primary terminals first, then assign
+                // the loaded pool and add the new tapes. removeTape auto-reroutes
+                // any channel that pointed at a removed terminal to the primary
+                // (see MixerGraph::removeTerminal), so terminals being referenced
+                // stay valid throughout.
                 {
                     audioDeviceManager_.removeAudioCallback (audioCallback_.get());
-                    // Reroute channels pointing at old non-primary tapes, then
-                    // remove those terminals so the mixer is clean before the new
-                    // pool is applied.
                     for (const auto& tape : tapePool_.tapes())
                     {
                         if (tape.id == tapePool_.primary()) continue;
-                        for (const auto& chId : inputStripChannelIds_)
-                            if (inputMixer_->channelMainOutIsTape (chId, tape.id))
-                                inputMixer_->setChannelMainOutToTape (chId); // primary
                         inputMixer_->removeTape (tape.id);
                     }
                     tapePool_ = std::move (loadedPool);
