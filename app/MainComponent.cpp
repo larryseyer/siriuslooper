@@ -1583,10 +1583,7 @@ MainComponent::MainComponent()
         };
         // Blank-area "Add tape" gesture — same creation path + auto-name as the
         // Tapes-tab "New tape" button (T5), so both surfaces stay consistent.
-        inputMixerPane_->onAddTape = [this]
-        {
-            addTape ("Tape " + juce::String (tapePool_.count() + 1));
-        };
+        inputMixerPane_->onAddTape = [this] { addNextTape(); };
         tabs_.addTab ("Input Mixer", juce::Colours::black, inputMixerPane_.get(), false);
 
         rebuildInputStrips();
@@ -1598,10 +1595,7 @@ MainComponent::MainComponent()
     // list back. ---
     {
         tapesPane_ = std::make_unique<TapesPane>();
-        tapesPane_->onCreate = [this]
-        {
-            addTape ("Tape " + juce::String (tapePool_.count() + 1));
-        };
+        tapesPane_->onCreate = [this] { addNextTape(); };
         tapesPane_->onRename = [this] (sirius::TapeId id, juce::String name)
         {
             renameTape (id, name);
@@ -2110,6 +2104,11 @@ void MainComponent::addTape (const juce::String& name)
     jassert (ok); juce::ignoreUnused (ok);
     audioDeviceManager_.addAudioCallback (audioCallback_.get());
     refreshTapesPane();
+}
+
+void MainComponent::addNextTape()
+{
+    addTape ("Tape " + juce::String (tapePool_.count() + 1));
 }
 
 void MainComponent::renameTape (sirius::TapeId id, const juce::String& name)
