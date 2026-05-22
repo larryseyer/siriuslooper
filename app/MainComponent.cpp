@@ -2221,6 +2221,12 @@ void MainComponent::rebuildBusStrips()
     busStripIds_.reserve (static_cast<std::size_t> (n));
 
     const double sampleRate = audioCallback_->currentSampleRate();
+
+    // bus->prepare() reallocates LufsMeter buffers + writes non-atomic state the
+    // audio thread reads in Bus::process. Bracket the prepare loop so it can never
+    // run concurrently with the audio callback (this method is called from
+    // onAddBus/onAddFxReturn while audio is live). Mirrors rebuildInputStrips().
+    audioDeviceManager_.removeAudioCallback (audioCallback_.get());
     for (int i = 0; i < n; ++i)
     {
         const auto id   = inputMixer_->busIdAt (i);
@@ -2232,7 +2238,9 @@ void MainComponent::rebuildBusStrips()
             busStripIds_.push_back (id);
         }
     }
-    inputMixerPane_->setBusStrips (infos);
+    audioDeviceManager_.addAudioCallback (audioCallback_.get());
+
+    inputMixerPane_->setBusStrips (infos);   // UI work — safe after re-add
 }
 
 void MainComponent::toggleInputPairStereo (int stripIndex)
