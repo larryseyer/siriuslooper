@@ -10,6 +10,7 @@
 #include "sirius/SessionFormat.h"
 #include "sirius/SessionSnapshot.h"
 #include "sirius/TapeId.h"
+#include "sirius/TapePoolMirror.h"
 #include "sirius/TimelineView.h"
 #include "sirius/TimelineViewState.h"
 #include "sirius/VideoPreview.h"
@@ -1101,6 +1102,10 @@ MainComponent::MainComponent()
         audioDeviceManager_.getAudioDeviceSetup().sampleRate,
         256);
     inputMixer_->setTapeSink (flacTapeSink_.get());
+
+    // Tape-UI slice — TapePool is the single source of truth for which tapes exist.
+    // Mirror it into the input mixer's routing terminals at startup.
+    sirius::mirrorTapePool (tapePool_, *inputMixer_);
 
     audioCallback_   = std::make_unique<AudioCallback> (engineConfig_);
     audioCallback_->setLmc (lmc_.get());

@@ -10,6 +10,7 @@ add_executable(SiriusTests
     RoleResolverTests.cpp
     CaptureSessionTests.cpp
     TapePoolTests.cpp
+    TapePoolMirrorTests.cpp
     PromotionTests.cpp
     InputDescriptorTests.cpp
     RepetitionRulesTests.cpp

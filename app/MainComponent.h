@@ -25,6 +25,7 @@
 #include "sirius/RetroactiveRing.h"
 #include "sirius/SessionSnapshot.h"
 #include "sirius/TapeId.h"
+#include "sirius/TapePool.h"
 #include "sirius/UndoStack.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
@@ -169,6 +170,10 @@ private:
     // pointers into). The MainComponent destructor also explicitly removes
     // the callback from the device manager before any teardown begins, so
     // the audio thread can't see a half-destroyed mixer.
+    // Tape-UI slice — single source of truth for which tapes exist; mirrored
+    // into the input mixer's routing terminals at startup. Declared before
+    // inputMixer_ so it outlives the mixer on destruction.
+    sirius::TapePool                      tapePool_;
     std::unique_ptr<InputMixer>           inputMixer_;
     std::unique_ptr<OutputMixer>          outputMixer_;
     std::unique_ptr<DirectLayer>          directLayer_;
