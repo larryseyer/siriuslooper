@@ -2062,13 +2062,18 @@ void MainComponent::refreshInputDestinations()
     if (inputMixerPane_ == nullptr) return;
     using Pane = InputMixerPane;
 
-    // Choice list (shared for every strip's popup): pooled tapes, then buses /
-    // FX returns, then the direct (hardware-output) terminal.
+    // Choice list (shared for every strip's popup): pooled tapes, then plain
+    // buses, then the direct (hardware-output) terminal. FX returns are
+    // DELIBERATELY EXCLUDED — a channel reaches RVB/DLY via a post-fader SEND
+    // (the Sends tab, P7), never as a main-out destination. Only BusKind::Bus
+    // subgroups are valid main-out targets.
     std::vector<Pane::DestChoice> choices;
     for (const auto& t : tapePool_.tapes())
         choices.push_back (Pane::DestChoice { Pane::DestKind::Tape, t.id.value(), juce::String (t.name) });
     for (int i = 0; i < inputMixer_->busCount(); ++i)
     {
+        if (inputMixer_->busKindAt (i) != sirius::BusKind::Bus)
+            continue;   // FX returns are send-only, not main-out destinations
         const auto bid = inputMixer_->busIdAt (i);
         if (auto* bus = inputMixer_->busForId (bid))
             choices.push_back (Pane::DestChoice { Pane::DestKind::Bus,
