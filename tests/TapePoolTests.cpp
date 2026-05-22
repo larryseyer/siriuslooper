@@ -71,6 +71,16 @@ TEST_CASE ("TapePool::remove erases a tape but enforces the >=1 floor", "[tape-p
         CHECK_FALSE (pool.remove (TapeId (999)));
         CHECK (pool.count() == 2);
     }
+
+    SECTION ("removing the primary is refused even above the floor")
+    {
+        // The primary tape is permanent: InputMixer pins it and refuses removal,
+        // so the pool must agree or the two desync (primary writer closed while the
+        // pool entry vanishes). This must hold with >=2 tapes, not just at the floor.
+        CHECK_FALSE (pool.remove (pool.primary()));
+        CHECK (pool.count() == 2);                 // unchanged — falsifiable
+        CHECK (pool.find (pool.primary()) != nullptr);
+    }
 }
 
 TEST_CASE ("TapePool::add after remove never reuses an id", "[tape-pool]")

@@ -42,6 +42,8 @@ bool TapePool::remove (TapeId id)
 {
     if (tapes_.size() <= 1) // >=1 floor: never empty the pool
         return false;
+    if (id == primary())    // primary is permanent (InputMixer pins TapeId{1} too)
+        return false;
 
     const auto it = std::find_if (tapes_.begin(), tapes_.end(),
                                   [id] (const TapeDescriptor& t) { return t.id == id; });
