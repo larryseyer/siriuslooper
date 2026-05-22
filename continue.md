@@ -8,14 +8,15 @@
 
 ---
 
-## ⭐ DO FIRST (added 2026-05-22) — fold in the "Energy Arrangement" design
+## ⭐ PARKED DESIGN (added 2026-05-22) — "Energy Arrangement" (context only; integrate at/after P8). **The actual next action is the tape-UI slice in RESUME HERE below.**
 
-> **This is a PLANNING/INTEGRATION task, not an engineering reorder.** A brainstorming
-> session designed **Energy Arrangement**. It is NOT yet a repo spec. Before the next big
-> design step, fold it into the master long-range path and write its spec — sequenced where
-> its dependencies allow (its Mix Scenes ride on the Output Mixer / snapshot API, so it lands
-> at/after **P8 Output Mixer UI**, NOT ahead of the tape line). **Do not implement yet. Do not
-> edit the RESUME-HERE / tape-UI block below — that stays the active engineering line.**
+> **This is a PARKED design captured for context — NOT the next action.** The logically-first,
+> active engineering line is the **tape-UI slice** in the `RESUME HERE` block below — do that.
+> Energy Arrangement is downstream: its Mix Scenes ride on the Output Mixer snapshot API, so it
+> cannot be implemented until at/after **P8 Output Mixer UI**, and its spec is best written THEN
+> (writing it now would drift against surfaces that don't exist yet). It is fully captured here +
+> in the design file + memory + WP §6.8, so it will not be lost. **Do not implement it yet; do
+> not reorder or edit the tape-UI block below.**
 >
 > **Full design:** `~/.claude/plans/this-will-be-a-merry-rabin.md`. Four parts:
 > 1. **Transport** — native to Sirius, **mastered by the LMC** (LMC = honest time *source*; a
