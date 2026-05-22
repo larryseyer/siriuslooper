@@ -4168,7 +4168,7 @@ The alignment pass that this section queued has been spec'd in full at
 11 parts; M1 = Audio I/O foundation + RT-safety contract audit; see
 RESUME HERE at the top of this file). The original V2 white paper
 referenced below is superseded by V7 (`docs/Sirius_Looper.md`); the
-V2→V7 transition guide (`docs/sirius-looper-v2-to-v7-transition.md`)
+V2→V7 transition guide (`docs/archive/sirius-looper-v2-to-v7-transition.md`)
 is the bridge.
 
 Original §6 contents preserved for historical context follow; treat as
