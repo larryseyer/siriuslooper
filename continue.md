@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-22 (**Tape-UI slice SHIPPED** — all 7 tasks on origin/master `e3d5c71..bbe82fc` via subagent-driven-development with per-task spec+code-quality review and a final holistic opus review. Tapes tab + per-channel tape picker + blank-area Add-tape gesture + TapePool ownership/ops/persistence. Clean `rm -rf build` rebuild green; full ctest baseline (567 pass, 1 documented Not-Run). **Operator eyes-on confirmed**: Tapes tab + per-channel tape picker work (picker is tape-only BY DESIGN — "direct to output mixer" appears only when the input→output bridge slice lands with P8; see todo.md). ⚠ Operator hit a **GUI lockup clicking the plugin "Scan" button** — pre-existing, unrelated to tape-UI (host plugin-scan path); logged in todo.md. **Holistic review caught + fixed 2 Criticals** (picker route-edit was an unbracketed audio-thread topology race → now bracketed; primary-tape removal could desync pool↔mixer → now refused at 3 layers). **NEXT = P6 Input Mixer UI** (bus/FX-return strips) — the tape-UI gate is now lifted. Long-range path below.)
+# Session Continuation — 2026-05-22 (**Tape-UI slice SHIPPED** — all 7 tasks on origin/master `e3d5c71..bbe82fc` via subagent-driven-development with per-task spec+code-quality review and a final holistic opus review. Tapes tab + per-channel tape picker + blank-area Add-tape gesture + TapePool ownership/ops/persistence. Clean `rm -rf build` rebuild green; full ctest baseline (567 pass, 1 documented Not-Run). **Operator eyes-on confirmed**: Tapes tab + per-channel tape picker work (picker is tape-only BY DESIGN — "direct to output mixer" appears only when the input→output bridge slice lands with P8; see todo.md). ⚠ Operator hit a **GUI lockup clicking the plugin "Scan" button** — pre-existing, unrelated to tape-UI (host plugin-scan path); logged in todo.md. **Holistic review caught + fixed 2 Criticals** (picker route-edit was an unbracketed audio-thread topology race → now bracketed; primary-tape removal could desync pool↔mixer → now refused at 3 layers). **P6 Input Mixer UI SHIPPED + operator-verified** (bus/FX-return strips, blank-area create gesture, channel destination picker tape/plain-bus/Direct; commits `b94440f`/`3ebd31b`/`538a918` + RT-safety fix `7c85bb4` + FX-return-exclusion fix `c17e0e6`; ctest 569/1). **Follow-on P6b half-done: Task A `f384a1e` (engine main-out-bus accessors + cycle precheck) shipped; NEXT = P6b Task B — bus-row destination pickers (UI).** ⚠ Another terminal pushed UNRELATED work after this checkpoint — `git pull --rebase` first. Long-range path below.)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -65,21 +65,63 @@
 
 ## RESUME HERE (2026-05-22 — slice 3 signed off; Phase 0 architecture locked; NEXT = the tape-UI slice)
 
-> ## ▶ STEP 1 (do this FIRST): EXECUTE the **P6 — Input Mixer UI** plan (already written; do NOT re-plan)
-> **The P6 plan is written and locked:** `docs/superpowers/plans/2026-05-22-p6-input-mixer-ui.md`
-> (4 tasks: T1 render bus/FX-return strips + fader/mute/meter; T2 blank-area Add-bus/Add-FX-return
-> gesture; T3 per-channel destination picker tape/bus/direct-out; T4 clean rebuild + operator eyes-on
-> + this handoff). Spec was locked, so brainstorming + writing-plans are DONE — go straight to
-> `superpowers:subagent-driven-development` (fresh subagent per task, two-stage review between).
-> UI is operator-verified (no red/green TDD); each task gates on compile-green + ctest baseline
-> (567/1) + commit. The plan's scope decisions (channel-only picker; bus removal + bus-node routing +
-> exact bus tick-back deferred to P7; floor-enforcement to P8) are deliberate — do not relitigate.
+> ## ▶ STEP 1 (do this FIRST): EXECUTE **P6b Task B** — bus-row destination pickers (UI)
+> **FIRST, sync the tree:** another terminal pushed UNRELATED work to origin/master after this
+> checkpoint. `git pull --rebase origin master` (or fetch+rebase) BEFORE doing anything. My last
+> commit here was `f384a1e` (P6b Task A). If the other terminal's work conflicts, resolve in favor
+> of keeping BOTH (its change + my P6b Task A engine additions).
 >
-> (Housekeeping done this session: the completed V2→V7 transition guide was archived to
+> **Where we are:** P6 (Input Mixer UI) is functionally SHIPPED and operator-verified, plus a
+> follow-on (P6b) that is HALF DONE. Plans: `docs/superpowers/plans/2026-05-22-p6-input-mixer-ui.md`
+> (P6, all 4 tasks done) and `docs/superpowers/plans/2026-05-22-p6b-bus-routing-completion.md`
+> (P6b — **Task A ✅ done, Task B is NEXT/not started**).
+>
+> **P6 shipped (subagent-driven, each task spec+quality reviewed; commits on origin/master):**
+>   - T1 `b94440f` — render bus/FX-return strips (RVB/DLY visible) + fader/mute/solo + dual peak+LUFS
+>     meter; `MainComponent::rebuildBusStrips()` + `busStripIds_`; listener branches on ChannelType.
+>   - T2 `3ebd31b` — blank-area long-press/right-click menu: **Add bus / Add FX return / Add tape**
+>     (bracketed addBus/addFxReturn → rebuildBusStrips).
+>   - T3 `538a918` — per-channel destination picker generalized to **tape / bus / Direct out**
+>     (`DestChoice{kind,id,name}`, routed via setChannelMainOutTo{Tape,Bus,HardwareOutput}, bracketed).
+>   - `7c85bb4` — **CRITICAL RT-safety fix** (holistic opus review caught it): `rebuildBusStrips()`
+>     now brackets its `bus->prepare()` loop with remove/addAudioCallback (LufsMeter realloc was
+>     racing the audio thread when adding a 2nd+ bus live).
+>   - `c17e0e6` — **design fix (operator-flagged):** FX returns EXCLUDED from the channel main-out
+>     picker (RVB/DLY are reached by SENDS, never main-out). Picker now = tape / plain bus / Direct out.
+>   - Operator eyes-on CONFIRMED: bus strips render; long-press create works (added bus+FX+tape);
+>     channel picker shows tape/plain-bus/Direct (no RVB/DLY). Right-click not tested (same handler).
+>
+> **P6b — bus-routing completion (operator: "no half-baked anything" — see memory
+> `feedback_sirius_done_right_and_complete`):** buses you can create MUST be routable.
+>   - **Task A ✅ `f384a1e`** — engine: `InputMixer::channelMainOutBus(ChannelId)` /
+>     `busMainOutBus(BusId)` (return the specific target BusId, or `BusId{0}` sentinel for
+>     tape/hardware/unknown) + `busMainOutToBusWouldCycle(from,to)` (const wrapper over
+>     `MixerGraph::wouldMainOutCycle`, lets the UI filter cycle-creating targets). 2 new Catch2
+>     `[input-mixer]` cases. ctest now **569 pass / 1 Not-Run**.
+>   - **Task B ⏳ NEXT (UI, NOT started):** give EVERY bus-row strip (plain Bus AND RVB/DLY FX returns)
+>     a destination picker — destinations = tapes + Direct out + other PLAIN buses (exclude self,
+>     exclude FX returns as targets, exclude any `busMainOutToBusWouldCycle` target). Wire selection
+>     via setBusMainOutTo{Tape,Bus,HardwareOutput} (bracketed). ALSO fix the channel picker tick-back
+>     to show the SPECIFIC bus NAME via `channelMainOutBus` (replaces the generic "Bus" label).
+>     Full step-by-step is Task B in the P6b plan. After it: holistic review → clean `rm -rf build`
+>     rebuild → operator eyes-on → then refresh THIS file and set NEXT=P7.
+>
+> **Method:** `superpowers:subagent-driven-development` (fresh subagent per task; spec review then
+> code-quality review; a FINAL holistic opus review caught a real Critical on P6 — always run it).
+> Engine tasks are TDD; UI tasks are operator-verified (no red/green). Build app:
+> `cmake --build build --target SiriusLooper`; tests: `cmake --build build --target SiriusTests &&
+> ctest --test-dir build`. Subagents commit AND push their own task commits (no --amend).
+>
+> **Still deferred (legit, NOT half-baked gaps):** P7 = Input Mixer **Sends tab** (per-channel send
+> levels INTO RVB/DLY — the counterpart to excluding FX returns from main-out) + insert-chain mgmt
+> ≤8 + wire P4/P5 routing-graph apparatus into production save/load. P8 = Output Mixer UI + the
+> input→output bridge slice + looper floor-enforcement (≥1 channel→≥1 tape).
+>
+> (Housekeeping this session: completed V2→V7 transition guide archived to
 > `docs/archive/sirius-looper-v2-to-v7-transition.md` — every subsystem it prescribed exists.)
 >
-> The tape-UI slice that gated P6 is **SHIPPED** (`e3d5c71..bbe82fc`, 7 tasks + per-task review fixes
-> + a final holistic opus review). Plan that drove it: `docs/superpowers/plans/2026-05-22-tape-ui-slice.md`.
+> The tape-UI slice that gated P6 is SHIPPED (`e3d5c71..bbe82fc`). Its plan:
+> `docs/superpowers/plans/2026-05-22-tape-ui-slice.md`.
 > What landed: `MixerMainOut` carries `TapeId` (non-primary routes export — T1); `MainComponent` owns
 > `TapePool` + `mirrorTapePool` (`engine/include/sirius/TapePoolMirror.h` — T2); `addTape`/`renameTape`/
 > `removeTape` keep pool↔mixer↔sink consistent with audio-callback bracketing + `closeTape` inside it

@@ -10,6 +10,8 @@
 
 **Tech Stack:** C++17, Catch2 (engine tests), JUCE 8 (UI).
 
+**STATUS (2026-05-22):** Task A ✅ SHIPPED at `f384a1e` (`channelMainOutBus`/`busMainOutBus`/`busMainOutToBusWouldCycle` + 2 Catch2 cases; ctest 569 pass / 1 Not-Run). **Task B (UI) is NEXT and not started.**
+
 ---
 
 ## Scope (complete, not half)
