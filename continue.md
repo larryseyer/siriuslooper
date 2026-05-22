@@ -1,4 +1,41 @@
-# Session Continuation — 2026-05-22 (**Tape-UI slice SHIPPED** — all 7 tasks on origin/master `e3d5c71..bbe82fc` via subagent-driven-development with per-task spec+code-quality review and a final holistic opus review. Tapes tab + per-channel tape picker + blank-area Add-tape gesture + TapePool ownership/ops/persistence. Clean `rm -rf build` rebuild green; full ctest baseline (567 pass, 1 documented Not-Run). **Operator eyes-on confirmed**: Tapes tab + per-channel tape picker work (picker is tape-only BY DESIGN — "direct to output mixer" appears only when the input→output bridge slice lands with P8; see todo.md). ⚠ Operator hit a **GUI lockup clicking the plugin "Scan" button** — pre-existing, unrelated to tape-UI (host plugin-scan path); logged in todo.md. **Holistic review caught + fixed 2 Criticals** (picker route-edit was an unbracketed audio-thread topology race → now bracketed; primary-tape removal could desync pool↔mixer → now refused at 3 layers). **P6 Input Mixer UI SHIPPED + operator-verified** (bus/FX-return strips, blank-area create gesture, channel destination picker tape/plain-bus/Direct; commits `b94440f`/`3ebd31b`/`538a918` + RT-safety fix `7c85bb4` + FX-return-exclusion fix `c17e0e6`; ctest 569/1). **Follow-on P6b half-done: Task A `f384a1e` (engine main-out-bus accessors + cycle precheck) shipped; NEXT = P6b Task B — bus-row destination pickers (UI).** ⚠ Another terminal pushed UNRELATED work after this checkpoint — `git pull --rebase` first. Long-range path below.)
+# Session Continuation — 2026-05-22 (**P6b COMPLETE — bus-row routing fully shipped**)
+
+> ## ✅ DONE THIS SESSION — P6b Task B: bus-row destination pickers + specific bus tick-back
+> **SHIPPED to origin/master.** Commits `364666b` (Task B) + `e98871f` (review Minor: clear
+> `busChoices_` in `setBusStrips`). UI-only, in `app/MainComponent.cpp`. Every bus-row strip (plain
+> Bus AND RVB/DLY FX returns) now has a destination picker → routes its output to a pooled tape /
+> "Direct out" / another PLAIN bus, with self + FX-return + feedback-cycle targets filtered out
+> (`busMainOutToBusWouldCycle`). BOTH channel and bus pickers now tick-back the SPECIFIC current
+> destination by name (channel `MainOutDest::Bus` no longer shows a generic "Bus" label —
+> `channelMainOutBus`/`busMainOutBus` + `busForId`). The new bus relay is audio-callback-bracketed
+> (mirrors the channel relay). Method: subagent-driven-development — spec review ✅, code-quality
+> review ✅ (Approve), final holistic cross-file review ✅ ("no Critical/Important — safe"; engine
+> independently rejects cycles + reroutes orphaned main-outs, so the UI filter is defense-in-depth).
+> Clean `rm -rf build` rebuild green; **ctest 569 pass / 1 documented Not-Run** (baseline held — no
+> engine change). Holistic-review Minor logged in todo.md (stale picker label after removeTape —
+> pre-existing, affects channel picker too, one-line fix).
+>
+> **▶ NEXT = P7 — Input Mixer Sends tab + insert mgmt ≤8 + wire P4/P5 persistence into save/load.**
+> P6 + P6b are the complete Input Mixer routing surface (strips, create gestures, channel + bus
+> destination pickers, all routable). P7 is the counterpart to excluding FX returns from main-out:
+> per-channel SEND levels INTO the RVB/DLY returns (the Sends tab), plus insert-chain management
+> (≤8 slots per node), plus finally wiring the P4/P5 routing-graph persistence apparatus
+> (`serialize/deserializeMixerGraphState` — built + unit-tested, NOT yet called by MainComponent
+> save/load; see todo.md "per-channel tape ROUTES not yet written to session file"). After P7: P8
+> Output Mixer UI + the input→output bridge slice. Then transport/metering (operator's stated order).
+> Spec for sends/inserts: `docs/superpowers/specs/2026-05-20-mixer-routing-graph-design.md` (P7).
+>
+> **First moves for P7:** `git status` clean (`e98871f` newest); read the spec P7 section + the
+> `InputMixerPane` channel-strip detail/tab plumbing (the pan/width detail tab is the pattern a Sends
+> tab mirrors) + `InputMixer::setChannelSend`/send API + the EffectChain 8-slot apparatus (P4) +
+> `serialize/deserializeMixerGraphState`. brainstorming NOT needed (spec locked) →
+> `superpowers:writing-plans` → `subagent-driven-development`; engine/persistence parts are TDD, the
+> Sends-tab UI is operator-verified. ⚠ Do NOT touch the channel/bus destination pickers — they're
+> the established UI pattern; the Sends tab is additive (a new detail tab + per-channel send rows).
+>
+> ---
+
+# (archived header) — 2026-05-22 (**Tape-UI slice SHIPPED** — all 7 tasks on origin/master `e3d5c71..bbe82fc` via subagent-driven-development with per-task spec+code-quality review and a final holistic opus review. Tapes tab + per-channel tape picker + blank-area Add-tape gesture + TapePool ownership/ops/persistence. Clean `rm -rf build` rebuild green; full ctest baseline (567 pass, 1 documented Not-Run). **Operator eyes-on confirmed**: Tapes tab + per-channel tape picker work (picker is tape-only BY DESIGN — "direct to output mixer" appears only when the input→output bridge slice lands with P8; see todo.md). ⚠ Operator hit a **GUI lockup clicking the plugin "Scan" button** — pre-existing, unrelated to tape-UI (host plugin-scan path); logged in todo.md. **Holistic review caught + fixed 2 Criticals** (picker route-edit was an unbracketed audio-thread topology race → now bracketed; primary-tape removal could desync pool↔mixer → now refused at 3 layers). **P6 Input Mixer UI SHIPPED + operator-verified** (bus/FX-return strips, blank-area create gesture, channel destination picker tape/plain-bus/Direct; commits `b94440f`/`3ebd31b`/`538a918` + RT-safety fix `7c85bb4` + FX-return-exclusion fix `c17e0e6`; ctest 569/1). **Follow-on P6b half-done: Task A `f384a1e` (engine main-out-bus accessors + cycle precheck) shipped; NEXT = P6b Task B — bus-row destination pickers (UI).** ⚠ Another terminal pushed UNRELATED work after this checkpoint — `git pull --rebase` first. Long-range path below.)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the

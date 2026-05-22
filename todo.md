@@ -1,5 +1,16 @@
 # Sirius Looper — Deferred Items
 
+### 2026-05-22 — Input Mixer destination pickers show a stale label after removeTape (P6b holistic-review Minor)
+- Files: app/MainComponent.cpp (`removeTape` ~2503-2536; `refreshInputDestinations`/`refreshInputMixer`).
+- What was deferred: when a tape is removed, the engine (`MixerGraph::removeTerminal`) silently reroutes
+  every orphaned main-out to the primary tape, but `removeTape` refreshes only the Tapes pane / timeline /
+  capture / diagnostics — NOT the Input Mixer. So a channel OR bus picker routed to the removed tape keeps
+  displaying the old tape name until the next unrelated `refreshInputMixer`. Affects the pre-existing
+  channel picker identically — P6b's bus picker just inherits it; NOT a P6b regression.
+- Why deferred: cosmetic (the engine route is already correct); out of P6b Task B scope.
+- What's needed to finish: call `refreshInputMixer()` (which calls `refreshInputDestinations()`) at the
+  end of `removeTape`, after the pool/mirror updates. One line.
+
 ### 2026-05-22 — GUI lockup when clicking the plugin "Scan" button (observed, NOT investigated)
 - Files: unknown — the host plugin-scan path (host/ out-of-process plugin hosting + the MainComponent
   Plugins tab "Scan" control). NOT touched by the tape-UI slice.
