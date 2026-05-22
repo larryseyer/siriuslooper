@@ -282,7 +282,7 @@ private:
     std::vector<bool>               inputStripMuted_;
     std::vector<bool>               inputStripSoloed_;
     // Bus/FX-return strip IDs, parallel to InputMixerPane bus strips.
-    // Rebuilt by rebuildBusStrips() after rebuildInputStrips().
+    // Kept in sync by rebuildBusStrips().
     std::vector<sirius::BusId>      busStripIds_;
 
     // --- Plugins tab ---

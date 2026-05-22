@@ -575,6 +575,7 @@ public:
     void setBusStrips (const std::vector<BusInfo>& infos)
     {
         busStrips_.clear();
+        // No selection/detail state to reset — bus strips have no detail panel in P6.
         for (int i = 0; i < static_cast<int> (infos.size()); ++i)
         {
             const auto& info = infos[static_cast<std::size_t> (i)];
@@ -673,7 +674,8 @@ public:
 
     void resized() override
     {
-        constexpr int kGap = 6;
+        constexpr int kGap          = 6;
+        constexpr int kGroupDividerW = kGap * 3;   // visual gap between channel + bus strip groups
         auto area = getLocalBounds().reduced (kGap);
 
         // The detail panel (when a strip is selected) takes a fixed band across
@@ -703,7 +705,7 @@ public:
         // Bus / FX-return strips sit to the right of the channel strips, after a
         // wider divider gap. They have no picker row beneath them.
         if (busStripCount() > 0)
-            area.removeFromLeft (kGap * 3);   // visual divider between the two groups
+            area.removeFromLeft (kGroupDividerW);   // visual divider between the two groups
         for (int i = 0; i < busStripCount(); ++i)
         {
             busStrips_[static_cast<std::size_t> (i)]->setBounds (area.removeFromLeft (kStripW));
@@ -2132,6 +2134,11 @@ void MainComponent::rebuildInputStrips()
     audioDeviceManager_.addAudioCallback (audioCallback_.get());
 }
 
+// Rebuilds the bus/FX-return strip row from the engine bus set. Call this after
+// ANY change to the bus set (setup, addBus/addFxReturn) — it is intentionally
+// NOT chained off rebuildInputStrips(), because a channel-pair stereo toggle
+// leaves the bus set untouched and a gratuitous rebuild would reset bus fader
+// visuals while the engine gain persists. Buses are unaffected by channel rebuilds.
 void MainComponent::rebuildBusStrips()
 {
     if (inputMixerPane_ == nullptr || inputMixer_ == nullptr) return;
