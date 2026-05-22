@@ -67,6 +67,18 @@ public:
     MainOutDest channelMainOut (ChannelId) const noexcept;
     MainOutDest busMainOut (BusId) const noexcept;
 
+    /// The specific bus a node's main-out targets, or BusId{0} (invalid sentinel)
+    /// when the main-out is not a bus (tape / hardware output) or the node is
+    /// unknown. Complements channelMainOut/busMainOut (which return only the
+    /// MainOutDest category). Message-thread only.
+    BusId channelMainOutBus (ChannelId) const noexcept;
+    BusId busMainOutBus (BusId) const noexcept;
+
+    /// True iff routing `from`'s main-out to bus `to` would close a feedback
+    /// cycle (so the UI can omit it from the picker). Non-mutating wrapper over
+    /// MixerGraph::wouldMainOutCycle. False for unknown ids. Message-thread only.
+    bool busMainOutToBusWouldCycle (BusId from, BusId to) const noexcept;
+
     // Multi-tape terminal registry (tape subsystem slice 2) -----------------
     /// Registers a Tape terminal for a pooled tape. The eventual owner (slice 4)
     /// keeps this in sync with the project TapePool. Returns false on a duplicate
@@ -243,6 +255,7 @@ private:
     MixerNodeId nodeForBus (BusId) const noexcept;
     MixerNodeId nodeForChannel (ChannelId) const noexcept;
     MainOutDest classifyMainOut (MixerNodeId dest) const noexcept;
+    BusId       busIdForNode (MixerNodeId) const noexcept; // BusId{0} if not a bus node
     MixerNodeId tapeNodeFor (TapeId) const noexcept;        // invalid id if absent
     int         tapeSlotForNode (MixerNodeId) const noexcept; // -1 if not a tape terminal
 

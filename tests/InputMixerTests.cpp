@@ -1075,3 +1075,31 @@ TEST_CASE ("exportGraphState round-trips a non-primary tape route", "[input-mixe
     CHECK (restored.channelMainOutIsTape (sirius::ChannelId (state.channels[0].channelId),
                                           sirius::TapeId { 2 }));
 }
+
+TEST_CASE ("InputMixer reports which bus a node's main-out targets", "[input-mixer]")
+{
+    sirius::InputMixer mixer;
+    const auto a  = mixer.addBus (sirius::BusConfig { 2, "A", sirius::BusKind::Bus });
+    const auto b  = mixer.addBus (sirius::BusConfig { 2, "B", sirius::BusKind::Bus });
+    const auto ch = mixer.addChannel (sirius::InputId (0), sirius::SignalType::Audio);
+
+    REQUIRE (mixer.setChannelMainOutToBus (ch, a));
+    REQUIRE (mixer.channelMainOutBus (ch).value() == a.value());
+    REQUIRE (mixer.setBusMainOutToBus (a, b));
+    REQUIRE (mixer.busMainOutBus (a).value() == b.value());
+
+    REQUIRE (mixer.setChannelMainOutToHardwareOutput (ch));
+    REQUIRE (mixer.channelMainOutBus (ch).value() == 0);
+    REQUIRE (mixer.setBusMainOutToTape (b));
+    REQUIRE (mixer.busMainOutBus (b).value() == 0);
+}
+
+TEST_CASE ("InputMixer flags bus main-out routes that would cycle", "[input-mixer]")
+{
+    sirius::InputMixer mixer;
+    const auto a = mixer.addBus (sirius::BusConfig { 2, "A", sirius::BusKind::Bus });
+    const auto b = mixer.addBus (sirius::BusConfig { 2, "B", sirius::BusKind::Bus });
+    REQUIRE (mixer.setBusMainOutToBus (a, b));           // a -> b
+    REQUIRE (mixer.busMainOutToBusWouldCycle (b, a));    // b -> a would close the loop
+    REQUIRE_FALSE (mixer.busMainOutToBusWouldCycle (a, b));
+}

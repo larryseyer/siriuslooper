@@ -543,6 +543,31 @@ InputMixer::MainOutDest InputMixer::classifyMainOut (MixerNodeId dest) const noe
     return MainOutDest::Bus;
 }
 
+BusId InputMixer::busIdForNode (MixerNodeId node) const noexcept
+{
+    for (std::size_t i = 0; i < busNodeIds_.size(); ++i)
+        if (busNodeIds_[i] == node) return buses_[i].id();
+    return BusId { 0 };
+}
+
+BusId InputMixer::channelMainOutBus (ChannelId ch) const noexcept
+{
+    return busIdForNode (graph_.mainOutOf (nodeForChannel (ch)));
+}
+
+BusId InputMixer::busMainOutBus (BusId id) const noexcept
+{
+    return busIdForNode (graph_.mainOutOf (nodeForBus (id)));
+}
+
+bool InputMixer::busMainOutToBusWouldCycle (BusId from, BusId to) const noexcept
+{
+    const MixerNodeId fromNode = nodeForBus (from);
+    const MixerNodeId toNode   = nodeForBus (to);
+    if (! fromNode.isValid() || ! toNode.isValid()) return false;
+    return graph_.wouldMainOutCycle (fromNode, toNode);
+}
+
 bool InputMixer::setChannelMainOutToBus (ChannelId ch, BusId bus)
 { return graph_.setMainOut (nodeForChannel (ch), nodeForBus (bus)); }
 bool InputMixer::setChannelMainOutToHardwareOutput (ChannelId ch)
