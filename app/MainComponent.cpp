@@ -2175,8 +2175,18 @@ void MainComponent::chooseFileAndSave()
             // descriptor + live state blob of the bus its instance runs on.
             const auto populated = sirius::populateVersionPinningRecords (
                 undoStack_.current(), effectChainHost_, slotLookup(), *notificationBus_);
-            const auto json = persistence::serializeSession (*populated);
-            if (target.replaceWithText (json))
+            const auto sessionJson = persistence::serializeSession (*populated);
+            const auto poolJson    = persistence::serializeTapePool (tapePool_);
+            // Embed both sections as string values in a thin envelope so the
+            // session and pool documents stay self-contained and the envelope
+            // itself is forward-compat (unknown top-level keys are ignored on
+            // load). Pre-envelope files are still loadable — see chooseFileAndLoad.
+            auto envelope = juce::DynamicObject::Ptr { new juce::DynamicObject() };
+            envelope->setProperty ("sirius_version", 1);
+            envelope->setProperty ("session",        sessionJson);
+            envelope->setProperty ("pool",           poolJson);
+            const auto fileText = juce::JSON::toString (juce::var (envelope.get()));
+            if (target.replaceWithText (fileText))
                 preparationPane_->setStatus ("Saved to " + target.getFullPathName());
             else
                 preparationPane_->setStatus ("Failed to write " + target.getFullPathName());
@@ -2197,10 +2207,34 @@ void MainComponent::chooseFileAndLoad()
             const auto source = fc.getResult();
             if (source == juce::File()) return;
 
-            const auto json = source.loadFileAsString();
+            const auto fileText = source.loadFileAsString();
             try
             {
-                auto loaded = persistence::deserializeSession (json);
+                // Detect envelope format (written by the current save path) vs
+                // the legacy format (a raw session JSON document). The envelope
+                // carries a "sirius_version" key; legacy files carry "version".
+                juce::String sessionJson;
+                TapePool loadedPool;                    // default: 1 tape, id=1
+
+                juce::var envelope;
+                if (juce::JSON::parse (fileText, envelope).wasOk()
+                    && envelope.isObject()
+                    && envelope.getDynamicObject()->hasProperty ("sirius_version"))
+                {
+                    sessionJson = envelope.getProperty ("session", {}).toString();
+                    const auto poolStr = envelope.getProperty ("pool", {}).toString();
+                    if (poolStr.isNotEmpty())
+                        loadedPool = persistence::deserializeTapePool (poolStr);
+                }
+                else
+                {
+                    // Pre-envelope file: the whole text is the session JSON;
+                    // default TapePool() is the back-compat choice per the
+                    // SessionFormat.h §52 contract.
+                    sessionJson = fileText;
+                }
+
+                auto loaded = persistence::deserializeSession (sessionJson);
                 // M8 S1: warn-on-drift via the existing NotificationBus.
                 // The Preparation pane's notification-history line picks
                 // up the message without any new UI code. Per white paper
@@ -2237,6 +2271,31 @@ void MainComponent::chooseFileAndLoad()
                         sirius::parseAndValidateCalibration (contents).status,
                         *notificationBus_);
                 }
+                // Re-mirror the loaded tape pool into the InputMixer. The audio
+                // thread reads the mixer's tape-terminal list on the hot path, so
+                // all mutation happens inside the removeAudioCallback bracket.
+                // Sequencing: remove old non-primary terminals first (rerouting
+                // any channel that pointed at them to the primary terminal), then
+                // assign the loaded pool and add the new tapes. This order ensures
+                // terminals that are being referenced are valid throughout.
+                {
+                    audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+                    // Reroute channels pointing at old non-primary tapes, then
+                    // remove those terminals so the mixer is clean before the new
+                    // pool is applied.
+                    for (const auto& tape : tapePool_.tapes())
+                    {
+                        if (tape.id == tapePool_.primary()) continue;
+                        for (const auto& chId : inputStripChannelIds_)
+                            if (inputMixer_->channelMainOutIsTape (chId, tape.id))
+                                inputMixer_->setChannelMainOutToTape (chId); // primary
+                        inputMixer_->removeTape (tape.id);
+                    }
+                    tapePool_ = std::move (loadedPool);
+                    sirius::mirrorTapePool (tapePool_, *inputMixer_);
+                    audioDeviceManager_.addAudioCallback (audioCallback_.get());
+                }
+                refreshTapesPane();
                 // The white paper Part 14.7 rule: load is an edit; preserve
                 // the existing undo history rather than wiping it. The
                 // operator can undo back to whatever was on screen before.

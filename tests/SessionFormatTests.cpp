@@ -463,3 +463,27 @@ TEST_CASE ("a pre-graph mixer document missing all graph keys loads as defaults"
     CHECK (out.nextBusId == 1);
     CHECK (out.nextChannelId == 1);
 }
+
+TEST_CASE ("TapePool round-trips through serialize/deserialize", "[sessionformat][tape-pool]")
+{
+    sirius::TapePool pool;
+    const auto drums = pool.add ("Drums");
+    pool.add ("Vox");
+    pool.rename (drums, "Kit");
+
+    const auto restored = sirius::persistence::deserializeTapePool (
+        sirius::persistence::serializeTapePool (pool));
+    REQUIRE (restored.count() == pool.count());
+    CHECK (restored.tapes() == pool.tapes());
+    CHECK (restored.primary() == pool.primary());
+}
+
+TEST_CASE ("a malformed tape-pool document throws", "[sessionformat][tape-pool]")
+{
+    // deserializeTapePool must throw on a missing 'tapes' key — back-compat is
+    // the caller's responsibility; the function does not silently default.
+    CHECK_THROWS_AS (sirius::persistence::deserializeTapePool ("{}"),
+                     std::runtime_error);
+    CHECK_THROWS_AS (sirius::persistence::deserializeTapePool ("{not json}"),
+                     std::runtime_error);
+}
