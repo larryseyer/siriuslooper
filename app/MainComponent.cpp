@@ -459,6 +459,10 @@ public:
     /// mono = two strips (the pair's L and R halves).
     struct StripInfo { juce::String name; bool stereo; };
 
+    /// One bus/FX-return strip's display state. `isFxReturn` picks the
+    /// CompactFaderStrip ChannelType (FXReturn vs Bus).
+    struct BusInfo { juce::String name; bool isFxReturn; };
+
     /// One selectable tape in a strip's destination picker.
     struct TapeChoice { sirius::TapeId id; juce::String name; };
     /// One strip's destination state: the tape it currently records to. `currentId`
@@ -488,6 +492,12 @@ public:
     /// empty pane). MainComponent creates a pooled tape (T3 addTape). The pane
     /// owns no pool/mixer state — it only relays the intent.
     std::function<void()>                              onAddTape;
+
+    /// A bus/FX-return strip's fader/mute/solo changed (busIdx = index into the
+    /// pane's bus-strip row, parallel to MainComponent::busStripIds_).
+    std::function<void (int busIdx, float gainLinear)> onBusGain;
+    std::function<void (int busIdx, bool muted)>       onBusMute;
+    std::function<void (int busIdx, bool soloed)>      onBusSolo;
 
     /// Populates the detail panel with `idx`'s current values and reveals it.
     /// `panMinus1to1` is the knob-domain pan ([-1, +1]); `width` is [0, 2].
@@ -556,6 +566,45 @@ public:
             const auto& label = perStrip[static_cast<std::size_t> (i)].currentName;
             destButtons_[static_cast<std::size_t> (i)]->setButtonText (label.isEmpty() ? "—" : label);
         }
+    }
+
+    /// Rebuilds the bus/FX-return strip row from `infos`. Each becomes a
+    /// CompactFaderStrip typed Bus or FXReturn. Unlike channel strips these are
+    /// NOT given addMouseListener (no pane gesture applies) — only addListener
+    /// for fader/mute/solo. No destination picker button is created.
+    void setBusStrips (const std::vector<BusInfo>& infos)
+    {
+        busStrips_.clear();
+        for (int i = 0; i < static_cast<int> (infos.size()); ++i)
+        {
+            const auto& info = infos[static_cast<std::size_t> (i)];
+            auto strip = std::make_unique<otto::ui::CompactFaderStrip> (
+                i, info.isFxReturn ? otto::ui::ChannelType::FXReturn
+                                   : otto::ui::ChannelType::Bus);
+            strip->setChannelName (info.name);
+            strip->setOutputComboVisible (false);   // pane owns routing, not the combo
+            strip->addListener (this);               // fader/mute/solo only
+            addAndMakeVisible (*strip);
+            busStrips_.push_back (std::move (strip));
+        }
+        resized();
+    }
+
+    [[nodiscard]] int busStripCount() const noexcept
+    {
+        return static_cast<int> (busStrips_.size());
+    }
+
+    void setBusStripLevelDb (int busIdx, float dbL, float dbR)
+    {
+        if (busIdx >= 0 && busIdx < busStripCount())
+            busStrips_[static_cast<std::size_t> (busIdx)]->setLevel (dbL, dbR);
+    }
+
+    void setBusStripLufs (int busIdx, float lufs)
+    {
+        if (busIdx >= 0 && busIdx < busStripCount())
+            busStrips_[static_cast<std::size_t> (busIdx)]->setLUFSLevel (lufs);
     }
 
     /// RME split/collapse affordance — gesture-only so the strip face stays
@@ -650,25 +699,43 @@ public:
             area.removeFromLeft (kGap);
             pickerRow.removeFromLeft (kGap);
         }
+
+        // Bus / FX-return strips sit to the right of the channel strips, after a
+        // wider divider gap. They have no picker row beneath them.
+        if (busStripCount() > 0)
+            area.removeFromLeft (kGap * 3);   // visual divider between the two groups
+        for (int i = 0; i < busStripCount(); ++i)
+        {
+            busStrips_[static_cast<std::size_t> (i)]->setBounds (area.removeFromLeft (kStripW));
+            area.removeFromLeft (kGap);
+        }
     }
 
     void paint (juce::Graphics& g) override { g.fillAll (otto::Colours::bg2); }
 
     // --- CompactFaderStripListener ---
-    void stripGainChanged (int idx, otto::ui::ChannelType, float gain) override
+    void stripGainChanged (int idx, otto::ui::ChannelType type, float gain) override
     {
-        if (onGain) onGain (idx, gain);
+        if (type == otto::ui::ChannelType::Bus || type == otto::ui::ChannelType::FXReturn)
+        {   if (onBusGain) onBusGain (idx, gain); }
+        else if (onGain) onGain (idx, gain);
     }
-    void stripMuteChanged (int idx, otto::ui::ChannelType, bool muted) override
+    void stripMuteChanged (int idx, otto::ui::ChannelType type, bool muted) override
     {
-        if (onMute) onMute (idx, muted);
+        if (type == otto::ui::ChannelType::Bus || type == otto::ui::ChannelType::FXReturn)
+        {   if (onBusMute) onBusMute (idx, muted); }
+        else if (onMute) onMute (idx, muted);
     }
-    void stripSoloChanged (int idx, otto::ui::ChannelType, bool soloed) override
+    void stripSoloChanged (int idx, otto::ui::ChannelType type, bool soloed) override
     {
-        if (onSolo) onSolo (idx, soloed);
+        if (type == otto::ui::ChannelType::Bus || type == otto::ui::ChannelType::FXReturn)
+        {   if (onBusSolo) onBusSolo (idx, soloed); }
+        else if (onSolo) onSolo (idx, soloed);
     }
-    void stripChannelSelected (int idx, otto::ui::ChannelType) override
+    void stripChannelSelected (int idx, otto::ui::ChannelType type) override
     {
+        if (type == otto::ui::ChannelType::Bus || type == otto::ui::ChannelType::FXReturn)
+            return;   // bus strips have no detail panel in P6
         for (int i = 0; i < stripCount(); ++i)
             strips_[static_cast<std::size_t> (i)]->setSelected (i == idx);
         selectedStrip_ = idx;
@@ -769,6 +836,12 @@ private:
     int                                                       longPressIdx_ { -1 };
     bool                                                      longPressBlank_ { false };
     juce::Point<int>                                          longPressScreenPos_;
+
+    /// Bus + FX-return strips — a SECOND row to the right of the channel strips.
+    /// Kept separate so channel-strip gestures/pickers/selection stay untouched.
+    /// These get fader/mute/solo + meter only (no destination picker, no detail
+    /// panel) in P6; their index space is independent of the channel strips.
+    std::vector<std::unique_ptr<otto::ui::CompactFaderStrip>> busStrips_;
 };
 
 // =============================================================================
@@ -1596,9 +1669,28 @@ MainComponent::MainComponent()
         // Blank-area "Add tape" gesture — same creation path + auto-name as the
         // Tapes-tab "New tape" button (T5), so both surfaces stay consistent.
         inputMixerPane_->onAddTape = [this] { addNextTape(); };
+        inputMixerPane_->onBusGain = [this] (int busIdx, float gain)
+        {
+            if (busIdx >= 0 && busIdx < static_cast<int> (busStripIds_.size()))
+                if (auto* bus = inputMixer_->busForId (busStripIds_[static_cast<std::size_t> (busIdx)]))
+                    bus->setGain (gain);
+        };
+        inputMixerPane_->onBusMute = [this] (int busIdx, bool muted)
+        {
+            if (busIdx >= 0 && busIdx < static_cast<int> (busStripIds_.size()))
+                if (auto* bus = inputMixer_->busForId (busStripIds_[static_cast<std::size_t> (busIdx)]))
+                    bus->setMuted (muted);
+        };
+        inputMixerPane_->onBusSolo = [] (int busIdx, bool soloed)
+        {
+            // Bus solo is not yet an engine concept on the input side; reflect it
+            // on the strip only (no-op on the mix) until a bus-solo slice lands.
+            juce::ignoreUnused (busIdx, soloed);
+        };
         tabs_.addTab ("Input Mixer", juce::Colours::black, inputMixerPane_.get(), false);
 
         rebuildInputStrips();
+        rebuildBusStrips();
     }
 
     // --- Tapes tab (tape-UI T5 — the operator-facing tape-pool management
@@ -1908,6 +2000,14 @@ void MainComponent::refreshInputMixer()
             inputMixerPane_->setStripLufs (i, s->lufsIntegrated());
         }
 
+    for (int i = 0; i < static_cast<int> (busStripIds_.size()); ++i)
+        if (auto* bus = inputMixer_->busForId (busStripIds_[static_cast<std::size_t> (i)]))
+        {
+            inputMixerPane_->setBusStripLevelDb (i, linToDb (bus->peakLeft()),
+                                                 linToDb (bus->peakRight()));
+            inputMixerPane_->setBusStripLufs (i, bus->lufsIntegrated());
+        }
+
     refreshInputDestinations();
 }
 
@@ -2030,6 +2130,31 @@ void MainComponent::rebuildInputStrips()
         flacTapeSink_->setSampleRate (sampleRate);
 
     audioDeviceManager_.addAudioCallback (audioCallback_.get());
+}
+
+void MainComponent::rebuildBusStrips()
+{
+    if (inputMixerPane_ == nullptr || inputMixer_ == nullptr) return;
+
+    busStripIds_.clear();
+    std::vector<InputMixerPane::BusInfo> infos;
+    const int n = inputMixer_->busCount();
+    infos.reserve (static_cast<std::size_t> (n));
+    busStripIds_.reserve (static_cast<std::size_t> (n));
+
+    const double sampleRate = audioCallback_->currentSampleRate();
+    for (int i = 0; i < n; ++i)
+    {
+        const auto id   = inputMixer_->busIdAt (i);
+        const bool isFx = inputMixer_->busKindAt (i) == sirius::BusKind::FxReturn;
+        if (auto* bus = inputMixer_->busForId (id))
+        {
+            bus->prepare (sampleRate, kInputLufsMaxBlock);
+            infos.push_back ({ juce::String (bus->config().name), isFx });
+            busStripIds_.push_back (id);
+        }
+    }
+    inputMixerPane_->setBusStrips (infos);
 }
 
 void MainComponent::toggleInputPairStereo (int stripIndex)

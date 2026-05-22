@@ -113,6 +113,11 @@ private:
     /// removeAudioCallback/addAudioCallback so the audio thread never reads a
     /// half-mutated registry. Message-thread only; resets mute/solo state.
     void rebuildInputStrips();
+    /// Rebuilds the bus/FX-return strip row in InputMixerPane from the engine
+    /// InputMixer's current bus list. Calls prepare() on each bus off the audio
+    /// thread. Message-thread only. Called after rebuildInputStrips() so bus
+    /// meters start alongside channel meters.
+    void rebuildBusStrips();
     /// Flips the stereo/mono mode of the pair behind `stripIndex` (RME-style
     /// split/collapse) and rebuilds. Message-thread only.
     void toggleInputPairStereo (int stripIndex);
@@ -276,6 +281,9 @@ private:
     std::vector<int>                inputStripPair_;     // strip → index into inputPairs_
     std::vector<bool>               inputStripMuted_;
     std::vector<bool>               inputStripSoloed_;
+    // Bus/FX-return strip IDs, parallel to InputMixerPane bus strips.
+    // Rebuilt by rebuildBusStrips() after rebuildInputStrips().
+    std::vector<sirius::BusId>      busStripIds_;
 
     // --- Plugins tab ---
     class PluginListBox;
