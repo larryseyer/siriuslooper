@@ -459,6 +459,12 @@ public:
     /// mono = two strips (the pair's L and R halves).
     struct StripInfo { juce::String name; bool stereo; };
 
+    /// One selectable tape in a strip's destination picker.
+    struct TapeChoice { sirius::TapeId id; juce::String name; };
+    /// One strip's destination state: the tape it currently records to (button
+    /// label) and the full list of pooled tapes the picker offers.
+    struct DestInfo { juce::String currentName; std::vector<TapeChoice> choices; };
+
     // Gesture relays (idx = strip index). Set by MainComponent.
     std::function<void (int idx, float gainLinear)> onGain;
     std::function<void (int idx, bool muted)>       onMute;
@@ -472,6 +478,9 @@ public:
     std::function<void (int idx, float pan)>        onPan;
     /// Detail-panel width knob moved. `width` is [0, 2] (1 = unity stereo).
     std::function<void (int idx, float width)>      onWidth;
+    /// A tape was chosen from strip `idx`'s destination picker — route the
+    /// channel's main output to that tape. MainComponent applies the graph edit.
+    std::function<void (int idx, sirius::TapeId tape)> onDestinationChosen;
 
     /// Populates the detail panel with `idx`'s current values and reveals it.
     /// `panMinus1to1` is the knob-domain pan ([-1, +1]); `width` is [0, 2].
@@ -492,6 +501,8 @@ public:
     {
         strips_.clear();
         stripStereo_.clear();
+        destButtons_.clear();
+        destInfos_.clear();
         // Channel identities change on a rebuild, so the prior selection no
         // longer maps to a strip — drop it and hide the detail panel.
         selectedStrip_ = -1;
@@ -501,14 +512,39 @@ public:
             auto strip = std::make_unique<otto::ui::CompactFaderStrip> (
                 i, otto::ui::ChannelType::Instrument);
             strip->setChannelName (infos[static_cast<std::size_t> (i)].name);
-            strip->setOutputComboVisible (false);   // tape-output routing is a later slice
+            strip->setOutputComboVisible (false);   // CompactFaderStrip's combo is OTTO's
+                                                     // hardware-pair model; the tape picker
+                                                     // below is InputMixerPane's own control
             strip->addListener (this);
             strip->addMouseListener (this, /*wantsNestedEvents*/ true);
             addAndMakeVisible (*strip);
             strips_.push_back (std::move (strip));
             stripStereo_.push_back (infos[static_cast<std::size_t> (i)].stereo);
+
+            // The per-strip tape destination picker — InputMixerPane's own
+            // control beneath the strip. Opens a tapes-only PopupMenu on click.
+            auto button = std::make_unique<juce::TextButton>();
+            button->setButtonText ("—");
+            const int idx = i;
+            button->onClick = [this, idx] { showDestinationMenu (idx); };
+            addAndMakeVisible (*button);
+            destButtons_.push_back (std::move (button));
+            destInfos_.push_back ({});
         }
         resized();
+    }
+
+    /// Pushes the per-strip destination state (current tape label + selectable
+    /// tape list). `infos` is parallel to the strips set by setStrips; extra or
+    /// missing entries are ignored so a stale push can't desync the buttons.
+    void setDestinations (const std::vector<DestInfo>& infos)
+    {
+        for (int i = 0; i < stripCount() && i < static_cast<int> (infos.size()); ++i)
+        {
+            destInfos_[static_cast<std::size_t> (i)] = infos[static_cast<std::size_t> (i)];
+            const auto& label = infos[static_cast<std::size_t> (i)].currentName;
+            destButtons_[static_cast<std::size_t> (i)]->setButtonText (label.isEmpty() ? "—" : label);
+        }
     }
 
     /// RME split/collapse affordance — gesture-only so the strip face stays
@@ -570,13 +606,20 @@ public:
             area.removeFromTop (kGap);
         }
 
+        // The destination picker sits in a fixed band below each strip, one
+        // compact button per strip column (touch-friendly; no extra chrome).
+        auto pickerRow = area.removeFromBottom (kDestHeight);
+        area.removeFromBottom (kGap);
+
         // Left-to-right row of fixed-width strips. A few strips fit a typical
         // window; wide input counts get a horizontal Viewport in a later slice.
         constexpr int kStripW = otto::ui::CompactFaderStrip::kStripWidth;
-        for (auto& strip : strips_)
+        for (int i = 0; i < stripCount(); ++i)
         {
-            strip->setBounds (area.removeFromLeft (kStripW));
+            strips_[static_cast<std::size_t> (i)]->setBounds (area.removeFromLeft (kStripW));
+            destButtons_[static_cast<std::size_t> (i)]->setBounds (pickerRow.removeFromLeft (kStripW));
             area.removeFromLeft (kGap);
+            pickerRow.removeFromLeft (kGap);
         }
     }
 
@@ -617,6 +660,7 @@ private:
     static constexpr int kLongPressMs              = 500;
     static constexpr int kLongPressMoveTolerancePx = 8;
     static constexpr int kDetailHeight             = 180;
+    static constexpr int kDestHeight               = 26;
 
     void timerCallback() override
     {
@@ -638,6 +682,25 @@ private:
             juce::Rectangle<int> (screenPos.x, screenPos.y, 1, 1)));
     }
 
+    /// Builds + shows strip `idx`'s tape destination menu from its stored
+    /// choices (pooled tapes only — no Direct/hardware-output entry; that path
+    /// is a deferred bridge slice). Selecting fires onDestinationChosen.
+    void showDestinationMenu (int idx)
+    {
+        if (idx < 0 || idx >= stripCount()) return;
+        const auto& choices = destInfos_[static_cast<std::size_t> (idx)].choices;
+        const auto& current = destInfos_[static_cast<std::size_t> (idx)].currentName;
+        juce::PopupMenu menu;
+        for (const auto& choice : choices)
+        {
+            const auto tape = choice.id;
+            menu.addItem (choice.name, /*enabled*/ true, /*ticked*/ choice.name == current,
+                          [this, idx, tape] { if (onDestinationChosen) onDestinationChosen (idx, tape); });
+        }
+        menu.showMenuAsync (juce::PopupMenu::Options{}.withTargetComponent (
+            destButtons_[static_cast<std::size_t> (idx)].get()));
+    }
+
     /// Maps a mouse event's source component back to a strip index (the event
     /// component may be a nested child of the strip), or -1 if it is none.
     [[nodiscard]] int stripIndexOf (juce::Component* c) const
@@ -651,6 +714,8 @@ private:
     }
 
     std::vector<std::unique_ptr<otto::ui::CompactFaderStrip>> strips_;
+    std::vector<std::unique_ptr<juce::TextButton>>            destButtons_;
+    std::vector<DestInfo>                                     destInfos_;
     std::vector<bool>                                         stripStereo_;
     otto::ui::ChannelDetailPanWidTab                          detailPanel_;
     int                                                       selectedStrip_ { -1 };
@@ -1458,6 +1523,16 @@ MainComponent::MainComponent()
         {
             if (auto* s = inputStripAt (idx)) s->setWidth (width);
         };
+        // Routing the channel main-out to a tape is a single graph-edge mutation
+        // on the message thread (same class as the gain/pan edits above — no
+        // audio-callback bracketing needed; the audio thread reads the edge atomically).
+        inputMixerPane_->onDestinationChosen = [this] (int idx, sirius::TapeId tape)
+        {
+            if (idx >= 0 && idx < static_cast<int> (inputStripChannelIds_.size()))
+                inputMixer_->setChannelMainOutToTape (
+                    inputStripChannelIds_[static_cast<std::size_t> (idx)], tape);
+            refreshInputMixer();
+        };
         tabs_.addTab ("Input Mixer", juce::Colours::black, inputMixerPane_.get(), false);
 
         rebuildInputStrips();
@@ -1772,6 +1847,37 @@ void MainComponent::refreshInputMixer()
                                               linToDb (s->peakRight()));
             inputMixerPane_->setStripLufs (i, s->lufsIntegrated());
         }
+
+    refreshInputDestinations();
+}
+
+// Resolves each strip's current tape (the one its channel main-out routes to)
+// and the full pooled-tape choice list, then pushes both into the pane so the
+// picker buttons track route changes and pool renames. Tapes only — the bus/
+// hardware-output display is out of scope for this slice.
+void MainComponent::refreshInputDestinations()
+{
+    if (inputMixerPane_ == nullptr) return;
+
+    std::vector<InputMixerPane::TapeChoice> choices;
+    choices.reserve (tapePool_.tapes().size());
+    for (const auto& t : tapePool_.tapes())
+        choices.push_back ({ t.id, juce::String (t.name) });
+
+    std::vector<InputMixerPane::DestInfo> infos;
+    infos.reserve (inputStripChannelIds_.size());
+    for (const auto& chId : inputStripChannelIds_)
+    {
+        juce::String currentName;
+        for (const auto& t : tapePool_.tapes())
+            if (inputMixer_->channelMainOutIsTape (chId, t.id))
+            {
+                currentName = juce::String (t.name);
+                break;
+            }
+        infos.push_back ({ currentName, choices });
+    }
+    inputMixerPane_->setDestinations (infos);
 }
 
 void MainComponent::rebuildInputStrips()
@@ -1846,6 +1952,7 @@ void MainComponent::rebuildInputStrips()
 
     if (inputMixerPane_ != nullptr) inputMixerPane_->setStrips (infos);
     recomputeInputStripMutes();
+    refreshInputDestinations();   // populate the picker labels for the new strips
 
     // Prepare each strip's EBU R128 loudness meter for the device's sample rate
     // (off the audio thread — the callback is removed). A generous max block

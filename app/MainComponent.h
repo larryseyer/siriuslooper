@@ -93,6 +93,10 @@ private:
     void refreshTimeline();
     void refreshDiagnostics();
     void refreshInputMixer();
+    /// Resolves each input strip's current tape destination + the pooled-tape
+    /// choice list and pushes both into the pane's per-strip picker buttons.
+    /// Message-thread only.
+    void refreshInputDestinations();
 
     // --- input mixer strip wiring ---
     /// The Audio ChannelStrip behind input-mixer strip `index`, or nullptr if
