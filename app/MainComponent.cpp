@@ -463,14 +463,17 @@ public:
     /// CompactFaderStrip ChannelType (FXReturn vs Bus).
     struct BusInfo { juce::String name; bool isFxReturn; };
 
-    /// One selectable tape in a strip's destination picker.
-    struct TapeChoice { sirius::TapeId id; juce::String name; };
-    /// One strip's destination state: the tape it currently records to. `currentId`
-    /// is the authoritative identity (names are user-editable + non-unique, so the
-    /// popup ticks by id, not by label); `currentName` is the button label only.
-    /// `sirius::TapeId{0}` is the no-match sentinel (pool ids start at 1) — used
-    /// when the strip is routed somewhere other than a pooled tape, so nothing ticks.
-    struct StripDest { juce::String currentName; sirius::TapeId currentId { 0 }; };
+    /// A routing destination kind for a channel's main-out.
+    enum class DestKind { Tape, Bus, HardwareOutput };
+    /// One selectable destination in a strip's picker. `id` is the TapeId or
+    /// BusId raw value (unused / 0 for HardwareOutput). Identity for ticking is
+    /// the (kind, id) pair — names are user-editable and non-unique.
+    struct DestChoice { DestKind kind; std::int64_t id; juce::String name; };
+    /// A strip's current destination (button label + what ticks in the popup).
+    /// Defaults to Tape + id 0 (no-match sentinel; pool ids start at 1).
+    struct StripDest { DestKind currentKind { DestKind::Tape };
+                       std::int64_t currentId { 0 };
+                       juce::String currentName; };
 
     // Gesture relays (idx = strip index). Set by MainComponent.
     std::function<void (int idx, float gainLinear)> onGain;
@@ -485,9 +488,9 @@ public:
     std::function<void (int idx, float pan)>        onPan;
     /// Detail-panel width knob moved. `width` is [0, 2] (1 = unity stereo).
     std::function<void (int idx, float width)>      onWidth;
-    /// A tape was chosen from strip `idx`'s destination picker — route the
-    /// channel's main output to that tape. MainComponent applies the graph edit.
-    std::function<void (int idx, sirius::TapeId tape)> onDestinationChosen;
+    /// A destination was chosen from strip `idx`'s picker. MainComponent applies
+    /// the matching engine main-out edit (tape / bus / hardware output).
+    std::function<void (int idx, DestChoice dest)> onDestinationChosen;
     /// Blank-pane-area "Add tape" gesture fired (right-click / long-press on
     /// empty pane). MainComponent creates a pooled tape (T3 addTape). The pane
     /// owns no pool/mixer state — it only relays the intent.
@@ -555,11 +558,12 @@ public:
         resized();
     }
 
-    /// Pushes the destination state: the shared pooled-tape `choices` list (stored
-    /// once for the popup) plus a per-strip `perStrip` entry parallel to the strips
-    /// set by setStrips. `perStrip` length should equal stripCount(); the guard is a
-    /// production fallback against a stale push, the jassert catches a real desync.
-    void setDestinations (const std::vector<TapeChoice>& choices,
+    /// Pushes the destination state: the shared `choices` list (stored once for
+    /// the popup; tapes then buses then direct-out) plus a per-strip `perStrip`
+    /// entry parallel to the strips set by setStrips. `perStrip` length should
+    /// equal stripCount(); the guard is a production fallback against a stale
+    /// push, the jassert catches a real desync.
+    void setDestinations (const std::vector<DestChoice>& choices,
                           const std::vector<StripDest>& perStrip)
     {
         choices_ = choices;
@@ -791,8 +795,9 @@ private:
     }
 
     /// Builds + shows the blank-area menu (right-click / long-press on empty
-    /// pane). One item, "Add tape", relays out via onAddTape — MainComponent
-    /// creates the pooled tape. `screenPos` targets both mouse and touch.
+    /// pane). Three items: "Add bus", "Add FX return", and "Add tape" — each
+    /// relays out via its matching on* callback. MainComponent handles creation.
+    /// `screenPos` targets both mouse and touch.
     void showBlankAreaMenu (juce::Point<int> screenPos)
     {
         juce::PopupMenu menu;
@@ -803,20 +808,21 @@ private:
             juce::Rectangle<int> (screenPos.x, screenPos.y, 1, 1)));
     }
 
-    /// Builds + shows strip `idx`'s tape destination menu from its stored
-    /// choices (pooled tapes only — no Direct/hardware-output entry; that path
-    /// is a deferred bridge slice). Selecting fires onDestinationChosen.
+    /// Builds + shows strip `idx`'s destination menu from its stored choices
+    /// (pooled tapes, buses/FX returns, and the direct hardware-output entry).
+    /// Selecting fires onDestinationChosen with the chosen DestChoice.
     void showDestinationMenu (int idx)
     {
         if (idx < 0 || idx >= stripCount()) return;
         if (choices_.empty()) return;
-        const auto currentId = stripDests_[static_cast<std::size_t> (idx)].currentId;
+        const auto& cur = stripDests_[static_cast<std::size_t> (idx)];
         juce::PopupMenu menu;
         for (const auto& choice : choices_)
         {
-            const auto tape = choice.id;
-            menu.addItem (choice.name, /*enabled*/ true, /*ticked*/ choice.id == currentId,
-                          [this, idx, tape] { if (onDestinationChosen) onDestinationChosen (idx, tape); });
+            const bool ticked = choice.kind == cur.currentKind && choice.id == cur.currentId;
+            const DestChoice d = choice;
+            menu.addItem (choice.name, /*enabled*/ true, ticked,
+                          [this, idx, d] { if (onDestinationChosen) onDestinationChosen (idx, d); });
         }
         menu.showMenuAsync (juce::PopupMenu::Options{}.withTargetComponent (
             destButtons_[static_cast<std::size_t> (idx)].get()));
@@ -837,7 +843,7 @@ private:
     std::vector<std::unique_ptr<otto::ui::CompactFaderStrip>> strips_;
     std::vector<std::unique_ptr<juce::TextButton>>            destButtons_;
     std::vector<StripDest>                                    stripDests_;
-    std::vector<TapeChoice>                                   choices_;   // shared, stored once
+    std::vector<DestChoice>                                   choices_;   // shared, stored once
     std::vector<bool>                                         stripStereo_;
     otto::ui::ChannelDetailPanWidTab                          detailPanel_;
     int                                                       selectedStrip_ { -1 };
@@ -1663,15 +1669,24 @@ MainComponent::MainComponent()
         // remove/addAudioCallback, exactly like removeTape and the load path.
         // (onGain/onPan above touch only strip-local atomics — no order_ mutation —
         // which is why they correctly skip the bracket.)
-        inputMixerPane_->onDestinationChosen = [this] (int idx, sirius::TapeId tape)
+        inputMixerPane_->onDestinationChosen = [this] (int idx, InputMixerPane::DestChoice dest)
         {
-            if (idx >= 0 && idx < static_cast<int> (inputStripChannelIds_.size()))
+            if (idx < 0 || idx >= static_cast<int> (inputStripChannelIds_.size())) return;
+            const auto chId = inputStripChannelIds_[static_cast<std::size_t> (idx)];
+            audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+            switch (dest.kind)
             {
-                const auto chId = inputStripChannelIds_[static_cast<std::size_t> (idx)];
-                audioDeviceManager_.removeAudioCallback (audioCallback_.get());
-                inputMixer_->setChannelMainOutToTape (chId, tape);
-                audioDeviceManager_.addAudioCallback (audioCallback_.get());
+                case InputMixerPane::DestKind::Tape:
+                    inputMixer_->setChannelMainOutToTape (chId, sirius::TapeId (dest.id));
+                    break;
+                case InputMixerPane::DestKind::Bus:
+                    inputMixer_->setChannelMainOutToBus (chId, sirius::BusId (dest.id));
+                    break;
+                case InputMixerPane::DestKind::HardwareOutput:
+                    inputMixer_->setChannelMainOutToHardwareOutput (chId);
+                    break;
             }
+            audioDeviceManager_.addAudioCallback (audioCallback_.get());
             refreshInputMixer();
         };
         // Blank-area "Add tape" gesture — same creation path + auto-name as the
@@ -2039,31 +2054,61 @@ void MainComponent::refreshInputMixer()
     refreshInputDestinations();
 }
 
-// Resolves each strip's current tape (the one its channel main-out routes to)
-// and the full pooled-tape choice list, then pushes both into the pane so the
-// picker buttons track route changes and pool renames. Tapes only — the bus/
-// hardware-output display is out of scope for this slice.
+// Resolves each strip's current main-out destination and builds the full choice
+// list (pooled tapes, then buses/FX returns, then direct hardware output), then
+// pushes both into the pane so picker buttons track route changes and pool renames.
 void MainComponent::refreshInputDestinations()
 {
     if (inputMixerPane_ == nullptr) return;
+    using Pane = InputMixerPane;
 
-    std::vector<InputMixerPane::TapeChoice> choices;
-    choices.reserve (tapePool_.tapes().size());
+    // Choice list (shared for every strip's popup): pooled tapes, then buses /
+    // FX returns, then the direct (hardware-output) terminal.
+    std::vector<Pane::DestChoice> choices;
     for (const auto& t : tapePool_.tapes())
-        choices.push_back ({ t.id, juce::String (t.name) });
+        choices.push_back (Pane::DestChoice { Pane::DestKind::Tape, t.id.value(), juce::String (t.name) });
+    for (int i = 0; i < inputMixer_->busCount(); ++i)
+    {
+        const auto bid = inputMixer_->busIdAt (i);
+        if (auto* bus = inputMixer_->busForId (bid))
+            choices.push_back (Pane::DestChoice { Pane::DestKind::Bus,
+                                                  bid.value(),
+                                                  juce::String (bus->config().name) });
+    }
+    choices.push_back (Pane::DestChoice { Pane::DestKind::HardwareOutput, 0, "Direct out" });
 
-    std::vector<InputMixerPane::StripDest> perStrip;
+    // Per-strip current destination, read back from the engine's main-out.
+    std::vector<Pane::StripDest> perStrip;
     perStrip.reserve (inputStripChannelIds_.size());
     for (const auto& chId : inputStripChannelIds_)
     {
-        InputMixerPane::StripDest dest;   // currentId defaults to the {0} no-match sentinel
-        for (const auto& t : tapePool_.tapes())
-            if (inputMixer_->channelMainOutIsTape (chId, t.id))
-            {
-                dest.currentName = juce::String (t.name);
-                dest.currentId   = t.id;
+        Pane::StripDest dest;
+        switch (inputMixer_->channelMainOut (chId))
+        {
+            case sirius::InputMixer::MainOutDest::Tape:
+                for (const auto& t : tapePool_.tapes())
+                    if (inputMixer_->channelMainOutIsTape (chId, t.id))
+                    {
+                        dest.currentKind = Pane::DestKind::Tape;
+                        dest.currentId   = t.id.value();
+                        dest.currentName = juce::String (t.name);
+                        break;
+                    }
                 break;
-            }
+            case sirius::InputMixer::MainOutDest::Bus:
+                // channelMainOut == Bus, but the engine exposes no "which bus"
+                // accessor (only MainOutDest + the tape-specific query), so the
+                // specific bus cannot be ticked back in P6 — label generically.
+                // Exact bus tick-back is a P7 nicety (needs channelMainOutBus()).
+                dest.currentKind = Pane::DestKind::Bus;
+                dest.currentName = "Bus";
+                break;
+            case sirius::InputMixer::MainOutDest::HardwareOutput:
+                dest.currentKind = Pane::DestKind::HardwareOutput;
+                dest.currentId   = 0;
+                dest.currentName = "Direct out";
+                break;
+        }
         perStrip.push_back (std::move (dest));
     }
     inputMixerPane_->setDestinations (choices, perStrip);
