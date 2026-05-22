@@ -1,5 +1,15 @@
 # Sirius Looper — Deferred Items
 
+### 2026-05-22 — GUI lockup when clicking the plugin "Scan" button (observed, NOT investigated)
+- Files: unknown — the host plugin-scan path (host/ out-of-process plugin hosting + the MainComponent
+  Plugins tab "Scan" control). NOT touched by the tape-UI slice.
+- What happened: operator clicked the "Scan" plugins button and the app locked up (had to relaunch).
+- Why deferred: pre-existing, unrelated to the tape-UI work; surfaced incidentally during eyes-on.
+- What's needed to finish: reproduce, then determine whether the scan blocks the message thread
+  (synchronous AudioPluginFormat scan on the UI thread is the usual culprit → move to a worker /
+  progress modal) or the out-of-process host handshake hangs. Confirm before P6 GUI work layers more
+  onto the same tab.
+
 ### 2026-05-22 — per-channel tape ROUTES are not yet written to the session file (tape-UI slice; holistic-review Important finding)
 - Files: app/MainComponent.cpp (chooseFileAndSave/chooseFileAndLoad), persistence (serialize/deserializeMixerGraphState already exist + tested).
 - What was deferred: the tape-UI slice persists the **TapePool** (which tapes exist) in the session
