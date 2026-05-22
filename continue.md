@@ -65,9 +65,21 @@
 
 ## RESUME HERE (2026-05-22 — slice 3 signed off; Phase 0 architecture locked; NEXT = the tape-UI slice)
 
-> ## ▶ STEP 1 (do this FIRST): brainstorm/plan **P6 — Input Mixer UI** (the tape-UI gate is lifted)
-> The tape-UI slice is **SHIPPED** (`e3d5c71..bbe82fc`, 7 tasks + per-task review fixes + a final
-> holistic opus review). Plan that drove it: `docs/superpowers/plans/2026-05-22-tape-ui-slice.md`.
+> ## ▶ STEP 1 (do this FIRST): EXECUTE the **P6 — Input Mixer UI** plan (already written; do NOT re-plan)
+> **The P6 plan is written and locked:** `docs/superpowers/plans/2026-05-22-p6-input-mixer-ui.md`
+> (4 tasks: T1 render bus/FX-return strips + fader/mute/meter; T2 blank-area Add-bus/Add-FX-return
+> gesture; T3 per-channel destination picker tape/bus/direct-out; T4 clean rebuild + operator eyes-on
+> + this handoff). Spec was locked, so brainstorming + writing-plans are DONE — go straight to
+> `superpowers:subagent-driven-development` (fresh subagent per task, two-stage review between).
+> UI is operator-verified (no red/green TDD); each task gates on compile-green + ctest baseline
+> (567/1) + commit. The plan's scope decisions (channel-only picker; bus removal + bus-node routing +
+> exact bus tick-back deferred to P7; floor-enforcement to P8) are deliberate — do not relitigate.
+>
+> (Housekeeping done this session: the completed V2→V7 transition guide was archived to
+> `docs/archive/sirius-looper-v2-to-v7-transition.md` — every subsystem it prescribed exists.)
+>
+> The tape-UI slice that gated P6 is **SHIPPED** (`e3d5c71..bbe82fc`, 7 tasks + per-task review fixes
+> + a final holistic opus review). Plan that drove it: `docs/superpowers/plans/2026-05-22-tape-ui-slice.md`.
 > What landed: `MixerMainOut` carries `TapeId` (non-primary routes export — T1); `MainComponent` owns
 > `TapePool` + `mirrorTapePool` (`engine/include/sirius/TapePoolMirror.h` — T2); `addTape`/`renameTape`/
 > `removeTape` keep pool↔mixer↔sink consistent with audio-callback bracketing + `closeTape` inside it
