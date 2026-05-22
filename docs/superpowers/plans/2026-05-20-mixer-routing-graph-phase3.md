@@ -1,5 +1,7 @@
 # Input-Side Routing Apparatus (Routing Phase 3) Implementation Plan
 
+> **HISTORICAL — superseded by minimal-defaults rule (2026-05-22):** the RVB+DLY ctor-seed described below was removed. Plan body preserved as the as-implemented record at that time.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Give `InputMixer` its own routing apparatus — a multi-terminal `MixerGraph` (Tape + HardwareOutput), buses, FX returns (incl. default RVB + DLY), graph-stored sends, per-node main-out assignment, and an RT-safe topological render traversal — mirroring `OutputMixer` but with two terminal sinks.

@@ -24,17 +24,11 @@
 > whitepaper V7 §6.1 (added §6.1.1 paragraph), routing-graph spec
 > (`docs/superpowers/specs/2026-05-20-mixer-routing-graph-design.md`), memory
 > `project_minimal_default_mixers` (NEW) + `project_mixer_routing_destinations_and_plugins`
-> (amended). **Code state:** `InputMixer` ctor at `engine/src/InputMixer.cpp:41-42`
-> STILL seeds `addFxReturn("RVB")` + `addFxReturn("DLY")` in violation of the rule —
-> queued in `todo.md` as its own slice (touches engine ctor + Phase-5 persistence
-> import + tests; recommend running it AHEAD of P7 so P7's Sends-tab UI doesn't
-> bake-in an assumption that RVB/DLY always exist). OutputMixer already starts empty.
+> (amended). **Code state:** ctor RVB/DLY seed REMOVED (`refactor: InputMixer ctor no longer seeds RVB/DLY FX returns`)
+> — a fresh `InputMixer` now holds zero buses; the existing P6 blank-area "Add FX
+> return" gesture mints them on demand. OutputMixer already starts empty.
 >
-> **▶ NEXT (revised) = remove the ctor RVB/DLY seed, THEN P7.**
-> The original NEXT was P7; the minimal-defaults rule changes ordering — do the
-> ctor-seed removal first so P7 starts from a correct baseline. Old NEXT preserved below.
->
-> **▶ NEXT (original, run AFTER the seed removal) = P7 — Input Mixer Sends tab + insert mgmt ≤8 + wire P4/P5 persistence into save/load.**
+> **▶ NEXT = P7 — Input Mixer Sends tab + insert mgmt ≤8 + wire P4/P5 persistence into save/load.**
 > P6 + P6b are the complete Input Mixer routing surface (strips, create gestures, channel + bus
 > destination pickers, all routable). P7 is the counterpart to excluding FX returns from main-out:
 > per-channel SEND levels INTO the RVB/DLY returns (the Sends tab), plus insert-chain management

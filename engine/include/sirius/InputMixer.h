@@ -125,9 +125,9 @@ public:
 
     /// Message-thread reconstruction of the routing graph from a snapshot.
     /// Replays buses/channels with their persisted ids, then main-outs, sends,
-    /// and insert chains. Call on a freshly-constructed mixer; the ctor's RVB/DLY
-    /// FX returns are reused (not re-created) when the snapshot carries their ids.
-    /// Message-thread only.
+    /// and insert chains. Call on a freshly-constructed mixer; under the
+    /// minimal-defaults rule the ctor seeds no buses, so every persisted bus is
+    /// minted via addBus to reproduce its dense busId. Message-thread only.
     void importGraphState (const InputMixerGraphState&);
 
     // Injected non-owning collaborators (set-once on the message thread).

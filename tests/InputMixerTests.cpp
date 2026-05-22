@@ -541,13 +541,11 @@ TEST_CASE ("processDeviceInputs safely skips a source whose device channel is ou
 // [input-routing] — Phase 3 Task 2: MixerGraph + bus/FX-return registry
 // =============================================================================
 
-TEST_CASE ("InputMixer constructs with Tape+HardwareOutput terminals and default RVB/DLY returns",
+TEST_CASE ("InputMixer constructs with Tape+HardwareOutput terminals and zero buses",
            "[input-routing]")
 {
     sirius::InputMixer mixer;
-    CHECK (mixer.busCount() == 2);
-    CHECK (mixer.busKindAt (0) == sirius::BusKind::FxReturn);
-    CHECK (mixer.busKindAt (1) == sirius::BusKind::FxReturn);
+    CHECK (mixer.busCount() == 0);
 }
 
 TEST_CASE ("InputMixer addBus registers a graph node defaulting its main-out to the tape terminal",
@@ -556,7 +554,7 @@ TEST_CASE ("InputMixer addBus registers a graph node defaulting its main-out to 
     sirius::InputMixer mixer;
     const auto bus = mixer.addBus (sirius::BusConfig { 2, "Drums", sirius::BusKind::Bus });
     CHECK (bus.value() != 0);
-    CHECK (mixer.busCount() == 3); // RVB, DLY, Drums
+    CHECK (mixer.busCount() == 1); // Drums
     CHECK (mixer.busMainOutIsTape (bus));
 }
 
@@ -568,14 +566,6 @@ TEST_CASE ("InputMixer addChannel registers a Channel graph node; removeChannel 
     CHECK (mixer.channelIsRegisteredInGraph (ch));
     mixer.removeChannel (ch);
     CHECK_FALSE (mixer.channelIsRegisteredInGraph (ch));
-}
-
-TEST_CASE ("InputMixer default RVB/DLY returns monitor the hardware output, not tape",
-           "[input-routing]")
-{
-    sirius::InputMixer mixer;
-    CHECK (mixer.busMainOut (mixer.busIdAt (0)) == sirius::InputMixer::MainOutDest::HardwareOutput);
-    CHECK (mixer.busMainOut (mixer.busIdAt (1)) == sirius::InputMixer::MainOutDest::HardwareOutput);
 }
 
 TEST_CASE ("InputMixer routes a channel main-out to a bus, the tape, or a hardware output",
@@ -718,9 +708,9 @@ TEST_CASE ("renderInputGraph: a channel send reaches an FX return, which deliver
 TEST_CASE ("InputMixer exportGraphState reflects buses, routing, sends, inserts",
            "[input-mixer][persistence]")
 {
-    // The InputMixer ctor pre-builds two FX returns (RVB busId 1, DLY busId 2),
-    // so the bus vector is [RVB, DLY, Drums, Reverb] and the snapshot reflects
-    // them all — exportGraphState mirrors the live mixer, ctor nodes included.
+    // A freshly-constructed mixer has zero buses (minimal-defaults rule), so the
+    // bus vector after these adds is [Drums, Reverb] and exportGraphState reflects
+    // exactly what the test wired up — no ctor-seeded nodes intrude.
     sirius::InputMixer mixer;
     const sirius::InputDescriptor desc {
         sirius::TapeId (1), sirius::InputKind::Audio, std::string ("In 1"),
@@ -748,17 +738,15 @@ TEST_CASE ("InputMixer exportGraphState reflects buses, routing, sends, inserts"
 
     const auto state = mixer.exportGraphState();
 
-    REQUIRE (state.buses.size() == 4);
-    CHECK (state.buses[0].kind == sirius::MixerBusKind::FxReturn); // RVB
-    CHECK (state.buses[1].kind == sirius::MixerBusKind::FxReturn); // DLY
+    REQUIRE (state.buses.size() == 2);
 
-    const auto& drumsState = state.buses[2];
+    const auto& drumsState = state.buses[0];
     CHECK (drumsState.busId == drums.value());
     CHECK (drumsState.name == "Drums");
     CHECK (drumsState.kind == sirius::MixerBusKind::Bus);
     CHECK (drumsState.inserts.entries().size() == 1);
 
-    const auto& reverbState = state.buses[3];
+    const auto& reverbState = state.buses[1];
     CHECK (reverbState.busId == reverb.value());
     CHECK (reverbState.kind == sirius::MixerBusKind::FxReturn);
 
@@ -788,9 +776,6 @@ TEST_CASE ("InputMixer importGraphState round-trips an exported graph", "[input-
     const auto reverb = source.addFxReturn ("Reverb");
     sirius::EffectChainEntry comp; comp.displayName = "comp";
     source.setBusEffectChain (drums, sirius::EffectChain{}.withAppended (comp));
-    // Exercise the "apply chain to an EXISTING ctor bus" import path (busId 1 = RVB).
-    sirius::EffectChainEntry rvbVerb; rvbVerb.displayName = "rvb-plate";
-    source.setBusEffectChain (sirius::BusId (1), sirius::EffectChain{}.withAppended (rvbVerb));
     const auto ch = source.addChannel (sirius::InputId (1), sirius::SignalType::Audio);
     source.setChannelInputSource (ch, 2, 3, true);
     source.setChannelTapeMode (ch, sirius::TapeMode::CommitToTape);
@@ -805,14 +790,15 @@ TEST_CASE ("InputMixer importGraphState round-trips an exported graph", "[input-
     CHECK (loaded.exportGraphState() == exported);
 }
 
-TEST_CASE ("InputMixer importGraphState of an empty snapshot keeps only the ctor FX returns", "[input-mixer][persistence]")
+TEST_CASE ("InputMixer importGraphState of an empty snapshot yields an empty mixer", "[input-mixer][persistence]")
 {
     sirius::InputMixer mixer;
     mixer.importGraphState (sirius::InputMixerGraphState{});
 
-    // The ctor seeds RVB (busId 1) + DLY (busId 2); an empty import adds no user
-    // buses and must not duplicate or rewind them — the pre-graph "loads clean" default.
-    CHECK (mixer.busCount() == 2);
+    // Minimal-defaults rule: a fresh mixer has zero buses, and an empty import
+    // adds none — the mixer stays in the pristine ctor state and a fresh add
+    // works normally (channel default-routes to the tape terminal).
+    CHECK (mixer.busCount() == 0);
 
     const sirius::InputDescriptor desc {
         sirius::TapeId (1), sirius::InputKind::Audio, std::string ("In 1"),

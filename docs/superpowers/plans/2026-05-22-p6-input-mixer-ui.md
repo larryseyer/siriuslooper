@@ -1,5 +1,7 @@
 # P6 — Input Mixer UI (creation + routing) Implementation Plan
 
+> **HISTORICAL — superseded by minimal-defaults rule (2026-05-22):** the InputMixer ctor no longer seeds RVB/DLY returns; bus/FX-return strips appear only after the performer uses the blank-area gesture. Plan body preserved as the as-implemented record at that time.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Give the Input Mixer pane visible bus / FX-return strips, a blank-area gesture to create them, and a per-channel destination picker that routes a channel's main-out to a tape, a bus, or the hardware (direct) output.

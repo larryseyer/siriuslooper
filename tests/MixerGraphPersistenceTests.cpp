@@ -83,11 +83,11 @@ TEST_CASE ("a pre-graph session (no mixer-graph JSON) loads as ctor-default mixe
 {
     // Forward-compat: a pre-graph session never serialized a mixer graph, so
     // nothing is imported. Both mixers stay at their ctor defaults: the input
-    // mixer with its dedicated RVB+DLY FX returns, the output mixer with master.
+    // mixer is empty (minimal-defaults rule), the output mixer carries master.
     InputMixer  input;
     OutputMixer output;
 
-    CHECK (input.busCount() == 2);          // ctor RVB (busId 1) + DLY (busId 2)
+    CHECK (input.busCount() == 0);          // minimal-defaults: no ctor-seeded buses
     const auto outState = output.exportGraphState();
     REQUIRE (outState.buses.size() >= 1);   // master at index 0
     CHECK (outState.buses[0].busId == 0);

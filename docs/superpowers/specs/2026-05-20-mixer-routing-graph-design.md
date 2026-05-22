@@ -260,9 +260,8 @@ with >1 terminal, OutputMixer regression-equivalence.
 
 **Phase 3 — Input-side routing apparatus.** Engine, TDD. `InputMixer` gains its
 **own** `MixerGraph` (tape + hardware-output terminals), **own** buses, **own** FX
-returns (**none seeded by default** — the historical RVB+DLY ctor-seed contradicts
-the minimal-defaults rule and is queued for removal; see todo.md), **own** send
-matrix, and the
+returns (**none seeded by default** — the minimal-defaults rule; the historical
+RVB+DLY ctor-seed was removed in line with this), **own** send matrix, and the
 RT-safe topological traversal — mirroring `OutputMixer`'s render but with source =
 device-input strips and a dual terminal. Main-out: channel → bus / tape / hardware
 output; bus / FX-return → bus / tape / output. Sends: channel|bus → FX return

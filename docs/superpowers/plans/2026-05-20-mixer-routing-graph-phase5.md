@@ -1,5 +1,7 @@
 # Mixer Routing-Graph Phase 5: Routing-Graph Persistence — Implementation Plan
 
+> **HISTORICAL — superseded by minimal-defaults rule (2026-05-22):** the InputMixer ctor no longer seeds RVB(busId 1)/DLY(busId 2); the "reuse ctor-seeded buses on import" path described below collapsed to "every persisted bus is minted via addBus". Plan body preserved as the as-implemented record at that time.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make each mixer's routing graph (buses, FX returns, main-out assignments, send levels, terminal assignments, per-node insert chains) survive a session save/load round-trip, while pre-graph sessions still load clean.

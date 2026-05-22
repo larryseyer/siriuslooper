@@ -38,8 +38,6 @@ InputMixer::InputMixer()
     busNodeIds_.reserve (static_cast<std::size_t> (kMaxInputBuses));
     tapeTerminals_.reserve (static_cast<std::size_t> (kMaxTapes));
     tapeTerminals_.push_back ({ 1, graph_.terminalNode (MixerTerminal::Tape) });
-    setBusMainOutToHardwareOutput (addFxReturn ("RVB"));
-    setBusMainOutToHardwareOutput (addFxReturn ("DLY"));
 }
 
 InputMixer::~InputMixer() = default;
@@ -269,9 +267,12 @@ void InputMixer::importGraphState (const InputMixerGraphState& state)
         return false;
     };
 
-    // 1. Buses / FX returns. The ctor pre-creates RVB (busId 1) + DLY (busId 2);
-    //    apply the snapshot's chain to an existing bus rather than re-creating it.
-    //    Create the rest with addBus, which mints the persisted (dense) busId.
+    // 1. Buses / FX returns. A freshly-constructed mixer holds zero buses
+    //    (minimal-defaults rule), so every persisted bus is minted here via addBus,
+    //    which assigns the snapshot's dense busId. The busExists guard is kept as
+    //    defense-in-depth — no live path currently reaches importGraphState on a
+    //    non-empty mixer (removeBus does not exist), but the guard keeps the loop
+    //    correct should an in-place reimport API land later.
     for (const auto& b : state.buses)
     {
         if (! busExists (b.busId))
@@ -310,7 +311,7 @@ void InputMixer::importGraphState (const InputMixerGraphState& state)
     for (const auto& c : state.channels)
         for (const auto& s : c.sends) { const bool ok = setChannelSend (ChannelId (c.channelId), BusId (s.busId), s.level); jassert (ok); juce::ignoreUnused (ok); }
 
-    // 5. Advance id counters — never rewind (the ctor already set nextBusId_ == 3).
+    // 5. Advance id counters — never rewind (the ctor leaves nextBusId_ == 1).
     nextBusId_     = std::max (nextBusId_, state.nextBusId);
     nextChannelId_ = std::max (nextChannelId_, state.nextChannelId);
 }
