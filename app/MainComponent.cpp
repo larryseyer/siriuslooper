@@ -22,6 +22,7 @@
 #include <deque>
 #include <exception>
 #include <functional>
+#include <limits>
 #include <optional>
 #include <vector>
 
@@ -692,6 +693,7 @@ public:
 
         dropped_.setColour (juce::Label::textColourId, otto::Colours::textSecondary);
         dropped_.setJustificationType (juce::Justification::centredRight);
+        dropped_.setText ("Dropped capture blocks: 0", juce::dontSendNotification);
         addAndMakeVisible (dropped_);
     }
 
@@ -720,6 +722,8 @@ public:
     /// (the audio thread out-ran the disk worker) — surfaced, never hidden.
     void setDroppedBlocks (std::uint64_t count)
     {
+        if (count == lastDropped_) return;
+        lastDropped_ = count;
         dropped_.setText (count == 0
                               ? juce::String ("Dropped capture blocks: 0")
                               : "Dropped capture blocks: " + juce::String (count) + "  (capture overflow)",
@@ -785,6 +789,8 @@ private:
     private:
         void commitName()
         {
+            if (committed_) return;
+            committed_ = true;
             const auto trimmed = name_.getText().trim();
             if (trimmed.isNotEmpty() && onRename) onRename (id_, trimmed);
         }
@@ -792,11 +798,13 @@ private:
         sirius::TapeId   id_;
         juce::TextEditor name_;
         juce::TextButton remove_;
+        bool             committed_ { false };
     };
 
     juce::Label                            title_;
     juce::TextButton                       newButton_;
     juce::Label                            dropped_;
+    std::uint64_t                          lastDropped_ { std::numeric_limits<std::uint64_t>::max() };
     std::vector<std::unique_ptr<Row>>      rows_;
 };
 
