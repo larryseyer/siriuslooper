@@ -461,9 +461,12 @@ public:
 
     /// One selectable tape in a strip's destination picker.
     struct TapeChoice { sirius::TapeId id; juce::String name; };
-    /// One strip's destination state: the tape it currently records to (button
-    /// label) and the full list of pooled tapes the picker offers.
-    struct DestInfo { juce::String currentName; std::vector<TapeChoice> choices; };
+    /// One strip's destination state: the tape it currently records to. `currentId`
+    /// is the authoritative identity (names are user-editable + non-unique, so the
+    /// popup ticks by id, not by label); `currentName` is the button label only.
+    /// `sirius::TapeId{0}` is the no-match sentinel (pool ids start at 1) — used
+    /// when the strip is routed somewhere other than a pooled tape, so nothing ticks.
+    struct StripDest { juce::String currentName; sirius::TapeId currentId { 0 }; };
 
     // Gesture relays (idx = strip index). Set by MainComponent.
     std::function<void (int idx, float gainLinear)> onGain;
@@ -502,7 +505,7 @@ public:
         strips_.clear();
         stripStereo_.clear();
         destButtons_.clear();
-        destInfos_.clear();
+        stripDests_.clear();
         // Channel identities change on a rebuild, so the prior selection no
         // longer maps to a strip — drop it and hide the detail panel.
         selectedStrip_ = -1;
@@ -529,20 +532,24 @@ public:
             button->onClick = [this, idx] { showDestinationMenu (idx); };
             addAndMakeVisible (*button);
             destButtons_.push_back (std::move (button));
-            destInfos_.push_back ({});
+            stripDests_.push_back ({});
         }
         resized();
     }
 
-    /// Pushes the per-strip destination state (current tape label + selectable
-    /// tape list). `infos` is parallel to the strips set by setStrips; extra or
-    /// missing entries are ignored so a stale push can't desync the buttons.
-    void setDestinations (const std::vector<DestInfo>& infos)
+    /// Pushes the destination state: the shared pooled-tape `choices` list (stored
+    /// once for the popup) plus a per-strip `perStrip` entry parallel to the strips
+    /// set by setStrips. `perStrip` length should equal stripCount(); the guard is a
+    /// production fallback against a stale push, the jassert catches a real desync.
+    void setDestinations (const std::vector<TapeChoice>& choices,
+                          const std::vector<StripDest>& perStrip)
     {
-        for (int i = 0; i < stripCount() && i < static_cast<int> (infos.size()); ++i)
+        choices_ = choices;
+        jassert (static_cast<int> (perStrip.size()) == stripCount());
+        for (int i = 0; i < stripCount() && i < static_cast<int> (perStrip.size()); ++i)
         {
-            destInfos_[static_cast<std::size_t> (i)] = infos[static_cast<std::size_t> (i)];
-            const auto& label = infos[static_cast<std::size_t> (i)].currentName;
+            stripDests_[static_cast<std::size_t> (i)] = perStrip[static_cast<std::size_t> (i)];
+            const auto& label = perStrip[static_cast<std::size_t> (i)].currentName;
             destButtons_[static_cast<std::size_t> (i)]->setButtonText (label.isEmpty() ? "—" : label);
         }
     }
@@ -688,13 +695,13 @@ private:
     void showDestinationMenu (int idx)
     {
         if (idx < 0 || idx >= stripCount()) return;
-        const auto& choices = destInfos_[static_cast<std::size_t> (idx)].choices;
-        const auto& current = destInfos_[static_cast<std::size_t> (idx)].currentName;
+        if (choices_.empty()) return;
+        const auto currentId = stripDests_[static_cast<std::size_t> (idx)].currentId;
         juce::PopupMenu menu;
-        for (const auto& choice : choices)
+        for (const auto& choice : choices_)
         {
             const auto tape = choice.id;
-            menu.addItem (choice.name, /*enabled*/ true, /*ticked*/ choice.name == current,
+            menu.addItem (choice.name, /*enabled*/ true, /*ticked*/ choice.id == currentId,
                           [this, idx, tape] { if (onDestinationChosen) onDestinationChosen (idx, tape); });
         }
         menu.showMenuAsync (juce::PopupMenu::Options{}.withTargetComponent (
@@ -715,7 +722,8 @@ private:
 
     std::vector<std::unique_ptr<otto::ui::CompactFaderStrip>> strips_;
     std::vector<std::unique_ptr<juce::TextButton>>            destButtons_;
-    std::vector<DestInfo>                                     destInfos_;
+    std::vector<StripDest>                                    stripDests_;
+    std::vector<TapeChoice>                                   choices_;   // shared, stored once
     std::vector<bool>                                         stripStereo_;
     otto::ui::ChannelDetailPanWidTab                          detailPanel_;
     int                                                       selectedStrip_ { -1 };
@@ -1864,20 +1872,21 @@ void MainComponent::refreshInputDestinations()
     for (const auto& t : tapePool_.tapes())
         choices.push_back ({ t.id, juce::String (t.name) });
 
-    std::vector<InputMixerPane::DestInfo> infos;
-    infos.reserve (inputStripChannelIds_.size());
+    std::vector<InputMixerPane::StripDest> perStrip;
+    perStrip.reserve (inputStripChannelIds_.size());
     for (const auto& chId : inputStripChannelIds_)
     {
-        juce::String currentName;
+        InputMixerPane::StripDest dest;   // currentId defaults to the {0} no-match sentinel
         for (const auto& t : tapePool_.tapes())
             if (inputMixer_->channelMainOutIsTape (chId, t.id))
             {
-                currentName = juce::String (t.name);
+                dest.currentName = juce::String (t.name);
+                dest.currentId   = t.id;
                 break;
             }
-        infos.push_back ({ currentName, choices });
+        perStrip.push_back (std::move (dest));
     }
-    inputMixerPane_->setDestinations (infos);
+    inputMixerPane_->setDestinations (choices, perStrip);
 }
 
 void MainComponent::rebuildInputStrips()
