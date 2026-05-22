@@ -10,12 +10,15 @@
 
 ## RESUME HERE (2026-05-22 — slice 3 signed off; Phase 0 architecture locked; NEXT = the tape-UI slice)
 
-> ## ▶ STEP 1 (do this FIRST): `writing-plans` for the tape-UI slice
-> Phase 0 (design capture) is DONE — local, **not yet committed**. The architecture is locked;
-> no more brainstorming. Go straight to `superpowers:writing-plans` →
-> `docs/superpowers/plans/2026-05-22-tape-ui-slice.md` → `superpowers:subagent-driven-development`.
-> The approved plan lives at `~/.claude/plans/read-continue-and-proceed-graceful-otter.md`.
-> GUI = operator-verified (not unit-tested); engine/wiring = headless TDD.
+> ## ▶ STEP 1 (do this FIRST): EXECUTE the tape-UI implementation plan
+> Phase 0 (design capture) is DONE and **committed/pushed** (`a77e261`). The full **implementation
+> plan is WRITTEN** at `docs/superpowers/plans/2026-05-22-tape-ui-slice.md` (7 tasks, real test code,
+> exact file/line targets) — brainstorming AND writing-plans are both complete. Go STRAIGHT to
+> `superpowers:subagent-driven-development` and execute it task-by-task, **T1 first** (each task ends
+> with a commit + push per `feedback_subagents_push_to_master`; never `--amend` a pushed task commit).
+> Higher-level approved plan: `~/.claude/plans/read-continue-and-proceed-graceful-otter.md`.
+> Architecture (the "why"): `docs/superpowers/specs/2026-05-22-io-ownership-and-direct-layer-design.md`.
+> GUI tasks (T5–T7) = operator-verified (not unit-tested); engine/wiring (T1–T4) = headless TDD.
 >
 > **The tape-UI slice = 7 tasks** (built to the canonical model — tape destinations ONLY, no
 > direct/hardware-output option in the picker):
@@ -43,10 +46,12 @@
 > - **T7 (GUI):** extend `InputMixerPane::mouseDown` (~510) so right-click / 500 ms long-press on BLANK
 >   area (`stripIndexOf==-1`, currently early-returns) opens "Add tape / use existing".
 >
-> **First moves:** `git status` (Phase-0 edits uncommitted: design doc, whitepaper §5.2/§6.6, memories,
-> this file); commit Phase 0 (`docs:`); then read `TapePool.h` + `TapeId.h` + `FlacTapeSink.h` +
-> `InputMixer.h` tape API + `MainComponent.cpp` `InputMixerPane`/`rebuildInputStrips`(~1589) +
-> `tabs_`(~1206-1323); then `writing-plans`. The approved plan + the design doc are the source of truth.
+> **First moves:** `git status` should be clean (Phase 0 + the implementation plan are committed/pushed).
+> Read the implementation plan in full, then invoke `superpowers:subagent-driven-development` and
+> dispatch T1. The plan already cites every file/line it touches (`InputMixer.cpp:162/316`,
+> `MixerGraphState.h:26`, `MainComponent.cpp` ~1096/1265/1299/1469/1589/2089) and includes the real
+> test code; implementers read the surrounding code as needed. The 7-task summary below is a quick
+> reference — the plan file is the executable source of truth.
 
 > ## THE CANONICAL I/O MODEL (locked 2026-05-22 — `project_io_ownership_direct_layer`)
 > **Input mixer = sole owner of physical INPUTS. Output mixer = sole owner of physical OUTPUTS.**
