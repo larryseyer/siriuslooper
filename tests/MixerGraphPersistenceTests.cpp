@@ -98,3 +98,17 @@ TEST_CASE ("a pre-graph session (no mixer-graph JSON) loads as ctor-default mixe
     const auto chId = input.addChannel (InputId (1), SignalType::Audio);
     CHECK (input.channelMainOut (chId) == InputMixer::MainOutDest::Tape);
 }
+
+TEST_CASE ("input mixer graph serializes a non-primary tape route", "[sessionformat][mixer][tape]")
+{
+    sirius::InputMixer mixer;
+    const auto ch = mixer.addChannel (sirius::InputId (0), sirius::SignalType::Audio);
+    REQUIRE (mixer.addTape (sirius::TapeId { 3 }));
+    REQUIRE (mixer.setChannelMainOutToTape (ch, sirius::TapeId { 3 }));
+
+    const auto json    = sirius::persistence::serializeMixerGraphState (mixer.exportGraphState());
+    const auto decoded = sirius::persistence::deserializeInputMixerGraphState (json);
+    CHECK (decoded.channels.size() == 1);
+    CHECK (decoded.channels[0].mainOut.terminal == sirius::MixerTerminalKind::Tape);
+    CHECK (decoded.channels[0].mainOut.tapeId   == 3);
+}

@@ -1052,3 +1052,26 @@ TEST_CASE ("renderInputGraph: removing a tape a channel was routed to falls the 
     REQUIRE (sink.find (2) == nullptr);  // the removed tape receives nothing
     REQUIRE (sink.find (1) != nullptr);  // signal fell back to the primary
 }
+
+TEST_CASE ("exportGraphState round-trips a non-primary tape route", "[input-mixer][tape]")
+{
+    sirius::InputMixer mixer;
+    const auto ch = mixer.addChannel (sirius::InputId (0), sirius::SignalType::Audio);
+    REQUIRE (mixer.addTape (sirius::TapeId { 2 }));
+    REQUIRE (mixer.setChannelMainOutToTape (ch, sirius::TapeId { 2 }));
+
+    // Must NOT trip the mainOutSnapshot jassertfalse, and must record tape 2.
+    const auto state = mixer.exportGraphState();
+    REQUIRE (state.channels.size() == 1);
+    const auto& mo = state.channels[0].mainOut;
+    CHECK (mo.kind     == sirius::MixerMainOut::Kind::Terminal);
+    CHECK (mo.terminal == sirius::MixerTerminalKind::Tape);
+    CHECK (mo.tapeId   == 2);
+
+    // Re-import into a fresh mixer (with tape 2 present) restores the route.
+    sirius::InputMixer restored;
+    REQUIRE (restored.addTape (sirius::TapeId { 2 }));
+    restored.importGraphState (state);
+    CHECK (restored.channelMainOutIsTape (sirius::ChannelId (state.channels[0].channelId),
+                                          sirius::TapeId { 2 }));
+}

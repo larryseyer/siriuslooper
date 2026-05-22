@@ -28,10 +28,11 @@ struct MixerMainOut
     enum class Kind { Terminal, Bus };
     Kind              kind     { Kind::Terminal };
     MixerTerminalKind terminal { MixerTerminalKind::Tape }; // valid when kind == Terminal
+    std::int64_t      tapeId   { 1 };                       // valid when terminal == Tape (1 = primary)
     std::int64_t      busId    { 0 };                       // valid when kind == Bus
 
     bool operator== (const MixerMainOut& o) const noexcept
-    { return kind == o.kind && terminal == o.terminal && busId == o.busId; }
+    { return kind == o.kind && terminal == o.terminal && tapeId == o.tapeId && busId == o.busId; }
     bool operator!= (const MixerMainOut& o) const noexcept { return ! (*this == o); }
 };
 

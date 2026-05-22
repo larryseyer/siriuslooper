@@ -163,10 +163,12 @@ MixerMainOut InputMixer::mainOutSnapshot (MixerNodeId node) const noexcept
 {
     const auto dest = graph_.mainOutOf (node);
     MixerMainOut out;
-    if (dest == graph_.terminalNode (MixerTerminal::Tape))
+    const int tapeSlot = tapeSlotForNode (dest);
+    if (tapeSlot >= 0)
     {
-        out.kind = MixerMainOut::Kind::Terminal;
+        out.kind     = MixerMainOut::Kind::Terminal;
         out.terminal = MixerTerminalKind::Tape;
+        out.tapeId   = tapeTerminals_[static_cast<std::size_t> (tapeSlot)].tapeId;
         return out;
     }
     if (dest == graph_.terminalNode (MixerTerminal::HardwareOutput))
@@ -319,7 +321,7 @@ void InputMixer::applyChannelMainOut (ChannelId id, const MixerMainOut& m)
                         ? setChannelMainOutToBus (id, BusId (m.busId))
                         : (m.terminal == MixerTerminalKind::HardwareOutput)
                               ? setChannelMainOutToHardwareOutput (id)
-                              : setChannelMainOutToTape (id);
+                              : setChannelMainOutToTape (id, TapeId (m.tapeId));
     jassert (ok); // a snapshot edge the graph rejected = corrupt/incompatible snapshot
     juce::ignoreUnused (ok);
 }
@@ -330,7 +332,7 @@ void InputMixer::applyBusMainOut (BusId id, const MixerMainOut& m)
                         ? setBusMainOutToBus (id, BusId (m.busId))
                         : (m.terminal == MixerTerminalKind::HardwareOutput)
                               ? setBusMainOutToHardwareOutput (id)
-                              : setBusMainOutToTape (id);
+                              : setBusMainOutToTape (id, TapeId (m.tapeId));
     jassert (ok); // a snapshot edge the graph rejected = corrupt/incompatible snapshot
     juce::ignoreUnused (ok);
 }

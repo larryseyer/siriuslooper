@@ -781,9 +781,15 @@ namespace
         auto obj = makeObject();
         obj->setProperty ("kind", m.kind == MixerMainOut::Kind::Bus ? "Bus" : "Terminal");
         if (m.kind == MixerMainOut::Kind::Bus)
+        {
             obj->setProperty ("busId", juce::int64 (m.busId));
+        }
         else
+        {
             obj->setProperty ("terminal", terminalKindToString (m.terminal));
+            if (m.terminal == MixerTerminalKind::Tape)
+                obj->setProperty ("tapeId", juce::int64 (m.tapeId));
+        }
         return objectVar (obj);
     }
     MixerMainOut mainOutFromVar (const juce::var& v)
@@ -799,6 +805,14 @@ namespace
         {
             m.kind = MixerMainOut::Kind::Terminal;
             m.terminal = terminalKindFromString (requireProperty (v, "terminal").toString());
+            if (m.terminal == MixerTerminalKind::Tape)
+            {
+                // Back-compat default 1 (primary) for pre-tapeId documents.
+                if (const auto t = optionalProperty (v, "tapeId"); ! t.isVoid())
+                    m.tapeId = requireInt64 (t, "mainOut.tapeId");
+                else
+                    m.tapeId = 1;
+            }
         }
         else fail (("Unknown mainOut.kind: " + kind).toStdString());
         return m;
