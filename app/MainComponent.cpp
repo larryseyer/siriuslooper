@@ -811,14 +811,17 @@ public:
     }
 
     /// Rebuilds the row list from `infos` (one Row each). Remove is disabled
-    /// when only one tape remains so the >=1 pool floor is unbreakable from
-    /// the UI (TapePool/MainComponent also refuse below it).
-    void setTapes (const std::vector<TapeInfo>& infos)
+    /// (a) when only one tape remains so the >=1 pool floor is unbreakable, and
+    /// (b) on the primary tape, which is permanent (TapePool/InputMixer/MainComponent
+    /// all refuse to remove it). Both must be reflected in the UI or the operator
+    /// can click a Remove that silently desyncs pool from mixer.
+    void setTapes (const std::vector<TapeInfo>& infos, sirius::TapeId primary)
     {
         rows_.clear();
-        const bool canRemove = infos.size() > 1;
+        const bool poolAboveFloor = infos.size() > 1;
         for (const auto& info : infos)
         {
+            const bool canRemove = poolAboveFloor && info.id != primary;
             auto row = std::make_unique<Row> (info.id, info.name, canRemove);
             row->onRename = [this] (sirius::TapeId id, juce::String n)
             {
@@ -1571,14 +1574,23 @@ MainComponent::MainComponent()
         {
             if (auto* s = inputStripAt (idx)) s->setWidth (width);
         };
-        // Routing the channel main-out to a tape is a single graph-edge mutation
-        // on the message thread (same class as the gain/pan edits above — no
-        // audio-callback bracketing needed; the audio thread reads the edge atomically).
+        // Routing the channel main-out to a tape is a TOPOLOGY mutation, not a
+        // strip-local edit: setChannelMainOutToTape -> MixerGraph::setMainOut ->
+        // recomputeOrder(), which clears and rebuilds order_ — the very vector the
+        // audio thread reads via evaluationOrder() on the hot path (MixerGraph.h
+        // forbids reading it mid-mutation). So this MUST be bracketed by
+        // remove/addAudioCallback, exactly like removeTape and the load path.
+        // (onGain/onPan above touch only strip-local atomics — no order_ mutation —
+        // which is why they correctly skip the bracket.)
         inputMixerPane_->onDestinationChosen = [this] (int idx, sirius::TapeId tape)
         {
             if (idx >= 0 && idx < static_cast<int> (inputStripChannelIds_.size()))
-                inputMixer_->setChannelMainOutToTape (
-                    inputStripChannelIds_[static_cast<std::size_t> (idx)], tape);
+            {
+                const auto chId = inputStripChannelIds_[static_cast<std::size_t> (idx)];
+                audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+                inputMixer_->setChannelMainOutToTape (chId, tape);
+                audioDeviceManager_.addAudioCallback (audioCallback_.get());
+            }
             refreshInputMixer();
         };
         // Blank-area "Add tape" gesture — same creation path + auto-name as the
@@ -2121,6 +2133,10 @@ void MainComponent::renameTape (sirius::TapeId id, const juce::String& name)
 void MainComponent::removeTape (sirius::TapeId id)
 {
     if (tapePool_.count() <= 1) return;          // >=1 pool floor (TapePool also refuses)
+    if (id == tapePool_.primary()) return;       // primary is permanent (InputMixer pins it
+                                                 // too) — must bail BEFORE closeTape, or we'd
+                                                 // close the primary writer then desync when
+                                                 // inputMixer_->removeTape refuses TapeId{1}.
 
     audioDeviceManager_.removeAudioCallback (audioCallback_.get());
     // Route any channel that targeted this tape back to the primary tape.
@@ -2156,7 +2172,7 @@ void MainComponent::refreshTapesPane()
     infos.reserve (tapePool_.tapes().size());
     for (const auto& t : tapePool_.tapes())
         infos.push_back ({ t.id, juce::String (t.name) });
-    tapesPane_->setTapes (infos);
+    tapesPane_->setTapes (infos, tapePool_.primary());
 }
 
 void MainComponent::refreshDiagnostics()
