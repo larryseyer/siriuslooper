@@ -1,18 +1,19 @@
 # Sirius Looper — Deferred Items
 
-### 2026-05-21 — Slice 4: enforce the ≥1-channel→≥1-tape looper invariant + per-channel direct-out opt-out
-- Files: app/MainComponent.cpp (rebuildInputStrips, the slice-4 destination picker),
-  engine/src/InputMixer.cpp (route mutators).
-- What was deferred: slice 3 makes input strips default to TapeMode::CommitToTape (capture to the
-  primary tape) so the looper always has a live capture path. NOT yet built: (a) the per-channel
-  destination picker letting a user route a channel direct-to-output (TapeMode::NoTape) or to a
-  chosen tape; (b) the ACTIVE enforcement that refuses to let the count of channels-recording-to-a-
-  tape reach zero (≥1 channel → ≥1 tape ALWAYS, else it's a mixer not a looper — operator rule,
-  memory project_looper_at_least_one_tape_invariant).
-- Why deferred: the routing UI is slice 4; slice 3 scope is the capture mechanism + a sane default.
-- What's needed to finish: build the slice-4 picker; when a route change would drop the last
-  channel→tape path, refuse / keep ≥1 (and surface why). NonDestructive's dry+param-tape split is
-  a separate (wet-capture) concern, not this path.
+### 2026-05-22 — input→output bridge slice: ≥1-channel→≥1-tape enforcement + per-channel direct-out opt-out (MOVED here from "slice 4")
+- Files: app/MainComponent.cpp (the destination picker), engine/src/InputMixer.cpp (route mutators).
+- What was deferred: (a) letting a channel opt OUT of tape (TapeMode::NoTape → the direct layer to
+  an output-mixer channel — see project_io_ownership_direct_layer); (b) the ACTIVE enforcement that
+  refuses to let the count of channels-recording-to-a-tape reach zero (≥1 channel → ≥1 tape ALWAYS,
+  else it's a mixer not a looper — memory project_looper_at_least_one_tape_invariant).
+- Why MOVED (2026-05-22): the tape-UI slice's per-channel picker offers TAPE destinations only —
+  there is NO no-tape destination until the input→output direct-layer bridge slice exists, so
+  nothing can drop below the floor before then. Enforcement belongs with the feature that can
+  violate it. The bridge slice is paired with the Output Mixer UI (P8), which provides the
+  addressable output channels the opt-out routes to.
+- What's needed to finish: in the bridge slice, when a route change would drop the last
+  channel→tape path, refuse / keep ≥1 (surface why). NonDestructive's dry+param-tape split is a
+  separate (wet-capture) concern, not this path.
 
 ### 2026-05-21 — Tape subsystem slice 3 (capture-to-disk / FLAC) deferrals
 - Files: audio/src/FlacTapeSink.cpp, audio/include/sirius/FlacTapeSink.h, app/MainComponent.cpp.
@@ -47,19 +48,21 @@
   hardware-output direct-out buffer is still passed null/0 (no hardware-output route is active until
   the destination picker lands in slice 4) — that remaining sub-item folds into slice 4.
 
-### 2026-05-21 - Tape subsystem slice 2 carry-forward
-- Files: engine/src/InputMixer.cpp (mainOutSnapshot), core/include/sirius/MixerGraphState.h
+### 2026-05-21 - Tape subsystem slice 2 carry-forward — NOW SCHEDULED as tape-UI slice T1 (2026-05-22)
+- Files: engine/src/InputMixer.cpp (mainOutSnapshot), core/include/sirius/MixerGraphState.h,
+  persistence/src/SessionFormat.cpp.
 - What was deferred: persisting WHICH tape a node's main-out targets. mainOutSnapshot
   records only MixerTerminalKind::Tape (no TapeId); a non-primary tape route round-trips
   as the primary on load. ⚠ Sharper: mainOutSnapshot compares dest only against the
   PRIMARY tape terminal, so calling exportGraphState() while any node is routed to a
   non-primary tape hits the fall-through jassertfalse (debug trap; release returns a
-  corrupt MixerMainOut). exportGraphState is not yet wired into production, and no UI can
-  create a non-primary route until slice 4 — so this is latent, not live — but slice 5
-  must fix mainOutSnapshot before either lands.
-- Why deferred: per-node tape-terminal persistence is routing-spec slice 5, out of slice-2 scope.
-- What's needed to finish: add a tapeId field to MixerMainOut (Terminal kind) + serialize it;
-  applyChannelMainOut/applyBusMainOut route to setChannelMainOutToTape(id, tapeId).
+  corrupt MixerMainOut).
+- Status (2026-05-22): the tape-UI slice creates multi-tape routes AND persists the pool, so this
+  is no longer latent — it is **T1 of the tape-UI slice** (do it FIRST, headless TDD). The
+  tape-UI per-channel picker (T6) is the first UI that routes a channel to a non-primary tape.
+- What's needed to finish (T1): add a tapeId field to MixerMainOut + serialize it (back-compat:
+  missing → primary); applyChannelMainOut/applyBusMainOut route to setChannelMainOutToTape(id, tapeId);
+  test: route to non-primary tape → exportGraphState must not assert and must round-trip the id.
 
 ### 2026-05-21 — Routing Phase 3: bus→tape ChannelId derivation + stereo tape payload — ✅ SUPERSEDED by tape slices 2–3
 - The `enqueueToTape`/bus-id-as-ChannelId scheme was removed in slice 2: `renderInputGraph` now

@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-21 (**Tape subsystem slice 3 code SHIPPED on origin/master — but live-capture LEVEL is UNDER INVESTIGATION**, NOT yet signed off. FLAC capture-to-disk works mechanically — a routed strip writes a growing, valid `tape-1.flac` to `~/Library/Sirius Looper/tapes/` — but the captured audio measured **≈ −58 dBFS (near-silent / "blank" in an editor)** while input meters moved. A decisive controlled-level test is PENDING (operator plays a LOUD input, meter hot, quit, measure). Resolve that FIRST, then proceed to **slice 4 (Tapes UI + destination picker + creation gesture)**. End goal + full path below.)
+# Session Continuation — 2026-05-22 (**Tape slice 3 SIGNED OFF** — live FLAC capture verified by the operator; the −58 dBFS file was a benign unfinalized/quiet-ambient artifact and the fader-default attenuation theory was disproven by code analysis. **Phase 0 DONE**: the I/O-ownership + direct-layer architecture is locked (`docs/superpowers/specs/2026-05-22-io-ownership-and-direct-layer-design.md`), whitepaper §5.2/§6.6 amended, memories refreshed. **NEXT = the tape-UI slice** via `writing-plans` → `subagent-driven-development`. Plan + long-range path below.)
 
 > **For a fresh chat picking this up cold:** read this whole file
 > before doing anything. The user's `~/.claude/CLAUDE.md` and the
@@ -8,7 +8,88 @@
 
 ---
 
-## RESUME HERE (2026-05-21 — slice 3 FLAC capture-to-disk SHIPPED on origin/master; **OPEN: captured audio level ≈ −58 dBFS, under investigation** — resolve before sign-off, then slice 4)
+## RESUME HERE (2026-05-22 — slice 3 signed off; Phase 0 architecture locked; NEXT = the tape-UI slice)
+
+> ## ▶ STEP 1 (do this FIRST): `writing-plans` for the tape-UI slice
+> Phase 0 (design capture) is DONE — local, **not yet committed**. The architecture is locked;
+> no more brainstorming. Go straight to `superpowers:writing-plans` →
+> `docs/superpowers/plans/2026-05-22-tape-ui-slice.md` → `superpowers:subagent-driven-development`.
+> The approved plan lives at `~/.claude/plans/read-continue-and-proceed-graceful-otter.md`.
+> GUI = operator-verified (not unit-tested); engine/wiring = headless TDD.
+>
+> **The tape-UI slice = 7 tasks** (built to the canonical model — tape destinations ONLY, no
+> direct/hardware-output option in the picker):
+> - **T1 (engine, TDD):** fix `InputMixer::mainOutSnapshot` (`engine/src/InputMixer.cpp:~162`) so a
+>   channel routed to a NON-primary tape no longer trips `jassertfalse` (~185); add `TapeId` to
+>   `MixerMainOut` (`core/include/sirius/MixerGraphState.h`); back-compat serialize (missing→primary)
+>   in `persistence/src/SessionFormat.cpp`. (This is the latent routing-slice-5 bug, now in scope.)
+> - **T2 (wiring, TDD):** add `TapePool tapePool_` to `MainComponent`; on init mirror `pool.tapes()`
+>   beyond `primary()` into `inputMixer_->addTape(...)`. Extract a testable mirror free function
+>   (`tests/TapePoolMirrorTests.cpp`, register in `tests/CMakeLists.txt`).
+> - **T3 (wiring, TDD):** `add`/`rename`/`remove` ops keeping TapePool↔InputMixer↔FlacTapeSink
+>   consistent. `remove` BRACKETED by `removeAudioCallback`/`addAudioCallback` (pattern at
+>   `MainComponent.cpp:1595/1676`): route dependent channels to primary, `flacTapeSink_->closeTape(id)`
+>   INSIDE the bracket (SPSC single-producer), `inputMixer_->removeTape(id)`, `tapePool_.remove(id)`
+>   (refuses below 1), auto-disarm if armed.
+> - **T4 (wiring, TDD):** persist the pool via `serializeTapePool`/`deserializeTapePool` in
+>   `chooseFileAndSave`/`chooseFileAndLoad`; re-run the T2 mirror on load inside the bracket;
+>   pre-pool sessions → default `TapePool()`. Depends on T1.
+> - **T5 (GUI):** new "Tapes" tab after "Input Mixer"; list of `tapePool_.tapes()`; create / inline-
+>   rename / remove (**Remove DISABLED at count==1** = ≥1 pool floor); surface
+>   `flacTapeSink_->droppedBlockCount()` diagnostics on the 30 Hz timer.
+> - **T6 (GUI):** per-channel destination picker beneath each Input-Mixer strip — own control in
+>   `InputMixerPane` (do NOT re-enable `CompactFaderStrip`'s combo); shows current tape (via
+>   `channelMainOutIsTape`); `PopupMenu` of **the pooled tapes only** → `setChannelMainOutToTape(ch,tape)`.
+> - **T7 (GUI):** extend `InputMixerPane::mouseDown` (~510) so right-click / 500 ms long-press on BLANK
+>   area (`stripIndexOf==-1`, currently early-returns) opens "Add tape / use existing".
+>
+> **First moves:** `git status` (Phase-0 edits uncommitted: design doc, whitepaper §5.2/§6.6, memories,
+> this file); commit Phase 0 (`docs:`); then read `TapePool.h` + `TapeId.h` + `FlacTapeSink.h` +
+> `InputMixer.h` tape API + `MainComponent.cpp` `InputMixerPane`/`rebuildInputStrips`(~1589) +
+> `tabs_`(~1206-1323); then `writing-plans`. The approved plan + the design doc are the source of truth.
+
+> ## THE CANONICAL I/O MODEL (locked 2026-05-22 — `project_io_ownership_direct_layer`)
+> **Input mixer = sole owner of physical INPUTS. Output mixer = sole owner of physical OUTPUTS.**
+> Nothing else touches the converters. An input channel reaches the speakers ONLY via (a) tape →
+> phrase → output-mixer channel, or (b) the **direct layer** → an output-mixer channel (raw =
+> pre-processing, sub-ms; processed = post-chain, few ms). **REJECTED: input → hardware output
+> directly** (the old §5.2/§6.6 wrinkle, now amended). The engine input `HardwareOutput` terminal is
+> **deprecated for input channels** (API stays unused; never in a picker; removed with the bridge
+> slice). The OutputMixer's one-to-one device-input source is the M5 placeholder (wrong under this
+> rule — replaced M6+/bridge). The existing sub-ms DirectLayer is untouched until the bridge slice.
+
+> ## THE LONG-RANGE PATH (updated 2026-05-22 — keep our place; nothing reordered)
+> **End goal:** Sirius Looper — a full production-looper per **whitepaper V7**: signal path
+> **input mixer → tape → output mixer** with a sub-ms direct-monitor layer; the **always-running
+> tape is the source of truth**; the **Constituent hierarchy** (tape → loop → phrase → section →
+> song → set) in exact `Rational` time; OTTO visual parity. Platform: **macOS → iOS (AUv3,
+> Release-only) → Windows → Linux**.
+>
+> **Tape subsystem (active line):**
+>   1. ✅ Tape pool model + persistence (`TapePool`, core). 2. ✅ Multi-tape routing engine.
+>   3. ✅ Capture-to-disk (FLAC) — **SIGNED OFF 2026-05-22**.
+>   4. ⏳ **Tape-UI slice** (Tapes tab + per-channel TAPE picker + creation gesture + TapePool wiring
+>      & persistence) — **NEXT**. (Was "slice 4 + destination picker + ≥1→≥1 enforcement"; the picker
+>      is now tape-only and the active floor-enforcement + direct-out opt-out MOVED to the bridge slice,
+>      because no no-tape destination exists until then.)
+>
+> **Mixer routing-graph phases (engine/persistence apparatus shipped; UI gated on the tape-UI slice):**
+>   - P1–P5 ✅ + bus-controls engine slice ✅ (all on origin/master, NOT wired into save/load yet).
+>   - **P6 Input Mixer UI** (bus/FX-return strips + destination picker) — after the tape-UI slice.
+>   - **P7** Input Mixer sends tab + insert mgmt ≤8 + wire P4/P5 apparatus into production save/load.
+>   - **P8 Output Mixer UI** parity (one channel per phrase) — **paired with the NEW input→output
+>     direct-layer bridge slice** (adds direct-layer channels to the output mixer, makes output
+>     channels addressable as input-channel destinations, replaces the OutputMixer M5 device-input
+>     proxy, removes the deprecated input `HardwareOutput` terminal, and lands the active
+>     ≥1-channel→≥1-tape enforcement + direct-out opt-out). Needs addressable output channels, so it
+>     belongs here, not earlier. See `project_io_ownership_direct_layer`.
+>   - Follow-on (own spec): internal Sirius FX (EQ/Comp/Rvb/Dly, seeded by OTTO) + the union slot model.
+>
+> **Operator's near-term ordering:** finish **Input Mixer** → **Output Mixer** → THEN transport +
+> metering (own conversation). Bigger vision (own session): render → parts/pills → timeline → song.
+> **Engine milestones M8 S7+** resume after the mixer/UI line (absorb deferred slice-3 archival/manifest).
+
+## HISTORICAL — slice-3 capture-level investigation (RESOLVED 2026-05-22: signed off — the −58 dBFS file was benign; fader-default theory disproven by code analysis. Original notes below for reference.)
 
 > ## ▶ STEP 1 (do this FIRST): resolve the slice-3 capture-LEVEL investigation
 > Slice 3 (**append-only FLAC capture-to-disk — "real recording"**) is code-complete on origin/master
