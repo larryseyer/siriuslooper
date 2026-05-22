@@ -52,7 +52,7 @@ TEST_CASE ("removing a pooled tape re-mirrors to a consistent mixer", "[tape-poo
 
     CHECK (pool.count() == 1);
     CHECK (mixer.tapeCount() == 1);
-    CHECK (mixer.channelMainOutIsTape (ch, sirius::TapeId { 1 }));
+    CHECK (mixer.channelMainOutIsTape (ch, pool.primary()));
     CHECK_FALSE (mixer.hasTape (drums));
 }
 

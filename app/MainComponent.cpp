@@ -1755,18 +1755,22 @@ void MainComponent::setFocused (TapeId tape)
 
 // --- tape pool management (tape-UI T3) ---
 
-void MainComponent::addTape (juce::String name)
+void MainComponent::addTape (const juce::String& name)
 {
+    if (inputMixer_->tapeCount() >= sirius::InputMixer::kMaxTapes)
+        return;                                         // capacity guard: pool and mixer stay in lockstep
     const auto id = tapePool_.add (name.toStdString());
     audioDeviceManager_.removeAudioCallback (audioCallback_.get());
-    inputMixer_->addTape (id);
+    const bool ok = inputMixer_->addTape (id);
+    jassert (ok); juce::ignoreUnused (ok);
     audioDeviceManager_.addAudioCallback (audioCallback_.get());
     refreshTapesPane();
 }
 
-void MainComponent::renameTape (sirius::TapeId id, juce::String name)
+void MainComponent::renameTape (sirius::TapeId id, const juce::String& name)
 {
-    tapePool_.rename (id, name.toStdString());   // pool-only; no engine/sink effect
+    const bool ok = tapePool_.rename (id, name.toStdString());   // pool-only; no engine/sink effect
+    jassert (ok); juce::ignoreUnused (ok);
     refreshTapesPane();
 }
 
@@ -1783,15 +1787,22 @@ void MainComponent::removeTape (sirius::TapeId id)
     inputMixer_->removeTape (id);
     audioDeviceManager_.addAudioCallback (audioCallback_.get());
 
-    tapePool_.remove (id);
+    const bool ok = tapePool_.remove (id);
+    jassert (ok); juce::ignoreUnused (ok);
 
     // Auto-disarm: mirror toggleArm's disarm path for the removed tape.
     armedTapeIds_.erase (id.value());
     if (armedTapeIds_.empty() && captureSession_.isArmed())
         captureSession_.disarm();
 
+    // Prevent focusedTape_ from dangling on the now-removed tape.
+    if (focusedTape_ == id)
+        focusedTape_ = tapePool_.primary();
+
     refreshTapesPane();
     refreshTimeline();
+    refreshCaptureControls();
+    refreshDiagnostics();
 }
 
 void MainComponent::refreshTapesPane()
