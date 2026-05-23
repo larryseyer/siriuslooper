@@ -3,16 +3,47 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 
 #include <cstring>
+#include <string>
 
 namespace sirius
 {
+namespace
+{
+
+// Default IR preset (filename without extension; matches OTTO's
+// `PlayerEffectsConfig::irPresetName` convention). A short bright plate is
+// the universal pro-audio neutral starting point — flat enough to add
+// dimension without obscuring the source, short enough (~1.13 s tail) to
+// suit vocal/snare-bus insert duty. Verified present at
+// ${OTTO_ASSETS_DIR}/IR/Plate Bright 1.13.wav.
+constexpr const char* kDefaultIRPresetName = "Plate Bright 1.13";
+constexpr const char* kIRFileExtension     = ".wav";
+
+/// Compose the absolute path to the default IR from the CMake-injected
+/// asset-bundle root. Returns empty when SIRIUS_OTTO_ASSETS_DIR is not
+/// defined; PlayerIRConvolution::loadIRFile gracefully fails on empty /
+/// non-existent paths so the adapter degrades to silent passthrough
+/// rather than crashing.
+std::string resolveDefaultIRPath()
+{
+#ifdef SIRIUS_OTTO_ASSETS_DIR
+    return std::string (SIRIUS_OTTO_ASSETS_DIR) + "/IR/"
+         + kDefaultIRPresetName + kIRFileExtension;
+#else
+    return {};
+#endif
+}
+
+} // namespace
 
 RvbAdapter::RvbAdapter()
 {
     // T3d ships default-config RVB with the master enable flipped on so
-    // the adapter actually runs DSP. IR preset selection is the T4/T5 GUI
-    // story; slice 3 wires the path resolution.
-    cfg_.irEnabled = true;
+    // the adapter actually runs DSP, and the default plate IR pinned in
+    // cfg_ so a future param-diff path through updateParameters compares
+    // consistently. Operator-facing IR preset selection lands with T4/T5.
+    cfg_.irEnabled    = true;
+    cfg_.irPresetName = kDefaultIRPresetName;
 }
 
 void RvbAdapter::prepare (double sampleRate, int maxBlockSize)
@@ -27,6 +58,19 @@ void RvbAdapter::prepare (double sampleRate, int maxBlockSize)
     // (slice 3) requestIRLoad.
     conv_.prepare (sampleRate, maxBlockSize);
     conv_.updateParameters (cfg_);
+
+    // Hand the default-IR path to OTTO's background worker. requestIRLoad
+    // is documented audio-thread-safe (lock-guarded queue + condvar
+    // notify); we're on the message thread here, which is even safer.
+    // The audio thread sees `loaded_ == false` until the worker finishes
+    // wav-decode + decay/EQ/time-stretch processing + double-buffer
+    // install, during which window `conv_.process(...)` early-exits and
+    // outChannels retains its memcpy-from-input state (dry passthrough).
+    // Empty / missing path silently no-ops inside loadIRFile — the
+    // adapter stays in pre-load silent-passthrough indefinitely, which
+    // is the right failure mode when assets aren't bundled.
+    conv_.requestIRLoad (resolveDefaultIRPath());
+
     prepared_ = true;
 }
 
