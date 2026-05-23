@@ -1,0 +1,170 @@
+{
+  "project": "Sirius Looper",
+  "generated_at": "2026-05-23T00:00:00Z",
+  "description": "P7 umbrella T3b/T3c internal-FX adapters + T3a follow-up debts (I-1/I-2/M-2) + three loop-eligible code-review follow-ups from 2026-05-16. All tasks are engine-side or headless and verified by ctest. After T3c the work pivots to GUI (T4/T5) which ralph cannot verify; the loop must exit before then.",
+  "verification_command": "cmake --build build --target SiriusTests && ctest --test-dir build --output-on-failure",
+  "tasks": [
+    {
+      "id": "T01",
+      "priority": 1,
+      "title": "T3b-CMP — wrap otto::effects::PlayerCompressor as CmpAdapter",
+      "goal": "Mirror EqAdapter.{h,cpp} line-for-line, wrapping PlayerCompressor as a member with a defaulted PlayerEffectsConfig and compEnabled=true in the ctor. Flip InternalFxFactory's kCmp case from nullptr to std::make_unique<CmpAdapter>(). Pre-flight: read external/OTTO/src/otto-core/include/otto/effects/PlayerCompressor.h and verify process() derives sidechain internally from the input. If it expects a separate sidechain bus, emit <promise>HALTED</promise> — Sirius has no external-sidechain routing yet. Tests mirror EqAdapterTests.cpp (unprepared/prepared/reset/in-place) plus a DC-pulse/brick-wall case asserting peak reduction when input crosses threshold. Update tests/InternalFxFactoryTests.cpp: the kCmp-returns-nullptr case flips to kCmp-returns-valid-adapter.",
+      "primary_files": [
+        "engine/src/fx/CmpAdapter.h",
+        "engine/src/fx/CmpAdapter.cpp",
+        "engine/src/InternalFxFactory.cpp",
+        "tests/CmpAdapterTests.cpp",
+        "tests/InternalFxFactoryTests.cpp"
+      ],
+      "acceptance_criteria": [
+        "engine/src/fx/CmpAdapter.{h,cpp} exists, wraps otto::effects::PlayerCompressor, implements IInternalFxAdapter",
+        "InternalFxFactory returns a valid adapter for InternalFxId::kCmp",
+        "tests/CmpAdapterTests.cpp exists with at least: unprepared-no-op, prepared-process-finite, reset-clears-state, in-place-aliasing, and DC-pulse-gain-reduction cases tagged [internal-fx][cmp-adapter]",
+        "tests/InternalFxFactoryTests.cpp updated: kCmp now asserted valid",
+        "cmake --build build --target SiriusTests succeeds clean",
+        "ctest --test-dir build passes (baseline 602 -> +N for new CMP cases)",
+        "RT-safety: grep CmpAdapter::process for new/malloc/lock — none found"
+      ],
+      "commit_message": "feat: P7 T3b — CmpAdapter (PlayerCompressor wrapper) + factory wire-up"
+    },
+    {
+      "id": "T02",
+      "priority": 2,
+      "title": "T3c-DLY — wrap otto::effects::PlayerDelay as DlyAdapter",
+      "goal": "Same pattern as T01. Mirror EqAdapter shape. Default-config + dlyEnabled=true in ctor. Flip InternalFxFactory's kDly case from nullptr to std::make_unique<DlyAdapter>(). Pre-flight: read external/OTTO/src/otto-core/include/otto/effects/PlayerDelay.h. If process() allocates (some delay-line impls do under modulation), emit <promise>HALTED</promise>. Tests mirror EqAdapterTests plus a unit-impulse case asserting a non-zero sample appears at the expected delay-time offset.",
+      "primary_files": [
+        "engine/src/fx/DlyAdapter.h",
+        "engine/src/fx/DlyAdapter.cpp",
+        "engine/src/InternalFxFactory.cpp",
+        "tests/DlyAdapterTests.cpp",
+        "tests/InternalFxFactoryTests.cpp"
+      ],
+      "acceptance_criteria": [
+        "engine/src/fx/DlyAdapter.{h,cpp} exists, wraps otto::effects::PlayerDelay, implements IInternalFxAdapter",
+        "InternalFxFactory returns a valid adapter for InternalFxId::kDly",
+        "tests/DlyAdapterTests.cpp exists with at least: unprepared-no-op, prepared-process-finite, reset-clears-state, in-place-aliasing, and unit-impulse-delay-offset cases tagged [internal-fx][dly-adapter]",
+        "tests/InternalFxFactoryTests.cpp updated: kDly now asserted valid",
+        "cmake --build build --target SiriusTests succeeds clean",
+        "ctest --test-dir build passes",
+        "RT-safety: grep DlyAdapter::process for new/malloc/lock — none found"
+      ],
+      "commit_message": "feat: P7 T3c — DlyAdapter (PlayerDelay wrapper) + factory wire-up"
+    },
+    {
+      "id": "T03",
+      "priority": 3,
+      "title": "P7 T3a I-1 — prepareInternalFx early-returns on unchanged sr/block",
+      "goal": "At the top of OutOfProcessEffectChainHost::prepareInternalFx(sr, maxBlock), early-return when (sr, maxBlock) == (currentSampleRate_, currentMaxBlock_) && prepared_. Four-line fix. Existing state fields already present per todo.md (a). This prevents rebuildInputStrips()'s repeated calls on stereo-toggle / device-config rebuild from zapping bound adapters' IIR state. Extend tests to verify idempotency.",
+      "primary_files": [
+        "host/src/OutOfProcessEffectChainHost.cpp",
+        "host/include/sirius/OutOfProcessEffectChainHost.h",
+        "tests/OutOfProcessEffectChainHostTests.cpp"
+      ],
+      "acceptance_criteria": [
+        "prepareInternalFx early-returns when sr/maxBlock unchanged AND prepared_ is true",
+        "New test case in OutOfProcessEffectChainHostTests: 'prepareInternalFx is idempotent — same sr+block calls adapter->prepare() exactly once' using a counting mock adapter",
+        "cmake --build build --target SiriusTests succeeds clean",
+        "ctest --test-dir build passes",
+        "todo.md entry (a) for 2026-05-23 (late) is removed or marked resolved"
+      ],
+      "commit_message": "fix: P7 T3a I-1 — prepareInternalFx early-returns on unchanged sr/block"
+    },
+    {
+      "id": "T04",
+      "priority": 4,
+      "title": "P7 T3a I-2 — InputMixer::setEffectChainHost wiring + end-to-end test",
+      "goal": "Add setEffectChainHost(IEffectChainHost* host) to InputMixer mirroring OutputMixer's shape: store pointer, propagate to every existing internal bus via bus.setEffectChainHost(host), propagate to any new bus on creation. Wire MainComponent to call inputMixer_->setEffectChainHost(pluginHost_.get()) alongside the existing outputMixer_ call. New end-to-end test mirrors BusInternalFxEndToEndTests.cpp: drop an EffectChainEntry::makeInternal(kEq) onto an Input-side bus, verify finite non-zero stereo output through the host's dispatch.",
+      "primary_files": [
+        "engine/include/sirius/InputMixer.h",
+        "engine/src/InputMixer.cpp",
+        "app/MainComponent.cpp",
+        "tests/InputMixerInternalFxEndToEndTests.cpp"
+      ],
+      "acceptance_criteria": [
+        "InputMixer::setEffectChainHost(IEffectChainHost*) declared + defined",
+        "Setter propagates to every existing internal bus AND to any new bus on creation",
+        "MainComponent calls inputMixer_->setEffectChainHost(pluginHost_.get()) next to the existing outputMixer_->setEffectChainHost(...) site",
+        "tests/InputMixerInternalFxEndToEndTests.cpp exists with at least one [input-mixer][internal-fx][end-to-end] case mirroring BusInternalFxEndToEndTests.cpp",
+        "cmake --build build --target SiriusTests succeeds clean",
+        "ctest --test-dir build passes",
+        "todo.md entry (b) for 2026-05-23 (late) is removed or marked resolved"
+      ],
+      "commit_message": "fix: P7 T3a I-2 — InputMixer::setEffectChainHost wiring + end-to-end test"
+    },
+    {
+      "id": "T05",
+      "priority": 5,
+      "title": "P7 T3a M-2 — split Bus::process into processInline + processChain helpers",
+      "goal": "Bus::process is currently 173 lines (>100 default per CLAUDE.md). Split into private helpers processInline(...) (inline-path branch) and processChain(...) (chain-path branch). Wet-capture + meter writeback stay in the outer process. Both helpers noexcept, no allocation, no locking — same RT contract as the outer function. No behavior change.",
+      "primary_files": [
+        "engine/src/Bus.cpp",
+        "engine/include/sirius/Bus.h"
+      ],
+      "acceptance_criteria": [
+        "Bus::processInline and Bus::processChain exist as private member methods (or anonymous-namespace statics if all dependencies are passed in)",
+        "Both helpers noexcept",
+        "Bus::process body drops below 100 lines",
+        "Grep new helpers for new/malloc/lock — none found",
+        "cmake --build build --target SiriusTests succeeds clean",
+        "ctest --test-dir build passes — exactly the same number of cases as before (no behavior change)",
+        "todo.md entry (c) for 2026-05-23 (late) is removed or marked resolved"
+      ],
+      "commit_message": "refactor: P7 T3a M-2 — split Bus::process into processInline + processChain helpers"
+    },
+    {
+      "id": "T06",
+      "priority": 6,
+      "title": "Hoist Shared-path splice out of Promotion::promote into helper",
+      "goal": "Extract the pointer-identity-preserving Shared-path splice (currently lines ~230–289 of core/src/Promotion.cpp, inline std::function + recursive lambda) into a private anonymous-namespace helper named spliceLoopIntoSharedHost(root, hostPath, loopPtr). Capture by parameter, not by-reference closure. Drops promote() from ~226 to ~165 lines. Add one-line cross-reference comments at each splice site (Overlay → 'see spliceLoopIntoSharedHost for the Shared analogue'; Shared → 'see lines NNN for the Overlay analogue'). Strengthen the existing pointer-equality comment to call out that .get() reads as 'raw pointer identity'. Line numbers in todo.md may have drifted since T3a-C landed on 869318f — re-locate by symbol, not by line.",
+      "primary_files": [
+        "core/src/Promotion.cpp"
+      ],
+      "acceptance_criteria": [
+        "spliceLoopIntoSharedHost helper exists in core/src/Promotion.cpp's anonymous namespace",
+        "promote() body drops from ~226 to ~165 lines",
+        "Cross-reference comments added at both Overlay and Shared splice sites",
+        "cmake --build build --target SiriusTests succeeds clean",
+        "ctest --test-dir build passes — exactly the same number of cases as before",
+        "tests/PromotionTests.cpp::'promote with Shared and a wrapper covering Mark In adds the Loop to the shared Phrase' still passes (load-bearing pointer-equality assertion)",
+        "todo.md entry for 2026-05-16 'Hoist Shared-path splice' is removed or marked resolved"
+      ],
+      "commit_message": "refactor: hoist Shared-path splice out of Promotion::promote into helper"
+    },
+    {
+      "id": "T07",
+      "priority": 7,
+      "title": "Extract MainComponent::refreshAll and replace duplicated sites",
+      "goal": "Declare void refreshAll() in MainComponent.h (private, one-line docstring) that calls refreshPerformance(); refreshPreparation(); refreshCaptureControls(); refreshDiagnostics();. Replace each full-sequence call site (todo.md lists :525-528, :938-941, :966-969, :1013-1016 plus a fifth — line numbers MAY have drifted since T3a-C landed on 869318f, re-locate by grep for the four-call sequence). Inspect the two partial-sequence sites (:821-826, :1085-1086) — default to leaving them partial unless they are obviously full sequences mis-cited. No behavior change.",
+      "primary_files": [
+        "app/MainComponent.h",
+        "app/MainComponent.cpp"
+      ],
+      "acceptance_criteria": [
+        "MainComponent::refreshAll() declared private in MainComponent.h with a one-line docstring",
+        "MainComponent::refreshAll() defined in MainComponent.cpp calling the four refresh* methods in order",
+        "All full-sequence call sites replaced with refreshAll() — verify by grepping for any remaining 4-line refreshPerformance/refreshPreparation/refreshCaptureControls/refreshDiagnostics blocks",
+        "cmake --build build --target SiriusTests succeeds clean",
+        "ctest --test-dir build passes — exactly the same number of cases as before",
+        "todo.md entry for 2026-05-16 'Extract MainComponent::refreshAll' is removed or marked resolved"
+      ],
+      "commit_message": "refactor: extract MainComponent::refreshAll and use it across duplicated sites"
+    },
+    {
+      "id": "T08",
+      "priority": 8,
+      "title": "announceCapture Overlay — value_or fallbacks → jassert per fail-loud rule",
+      "goal": "In MainComponent.cpp's announceCapture Overlay branch (around line 780; verify by grep — line MAY have drifted), replace result.hostPhraseName.value_or(\"the phrase here\") and result.overlayPlacementIndex.value_or(0u) with direct dereference, guarded immediately above by jassert(result.hostPhraseName.has_value() && result.overlayPlacementIndex.has_value());. Branch is contractually unreachable when invariant holds — converts silent-wrong-copy failure to loud-debug-trap failure per CLAUDE.md philosophy rule 8. Operator gate re-verification (the four banner scenarios) is OUT OF LOOP SCOPE — left to operator after the loop exits.",
+      "primary_files": [
+        "app/MainComponent.cpp"
+      ],
+      "acceptance_criteria": [
+        "Both value_or fallbacks in the announceCapture Overlay branch replaced with direct dereference",
+        "A jassert guards both optionals immediately above the dereferences",
+        "cmake --build build --target SiriusTests succeeds clean",
+        "ctest --test-dir build passes — exactly the same number of cases as before",
+        "todo.md entry for 2026-05-16 'announceCapture Overlay branch: replace value_or fallbacks with jassert' is removed or marked resolved"
+      ],
+      "commit_message": "chore: announceCapture Overlay — value_or fallbacks to jassert per fail-loud rule"
+    }
+  ]
+}

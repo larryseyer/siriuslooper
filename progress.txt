@@ -1,0 +1,23 @@
+# Sirius Looper Ralph Loop Progress
+
+## Status
+state: not_started
+current_task: T01
+last_commit: none
+last_updated: 2026-05-23T00:00:00Z
+
+## Tasks
+[ ] T01 - T3b-CMP — wrap otto::effects::PlayerCompressor as CmpAdapter
+[ ] T02 - T3c-DLY — wrap otto::effects::PlayerDelay as DlyAdapter
+[ ] T03 - P7 T3a I-1 — prepareInternalFx early-returns on unchanged sr/block
+[ ] T04 - P7 T3a I-2 — InputMixer::setEffectChainHost wiring + end-to-end test
+[ ] T05 - P7 T3a M-2 — split Bus::process into processInline + processChain helpers
+[ ] T06 - Hoist Shared-path splice out of Promotion::promote into helper
+[ ] T07 - Extract MainComponent::refreshAll and replace duplicated sites
+[ ] T08 - announceCapture Overlay — value_or fallbacks → jassert per fail-loud rule
+
+## Codebase Patterns
+
+(Empty at generation. Loop session appends reusable gotcha patterns here as it learns them.)
+
+## Log
