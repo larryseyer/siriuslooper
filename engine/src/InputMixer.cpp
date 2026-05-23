@@ -128,6 +128,11 @@ BusId InputMixer::addBus (BusConfig config)
     }
     const BusId id { nextBusId_++ };
     buses_.emplace_back (id, config);
+    // Forward the stashed effect-chain host to the newly registered bus so
+    // post-`setEffectChainHost` `addBus` calls get the same wiring as
+    // pre-existing buses (parity with OutputMixer::addBus). Null is a valid
+    // value (M5 inline path).
+    buses_.back().setEffectChainHost (effectChainHost_);
     const auto kind = (config.kind == BusKind::FxReturn) ? MixerNodeKind::FxReturn
                                                          : MixerNodeKind::Bus;
     busNodeIds_.push_back (graph_.addNode (kind)); // defaults main-out to primary (Tape)
@@ -147,6 +152,13 @@ void InputMixer::setBusEffectChain (BusId id, EffectChain chain)
             bus.setEffectChain (std::move (chain));
             return;
         }
+}
+
+void InputMixer::setEffectChainHost (IEffectChainHost* host) noexcept
+{
+    effectChainHost_ = host;
+    for (auto& bus : buses_)
+        bus.setEffectChainHost (host);
 }
 
 Bus* InputMixer::busForId (BusId id) noexcept

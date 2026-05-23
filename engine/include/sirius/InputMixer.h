@@ -109,6 +109,19 @@ public:
     /// with OutputMixer::setBusEffectChain). No-op if the BusId is unknown.
     void setBusEffectChain (BusId id, EffectChain chain);
 
+    /// Message-thread setter — forwards the audio-thread effect-chain host
+    /// to every bus currently registered AND stashes the pointer so any
+    /// future `addBus`/`addFxReturn` call wires its new bus up at registration
+    /// time (P7 T3a I-2 — mirrors OutputMixer::setEffectChainHost). Pass
+    /// `nullptr` to disable dispatch — every bus then falls back to the M5
+    /// inline path.
+    ///
+    /// Set-once before the audio thread starts (same contract as
+    /// `setBusEffectChain`). The InputMixer does NOT own the host; lifetime
+    /// is the caller's responsibility (test, or MainComponent's
+    /// `effectChainHost_` member).
+    void setEffectChainHost (IEffectChainHost* host) noexcept;
+
     /// Message-thread accessor — the live Bus for `id`, or nullptr if unknown.
     /// Same linear-scan idiom as `setBusEffectChain`. The Input Mixer UI uses
     /// this to drive a bus/FX-return strip's fader/mute and read its peak/LUFS
@@ -276,6 +289,13 @@ private:
     sirius::persistence::TapeStore* tapeStore_ { nullptr };
     NotificationBus* notificationBus_ { nullptr };
     ITapeSink* tapeSink_ { nullptr };
+
+    /// Stashed `IEffectChainHost*` (P7 T3a I-2) — null = no audio-thread
+    /// dispatch, every bus falls back to the M5 inline path. Forwarded to
+    /// every bus by `setEffectChainHost`, and to any new bus on `addBus`
+    /// / `addFxReturn`. Lifetime is the caller's responsibility. Mirrors
+    /// the OutputMixer::effectChainHost_ shape.
+    IEffectChainHost* effectChainHost_ { nullptr };
 
     // Audio-thread scratch — pre-allocated in the constructor (sized to
     // `kMaxScratchSamples`, defined at file-scope in InputMixer.cpp). M5

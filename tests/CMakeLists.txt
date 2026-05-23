@@ -92,7 +92,9 @@ add_executable(SiriusTests
     # pattern as EqAdapterTests above.
     DlyAdapterTests.cpp
     # P7 T3a-C — end-to-end Bus → host → adapter dispatch test.
-    BusInternalFxEndToEndTests.cpp)
+    BusInternalFxEndToEndTests.cpp
+    # P7 T3a I-2 — end-to-end InputMixer → Bus → host → adapter dispatch.
+    InputMixerInternalFxEndToEndTests.cpp)
 
 # T3a: EqAdapterTests includes "fx/EqAdapter.h" (engine-private header) and
 # EqAdapter.h transitively includes <otto/effects/PlayerEQ.h>. Both paths

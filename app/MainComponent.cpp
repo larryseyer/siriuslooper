@@ -1543,6 +1543,14 @@ MainComponent::MainComponent()
     // editor, the child silently dies, and nothing surfaces in the
     // Preparation tab's notifications.
     effectChainHost_.setNotificationSink (notificationBus_.get());
+
+    // P7 T3a I-2 — give both mixers the audio-thread effect-chain host so
+    // any internal-FX or plugin entry the operator drops into a bus chain
+    // actually dispatches at runtime. Without this wiring, EffectChain
+    // entries on Input- or Output-side buses are held in the data model
+    // but never reach the host's pumpSlot dispatch (silent no-op).
+    inputMixer_->setEffectChainHost  (&effectChainHost_);
+    outputMixer_->setEffectChainHost (&effectChainHost_);
     // M8 S2 — scan-progress + state-save-timeout notifications surface in
     // the Preparation tab's notification history. Bound once here, before
     // any scan call; the scanner posts only when a sink is present.

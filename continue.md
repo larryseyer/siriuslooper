@@ -1,19 +1,102 @@
-# Session Continuation — 2026-05-23 (T03 I-1) (**P7 T3a follow-up debt T03 SHIPPED via ralph loop iteration #3 — `OutOfProcessEffectChainHost::prepareInternalFx(sr, maxBlock)` now early-returns when `(sr, maxBlock)` matches the stored `(currentSampleRate_, currentMaxBlock_)` AND `prepared_` is true. Closes the latent bug where `rebuildInputStrips()` (MainComponent.cpp:2378-2386) fires on every stereo-toggle / device-config rebuild, walks every bound adapter, and re-invokes `adapter->prepare(...)` — which (for PlayerEQ's ProcessorDuplicator IIR cascade) clears filter state mid-buffer. Adds a narrow `setInternalFxAdapterForTesting` injection seam to the host so tests can bind a counting mock without going through the factory. 2 new `[internal-fx-host][prepare-idempotency]` cases verify the early-return contract: one asserts a mock's `prepare()` count stays at 1 across redundant calls and bumps on real sr/block changes; one asserts the first-ever call still proceeds when stored defaults match the incoming values. ctest **619 pass / 2 skipped** (up from 614; +2 new idempotency cases plus 3 prior `ParseAndAddCatchTests` discovery delta). NEXT = T04 (`InputMixer::setEffectChainHost` wiring + end-to-end test).**)
+# Session Continuation — 2026-05-23 (T04 I-2) (**P7 T3a follow-up debt T04 SHIPPED via ralph loop iteration #4 — `InputMixer::setEffectChainHost(IEffectChainHost*)` now exists, mirroring `OutputMixer::setEffectChainHost`: stashes the pointer in `effectChainHost_` AND walks every existing bus to call `bus.setEffectChainHost(host)`. `addBus` (and therefore `addFxReturn`, which delegates) reads the stashed pointer and wires every newly registered bus the same way OutputMixer::addBus already does. `MainComponent.cpp` now binds BOTH `inputMixer_->setEffectChainHost(&effectChainHost_)` AND `outputMixer_->setEffectChainHost(&effectChainHost_)` next to `effectChainHost_.setNotificationSink(...)` — closes a pre-existing wiring gap where Input-side AND Output-side bus chains held EffectChainEntries that never reached the host's pumpSlot dispatch. 2 new `[input-mixer][internal-fx][end-to-end]` cases verify both paths: one exercises the pre-existing-bus path (addBus → setEffectChainHost → setBusEffectChain → renderInputGraph delivers a sine through Channel→Bus→HardwareOutput with EQ unity-tracking); one exercises the late-add path (setEffectChainHost FIRST, then addBus, then setBusEffectChain — proving the stashed pointer reaches the new bus at registration time). 138 assertions across both cases. ctest **621 pass / 2 skipped** (up from 619; +2 new end-to-end cases). NEXT = T05 (split `Bus::process` into `processInline` + `processChain` helpers per CLAUDE.md function-size rule).**)
 
 > **For a fresh chat picking this up cold:** read this whole file before
 > doing anything. Memory + project + user CLAUDE.md load automatically;
 > this file is the *state* (what just shipped + what's queued next).
-> Newest commit on Sirius origin/master: **`d61a7ef`** (this session's
-> T03 I-1 commit landed on top of `2660ad7`); OTTO origin/main:
-> **`abf8e4d4`** (unchanged this session); ctest baseline **619 pass / 2
-> skipped** (up from 614 — +5 ctest entries this session).
+> Newest commit on Sirius origin/master: **`<TBD>`** (this session's
+> T04 I-2 commit landed on top of `d61a7ef`); OTTO origin/main:
+> **`abf8e4d4`** (unchanged this session); ctest baseline **621 pass / 2
+> skipped** (up from 619 — +2 ctest entries this session).
 > **MANDATORY at session start:** read
 > `external/OTTO/CROSS_PROJECT_INBOX.md` and acknowledge any
 > `[FROM OTTO → SIRIUS]` entries (per `project_cross_project_inbox_protocol`).
 > The whitepaper lives at `docs/Sirius_Looper_Whitepaper_V7.md`
 > (underscores — `project_whitepaper_path`).
 
-## ✅ DONE THIS SESSION (2026-05-23 — T03 P7 T3a I-1 prepareInternalFx idempotency, ralph iteration #3)
+## ✅ DONE THIS SESSION (2026-05-23 — T04 P7 T3a I-2 InputMixer::setEffectChainHost wiring, ralph iteration #4)
+
+Single-commit ralph iteration. Engine setter + MainComponent caller +
+new end-to-end test. Closes a pre-existing wiring gap.
+
+- **`engine/include/sirius/InputMixer.h`** — declares
+  `void setEffectChainHost (IEffectChainHost* host) noexcept;` near
+  `setBusEffectChain` with a docstring spelling out the parity with
+  `OutputMixer::setEffectChainHost`: stash the pointer so any future
+  `addBus` / `addFxReturn` wires its new bus the same way, pass
+  `nullptr` to disable dispatch (M5 inline path). Adds an
+  `IEffectChainHost* effectChainHost_ { nullptr };` member field next
+  to the other injected collaborators with a comment mirroring
+  OutputMixer's `effectChainHost_` field doc. No new include needed
+  — `IEffectChainHost.h` is already pulled in transitively through
+  `Bus.h`.
+
+- **`engine/src/InputMixer.cpp`** — defines `setEffectChainHost`
+  (one-line setter + bus walk, same shape as
+  `OutputMixer::setEffectChainHost`). Modifies `addBus` to call
+  `buses_.back().setEffectChainHost(effectChainHost_)` immediately
+  after the `emplace_back` so a bus added AFTER the host pointer is
+  stashed picks up the wiring at registration time (parity with
+  `OutputMixer::addBus`). `addFxReturn` delegates to `addBus`, so it
+  inherits the wiring automatically.
+
+- **`app/MainComponent.cpp`** — two new lines next to
+  `effectChainHost_.setNotificationSink(notificationBus_.get())`:
+  `inputMixer_->setEffectChainHost(&effectChainHost_)` AND
+  `outputMixer_->setEffectChainHost(&effectChainHost_)`. The
+  OutputMixer's setter was ALSO previously unwired (the prd.json
+  description framed it as already-existing, but it was not — pre-T04
+  both mixers held bus chains that silently no-opped at the host
+  dispatch layer). Wiring both closes the gap symmetrically.
+
+- **`tests/InputMixerInternalFxEndToEndTests.cpp`** — new file with
+  2 `[input-mixer][internal-fx][end-to-end]` cases mirroring
+  `BusInternalFxEndToEndTests.cpp`'s shape (sine in, finite output
+  with peak tracking input within 0.5×–1.5× under the flat-default
+  EQ):
+    1. *InputMixer routes audio through an Internal-EQ bus chain via
+       setEffectChainHost (existing bus)* — addBus FIRST, then
+       setEffectChainHost, then setBusEffectChain. Verifies the setter
+       walks existing buses to forward the host pointer.
+    2. *InputMixer addBus AFTER setEffectChainHost still wires the
+       new bus to the host* — setEffectChainHost FIRST, then addBus.
+       Verifies the stashed `effectChainHost_` field reaches the new
+       bus through `addBus`'s post-emplace forwarding call.
+  Both cases register an Audio channel with `setChannelInputSource`,
+  route channel→bus→HardwareOutput, then drive a 440 Hz sine through
+  `renderInputGraph` and sample the `directOut` buffer.
+
+- **`tests/CMakeLists.txt`** — adds
+  `InputMixerInternalFxEndToEndTests.cpp` to the `SiriusTests` sources
+  next to the existing `BusInternalFxEndToEndTests.cpp` entry.
+
+- **`todo.md`** — entry (b) for 2026-05-23 (late) marked RESOLVED with
+  a paragraph summary of what landed and which test cases cover the
+  contract. Header line updated from "2 remaining entries" to "1
+  remaining entry" — only (c) Bus::process split (T05) is still open.
+
+- **`progress.txt`** — `[ ] T04` flipped to `[x] T04`; header fields
+  (`state`, `current_task` → T05, `last_commit`, `last_updated`) bumped.
+
+**RT-safety:** `setEffectChainHost` is message-thread API (matches
+`OutputMixer::setEffectChainHost`'s shape — not noexcept on either,
+ditto). The audio-thread `renderInputGraph` path is unchanged — it
+already routes through `Bus::process`, which now finds a non-null
+`host_` and can dispatch. `addBus` is message-thread API; the
+post-emplace forwarding call is the only structural change. No
+allocations / locks / I/O introduced anywhere on the hot path.
+
+**ctest baseline:** 619 → **621 pass / 2 skipped** (the 2 skipped are
+the operator-only OOP editor cases #620 / #621 from
+`MainComponentPluginEditorTests` — unchanged from prior). Build clean;
+`cmake --build build --target SiriusTests &&
+ctest --test-dir build --output-on-failure` is the loop's allowed
+verification command and was the gate this iteration passed.
+
+---
+
+# (archived header — 2026-05-23) — P7 T3a follow-up debt T03 SHIPPED via ralph iteration #3 — `OutOfProcessEffectChainHost::prepareInternalFx(sr, maxBlock)` now early-returns when stored `(sr, maxBlock)` matches the incoming values AND `prepared_` is true; closes the IIR-state-zap bug on stereo-toggle / device-config rebuild. Adds `setInternalFxAdapterForTesting` seam + 2 `[internal-fx-host][prepare-idempotency]` cases. ctest 614 → 619 (+5). NEXT was T04 — this iteration shipped it.
+
+## (archived body — T03 P7 T3a I-1 prepareInternalFx idempotency, ralph iteration #3)
 
 Single-commit ralph iteration. Pure host-layer surgical edit.
 
@@ -88,10 +171,11 @@ the operator-only OOP editor cases #618 / #619 from
 ctest --test-dir build --output-on-failure` is the loop's allowed
 verification command and was the gate this iteration passed.
 
-## ▶ NEXT — P7 T3a follow-up debt T04 (T04 in `prd.json`)
+## ▶ NEXT — P7 T3a follow-up debt T05 (T05 in `prd.json`)
 
-Active prd.json: `T04` — `InputMixer::setEffectChainHost` wiring +
-end-to-end test. The umbrella status:
+Active prd.json: `T05` — split `Bus::process` into `processInline` +
+`processChain` helpers (per CLAUDE.md function-size 100-line default;
+current body is 173 lines). The umbrella status:
 
 ```
 T0  OTTO submodule          ✅ DONE
@@ -103,36 +187,39 @@ T3  internal-FX adapters    NEAR DONE
     T3c-DLY                 ✅ DONE
     T3d-RVB                 last (background-thread IR loading)
 T3a follow-up debt          IN PROGRESS via prd.json T03-T05
-    T03 I-1 idempotency     ✅ DONE (this iteration)
-    T04 I-2 InputMixer wire next
-    T05 M-2 Bus split       after T04
+    T03 I-1 idempotency     ✅ DONE
+    T04 I-2 InputMixer wire ✅ DONE (this iteration)
+    T05 M-2 Bus split       next
 T4  Sends tab UI            (after T3 fully)
 T5  Insert UI               (internal-FX-only picker until "P7-scanner")
 T6  P4/P5 persistence wiring into MainComponent save/load
 ```
 
-**First moves for T04:**
+**First moves for T05:**
 
-1. Open `engine/include/sirius/InputMixer.h` and add
-   `void setEffectChainHost (IEffectChainHost* host);` near the
-   `OutputMixer`-shaped methods. Define in `engine/src/InputMixer.cpp`
-   by storing the pointer in a new `effectChainHost_` member and
-   walking every existing internal bus to call
-   `bus.setEffectChainHost(host)`. Propagate to any NEW bus on
-   creation in the same code path as the other per-bus setters.
-2. In `app/MainComponent.cpp`, locate the existing
-   `outputMixer_->setEffectChainHost(pluginHost_.get())` call and add
-   the matching `inputMixer_->setEffectChainHost(pluginHost_.get())`
-   line alongside it.
-3. Create `tests/InputMixerInternalFxEndToEndTests.cpp` mirroring
-   `tests/BusInternalFxEndToEndTests.cpp` — at least one
-   `[input-mixer][internal-fx][end-to-end]` case that drops a
-   `makeInternal(kEq)` onto an Input-side bus, prepares the host,
-   verifies a finite non-zero stereo output through the host's
-   dispatch.
-4. Add the new test file to `tests/CMakeLists.txt`.
-5. Remove or mark resolved the `todo.md` entry (b) for 2026-05-23
-   (late).
+1. Read `engine/src/Bus.cpp` end-to-end. Locate `Bus::process` and
+   confirm the structural seams — the inline-path branch
+   (`hasActiveSlot == false`) and the chain-path branch (`hasActiveSlot
+   == true` walking the slots through `host_->pumpSlot`). Wet-capture
+   + meter writeback stay in the OUTER `process` (per the prd.json
+   spec).
+2. Extract two private member methods (or anonymous-namespace statics
+   if all dependencies pass through arguments cleanly):
+   `Bus::processInline(...)` for the inline branch and
+   `Bus::processChain(...)` for the chain branch. Both `noexcept`. No
+   allocation, no locks, no I/O — exact RT-safety contract of the
+   parent. Declare in `engine/include/sirius/Bus.h` as private.
+3. Verify with `ctest --test-dir build --output-on-failure` — EXACTLY
+   the same number of cases as before T05 (currently 621/2-skipped;
+   no behavior change, no new tests). Grep the helpers for `new|malloc|
+   lock|mutex` — none found.
+4. Mark `todo.md` entry (c) for 2026-05-23 (late) resolved.
+
+After T05 the only remaining loop-eligible prd.json tasks are T06–T08
+(the three 2026-05-16 code-review follow-ups). T05 + T06 + T07 + T08
+are all engine/refactor work — the loop CAN ship them. Beyond T08 the
+work pivots to GUI (T4 / T5 in the umbrella plan), which ralph cannot
+verify; that's where the operator picks up.
 
 ## ✅ DONE THIS SESSION (2026-05-23 — T3c-DLY DlyAdapter, ralph iteration #2)
 

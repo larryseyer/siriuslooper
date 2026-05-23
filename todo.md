@@ -1,6 +1,6 @@
 # Sirius Looper — Deferred Items
 
-### 2026-05-23 (late) — T3a-EQ Code Reviewer follow-ups (2 remaining entries below; entry (a) resolved 2026-05-23)
+### 2026-05-23 (late) — T3a-EQ Code Reviewer follow-ups (1 remaining entry below; entries (a) + (b) resolved 2026-05-23)
 
 #### (a) — RESOLVED 2026-05-23 by P7 T3a I-1 (prd T03)
 - `OutOfProcessEffectChainHost::prepareInternalFx` now early-returns when
@@ -15,28 +15,23 @@
   narrow `setInternalFxAdapterForTesting` seam to the host so tests can
   inject a mock without going through the factory.
 
-#### (b) T4 prerequisite — `InputMixer` has no `setEffectChainHost` (internal FX on Input-side bus chains silently no-op)
-- Files: `engine/include/sirius/InputMixer.h`, `engine/src/InputMixer.cpp`
-  (mirror the `OutputMixer::setEffectChainHost` shape — propagate to internal
-  buses via the same pattern OutputMixer uses).
-- What was deferred: `InputMixer` never received a `setEffectChainHost(host)`
-  method, so its bus chains can never reach the host's `pumpSlot` dispatch.
-  Result: an `EffectChainEntry::makeInternal(kEq)` (or any Plugin entry)
-  inserted into an Input-side bus chain silently does nothing at runtime —
-  the chain is held in the data model but never dispatched.
-- Why pre-existing: never wired during P4 (the prior plugin-host milestone).
-  T3a-C inherited this gap; surgical-changes rule said leave it.
-- Why deferred from T3a-C: out of T3a scope (engine plumbing slice for the
-  paths that EXIST; not new wiring for paths that don't).
-- What's needed to finish: add `InputMixer::setEffectChainHost(IEffectChainHost*
-  host)` that stores the pointer + propagates to every internal bus via
-  `bus.setEffectChainHost(host)` (and to any new bus on creation). Caller in
-  `MainComponent` adds `inputMixer_->setEffectChainHost(pluginHost_.get());`
-  alongside the existing `outputMixer_->setEffectChainHost(...)` call. Verify
-  with an `[input-mixer][internal-fx][end-to-end]` test mirroring
-  `tests/BusInternalFxEndToEndTests.cpp`. Land BEFORE T4 ships its Sends-tab
-  UI, or T4 will surface Input-side bus chains that the operator can wire but
-  that don't actually process audio.
+#### (b) — RESOLVED 2026-05-23 by P7 T3a I-2 (prd T04)
+- `InputMixer::setEffectChainHost(IEffectChainHost*)` landed mirroring the
+  `OutputMixer::setEffectChainHost` shape: stores the pointer in
+  `effectChainHost_` AND walks every existing bus to call
+  `bus.setEffectChainHost(host)`. `addBus` (and therefore `addFxReturn`,
+  which delegates) now reads the stashed pointer and wires every newly
+  registered bus the same way OutputMixer::addBus already does. Caller
+  wiring lives at the audio-callback construction site in
+  `MainComponent.cpp` — both `inputMixer_->setEffectChainHost(&effectChainHost_)`
+  AND `outputMixer_->setEffectChainHost(&effectChainHost_)` are now bound
+  next to `effectChainHost_.setNotificationSink(...)`. Verified by 2 new
+  `[input-mixer][internal-fx][end-to-end]` cases in
+  `tests/InputMixerInternalFxEndToEndTests.cpp` (one exercises the
+  pre-existing-bus path: addBus → setEffectChainHost → setBusEffectChain;
+  one exercises the late-add path: setEffectChainHost first, then addBus,
+  then setBusEffectChain — proving the stashed pointer reaches the new
+  bus at registration time). 138 assertions across both cases.
 
 #### (c) Follow-up — `Bus::process` is 173 lines (>100 default)
 - Files: `engine/src/Bus.cpp` — `Bus::process`.

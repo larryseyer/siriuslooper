@@ -2,15 +2,15 @@
 
 ## Status
 state: in_progress
-current_task: T04
-last_commit: d61a7ef
-last_updated: 2026-05-23T21:10:00Z
+current_task: T05
+last_commit: <TBD>
+last_updated: 2026-05-23T22:30:00Z
 
 ## Tasks
 [x] T01 - T3b-CMP — wrap otto::effects::PlayerCompressor as CmpAdapter
 [x] T02 - T3c-DLY — wrap otto::effects::PlayerDelay as DlyAdapter
 [x] T03 - P7 T3a I-1 — prepareInternalFx early-returns on unchanged sr/block
-[ ] T04 - P7 T3a I-2 — InputMixer::setEffectChainHost wiring + end-to-end test
+[x] T04 - P7 T3a I-2 — InputMixer::setEffectChainHost wiring + end-to-end test
 [ ] T05 - P7 T3a M-2 — split Bus::process into processInline + processChain helpers
 [ ] T06 - Hoist Shared-path splice out of Promotion::promote into helper
 [ ] T07 - Extract MainComponent::refreshAll and replace duplicated sites
