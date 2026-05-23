@@ -549,41 +549,103 @@ namespace
     juce::var effectChainEntryToVar (const EffectChainEntry& e)
     {
         auto obj = makeObject();
-        obj->setProperty ("plugin",       pluginDescriptorToVar (e.descriptor));
-        obj->setProperty ("displayName",  juce::String (e.displayName));
-        obj->setProperty ("state",        juce::String (e.stateBase64));
-        obj->setProperty ("bypassed",     e.bypassed);
-        obj->setProperty ("archivalMode", juce::String (archivalModeToString (e.archivalMode)));
-        if (e.persistedSnapshot.has_value())
-            obj->setProperty ("persistedSnapshot", versionPinningRecordToVar (*e.persistedSnapshot));
+
+        // Discriminant first — readers consult this before deciding which payload
+        // fields to look for. Wire string is the canonical name of the enum.
+        obj->setProperty ("kind",
+            juce::String (e.kind == EffectChainSlotKind::Empty    ? "Empty"
+                        : e.kind == EffectChainSlotKind::Internal ? "Internal"
+                        :                                            "Plugin"));
+
+        obj->setProperty ("displayName", juce::String (e.displayName));
+        obj->setProperty ("bypassed",    e.bypassed);
+
+        switch (e.kind)
+        {
+            case EffectChainSlotKind::Empty:
+                // No payload beyond kind + displayName + bypassed.
+                break;
+
+            case EffectChainSlotKind::Internal:
+                obj->setProperty ("internalId", juce::String (internalFxIdToString (e.internalId)));
+                // archivalMode + state + persistedSnapshot are Plugin-only.
+                break;
+
+            case EffectChainSlotKind::Plugin:
+                obj->setProperty ("plugin",       pluginDescriptorToVar (e.descriptor));
+                obj->setProperty ("state",        juce::String (e.stateBase64));
+                obj->setProperty ("archivalMode", juce::String (archivalModeToString (e.archivalMode)));
+                if (e.persistedSnapshot.has_value())
+                    obj->setProperty ("persistedSnapshot", versionPinningRecordToVar (*e.persistedSnapshot));
+                break;
+        }
+
         return objectVar (obj);
     }
 
     EffectChainEntry effectChainEntryFromVar (const juce::var& v)
     {
         EffectChainEntry e;
-        e.kind = EffectChainSlotKind::Plugin; // Task 2 backstop: old JSON had no `kind` field;
-                                              // every entry it could encode was a plugin.
-                                              // Task 3 replaces this with proper discriminant read.
-        e.descriptor  = pluginDescriptorFromVar (requireProperty (v, "plugin"));
-        e.displayName = requireProperty (v, "displayName").toString().toStdString();
-        e.stateBase64 = requireProperty (v, "state").toString().toStdString();
-        e.bypassed    = bool (requireProperty (v, "bypassed"));
 
-        // archivalMode + persistedSnapshot are M8 additions. Sessions
-        // serialized before this lands do not carry them — default
-        // archivalMode to VersionPinning (the new-session default) and
-        // leave the optional snapshot empty. Per plan "Defaults for new
-        // sessions": no migration needed because the field is constructed
-        // in-place from the default initializer when a session loads from
-        // a JSON document that pre-dates the field.
-        if (auto* obj = v.getDynamicObject())
+        // Forward-compat: pre-union JSON had no `kind` field. Every entry it
+        // could encode was a plugin (Internal did not exist). Default missing
+        // `kind` to Plugin so old sessions load without migration.
+        EffectChainSlotKind kind = EffectChainSlotKind::Plugin;
+        if (auto* obj = v.getDynamicObject(); obj != nullptr && obj->hasProperty ("kind"))
         {
-            if (obj->hasProperty ("archivalMode"))
-                e.archivalMode = archivalModeFromString (obj->getProperty ("archivalMode").toString());
-            if (obj->hasProperty ("persistedSnapshot"))
-                e.persistedSnapshot = versionPinningRecordFromVar (obj->getProperty ("persistedSnapshot"));
+            const auto s = obj->getProperty ("kind").toString().toStdString();
+            if      (s == "Empty")    kind = EffectChainSlotKind::Empty;
+            else if (s == "Internal") kind = EffectChainSlotKind::Internal;
+            else if (s == "Plugin")   kind = EffectChainSlotKind::Plugin;
+            else fail ("effectChainEntry.kind unknown value \"" + s + "\"");
         }
+        e.kind = kind;
+
+        // Common fields. `displayName` is required on every kind; older sessions
+        // already encode it. `bypassed` defaults to false when absent.
+        if (auto* obj = v.getDynamicObject(); obj != nullptr)
+        {
+            if (obj->hasProperty ("displayName"))
+                e.displayName = obj->getProperty ("displayName").toString().toStdString();
+            if (obj->hasProperty ("bypassed"))
+                e.bypassed = bool (obj->getProperty ("bypassed"));
+        }
+
+        switch (kind)
+        {
+            case EffectChainSlotKind::Empty:
+                break; // no further payload
+
+            case EffectChainSlotKind::Internal:
+            {
+                if (auto* obj = v.getDynamicObject(); obj != nullptr && obj->hasProperty ("internalId"))
+                    e.internalId = internalFxIdFromString (
+                        obj->getProperty ("internalId").toString().toStdString());
+                else
+                    fail ("effectChainEntry of kind Internal missing required `internalId`");
+                break;
+            }
+
+            case EffectChainSlotKind::Plugin:
+            {
+                e.descriptor  = pluginDescriptorFromVar (requireProperty (v, "plugin"));
+                e.stateBase64 = requireProperty (v, "state").toString().toStdString();
+                // archivalMode + persistedSnapshot are M8 additions. Sessions
+                // serialized before M8 do not carry them — default archivalMode
+                // to VersionPinning and leave the optional snapshot empty.
+                if (auto* obj = v.getDynamicObject(); obj != nullptr)
+                {
+                    if (obj->hasProperty ("archivalMode"))
+                        e.archivalMode = archivalModeFromString (
+                            obj->getProperty ("archivalMode").toString());
+                    if (obj->hasProperty ("persistedSnapshot"))
+                        e.persistedSnapshot = versionPinningRecordFromVar (
+                            obj->getProperty ("persistedSnapshot"));
+                }
+                break;
+            }
+        }
+
         return e;
     }
 

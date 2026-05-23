@@ -263,3 +263,131 @@ TEST_CASE ("a chain can mix Internal and Plugin slots", "[effect-chain][union-sl
     CHECK (chain.entries()[2].kind == sirius::EffectChainSlotKind::Internal);
     CHECK (chain.entries()[2].internalId == sirius::InternalFxId::kCmp);
 }
+
+TEST_CASE ("an Internal effect entry round-trips through SessionFormat",
+           "[effect-chain][sessionformat][union-slot]")
+{
+    using sirius::EffectChainEntry;
+    using sirius::InternalFxId;
+
+    EffectChain chain;
+    chain = chain.withAppended (EffectChainEntry::makeInternal (InternalFxId::kEq))
+                 .withAppended (EffectChainEntry::makeInternal (InternalFxId::kCmp));
+
+    const Constituent c =
+        Constituent (ConstituentId (11), Position(), Position (Rational (4)))
+            .withName ("internal-only")
+            .withEffectChain (chain);
+
+    const auto json  = sirius::persistence::serializeSession (c);
+    const auto round = sirius::persistence::deserializeSession (json);
+
+    REQUIRE (round->hasEffectChain());
+    REQUIRE (round->effectChain()->size() == 2);
+    CHECK (round->effectChain()->entries()[0].kind == sirius::EffectChainSlotKind::Internal);
+    CHECK (round->effectChain()->entries()[0].internalId == InternalFxId::kEq);
+    CHECK (round->effectChain()->entries()[1].kind == sirius::EffectChainSlotKind::Internal);
+    CHECK (round->effectChain()->entries()[1].internalId == InternalFxId::kCmp);
+    CHECK (*round->effectChain() == chain);
+}
+
+TEST_CASE ("a mixed Internal + Plugin chain round-trips through SessionFormat",
+           "[effect-chain][sessionformat][union-slot]")
+{
+    using sirius::EffectChainEntry;
+    using sirius::InternalFxId;
+
+    sirius::PluginDescriptor d;
+    d.format = sirius::PluginFormat::Vst3;
+    d.uniqueId = "RV-1";
+    d.version = "1.0.0";
+    d.name = "Plate Reverb";
+    d.manufacturer = "AcmeAudio";
+    d.filePath = "/plugins/Plate Reverb.vst3";
+
+    EffectChain chain;
+    chain = chain.withAppended (EffectChainEntry::makeInternal (InternalFxId::kEq))
+                 .withAppended (EffectChainEntry::makePlugin (d, "Reverb", "ZmFrZS1zdGF0ZQ=="))
+                 .withAppended (EffectChainEntry::makeInternal (InternalFxId::kDly));
+
+    const Constituent c =
+        Constituent (ConstituentId (12), Position(), Position (Rational (4)))
+            .withName ("mixed")
+            .withEffectChain (chain);
+
+    const auto json  = sirius::persistence::serializeSession (c);
+    const auto round = sirius::persistence::deserializeSession (json);
+
+    REQUIRE (round->hasEffectChain());
+    REQUIRE (round->effectChain()->size() == 3);
+    CHECK (*round->effectChain() == chain);
+}
+
+TEST_CASE ("a pre-union session (no `kind` field) loads every entry as Plugin",
+           "[effect-chain][sessionformat][union-slot][forward-compat]")
+{
+    // Forward-compat: pre-union JSON had no `kind` field. Every entry it could
+    // encode was a hosted plugin (Internal didn't exist yet). The deserializer
+    // must default missing `kind` to Plugin so old sessions load.
+    //
+    // Rather than hand-write a fixture (brittle against envelope changes), we
+    // round-trip a real Plugin-kind chain, strip the `kind` field from each
+    // entry in the parsed JSON tree, re-serialize, and feed THAT to the
+    // deserializer. This proves the missing-kind-default path independently
+    // of the current envelope shape.
+    EffectChain chain;
+    chain = chain.withAppended (makeEntry ("legacy-eq", "Legacy EQ"));
+
+    const Constituent c =
+        Constituent (ConstituentId (100), Position(), Position (Rational (4)))
+            .withName ("legacy")
+            .withEffectChain (chain);
+
+    const auto jsonWithKind = sirius::persistence::serializeSession (c);
+
+    // Parse, walk effects.entries, drop the "kind" property from each entry,
+    // re-emit. We do not assume envelope structure beyond `effects.entries`
+    // (the only path the union touches).
+    juce::var parsed;
+    REQUIRE (juce::JSON::parse (jsonWithKind, parsed).wasOk());
+
+    // Walk the parsed var tree and strip "kind" from any object that has an
+    // "entries" array (that is the effect-chain envelope). Accepts const ref
+    // because mutations are made via getDynamicObject() which returns a mutable
+    // pointer into the refcounted object — even copies share the same underlying
+    // DynamicObject.
+    auto stripKindInEffects = [] (auto& self, const juce::var& node) -> void {
+        if (auto* obj = node.getDynamicObject())
+        {
+            if (obj->hasProperty ("entries"))
+            {
+                const auto entries = obj->getProperty ("entries");
+                if (auto* arr = entries.getArray())
+                {
+                    for (const auto& entryVar : *arr)
+                    {
+                        if (auto* entry = entryVar.getDynamicObject())
+                            entry->removeProperty ("kind");
+                    }
+                }
+            }
+            for (const auto& prop : obj->getProperties())
+                self (self, prop.value);
+        }
+        else if (auto* arr = node.getArray())
+        {
+            for (const auto& elem : *arr)
+                self (self, elem);
+        }
+    };
+    stripKindInEffects (stripKindInEffects, parsed);
+
+    const auto preUnionJson = juce::JSON::toString (parsed);
+
+    const auto round = sirius::persistence::deserializeSession (preUnionJson);
+    REQUIRE (round->hasEffectChain());
+    REQUIRE (round->effectChain()->size() == 1);
+    const auto& entry = round->effectChain()->entries()[0];
+    CHECK (entry.kind == sirius::EffectChainSlotKind::Plugin);
+    CHECK (entry.descriptor.uniqueId == "legacy-eq");
+}

@@ -83,9 +83,7 @@ TEST_CASE ("PluginDescriptor::version round-trips through SessionFormat",
     d.manufacturer = "Vendor";
     d.filePath     = "/plugins/TestEQ.vst3";
 
-    EffectChainEntry entry;
-    entry.descriptor  = d;
-    entry.displayName = d.name;
+    const auto entry = EffectChainEntry::makePlugin (d, d.name);
 
     auto leaf = std::make_shared<Constituent> (
         ConstituentId (1),
@@ -280,9 +278,7 @@ TEST_CASE ("ArchivalMode default for a new EffectChainEntry is VersionPinning",
 TEST_CASE ("EffectChainEntry with persistedSnapshot round-trips through SessionFormat",
            "[archival-mode][session-format]")
 {
-    EffectChainEntry entry;
-    entry.descriptor   = descriptorFixture();
-    entry.displayName  = "Synthetic";
+    auto entry = EffectChainEntry::makePlugin (descriptorFixture(), "Synthetic");
     entry.bypassed     = false;
     entry.archivalMode = ArchivalMode::VersionPinning;
     entry.persistedSnapshot = makeVersionPinningRecord (entry.descriptor, {});
@@ -311,9 +307,7 @@ TEST_CASE ("EffectChainEntry with persistedSnapshot round-trips through SessionF
 TEST_CASE ("EffectChainEntry without persistedSnapshot round-trips with no snapshot",
            "[archival-mode][session-format]")
 {
-    EffectChainEntry entry;
-    entry.descriptor   = descriptorFixture();
-    entry.displayName  = "Synthetic";
+    auto entry = EffectChainEntry::makePlugin (descriptorFixture(), "Synthetic");
     entry.archivalMode = ArchivalMode::DeterminismContract;
     // Deliberately no persistedSnapshot.
 
