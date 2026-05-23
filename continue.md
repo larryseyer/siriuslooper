@@ -1,30 +1,214 @@
-# Session Continuation — 2026-05-24 (T3d-RVB) (**P7 T3d SHIPPED operator-side across five focused commits (`da954b5` → `0337907` → `e04b862` → `15278ec` → `85cd210`). The reverb internal-FX adapter — last of four (EQ→CMP→DLY→RVB) consuming OTTO's header-only DSP — now wraps `otto::effects::PlayerIRConvolution`. Slice 1 plumbed `OTTO_ASSETS_DIR` as a CACHE PATH variable injected into SiriusEngine as `SIRIUS_OTTO_ASSETS_DIR` PRIVATE compile def (default `/Users/larryseyer/AudioDevelopment/OTTO/assets`). Slice 2 added `engine/src/fx/RvbAdapter.{h,cpp}` mirroring DlyAdapter's shape (value-member OTTO DSP + defaulted `PlayerEffectsConfig` with `irEnabled=true`); factory still returned nullptr. Slice 3 hardcoded the default IR (`"Plate Bright 1.13"`) and called `conv_.requestIRLoad(resolveDefaultIRPath())` from `prepare()`. Slice 4 added five `RvbAdapterTests` cases mirroring `DlyAdapterTests` (unprepared-miss, sine-bounded, reset, in-place equivalence with 1e-6 tolerance, IR-loaded smoke with 15s poll + SKIP fallback). Slice 5 flipped `InternalFxFactory::makeInternalFxAdapter(kRvb)` to return the new adapter, inverted `InternalFxFactoryTests`' kRvb case, deleted the now-obsolete "un-shipped id (kRvb) is a no-op rebind" test in `OutOfProcessEffectChainHostInternalDispatchTests`, and updated the stale "kCmp/kRvb/kDly return nullptr" comment in `OutOfProcessEffectChainHost.cpp` to reflect "reserved-but-undeclared enum values". ctest baseline now **623 pass / 2 skipped** (621 prior baseline + 5 new RvbAdapter cases − 3 net adjustments: kRvb-nullptr-pinning case in InternalFxFactoryTests inverted to a working-adapter case (net 0), un-shipped-id dispatch test deleted (−1)). One RVB case (IR-loaded smoke) routinely passes locally (~8s with 15s poll); on environments without `/Users/larryseyer/AudioDevelopment/OTTO/assets/IR/` it SKIPs cleanly (case 4/5 still pass either way). RT-safety preserved: OTTO's grandfathered mutex inside `requestIRLoad` is only contended between OTTO's message-thread requestor and its worker — never the audio thread, which only ever calls `conv_.process()` (atomic-acquire on `activeIndex_` for the double-buffer swap, no locks). The five-slice plan lived at `/Users/larryseyer/.claude/plans/read-continue-and-proceed-imperative-cocke.md`.**)
+# Session Continuation — 2026-05-25 (T5 slices 1-3) (**P7 T5 slices 1-3 SHIPPED across three focused commits (`f95602b` → `2f3a1cb` → `87da6bb`). The engine half of the Insert UI now exists — bypass, reorder, and persistence-load wiring for the internal-FX dispatch path. Slice 1 (`f95602b`) added `IEffectChainHost::setInternalFxBypassAtSlot` + a parallel `internalBypass_` atomic-bool map in `OutOfProcessEffectChainHost`; `pumpSlot`'s internal-FX branch now acquire-loads the flag after the adapter lookup and returns false (dry pass-through) when bypassed. `setInternalFxAtSlot` erase + fresh-id paths both clear the bypass entry so a re-added slot starts active. Three new TEST_CASEs (bypass-true→miss, bypass-flip-restores, fresh-id-resets-bypass) using the existing `[internal-fx-host]` pattern. Slice 2 (`2f3a1cb`) added `IEffectChainHost::moveInternalFxSlot` — atomic swap-or-move of `(nodeKey, fromSlot)` ↔ `(nodeKey, toSlot)` across BOTH `internalAdapters_` and `internalBypass_` maps; bypass flag travels with its adapter. Three new TEST_CASEs (swap-two-occupied, move-to-empty, bypass-preservation-through-move). Slice 3 (`87da6bb`) wired the persisted `EffectChainEntry::bypassed` flag through to the host: `Bus::setEffectChain` (`engine/src/Bus.cpp:73-79`) and `ChannelStrip::setEffectChain` (`engine/include/sirius/ChannelStrip.h:140-152`) now call `setInternalFxBypassAtSlot(.., entries[slotIdx].bypassed)` immediately after `setInternalFxAtSlot` in the Internal branch — closes the JSON-round-trip → host-state load path. Three new TEST_CASEs in `BusInternalFxEndToEndTests.cpp` (bypass=true→host pumpSlot returns false, bypass=false→host dispatches, replace-bypassed-with-fresh→bypass cleared). ctest baseline **625 → 634 across the session** (+9 new tests, 100% pass, 2 expected skips — the same operator-only OOP editor lifecycle cases #632/#633). Both `SiriusTests` and `SiriusLooper` rebuild clean. RT-safety preserved throughout: `pumpSlot` adds one `unordered_map::find` + one atomic-acquire load per call on the internal-FX branch — no allocation, no locking, `noexcept`-compatible. The full 6-slice T5 plan lives at `/Users/larryseyer/.claude/plans/t5-insert-ui.md`; the per-session plan was `/Users/larryseyer/.claude/plans/read-continue-and-proceed-radiant-cat.md`. Slices 4-6 remain — slice 4 (`InsertChainPopup` ui/ component, partially headless), slice 5 (INS button + MainComponent wiring, operator-eyes-on), slice 6 (this handoff doc — already done early).**)
 
 > **For a fresh chat picking this up cold:** read this whole file before
 > doing anything. Memory + project + user CLAUDE.md load automatically;
 > this file is the *state* (what just shipped + what's queued next).
-> Latest commits on Sirius origin/master this session: `da954b5` →
-> `0337907` → `e04b862` → `15278ec` → `85cd210` (T3d slices 1-5) →
-> `5b7ada5` (handoff doc) → `6b000d0` (handoff correction: no operator
-> audible gate until T5 ships) → this commit (T5 PLAN + final handoff
-> refresh). OTTO origin/main: **`abf8e4d4`** (unchanged this session);
-> ctest baseline **623 pass / 2 skipped** (was 621/2 — net +5 RvbAdapter
-> cases − 1 obsolete "un-shipped id (kRvb)" dispatch test deleted).
-> Slice-1 of T3d injected a new `OTTO_ASSETS_DIR` CACHE PATH variable —
-> operators with a non-default OTTO checkout location must pass
-> `-DOTTO_ASSETS_DIR=<their-path>` at configure time.
-> **T5 (Insert UI) was planned this session, NOT executed.** The
-> full 6-slice plan lives at
-> `/Users/larryseyer/.claude/plans/t5-insert-ui.md`. A fresh chat
-> picking up T5 should read that plan and start with slice 1
-> (bypass on internal-FX dispatch — fully headless, ralph-able).
+> Latest commits on Sirius origin/master this session: `f95602b` (T5
+> slice 1 — bypass on internal-FX dispatch) → `2f3a1cb` (T5 slice 2 —
+> moveInternalFxSlot reorder primitive) → `87da6bb` (T5 slice 3 —
+> propagate persisted bypassed flag from EffectChain to host on
+> chain-set). OTTO origin/main: **`abf8e4d4`** (unchanged this session
+> — no cross-project edits required). ctest baseline **634 pass / 2
+> skipped** (was 625/2 → +9 new tests; the 2 skipped are the
+> operator-only OOP editor lifecycle cases #632 / #633 from
+> `MainComponentPluginEditorTests`, unchanged from the prior baseline).
+>
+> **T5 slices 4-5 are the remaining UI-heavy work.** A fresh chat
+> picking this up should read `/Users/larryseyer/.claude/plans/t5-insert-ui.md`
+> (the full 6-slice plan, operator-approved) and start with slice 4
+> (the `InsertChainPopup` ui/ component — partially headless via
+> callback-driven tests, but the visual half is operator-eyes-on).
+> Slice 6 (this handoff doc) was folded forward into this session.
+>
 > **MANDATORY at session start:** read
 > `external/OTTO/CROSS_PROJECT_INBOX.md` and acknowledge any
 > `[FROM OTTO → SIRIUS]` entries (per `project_cross_project_inbox_protocol`).
 > The whitepaper lives at `docs/Sirius_Looper_Whitepaper_V7.md`
 > (underscores — `project_whitepaper_path`).
 
-## ✅ DONE THIS SESSION (2026-05-24 — T3d-RVB internal-FX adapter, 5 operator-side slices)
+## ✅ DONE THIS SESSION (2026-05-25 — T5 Insert UI slices 1-3, engine half)
+
+Three focused commits landed on origin/master. Together they ship the
+engine half of T5 (Insert UI) — the bypass, reorder, and persistence-
+load wiring the popup component will drive in slices 4-5. Each slice
+was fully headless / ralph-able and verified before push.
+
+### Slice 1 — bypass on internal-FX dispatch (`f95602b`)
+
+- **`core/include/sirius/IEffectChainHost.h`** — new virtual
+  `setInternalFxBypassAtSlot(int64_t nodeKey, size_t slotIdx, bool bypassed)`.
+  Defaulted no-op (NOT pure-virtual) to preserve the existing 5 test
+  fakes that only override `pumpSlot` (`HalvingEffectHost`,
+  `DoublingHost`, `SlotAwareHost`, `MissHost`, `NullHost`). Same
+  fake-compat pattern as the existing `setInternalFxAtSlot`.
+- **`host/include/sirius/OutOfProcessEffectChainHost.h`** — override
+  decl + a parallel `std::unordered_map<SlotKey, std::atomic<bool>,
+  SlotKeyHash> internalBypass_;` member next to `internalAdapters_`.
+- **`host/src/OutOfProcessEffectChainHost.cpp`** —
+  - `setInternalFxBypassAtSlot` impl: `try_emplace(key, bypassed)`
+    then explicit release-store on the existing-entry path.
+  - `setInternalFxAtSlot` erase path AND fresh-id path both
+    `internalBypass_.erase(key)` so a re-added slot starts active.
+  - `pumpSlot` internal-FX branch: after the adapter lookup hit, do
+    one `internalBypass_.find(key)` + acquire-load; if true,
+    `return false` (dry pass-through, matches the existing miss
+    contract verified by other tests in the file).
+- **`tests/OutOfProcessEffectChainHostInternalDispatchTests.cpp`** —
+  three new TEST_CASEs mirroring the existing `[internal-fx-host]`
+  pattern (no fixture, `pump()` helper, EQ adapter): bypass-true→miss
+  with sentinel survival, bypass-flip restores dispatch, fresh-id
+  resets bypass even from prior-true state.
+
+**RT-safety:** `pumpSlot` adds one `unordered_map::find` + one
+`std::atomic<bool>::load(acquire)` per call on the internal-FX path.
+No allocation, no locking, `noexcept`-compatible. The bypass map's
+bucket layout is only ever mutated on the message thread with the
+audio callback detached (same contract as `internalAdapters_`).
+
+ctest: 625 → 628.
+
+### Slice 2 — `moveInternalFxSlot` reorder primitive (`2f3a1cb`)
+
+- **`core/include/sirius/IEffectChainHost.h`** — new defaulted-no-op
+  virtual `moveInternalFxSlot(int64_t nodeKey, size_t fromSlot,
+  size_t toSlot)`. Documented contract: both-occupied → swap, one-
+  occupied → move (source becomes empty), both-empty / same-slot →
+  no-op. Bypass flag travels with its adapter.
+- **`host/include/sirius/OutOfProcessEffectChainHost.h`** — override
+  decl.
+- **`host/src/OutOfProcessEffectChainHost.cpp`** — impl hoists both
+  unique_ptr<IInternalFxAdapter>s out of `internalAdapters_`, erases
+  both keys, re-emplaces under swapped keys (only when non-null so a
+  move-into-empty actually leaves the source empty rather than
+  seeding a null entry). Same shape for `internalBypass_`: read both
+  atomics out (relaxed — audio is detached), erase both, re-emplace
+  under swapped keys ONLY when the source actually had an entry
+  (preserves "absent = not bypassed" optimization).
+- **`tests/OutOfProcessEffectChainHostInternalDispatchTests.cpp`** —
+  three new `[internal-fx-host][move]` TEST_CASEs: swap-two-occupied,
+  move-to-empty-leaves-src-empty, bypass-preserved-through-move
+  (the bypass test also confirms a post-move
+  `setInternalFxBypassAtSlot(.., false)` at the destination flips
+  dispatch back on).
+
+ctest: 628 → 631.
+
+### Slice 3 — engine propagates persisted bypass on chain-set (`87da6bb`)
+
+The session-load path the T5 plan called for was already mostly there
+— `Bus::setEffectChain` and `ChannelStrip::setEffectChain` already
+walk every slot index `[0, kMaxSlots)` and call
+`host_->setInternalFxAtSlot(...)` per slot (P7 T3a-C wiring). They
+just didn't propagate the entry's `bypassed` flag. Slice 3 adds
+exactly that:
+
+- **`engine/src/Bus.cpp`** — in the `kind == EffectChainSlotKind::Internal`
+  branch of `setEffectChain`'s sweep, immediately after the existing
+  `host_->setInternalFxAtSlot(...)` call, add
+  `host_->setInternalFxBypassAtSlot(nodeKey, slotIdx, entries[slotIdx].bypassed);`.
+  The nullopt-erase branch does NOT need its own
+  `setInternalFxBypassAtSlot` call — the erase inside
+  `setInternalFxAtSlot` already drops any matching bypass entry.
+- **`engine/include/sirius/ChannelStrip.h`** — identical edit in the
+  analogous location inside `setEffectChain`'s sweep.
+- **`tests/BusInternalFxEndToEndTests.cpp`** — three new
+  `[internal-fx][end-to-end][bypass-load]` TEST_CASEs. They observe
+  the host's `pumpSlot` DIRECTLY (not Bus::process) because Bus's own
+  `processChain` already skips bypassed entries via the chain-side
+  `entries[slotIdx].bypassed` check (line ~213) and would mask the
+  host-level bypass observation. Direct host pumpSlot gives an
+  apples-to-apples view of whether slice 3's wiring actually fired.
+- Coverage: chain with `{Internal=kEq, bypassed=true}` → host pumpSlot
+  returns false with sentinel survival; chain with `{Internal=kEq,
+  bypassed=false}` → host pumpSlot dispatches; replace-bypassed-with-
+  fresh → bypass cleared and host dispatches.
+
+**Architectural note (for slice 5 design):** the two layers of bypass
+are independent and need to stay in sync when the UI fires. Today:
+chain-entry `bypassed` (persisted in JSON) drives Bus's skip in
+`processChain`, AND drives host's `internalBypass_` at chain-set
+time. The slice-5 UI gesture for "toggle bypass" will need to either
+(a) update the chain entry AND call `setInternalFxBypassAtSlot`, or
+(b) only call `setInternalFxBypassAtSlot` and accept that the chain
+serialization loses the bypass state until the next chain-rebuild.
+Option (a) is the right one — the popup callback should mutate
+`EffectChain` and re-setEffectChain (which sweeps everything,
+including bypass propagation via slice 3). That keeps persistence
+honest without a parallel state-update path.
+
+ctest: 631 → 634.
+
+**Cumulative session shift: 625 pass / 2 skipped → 634 pass / 2
+skipped** (+9 new tests, 100% pass). Build clean throughout. Both
+`SiriusTests` and `SiriusLooper` rebuild without warnings beyond the
+pre-existing duplicate-library link warning and the pre-existing
+`-Wfloat-equal` warnings in test sentinel comparisons (clangd-default,
+not enabled in the build).
+
+## ▶ NEXT — T5 slices 4-5 (UI-heavy)
+
+The engine half of T5 is done. Slices 4-5 ship the UI half:
+
+- **Slice 4 — `InsertChainPopup` ui/ component (partially headless).**
+  New `juce::Component` subclass living in `ui/src/`. Renders 8 slot
+  rows (FX picker dropdown / bypass toggle / remove `×` / drag handle)
+  using `SiriusLookAndFeel` tokens. Callbacks: `onSlotChanged`,
+  `onSlotBypassToggled`, `onSlotsReordered`, `onClose`. The pixel
+  rendering itself is operator-eyes-on, but the callback wiring can
+  be unit-tested headlessly via small `simulatePickFx(...)` /
+  `simulateBypassToggle(...)` / `simulateReorder(...)` test seams on
+  the popup's public surface. Per the T5 plan + Sirius convention,
+  this uses `juce::ComboBox` / `juce::TextButton` (NOT OTTO's
+  `TouchMenuPresenter`, which is reserved for OTTO per its GRIM Menu
+  Surface rule + the inbox entry on `OTTO_OUTPUT_COMBO_AS_JUCE_COMBOBOX`).
+- **Slice 5 — INS button on Input + Bus strips + MainComponent
+  wiring (operator-eyes-on).** Adds an "INS" button to
+  `InputMixerPane::setStrips()` (~line 527) and `setBusStrips()`
+  (~line 590) next to the existing destination picker. Lambda relays
+  on `MainComponent` open the popup, wire its four callbacks to
+  `host.setInternalFxAtSlot` / `setInternalFxBypassAtSlot` /
+  `moveInternalFxSlot` / popup teardown. This is the slice that
+  finally provides the operator audible gate for T3d-RVB — drop an
+  RVB slot on an input or bus strip, wait 4-6 s for OTTO's IR
+  worker, hear plate reverb tail.
+
+**First moves for a fresh chat picking up slice 4:**
+
+1. Read the T5 plan at `/Users/larryseyer/.claude/plans/t5-insert-ui.md`
+   (slice 4 section, ~lines 147-189).
+2. Pick the geometry. The plan suggests 8 vertical rows × (picker /
+   bypass / remove / gripper). Per `feedback_default_to_professional_elegant`
+   + `feedback_gesture_over_ui_clutter` (memory), prefer:
+   - One row per slot, dense vertical stack.
+   - Picker = `juce::ComboBox` (5 entries: Empty / EQ / CMP / DLY /
+     RVB; sorted alphabetically with Empty first, OR by signal-chain
+     convention EQ→CMP→DLY→RVB if that reads better).
+   - Bypass = small power-icon toggle button (uses
+     `SiriusLookAndFeel::getMenuColors()` accent for on-state).
+   - Remove = small `×` glyph button.
+   - Drag handle = thin left-edge gripper (mouseDown/Drag/Up emits
+     `onSlotsReordered` on drop). Drag-reorder gesture coverage is
+     operator-eyes-on; the public `simulateReorder(from, to)` test
+     seam covers the callback wiring.
+3. Catch2 callback test pattern: see `tests/DlyAdapterTests.cpp` for a
+   bind-the-fake-and-assert example. The popup tests don't need to
+   render — they construct the component, invoke the simulate methods,
+   and assert the registered callbacks fired with the expected args.
+4. Cumulative ctest target after slice 4: 634 → ~639-641.
+5. Slice 5 cumulative target: no ctest delta (all gestures are
+   operator-driven); the operator gate is the audible RVB plate
+   reverb after dropping an RVB slot on a routed channel.
+
+**Alternative tracks if the operator deprioritizes T5:** T4 Sends tab
+UI (needs an Output Mixer tab first per
+`project_mixer_then_transport_roadmap`), T6 P4/P5 persistence wiring
+into MainComponent save/load. The §11 Promotion banner scenarios
+from the prior T08 session also still operator-eyes-on independent
+of T3d/T5.
+
+---
+
+# (archived header — 2026-05-24) — T3d-RVB internal-FX adapter, 5 operator-side slices
 
 Five focused commits landed on origin/master. T3d closes the
 "EQ → CMP → DLY → RVB" internal-FX-first-class umbrella started in P7 T3a.
