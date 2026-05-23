@@ -3173,12 +3173,8 @@ void MainComponent::openPluginEditor (const PluginDescriptor& descriptor)
 
     const auto busId = nextScratchBusId_++;
 
-    sirius::EffectChainEntry entry;
-    entry.descriptor  = descriptor;
-    entry.displayName = descriptor.name;
-    entry.bypassed    = false;
     sirius::EffectChain chain;
-    chain = chain.withAppended (entry);
+    chain = chain.withAppended (sirius::EffectChainEntry::makePlugin (descriptor, descriptor.name));
 
     effectChainHost_.configureBus (busId, chain, hostBinary, clapBundle);
 
