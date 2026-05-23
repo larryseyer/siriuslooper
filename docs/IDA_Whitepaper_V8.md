@@ -1,6 +1,4 @@
-# IDA
-
-### A Reference Architecture for Time-Domain Audio/Video Looping
+# IDA — A Reference Architecture for Time-Domain Audio/Video Looping
 
 *Looping as the Capture and Repetition of Musical Ideas*
 
@@ -13,7 +11,7 @@
 
 ## Abstract
 
-This paper proposes a reference architecture for audio/video loopers that rejects assumptions built into nearly every existing looper, and proposes a foundational reframe that follows from rejecting them.
+This paper describes the architecture of **IDA — Idea Development Arranger**, the looping environment in the AutomagicArt instrument family alongside OTTO (Organic Timing & Trigger Orchestrator). IDA proposes a reference architecture for audio/video loopers that rejects assumptions built into nearly every existing looper, and proposes a foundational reframe that follows from rejecting them.
 
 The rejected assumptions are: that audio sample clocks are a valid timing reference; that audio and video clocks can be synchronized to each other; that "record" is a fundamental operation; that the looper must protect the user from operating it; that time is a number; and that a loop is the unit of musical thought.
 
