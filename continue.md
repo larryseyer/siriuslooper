@@ -1,19 +1,88 @@
-# Session Continuation — 2026-05-23 (T04 I-2) (**P7 T3a follow-up debt T04 SHIPPED via ralph loop iteration #4 — `InputMixer::setEffectChainHost(IEffectChainHost*)` now exists, mirroring `OutputMixer::setEffectChainHost`: stashes the pointer in `effectChainHost_` AND walks every existing bus to call `bus.setEffectChainHost(host)`. `addBus` (and therefore `addFxReturn`, which delegates) reads the stashed pointer and wires every newly registered bus the same way OutputMixer::addBus already does. `MainComponent.cpp` now binds BOTH `inputMixer_->setEffectChainHost(&effectChainHost_)` AND `outputMixer_->setEffectChainHost(&effectChainHost_)` next to `effectChainHost_.setNotificationSink(...)` — closes a pre-existing wiring gap where Input-side AND Output-side bus chains held EffectChainEntries that never reached the host's pumpSlot dispatch. 2 new `[input-mixer][internal-fx][end-to-end]` cases verify both paths: one exercises the pre-existing-bus path (addBus → setEffectChainHost → setBusEffectChain → renderInputGraph delivers a sine through Channel→Bus→HardwareOutput with EQ unity-tracking); one exercises the late-add path (setEffectChainHost FIRST, then addBus, then setBusEffectChain — proving the stashed pointer reaches the new bus at registration time). 138 assertions across both cases. ctest **621 pass / 2 skipped** (up from 619; +2 new end-to-end cases). NEXT = T05 (split `Bus::process` into `processInline` + `processChain` helpers per CLAUDE.md function-size rule).**)
+# Session Continuation — 2026-05-23 (T05 M-2) (**P7 T3a follow-up debt T05 SHIPPED via ralph loop iteration #5 — `Bus::process` split into `Bus::processInline` (full inline-path DSP: gain/mute → mixBuffer_ in place → output write → per-channel peaks; 27 lines) and `Bus::processChain` (copy `mixBuffer_`→`processedBuffer_` → dispatch each non-bypassed slot through `host_->pumpSlot` in-place → tap `wetSink_` pre-fader per the M8 S4 contract → post-fader gain/mute → output accumulate → per-channel peaks; 71 lines). Outer `Bus::process` dropped from 173 lines → 66 lines, factors out the if/else dispatch + meter writeback (peak left/right publish + LUFS feed) + `mixBuffer_` zero so those apply uniformly to both paths. Wet-capture stays inside `processChain` rather than the outer body because the pre-fader-before-gain ordering of the M8 S4 contract lives next to the pump that produces the signal; moving it to the outer would have either re-ordered the wet feed to post-fader (semantic regression) or required a third helper to split `processChain` again (out of scope for this two-helper task). All three function bodies now satisfy the CLAUDE.md 100-line default; RT-safety preserved (grep for new/malloc/lock_guard/mutex/throw/allocator across the helpers — none found); no behavior change — ctest still **621 pass / 2 skipped**, the identical baseline from before the split. NEXT = T06 (hoist Shared-path splice out of `Promotion::promote` into helper).**)
 
 > **For a fresh chat picking this up cold:** read this whole file before
 > doing anything. Memory + project + user CLAUDE.md load automatically;
 > this file is the *state* (what just shipped + what's queued next).
-> Newest commit on Sirius origin/master: **`e793c5b`** (this session's
-> T04 I-2 commit landed on top of `d61a7ef`); OTTO origin/main:
+> Newest commit on Sirius origin/master: **`<TBD>`** (this session's T05
+> M-2 commit landed on top of `e793c5b`); OTTO origin/main:
 > **`abf8e4d4`** (unchanged this session); ctest baseline **621 pass / 2
-> skipped** (up from 619 — +2 ctest entries this session).
+> skipped** (unchanged — refactor only, no new tests).
 > **MANDATORY at session start:** read
 > `external/OTTO/CROSS_PROJECT_INBOX.md` and acknowledge any
 > `[FROM OTTO → SIRIUS]` entries (per `project_cross_project_inbox_protocol`).
 > The whitepaper lives at `docs/Sirius_Looper_Whitepaper_V7.md`
 > (underscores — `project_whitepaper_path`).
 
-## ✅ DONE THIS SESSION (2026-05-23 — T04 P7 T3a I-2 InputMixer::setEffectChainHost wiring, ralph iteration #4)
+## ✅ DONE THIS SESSION (2026-05-23 — T05 P7 T3a M-2 Bus::process split, ralph iteration #5)
+
+Single-commit ralph iteration. Pure refactor — no new tests, no behavior
+change. Closes the last open T3a Code Reviewer follow-up.
+
+- **`engine/include/sirius/Bus.h`** — adds two private member declarations:
+  `processInline(float* const* output, bool outputUsable, int activeChannels,
+  int clampedSamples, float* peaksOut) const noexcept` and
+  `processChain(float* const* output, int activeChannels, int clampedSamples,
+  float* peaksOut) const noexcept`. Both marked `noexcept`, both
+  documented with a docstring spelling out what they do AND what stays in
+  the outer `process()` (peak/LUFS publish + `mixBuffer_` zero).
+  `processChain`'s docstring also calls out that wet-capture stayed inside
+  this helper rather than the outer body because the pre-fader-before-gain
+  ordering of the M8 S4 contract lives next to the pump that produces the
+  signal.
+
+- **`engine/src/Bus.cpp`** — `Bus::process` (was 173 lines, now 66 lines)
+  becomes the top-level dispatcher: clamps `numSamples`, computes
+  `outputUsable` / `activeChannels`, decides `hasActiveSlot` from the
+  effect chain, dispatches to `processInline` or `processChain`, then
+  publishes the per-channel peaks + LUFS feed and zeros `mixBuffer_` for
+  the next buffer. The LUFS source buffer pointer follows the path taken
+  (`mixBuffer_.data()` for inline, `processedBuffer_.data()` for chain).
+  `processInline` (27 lines) implements the M5 inline body bit-for-bit:
+  load gain/mute once, walk active channels, apply gain in place to
+  `mixBuffer_` (the LUFS feed reads post-fader values), additively write
+  to `output[c]` when `outputUsable && output[c] != nullptr`, track
+  per-channel peaks into the caller's `peaksOut`. `processChain` (71
+  lines) implements the chain body bit-for-bit: copy
+  `mixBuffer_`→`processedBuffer_`, iterate `effectChain_.entries()`
+  dispatching non-bypassed slots through `host_->pumpSlot` in-place on
+  `processedBuffer_`, tap `wetSink_->tryEnqueueWet` on the pre-fader
+  processed signal (default-off; the M8 S4 ceiling comment is preserved
+  here), then apply post-fader gain/mute in place + output accumulate +
+  per-channel peaks.
+
+- **`todo.md`** — entry (c) for 2026-05-23 (late) marked RESOLVED with a
+  paragraph describing what landed, why wet-capture stayed inside
+  `processChain` instead of the outer body, the new function-body line
+  counts, and the RT-safety + behavior-preservation evidence. Header
+  line bumped from "1 remaining entry" to "ALL THREE ENTRIES RESOLVED
+  2026-05-23".
+
+- **`progress.txt`** — `[ ] T05` flipped to `[x] T05`; header fields
+  (`state` stays `in_progress`, `current_task` → T06, `last_commit`,
+  `last_updated`) bumped.
+
+**RT-safety:** `processInline` and `processChain` are both audio-thread
+APIs (called only from `Bus::process` which is itself the audio-thread
+mix entry point). Both marked `noexcept`. Grep across the helpers for
+`new` / `malloc` / `lock_guard` / `mutex` / `throw` / `allocator` — none
+found. The lambda-based `canWriteOutput` from the original body was
+inlined into `processInline` as a per-channel `bool canWrite` local; no
+heap closure, no allocation. `processedPtrs[kMaxBusChannelsHard]` is a
+stack-allocated fixed-size array (same as before). The wet-capture
+ordering (pre-fader, before the post-fader gain loop) is preserved
+inside `processChain`.
+
+**ctest baseline:** 621 pass / 2 skipped (the 2 skipped remain the
+operator-only OOP editor cases #620 / #621 from
+`MainComponentPluginEditorTests`). Build clean.
+`cmake --build build --target SiriusTests && ctest --test-dir build
+--output-on-failure` was the gate this iteration passed.
+
+---
+
+# (archived header — 2026-05-23) — P7 T3a follow-up debt T04 SHIPPED via ralph iteration #4 — `InputMixer::setEffectChainHost(IEffectChainHost*)` now exists mirroring OutputMixer; `MainComponent.cpp` wires both Input and Output mixers to the EffectChainHost; 2 new end-to-end cases. ctest 619 → 621.
+
+## (archived body — T04 P7 T3a I-2 InputMixer::setEffectChainHost wiring, ralph iteration #4)
 
 Single-commit ralph iteration. Engine setter + MainComponent caller +
 new end-to-end test. Closes a pre-existing wiring gap.
@@ -171,11 +240,16 @@ the operator-only OOP editor cases #618 / #619 from
 ctest --test-dir build --output-on-failure` is the loop's allowed
 verification command and was the gate this iteration passed.
 
-## ▶ NEXT — P7 T3a follow-up debt T05 (T05 in `prd.json`)
+## ▶ NEXT — Hoist Shared-path splice out of Promotion::promote (T06 in `prd.json`)
 
-Active prd.json: `T05` — split `Bus::process` into `processInline` +
-`processChain` helpers (per CLAUDE.md function-size 100-line default;
-current body is 173 lines). The umbrella status:
+Active prd.json: `T06` — extract the pointer-identity-preserving
+Shared-path splice in `core/src/Promotion.cpp` (todo.md said
+~lines 230-289 but line numbers may have drifted since T3a-C landed on
+`869318f` — RE-LOCATE BY SYMBOL, not by line) into a private
+anonymous-namespace helper named `spliceLoopIntoSharedHost(root,
+hostPath, loopPtr)`. Capture by parameter, not by-reference closure.
+Should drop `promote()` from ~226 lines to ~165 lines. The umbrella
+status:
 
 ```
 T0  OTTO submodule          ✅ DONE
@@ -186,40 +260,52 @@ T3  internal-FX adapters    NEAR DONE
     T3b-CMP                 ✅ DONE
     T3c-DLY                 ✅ DONE
     T3d-RVB                 last (background-thread IR loading)
-T3a follow-up debt          IN PROGRESS via prd.json T03-T05
+T3a follow-up debt          ✅ ALL DONE via prd.json T03-T05
     T03 I-1 idempotency     ✅ DONE
-    T04 I-2 InputMixer wire ✅ DONE (this iteration)
-    T05 M-2 Bus split       next
-T4  Sends tab UI            (after T3 fully)
+    T04 I-2 InputMixer wire ✅ DONE
+    T05 M-2 Bus split       ✅ DONE (this iteration)
+2026-05-16 code-review      IN PROGRESS via prd.json T06-T08
+    T06 Promotion splice    next (this entry)
+    T07 MainComponent refresh
+    T08 announceCapture jassert
+T4  Sends tab UI            (after T3d + GUI handoff)
 T5  Insert UI               (internal-FX-only picker until "P7-scanner")
 T6  P4/P5 persistence wiring into MainComponent save/load
 ```
 
-**First moves for T05:**
+**First moves for T06:**
 
-1. Read `engine/src/Bus.cpp` end-to-end. Locate `Bus::process` and
-   confirm the structural seams — the inline-path branch
-   (`hasActiveSlot == false`) and the chain-path branch (`hasActiveSlot
-   == true` walking the slots through `host_->pumpSlot`). Wet-capture
-   + meter writeback stay in the OUTER `process` (per the prd.json
-   spec).
-2. Extract two private member methods (or anonymous-namespace statics
-   if all dependencies pass through arguments cleanly):
-   `Bus::processInline(...)` for the inline branch and
-   `Bus::processChain(...)` for the chain branch. Both `noexcept`. No
-   allocation, no locks, no I/O — exact RT-safety contract of the
-   parent. Declare in `engine/include/sirius/Bus.h` as private.
-3. Verify with `ctest --test-dir build --output-on-failure` — EXACTLY
-   the same number of cases as before T05 (currently 621/2-skipped;
-   no behavior change, no new tests). Grep the helpers for `new|malloc|
-   lock|mutex` — none found.
-4. Mark `todo.md` entry (c) for 2026-05-23 (late) resolved.
+1. Read `core/src/Promotion.cpp` end-to-end. Use Grep to find the
+   Shared-path splice site — search for the `std::function`/recursive-
+   lambda pattern that walks `hostPath` and substitutes `loopPtr` while
+   preserving pointer identity via `.get()`. Confirm `promote()`'s
+   current line count (should be ~226).
+2. Add a private anonymous-namespace helper
+   `spliceLoopIntoSharedHost(root, hostPath, loopPtr)` near the top of
+   the file. Capture by parameter (not by-reference closure) so the
+   recursion is reasoning-friendly. Move the existing logic in as-is —
+   no behavior change.
+3. Replace the inline splice in `promote()` with a single call to the
+   new helper. Add the two cross-reference comments mentioned in the
+   spec: at the Overlay splice site, "see `spliceLoopIntoSharedHost`
+   for the Shared analogue"; at the Shared call site, "see lines NNN
+   for the Overlay analogue" (fill NNN after the edit settles). Also
+   strengthen the existing pointer-equality comment to call out that
+   `.get()` reads as "raw pointer identity".
+4. Verify with `cmake --build build --target SiriusTests &&
+   ctest --test-dir build --output-on-failure` — EXACTLY the same case
+   count as before T06 (currently 621 pass / 2 skipped; refactor only,
+   no new tests). The load-bearing case
+   `tests/PromotionTests.cpp::"promote with Shared and a wrapper
+   covering Mark In adds the Loop to the shared Phrase"` MUST still
+   pass — it pins the pointer-equality assertion.
+5. Mark the 2026-05-16 'Hoist Shared-path splice' entry in `todo.md`
+   resolved.
 
-After T05 the only remaining loop-eligible prd.json tasks are T06–T08
-(the three 2026-05-16 code-review follow-ups). T05 + T06 + T07 + T08
-are all engine/refactor work — the loop CAN ship them. Beyond T08 the
-work pivots to GUI (T4 / T5 in the umbrella plan), which ralph cannot
-verify; that's where the operator picks up.
+After T06 → T07 (MainComponent refreshAll extract) → T08 (announceCapture
+Overlay jassert). All three are engine/refactor work the loop CAN ship.
+Beyond T08 the work pivots to GUI (T4 / T5 in the umbrella plan), which
+ralph cannot verify; that's where the operator picks up.
 
 ## ✅ DONE THIS SESSION (2026-05-23 — T3c-DLY DlyAdapter, ralph iteration #2)
 

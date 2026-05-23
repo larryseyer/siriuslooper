@@ -1,6 +1,6 @@
 # Sirius Looper — Deferred Items
 
-### 2026-05-23 (late) — T3a-EQ Code Reviewer follow-ups (1 remaining entry below; entries (a) + (b) resolved 2026-05-23)
+### 2026-05-23 (late) — T3a-EQ Code Reviewer follow-ups (ALL THREE ENTRIES RESOLVED 2026-05-23)
 
 #### (a) — RESOLVED 2026-05-23 by P7 T3a I-1 (prd T03)
 - `OutOfProcessEffectChainHost::prepareInternalFx` now early-returns when
@@ -33,17 +33,24 @@
   then setBusEffectChain — proving the stashed pointer reaches the new
   bus at registration time). 138 assertions across both cases.
 
-#### (c) Follow-up — `Bus::process` is 173 lines (>100 default)
-- Files: `engine/src/Bus.cpp` — `Bus::process`.
-- What was deferred: after T3a-C inlined the chain-path body, `Bus::process`
-  exceeds the CLAUDE.md function-size 100-line default. The body is coherent
-  (inline-path + chain-path + wet-capture + meter writeback) and audited
-  RT-safe today, but it's growing.
-- Why deferred: out of T3a-C scope (the change was a single bind-loop add,
-  not a function refactor); not a correctness bug.
-- What's needed to finish: extract `Bus::processInline(...)` + `Bus::processChain(...)`
-  private helpers. Match RT-safety of the parent. Likely lands cleanly when
-  T3b-CMP (or any subsequent mixer-graph slice) next touches Bus.cpp.
+#### (c) — RESOLVED 2026-05-23 by P7 T3a M-2 (prd T05)
+- `Bus::process` is now 66 lines (down from 173), split into two private
+  helpers: `Bus::processInline` (27 lines — full inline-path DSP: gain/mute
+  + output write + per-channel peaks; operates on `mixBuffer_` in place so
+  the LUFS feed reads post-fader values) and `Bus::processChain` (71 lines
+  — copy `mixBuffer_`→`processedBuffer_`, dispatch each non-bypassed slot
+  through `host_->pumpSlot` in-place, tap the pre-fader `wetSink_` per the
+  M8 S4 contract, then apply post-fader gain/mute + output accumulate +
+  per-channel peaks). Wet-capture stayed inside `processChain` rather than
+  the outer `process` so the pre-fader-before-gain ordering lives in one
+  place — the alternative would have either split `processChain` again or
+  re-ordered the wet feed to post-fader, breaking M8 S4 semantics. Meter
+  writeback (peak left/right publish + LUFS feed) and `mixBuffer_` zero
+  stay in `process()` and apply uniformly to both paths. All three function
+  bodies satisfy the CLAUDE.md 100-line default. RT-safety preserved (grep
+  for new/malloc/lock_guard/mutex/throw/allocator across the helpers — none
+  found). No behavior change — ctest still **621 pass / 2 skipped**, the
+  identical baseline from before the split.
 
 ### 2026-05-23 — Raw `EffectChainEntry` construction sites in test fixtures (T3-debt, NOT a T2 correctness bug)
 - Files: `tests/ArchivalModeTests.cpp` (10 sites around lines 335–503),

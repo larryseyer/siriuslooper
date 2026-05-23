@@ -218,6 +218,32 @@ public:
     float* mixBufferChannel (int c) const noexcept;
 
 private:
+    /// Inline (no-effect-chain) DSP path. Applies post-fader gain/mute to
+    /// `mixBuffer_` in place (which becomes the LUFS feed), additively writes
+    /// the post-fader signal to `output` when `outputUsable && output[c]` is
+    /// non-null, and returns per-channel peaks via `peaksOut[0..activeChannels-1]`.
+    /// Does NOT touch wet-capture, peak/LUFS publish, or mixBuffer zero — those
+    /// stay in `process()` so they apply uniformly to both paths. Same RT contract
+    /// as `process()`: noexcept, allocation-free, lock-free, I/O-free.
+    void processInline (float* const* output, bool outputUsable,
+                        int activeChannels, int clampedSamples,
+                        float* peaksOut) const noexcept;
+
+    /// Effect-chain DSP path. Copies `mixBuffer_` → `processedBuffer_`,
+    /// dispatches each non-bypassed slot through `host_->pumpSlot` IN-PLACE
+    /// on `processedBuffer_`, taps the pre-fader signal to `wetSink_` (M8 S4
+    /// — kept inside this helper so the pre-fader-before-gain ordering lives
+    /// next to the pump that produced it), then applies post-fader gain/mute
+    /// to `processedBuffer_` in place (the LUFS feed), additively writes
+    /// the post-fader signal to `output[c]` when non-null, and returns
+    /// per-channel peaks via `peaksOut[0..activeChannels-1]`. The peak/LUFS
+    /// publish and `mixBuffer_` zero stay in `process()` (per P7 T3a M-2 spec).
+    /// Caller must guarantee `host_ != nullptr` before invoking. Same RT
+    /// contract as `process()`: noexcept, allocation-free, lock-free, I/O-free.
+    void processChain (float* const* output,
+                       int activeChannels, int clampedSamples,
+                       float* peaksOut) const noexcept;
+
     BusId             id_;
     BusConfig         config_;
     EffectChain       effectChain_;
