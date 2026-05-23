@@ -1,13 +1,13 @@
 # Sirius Looper Ralph Loop Progress
 
 ## Status
-state: not_started
-current_task: T01
-last_commit: none
-last_updated: 2026-05-23T00:00:00Z
+state: in_progress
+current_task: T02
+last_commit: 8853b25
+last_updated: 2026-05-23T18:00:00Z
 
 ## Tasks
-[ ] T01 - T3b-CMP — wrap otto::effects::PlayerCompressor as CmpAdapter
+[x] T01 - T3b-CMP — wrap otto::effects::PlayerCompressor as CmpAdapter
 [ ] T02 - T3c-DLY — wrap otto::effects::PlayerDelay as DlyAdapter
 [ ] T03 - P7 T3a I-1 — prepareInternalFx early-returns on unchanged sr/block
 [ ] T04 - P7 T3a I-2 — InputMixer::setEffectChainHost wiring + end-to-end test

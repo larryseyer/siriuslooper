@@ -44,7 +44,8 @@ add_library(SiriusEngine STATIC
     # both libraries (app, SiriusTests) — see comment in host/CMakeLists.txt
     # for the symmetric note.
     src/InternalFxFactory.cpp
-    src/fx/EqAdapter.cpp)
+    src/fx/EqAdapter.cpp
+    src/fx/CmpAdapter.cpp)
 
 target_include_directories(SiriusEngine PUBLIC include)
 

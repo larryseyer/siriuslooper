@@ -1,5 +1,6 @@
 #include "sirius/InternalFxFactory.h"
 
+#include "fx/CmpAdapter.h"
 #include "fx/EqAdapter.h"
 
 namespace sirius
@@ -12,11 +13,13 @@ std::unique_ptr<IInternalFxAdapter> makeInternalFxAdapter (InternalFxId id)
         case InternalFxId::kEq:
             return std::make_unique<EqAdapter>();
 
-        // T3b — CMP adapter wraps otto::effects::PlayerCompressor; lands in
-        // a separate session per the per-FX subagent sequence in
-        // ~/.claude/plans/read-continue-and-proceed-structured-acorn.md.
+        // T3b — CMP adapter wraps otto::effects::PlayerCompressor with the
+        // default config (sidechain derived internally from input;
+        // sidechain HPF on at 100 Hz Butterworth × 4 stages). The ctor
+        // flips compEnabled=true so a freshly-inserted CMP slot does
+        // DSP from sample 0.
         case InternalFxId::kCmp:
-            return nullptr;
+            return std::make_unique<CmpAdapter>();
 
         // T3d — RVB adapter wraps otto::effects::PlayerIRConvolution.
         // Sequenced LAST in T3 because the convolution carries

@@ -241,18 +241,18 @@ TEST_CASE ("bind-then-prepare also auto-prepares — adapter is ready on first p
     REQUIRE (pumped);
 }
 
-TEST_CASE ("setInternalFxAtSlot with an un-shipped id (kCmp) is a no-op rebind",
+TEST_CASE ("setInternalFxAtSlot with an un-shipped id (kRvb) is a no-op rebind",
            "[internal-fx-host]")
 {
     sirius::OutOfProcessEffectChainHost host;
     host.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
 
-    // T3a ships only kEq. The factory returns nullptr for kCmp/kRvb/kDly
-    // until T3b/c/d land. setInternalFxAtSlot(kCmp) should erase any
-    // existing entry without storing a null adapter; subsequent pumpSlot
-    // must miss (and leave outputs untouched).
+    // T3a/T3b shipped kEq + kCmp. The factory still returns nullptr for
+    // kRvb (T3d) and kDly (T3c). setInternalFxAtSlot(kRvb) should erase
+    // any existing entry without storing a null adapter; subsequent
+    // pumpSlot must miss (and leave outputs untouched).
     host.setInternalFxAtSlot (5, 0, sirius::InternalFxId::kEq);
-    host.setInternalFxAtSlot (5, 0, sirius::InternalFxId::kCmp);
+    host.setInternalFxAtSlot (5, 0, sirius::InternalFxId::kRvb);
 
     std::array<float, kBlockSamples> lin {}, rin {}, lout {}, rout {};
     fillSine (lin, rin);

@@ -85,6 +85,9 @@ add_executable(SiriusTests
     # the include path below lets the test reach it.
     EqAdapterTests.cpp
     InternalFxFactoryTests.cpp
+    # P7 T3b — CmpAdapter (PlayerCompressor wrapper). Same include-path
+    # pattern as EqAdapterTests above.
+    CmpAdapterTests.cpp
     # P7 T3a-C — end-to-end Bus → host → adapter dispatch test.
     BusInternalFxEndToEndTests.cpp)
 
