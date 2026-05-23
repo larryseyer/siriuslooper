@@ -1,4 +1,4 @@
-# Session Continuation — NEXT: Output Mixer slice 3 (phrase channels?) OR persistence (T6) OR cycle-aware destination filtering
+# Session Continuation — NEXT: Output Mixer slice 3 (cycle-aware filtering + per-output-pair picker + bus rename)
 
 > **For a fresh chat picking this up cold:** memory + project +
 > user CLAUDE.md load automatically. This file is the **forward-looking
@@ -6,134 +6,133 @@
 
 ## ▶ DO THIS FIRST
 
-1. Read `external/OTTO/CROSS_PROJECT_INBOX.md`. Ack any
-   `[FROM OTTO → IDA]` entries. Last sweep 2026-05-23: both 2026-05-23
-   TAPECOLOR entries acked/resolved; nothing new expected until OTTO
-   ships Phase 3.
+1. Read `external/OTTO/CROSS_PROJECT_INBOX.md`. Last sweep
+   2026-05-23 (this session): Phase 3 TAPECOLOR mirror request acked
+   and resolved. Nothing new expected until OTTO ships Phase 4.
 
-## ▶ DONE THIS SESSION — Output Mixer slice 1 + slice 2
+## ▶ DONE PREVIOUS SESSION — Output Mixer slices 1 + 2, TAPECOLOR Phase 3 mirror
 
-Two consecutive slices of the operator's mixer→transport roadmap
-landed in the same session. Operator confirmed slice 1 visually
-between slices.
+Three pieces of work landed in the prior session.
 
 ### Slice 1 — master bus strip
-- `Bus* OutputMixer::busForId(BusId)` accessor (mirrors InputMixer).
-- `OutputMixerPane` nested class — one Master bus strip with fader,
-  dual peak/LUFS meter, mute, INS button.
-- `openInsertChainPopupForMasterBus()` reusing the T5 detach/`setEffectChain`/re-attach bracket.
-- Tab registered behind the `Professional`-tier gate; `refreshOutputMixer()`
-  joined the 30 Hz timer.
-- Operator eyes-on confirmed: tab visible, single master strip
-  rendered, INS button present, destination picker correctly absent
-  (master is the terminal — there's nowhere "downstream" to pick).
+Commit `41944be`. `OutputMixerPane` + `Bus* OutputMixer::busForId`
+accessor + `openInsertChainPopupForMasterBus()` + tab registration +
+30 Hz refresh. Operator confirmed visually.
 
 ### Slice 2 — aux bus row + add-bus + destination picker
-- **Engine additions** to `OutputMixer` (`engine/include/ida/OutputMixer.h` +
-  `engine/src/OutputMixer.cpp`):
-  - `setBusMainOutToHardwareOutput(BusId)` — bus→hardware-out direct
-    (bypasses master). Mirrors InputMixer's one-liner.
-  - `busCount() const noexcept` for UI cap checks.
-  - `enum class MainOutDest { Bus, HardwareOutput }` +
-    `busMainOut(BusId)` + `busMainOutBus(BusId)` for picker label /
-    tick state. Same shape as InputMixer's introspection minus Tape.
-- **OutputMixerPane** extended with aux-bus row infrastructure:
-  `BusInfo`, `DestKind`, `DestChoice`, `StripDest` types
-  (Output-side: no Tape, no FXReturn — buses only). Per-strip INS +
-  destination-picker buttons. Blank-area right-click / long-press →
-  "Add bus" menu. Master strip moved to RIGHTMOST position via
-  `removeFromRight` (pro mixing-console convention); aux buses lay
-  out left-to-right to its left, with a visual divider.
-  Listener disambiguation: master uses sentinel id `-1`, aux strips
-  use 0..N-1.
-- **MainComponent** wiring (`app/MainComponent.cpp`):
-  - `outputBusStripIds_` parallel-ID vector (mirrors `busStripIds_`).
-  - `rebuildOutputBusStrips()` — walks `busCount()` skipping master,
-    brackets `Bus::prepare` in remove/addAudioCallback.
-  - `refreshOutputDestinations()` — per-bus choice list = `[Master,
-    every-other-aux, Direct out]`; current dest resolved via
-    `busMainOut` + `busMainOutBus`.
-  - `openInsertChainPopupForOutputBus(int)` mirrors the master variant.
-  - Callbacks: `onAddBus`, `onBusGain`, `onBusMute`,
-    `onBusInsertChainClicked`, `onBusDestinationChosen` wired in
-    the tab-init block. Topology mutations bracketed by
-    remove/addAudioCallback.
-- **Build:** `cmake --build build --target IdaTests IDA -j` green.
-- **Tests:** `ctest --test-dir build` → 639/640 pass / 1 not-run.
-  Test #169 (`permanent bypass: kill every generation`) flaked once
-  on first run, passed on re-run — pre-existing plug-in-host
-  process-kill timing dependency, unrelated to this work.
+Commit `7195335`. Engine: `OutputMixer::busCount()`,
+`setBusMainOutToHardwareOutput()`, `MainOutDest` enum,
+`busMainOut()`, `busMainOutBus()`. GUI: aux-bus row to the LEFT of
+master (master moved to rightmost per pro mixing-console
+convention), per-strip INS + destination picker, blank-area
+right-click / long-press → "Add bus" menu. Listener disambiguation:
+master uses sentinel id `-1`, aux strips use 0..N-1.
 
-### Audible verification still pending
+### TAPECOLOR Phase 3 mirror (cross-project)
+OTTO commit `be8240ef` (ack) + IDA commit `941aee5` (submodule
+bumps). `external/lsfx_tapecolor` bumped `c4a8ec3` → `ec6425c6`
+(DC blocker + emphasis EQ + ConvolutionStage async swap + 8
+placeholder IRs). `juce_dsp` + `juce_audio_formats` arrived
+transitively via existing `juce_audio_utils` link — no IDA CMake
+edits needed. New `lsfx_tapecolor_ir_data` binary-data target
+INTERFACE-linked automatically. Still pure plumbing on IDA's side
+— no `lsfx::TapeColorProcessor` instantiated anywhere until OTTO
+Phase 13.
 
-Slice 2 operator eyes-on next launch:
-- Right-click (or long-press) on blank area in Output Mixer tab →
-  "Add bus" menu appears. Selecting creates a new strip to the LEFT
-  of master (master stays rightmost).
-- New aux strip has fader, mute, INS button, and a destination picker
-  reading "Master" by default.
-- Picker opens with 3 options on the first bus (Master is ticked,
-  Direct out also offered). After adding a second bus, each strip's
-  picker also offers the OTHER aux bus.
-- Routing a bus to Direct out → bus's signal hits hardware outputs
-  bypassing master (master meter goes silent for that bus's
-  contribution).
-- INS on an aux bus opens InsertChainPopup; chain saves per-bus.
+## ▶ NEXT — Output Mixer slice 3
 
-If cycle-creating routes silently no-op, that's the slice 2 known
-limitation (engine rejects, UI just refreshes — see "OPTIONS" below
-for the planned slice 3 fix).
+Operator asked, during the slice 2 review, whether
+"Master / other-bus / Direct out" matched the spec. The whitepaper
+sweep produced a concrete answer:
 
-## ▶ NEXT — three options
+> §5.2 — "Each channel in the output mixer similarly chooses among
+> physical outputs, file destinations, MIDI outputs, video outputs,
+> and internal buses."
 
-### Option A — slice 3: cycle-aware destination filtering + bus rename
+> §6.6 (bundled-OTTO paragraph) — "the output mixer alone decides
+> **which physical outputs** each channel reaches… with a larger
+> interface, the performer parks each channel on any available
+> output pair in any combination."
 
-Add `OutputMixer::busMainOutToBusWouldCycle(BusId from, BusId to)`
-mirroring `InputMixer::busMainOutToBusWouldCycle`. Use it in
-`refreshOutputDestinations` to PRE-EXCLUDE the targets that would
-cycle, so the picker never offers a route that'll be silently
-rejected. Combine with a bus-rename gesture (double-click strip
-name? right-click strip → "Rename…"?) — currently buses ship as
-"Bus 1", "Bus 2", … and operator has no way to change them.
-Smallest, tightest follow-up.
+So the slice 2 single "Direct out" entry was a 2-output-interface
+collapse. Slice 3 honours the spec on multi-output hardware.
+Operator confirmed: roll **both** the cycle-aware filtering AND
+the per-output-pair picker into slice 3, with bus rename as well.
 
-### Option B — slice 4: phrase channels (depends on M6+)
+### Slice 3 scope
 
-Channels in the Output Mixer are "one per phrase" (whitepaper §6.6).
-Phrases as a runtime concept require M6+ Constituent rendering.
-Until at least one phrase can be defined at runtime, the channels
-column has nothing to populate. SKIP until M6+ engine work lands.
+1. **Per-output-pair picker.** Replace the single "Direct out" entry
+   with one entry per physical stereo output pair the audio device
+   exposes. Source: `audioDeviceManager_.getCurrentAudioDevice()->
+   getActiveOutputChannels()` paired up (1-2, 3-4, …). Engine work
+   required: extend `OutputMixer` so a bus's main-out can target a
+   *specific* output-pair index, not just `MixerTerminal::HardwareOutput`
+   in aggregate. Likely needs a new `MixerTerminal::HardwareOutputPair{N}`
+   concept or per-bus pair-index state. Match the InputMixer's
+   per-strip output-pair handling if there's a precedent to mirror
+   (search `setBusMainOutToHardwareOutput` and any pair-index plumbing
+   on the input side first; engine extension cost depends on what's
+   already in `MixerGraph`).
 
-### Option C — T6 persistence verify
+2. **Cycle-aware destination filtering.** Add
+   `OutputMixer::busMainOutToBusWouldCycle(BusId from, BusId to)
+   const noexcept` mirroring `InputMixer::busMainOutToBusWouldCycle`
+   (delegates to `MixerGraph::wouldMainOutCycle`). Use it in
+   `refreshOutputDestinations` to pre-filter cycle-bound targets so
+   the picker never offers a route the engine would reject.
+   Currently silent failure on cycle — refreshes label to current
+   state but is opaque to the operator.
 
-EffectChain + bus topology already round-trip via `SessionFormat`.
-With slice 2 in place, T6 would: create some aux buses, configure
-their destinations + INS chains, save session, reload, verify the
-Output Mixer tab reconstructs identically. Smallest-scope
-"correctness lap" — no new UX, just an audit.
+3. **Bus rename.** Aux buses ship as "Bus 1", "Bus 2", … with no
+   way to change them. Spec implication is operator-driven names
+   (the `BusConfig::name` field exists precisely for the
+   operator-facing bus picker). Pattern options:
+   - Right-click strip → "Rename…" → modal text-entry dialog
+   - Double-click the strip's name label → inline edit
+   InputMixerPane has no precedent yet; pick the most-elegant
+   pro-audio convention and apply symmetrically to both mixers
+   (per `feedback_default_to_professional_elegant`). Engine work:
+   add `OutputMixer::renameBus(BusId, std::string)` writing to
+   `BusConfig::name` (message-thread only; not on the audio thread).
+   Mirror on InputMixer if InputMixerPane wants the same gesture
+   (defer that to a follow-up if it widens scope).
 
-**Recommendation:** A. Cycle-aware filtering is a small, tight
-polish that completes the Output Mixer routing UX. B is blocked on
-engine milestones; C is verifiable but less visible than A.
+### Order of operations inside slice 3
 
-## ▶ BASELINE
+1. Engine first — `busMainOutToBusWouldCycle`, `renameBus`, the
+   per-output-pair routing surface (the chunkiest of the three —
+   may need a MixerGraph audit before designing).
+2. UI next — pre-filter cycle targets, expand the picker choices,
+   wire the rename gesture.
+3. Build + ctest (hold 639/640 baseline) + commit + push.
 
-- `ctest --test-dir build`: **639 pass / 1 not-run / 640 total**.
-  Flaky #169 (process-kill timing) sometimes fails on first run,
-  passes on re-run — pre-existing.
-- `master` HEAD on origin: this session's two commits (slice 1 +
-  slice 2), pushed.
-- OTTO submodule SHA: `41dcae25` on `origin/main` (unchanged).
-- lsfx_tapecolor submodule SHA: `c4a8ec3` on `main` (unchanged; no
-  DSP instantiation on IDA's side until OTTO Phase 13).
+### Deferred to later slices
+
+- **Channel strips** ("one per phrase" per §6.6) — waits on M6+
+  Constituent rendering; the per-channel row stays empty in slice 3.
+- **File / MIDI / video output destinations** — wait on render/
+  export and MIDI/video subsystem milestones.
+
+## ▶ BASELINE (start of next session)
+
+- `ctest --test-dir build`: **639 pass / 1 not-run / 640 total**
+  (1 not-run is the `MainComponentPluginEditorTests_NOT_BUILT`
+  sentinel — unchanged from baseline). Test #169 (`permanent bypass:
+  kill every generation`) is flaky on first run, passes on re-run
+  — pre-existing plug-in-host process-kill timing dependency,
+  unrelated to Output Mixer work.
+- `master` HEAD on origin: `941aee5` (submodule bumps for TAPECOLOR
+  Phase 3 mirror).
+- OTTO submodule SHA: `be8240ef` on `origin/main` (Phase 3 ack).
+- lsfx_tapecolor submodule SHA: `ec6425c` on `main` (Phase 1+2+3).
 
 ## ▶ HOUSEKEEPING
 
 - **Whitepaper:** `docs/IDA_Whitepaper_V8.md` (underscores —
   `project_whitepaper_path`).
-- **Operator actions still pending** (between sessions; agent cannot
-  perform; tracked in `todo.md`): notarytool keychain `ida-notary`
-  setup; `automagicart.com/ida` product page +
+- **Operator actions still pending** (between sessions; agent
+  cannot perform; tracked in `todo.md`): notarytool keychain
+  `ida-notary` setup; `automagicart.com/ida` product page +
   `larryseyer.com` rename.
 - **Clean build before any GUI smoke** (`feedback_clean_builds`):
   `rm -rf build && cmake -B build -S . -G Ninja
