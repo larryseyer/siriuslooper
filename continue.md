@@ -1,4 +1,115 @@
-# Session Continuation — 2026-05-22 (**OTTO brainstorm shipped end-to-end: meter coupling bug fixed; cross-project inbox protocol LIVE; full design spec landed; memory + whitepaper + todo updated. NEXT = T1 (P7 umbrella docs) — the work that was paused for this brainstorm.**)
+# Session Continuation — 2026-05-22 (**P7 umbrella T1 (docs) SHIPPED — dual-FX model is first-class in the whitepaper + routing-graph spec, new `docs/design/sirius-internal-fx.md` is the parameter-surface source of truth, all "vendor" wording purged from the routing-graph spec. NEXT = T2 (engine union slot — widen `EffectChainEntry` to `SlotKind = Empty | Internal | Plugin`).**)
+
+> **For a fresh chat picking this up cold:** read this whole file before
+> doing anything. Memory + project + user CLAUDE.md load automatically;
+> this file is the *state* (what just shipped + what's queued next).
+> **MANDATORY at session start:** read
+> `external/OTTO/CROSS_PROJECT_INBOX.md` and acknowledge any
+> `[FROM OTTO → SIRIUS]` entries (per `project_cross_project_inbox_protocol`).
+> The whitepaper now lives at `docs/Sirius_Looper_Whitepaper_V7.md`
+> (underscores — `project_whitepaper_path`); the old spaced name is dead.
+
+## ✅ DONE THIS SESSION (2026-05-22 — T1 docs)
+
+Single docs-only commit, no code change. All four T1.* items shipped:
+
+- **T1.a — Whitepaper §6.6** (`docs/Sirius_Looper_Whitepaper_V7.md`):
+  named the four built-in FX explicitly (EQ / Compressor / Reverb / Delay)
+  as **core product**, clarified that 3rd-party VST/CLAP hosting is
+  **additional** not a substitute, named the 8-slot cap inline, added an
+  inline reference to the new `docs/design/sirius-internal-fx.md`. Fixed
+  the misleading "When Sirius's bundled OTTO is loaded" wording — OTTO is
+  always present whenever Sirius is running (paywall is feature-level
+  runtime gate, not asset-level). §6.7 untouched (it's about local-vs-bus
+  placement, orthogonal to the named-FX layer).
+- **T1.b — Routing-graph spec**
+  (`docs/superpowers/specs/2026-05-20-mixer-routing-graph-design.md`):
+  every "vendor"/"vendored"/"byte-faithfully" wording replaced with
+  submodule-consumption wording (T0b retired the byte-faithful copy
+  pattern on 2026-05-22). `grep -n 'vendor' <file>` returns zero hits.
+  Added a one-paragraph retroactive note at the head of Phase 4: the
+  union slot **contract** lands in P4 / T2; the adapter
+  **implementations** that make `Internal` actually instantiate one of
+  OTTO's header-only Player FX land separately in T3 (links to
+  `docs/superpowers/specs/2026-05-22-otto-integration-design.md`
+  Decision 3 for the architecture).
+- **T1.c — NEW `docs/design/sirius-internal-fx.md`** — single source of
+  truth for the internal-FX product surface. Names the four FX with
+  purpose + DSP source-of-truth header path; enumerates concrete
+  parameter ranges (read from `PlayerEffectsConfig` in
+  `external/OTTO/src/otto-core/include/otto/effects/PlayerEffects.h`);
+  specifies the `SlotKind = Empty | Internal | Plugin` union slot
+  contract with persistence forward-compat shape; refers out to
+  Decision 3 for adapter architecture (does not duplicate it); lists
+  three explicit out-of-scope topics (adapter specifics, plugin scanner
+  repair, Mix Scene morph).
+- **T1.d — this file** — refreshed.
+
+**Also captured:** a new project memory `project_whitepaper_path` —
+canonical whitepaper path is `docs/Sirius_Looper_Whitepaper_V7.md`
+(underscores), not the dead spaced name. Older `continue.md` archive
+headers + old plan files reference the dead path; treat those as
+historical artifacts (NOT in scope to retro-fix).
+
+**No tests run** (docs-only). **No build run** (docs-only).
+ctest baseline unchanged: **569 pass / 1 documented Not-Run**.
+
+## ▶ NEXT — P7 umbrella T2 (engine union slot)
+
+Active P7 umbrella plan:
+`~/.claude/plans/read-continue-and-proceed-ancient-phoenix.md`. Status:
+
+```
+T0  OTTO submodule          ✅ DONE
+T1  docs                    ✅ DONE (this session)
+T2  engine union slot       ▶ RESUME HERE
+T3  internal-FX adapters    EQ → CMP → DLY → RVB sequential
+                            (architecture blueprint: otto-integration-design.md Decision 3)
+T4  Sends tab UI            (after T3 at least partially)
+T5  Insert UI               (internal-FX-only picker until "P7-scanner")
+T6  P4/P5 persistence wiring into MainComponent save/load
+```
+
+**T2 scope** (per the umbrella plan T2 section): widen
+`core/include/sirius/EffectChain.h` `EffectChainEntry` to
+`SlotKind = Empty | Internal | Plugin`; add
+`core/include/sirius/InternalFxId.h` (`kEq` / `kCmp` / `kRvb` / `kDly` +
+reserved range); extend `EffectChain::with*` builders (copy-on-write
+stays); extend `persistence/src/SessionFormat.cpp:994-1022`
+(`effectChainToVar` / `effectChainFromVar`) to round-trip the discriminant
+(old session JSON missing `kind` defaults to `Plugin`); 8-slot cap stays;
+new `[effect-chain]` + `[mixer-graph-persistence]` Catch2 cases for both
+kinds. Headless TDD — no UI, no operator eyes-on.
+
+**First moves for T2:**
+1. Read `external/OTTO/CROSS_PROJECT_INBOX.md` — ack any new
+   `[FROM OTTO → SIRIUS]` entries. (None as of this session.)
+2. `git pull --rebase origin master` (defensive; this session is solo).
+3. Read T2 section of
+   `~/.claude/plans/read-continue-and-proceed-ancient-phoenix.md`
+   alongside the contract section of `docs/design/sirius-internal-fx.md`
+   (the doc that T1 just shipped — it IS the contract T2 implements).
+4. `superpowers:writing-plans` → write T2 plan into
+   `docs/superpowers/plans/` → `superpowers:subagent-driven-development`.
+   Engine-only / TDD-only — no UI work, no operator eyes-on required.
+
+## Plan + memory state at session end
+- Plan file (this session): `~/.claude/plans/read-continue-and-proceed-crystalline-crystal.md`
+  (P7 umbrella T1 plan).
+- Umbrella plan (still live): `~/.claude/plans/read-continue-and-proceed-ancient-phoenix.md`
+  (T0 ✅ / T1 ✅ / T2..T6 remain).
+- New memory: `project_whitepaper_path` (whitepaper renamed —
+  underscores, not spaces). MEMORY.md updated.
+- Other memories from the prior session (cross-project inbox, OTTO as
+  Output Mixer source, internal-FX adapter, asset policy) all still
+  current — no updates this session.
+- `todo.md` net change: zero this session. Two bugs from the prior
+  session (Preparation tab `.json` filter; plugin scanner broken at all
+  entry points) still open.
+
+---
+
+# (archived header — earlier 2026-05-22) — OTTO brainstorm shipped end-to-end: meter coupling bug fixed; cross-project inbox protocol LIVE; full design spec landed; memory + whitepaper + todo updated. NEXT = T1 (P7 umbrella docs) — the work that was paused for this brainstorm.
 
 > **For a fresh chat picking this up cold:** read this whole file before
 > doing anything. Memory + project + user CLAUDE.md load automatically;

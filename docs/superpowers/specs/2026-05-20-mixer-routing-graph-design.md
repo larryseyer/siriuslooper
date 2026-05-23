@@ -159,7 +159,7 @@ peak+LUFS metering (Audio specialization). Used by every node's strip.
    per-block traversal stays allocation-free, lock-free, `noexcept`
    (docs/RT_SAFETY_CONTRACT.md §6). Pre-allocate bus mix buffers at their caps.
 
-## UI design (OTTO parity, vendored)
+## UI design (OTTO parity, consumed via submodule)
 
 ### Creation gesture — blank-area long-press
 
@@ -176,8 +176,8 @@ strip. Buses, FX returns, and tape/output destinations are **unbounded**.
 ### Strips
 
 Render buses and FX returns as `CompactFaderStrip` with `ChannelType::Bus` and
-`ChannelType::FXReturn` — **both enum values already exist** in the vendored
-strip. Bus/FX-return strips get fader/mute/solo + the dual peak+LUFS meter like
+`ChannelType::FXReturn` — **both enum values already exist** in the OTTO
+strip consumed from `external/OTTO/`. Bus/FX-return strips get fader/mute/solo + the dual peak+LUFS meter like
 channel strips.
 
 ### Main-out routing picker
@@ -190,9 +190,10 @@ slice; this is that slice.
 
 ### Sends detail tab
 
-Vendor OTTO's `ChannelDetailSendsTab` (`otto-plugin/ui/components/`) into
-`ui/lookandfeel/components/` byte-faithfully (the established vendoring pattern,
-as with `ChannelDetailPanWidTab`). It shows one send control per FX return; bind
+Use OTTO's `ChannelDetailSendsTab` directly from the submodule
+(`external/OTTO/src/otto-plugin/ui/components/`) — no byte-faithful copy
+(T0b on 2026-05-22 retired the copy pattern; OTTO is consumed in place via
+`external/OTTO/`). It shows one send control per FX return; bind
 each to the engine send level for the selected strip. It sits in the same detail
 panel as the Pan/Width tab (the selected-strip detail region added this session).
 Send count is dynamic (one per existing FX return), unlike OTTO's fixed 4.
@@ -282,6 +283,20 @@ the follow-on — see below — so this phase ships no selectable-but-dead effec
 Cover: per-channel chain dispatch, 8-slot enforcement, bypass/reorder, RT-safety,
 behavior-equivalence for empty chains.
 
+> **Retroactive note (2026-05-22, post-T0).** Phase 4 ships the **union slot
+> contract** — `EffectChainEntry` as `SlotKind = Empty | Internal | Plugin` —
+> as a pure data + host-dispatch shape: the `Internal` case is reachable from
+> the host but is constructed by an adapter that does not yet exist. The
+> **adapter implementations** that make `Internal` actually instantiate one of
+> OTTO's header-only Player FX (EQ / CMP / RVB / DLY) land in the follow-on
+> (P7 umbrella task T3 — see `docs/superpowers/specs/2026-05-22-otto-integration-design.md`
+> Decision 3 for the adapter architecture). P4 ships the contract; T3 fills
+> it. Until T3 lands, an `Internal` slot constructed in the engine is well-
+> formed data but has no audible effect — the host-side adapter table simply
+> has no entry to dispatch to. The insert-chain UI in P7 (operator-verified)
+> accordingly waits for T3 before offering "EQ / Compressor / Reverb / Delay"
+> as picker entries.
+
 **Phase 5 — Routing-graph persistence.** Engine + persistence, TDD. Serialize each
 mixer's buses, FX returns, main-out assignments, send levels, terminal
 assignments, and per-node insert chains into `SessionFormat`. Pre-graph sessions
@@ -294,8 +309,9 @@ FXReturn `CompactFaderStrip`s (dual peak+LUFS meter); the **bottom-of-strip
 destination picker** (bus / tape / hardware output) wired to the engine main-out
 assignment, offering only acyclic destinations.
 
-**Phase 7 — Input Mixer UI: sends + inserts.** Operator-verified. Vendor OTTO
-`ChannelDetailSendsTab` (per-FX-return send levels for the selected strip); the
+**Phase 7 — Input Mixer UI: sends + inserts.** Operator-verified. Use OTTO's
+`ChannelDetailSendsTab` directly from the submodule (per-FX-return send levels
+for the selected strip); the
 **insert-chain management UI** (add / remove / reorder / bypass up to 8 slots;
 choose a VST/CLAP from the scanned list — built-in FX appear once the follow-on
 registers them).
