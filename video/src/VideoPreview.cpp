@@ -1,4 +1,4 @@
-#include "sirius/VideoPreview.h"
+#include "ida/VideoPreview.h"
 
 namespace sirius
 {

@@ -1,6 +1,6 @@
-#include "sirius/TimelineViewState.h"
+#include "ida/TimelineViewState.h"
 
-#include "sirius/RepetitionRules.h"
+#include "ida/RepetitionRules.h"
 
 #include <algorithm>
 #include <functional>

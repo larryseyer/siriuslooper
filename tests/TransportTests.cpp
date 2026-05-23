@@ -4,7 +4,7 @@
 // load-bearing fields, and is pattern-matchable. The honest network surface
 // (real sockets, frame format, reliability) is the operator-deferred half of
 // M8 and tracked in todo.md.
-#include "sirius/Transport.h"
+#include "ida/Transport.h"
 
 #include <catch2/catch_test_macros.hpp>
 

@@ -1,6 +1,6 @@
 // Tests for ida::SharedMemoryRegion — POSIX shm_open + mmap RAII.
 
-#include "sirius/SharedMemoryRegion.h"
+#include "ida/SharedMemoryRegion.h"
 
 #include <catch2/catch_test_macros.hpp>
 

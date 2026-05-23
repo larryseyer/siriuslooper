@@ -4,11 +4,11 @@
 // impossible." These tests pin that down by exercising the algebraic
 // properties of a CRDT: commutativity, associativity, idempotence, and
 // last-writer-wins on the active version after a divergent edit.
-#include "sirius/SessionMerge.h"
+#include "ida/SessionMerge.h"
 
-#include "sirius/Constituent.h"
-#include "sirius/Position.h"
-#include "sirius/Rational.h"
+#include "ida/Constituent.h"
+#include "ida/Position.h"
+#include "ida/Rational.h"
 
 #include <catch2/catch_test_macros.hpp>
 

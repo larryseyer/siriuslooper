@@ -1,7 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
-#include "sirius/TapePool.h"
-#include "sirius/TapePoolMirror.h"
-#include "sirius/InputMixer.h"
+#include "ida/TapePool.h"
+#include "ida/TapePoolMirror.h"
+#include "ida/InputMixer.h"
 
 TEST_CASE ("mirrorTapePool registers every non-primary pool tape in the mixer", "[tape-pool][mirror]")
 {

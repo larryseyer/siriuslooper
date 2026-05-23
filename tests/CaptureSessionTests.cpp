@@ -4,10 +4,10 @@
 // gating, in-point setting and replacement, valid/invalid out-point
 // handling, cancel semantics, and the tape-identity that markIn pins
 // into AwaitingOut and that markOut stamps into the closed region.
-#include "sirius/CaptureSession.h"
+#include "ida/CaptureSession.h"
 
-#include "sirius/Rational.h"
-#include "sirius/TapeId.h"
+#include "ida/Rational.h"
+#include "ida/TapeId.h"
 
 #include <catch2/catch_test_macros.hpp>
 

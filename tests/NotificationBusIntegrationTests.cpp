@@ -10,7 +10,7 @@
 // These tests pin down the deque-trim + per-category FIFO behaviour without
 // needing JUCE — the trim policy is the only behaviour S3 adds beyond what
 // NotificationBusTests.cpp already covers for the bus itself.
-#include "sirius/NotificationBus.h"
+#include "ida/NotificationBus.h"
 
 #include <catch2/catch_test_macros.hpp>
 

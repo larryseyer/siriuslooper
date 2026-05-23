@@ -1,9 +1,9 @@
 #pragma once
 
-#include "sirius/Constituent.h"
-#include "sirius/InputDescriptor.h"
-#include "sirius/Rational.h"
-#include "sirius/TempoMap.h"
+#include "ida/Constituent.h"
+#include "ida/InputDescriptor.h"
+#include "ida/Rational.h"
+#include "ida/TempoMap.h"
 
 #include <memory>
 #include <vector>

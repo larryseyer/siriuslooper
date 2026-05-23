@@ -1,4 +1,4 @@
-#include "sirius/OutputMixer.h"
+#include "ida/OutputMixer.h"
 
 #include <juce_core/juce_core.h>
 

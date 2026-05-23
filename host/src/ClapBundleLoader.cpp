@@ -1,4 +1,4 @@
-#include "sirius/ClapBundleLoader.h"
+#include "ida/ClapBundleLoader.h"
 
 #include <cstring>
 #include <dlfcn.h>

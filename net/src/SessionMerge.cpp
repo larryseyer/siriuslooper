@@ -1,4 +1,4 @@
-#include "sirius/SessionMerge.h"
+#include "ida/SessionMerge.h"
 
 #include <algorithm>
 

@@ -1,4 +1,4 @@
-#include "sirius/LoopRenderer.h"
+#include "ida/LoopRenderer.h"
 
 #include <stdexcept>
 

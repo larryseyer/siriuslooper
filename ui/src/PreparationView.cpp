@@ -1,6 +1,6 @@
-#include "sirius/PreparationView.h"
+#include "ida/PreparationView.h"
 
-#include "sirius/IdaPalette.h"
+#include "ida/IdaPalette.h"
 
 namespace sirius
 {

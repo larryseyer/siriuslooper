@@ -2,11 +2,11 @@
 // session-level effect-bus data model behind V3 Step 7 / V7 alignment plan
 // M5 (lines 384-388). S2 establishes the configuration surfaces; S3 wires
 // the audio-thread mix pipeline that consumes Bus::process.
-#include "sirius/Bus.h"
-#include "sirius/Channel.h"
-#include "sirius/EffectChain.h"
-#include "sirius/LufsMeter.h"
-#include "sirius/PluginDescriptor.h"
+#include "ida/Bus.h"
+#include "ida/Channel.h"
+#include "ida/EffectChain.h"
+#include "ida/LufsMeter.h"
+#include "ida/PluginDescriptor.h"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>

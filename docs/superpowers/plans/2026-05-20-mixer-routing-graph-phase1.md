@@ -239,7 +239,7 @@ private:
 - [ ] **Step 2: Create the implementation** `engine/src/MixerGraph.cpp` (full body — every method, no stubs)
 
 ```cpp
-#include "sirius/MixerGraph.h"
+#include "ida/MixerGraph.h"
 
 #include <algorithm>
 
@@ -485,7 +485,7 @@ In `tests/CMakeLists.txt`, append to the `IdaTests` source list (after
 - [ ] **Step 4: Create `tests/MixerGraphTests.cpp` with the node-registry tests**
 
 ```cpp
-#include "sirius/MixerGraph.h"
+#include "ida/MixerGraph.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -877,7 +877,7 @@ Expected: COMPILE FAIL — `OutputMixer::routeBusToBus` does not exist yet.
 
 Add include + the accessor + members:
 ```cpp
-#include "sirius/MixerGraph.h"   // with the other sirius/ includes
+#include "ida/MixerGraph.h"   // with the other sirius/ includes
 ```
 Public, after `routeChannelToBus`:
 ```cpp

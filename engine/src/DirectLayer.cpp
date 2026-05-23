@@ -1,4 +1,4 @@
-#include "sirius/DirectLayer.h"
+#include "ida/DirectLayer.h"
 
 #include <algorithm>
 #include <cassert>

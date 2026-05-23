@@ -3,7 +3,7 @@
 // override beats tier dominance, tier dominance beats numerical majority, and
 // inside the dominant tier the narrowest interval wins as master after
 // Marzullo discards the falsetickers.
-#include "sirius/LmcElection.h"
+#include "ida/LmcElection.h"
 
 #include <catch2/catch_test_macros.hpp>
 

@@ -2,7 +2,7 @@
 // conceptual-time engine. These tests encode *why* the type exists: exactness,
 // no tolerance, no accumulated drift, loud failure on overflow. A test here
 // fails exactly when the white paper's "exact by construction" claim is broken.
-#include "sirius/Rational.h"
+#include "ida/Rational.h"
 
 #include <catch2/catch_test_macros.hpp>
 

@@ -1,13 +1,13 @@
-#include "sirius/WetCaptureWriter.h"
+#include "ida/WetCaptureWriter.h"
 
-#include "sirius/Bus.h"
-#include "sirius/Channel.h"
-#include "sirius/EffectChain.h"
-#include "sirius/IEffectChainHost.h"
-#include "sirius/NotificationBus.h"
-#include "sirius/PluginDescriptor.h"
-#include "sirius/Rational.h"
-#include "sirius/TapeStore.h"
+#include "ida/Bus.h"
+#include "ida/Channel.h"
+#include "ida/EffectChain.h"
+#include "ida/IEffectChainHost.h"
+#include "ida/NotificationBus.h"
+#include "ida/PluginDescriptor.h"
+#include "ida/Rational.h"
+#include "ida/TapeStore.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <juce_core/juce_core.h>

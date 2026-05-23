@@ -27,12 +27,12 @@
 //     output stream back through RingByteStream::writeAll + flush.
 // =============================================================================
 
-#include "sirius/ClapBundleLoader.h"
-#include "sirius/PluginGuiState.h"
-#include "sirius/PluginIpcMessage.h"
-#include "sirius/PluginStateRegion.h"
-#include "sirius/SharedMemoryRegion.h"
-#include "sirius/SharedMemorySpscQueue.h"
+#include "ida/ClapBundleLoader.h"
+#include "ida/PluginGuiState.h"
+#include "ida/PluginIpcMessage.h"
+#include "ida/PluginStateRegion.h"
+#include "ida/SharedMemoryRegion.h"
+#include "ida/SharedMemorySpscQueue.h"
 
 #include <clap/clap.h>
 #include <clap/ext/state.h>

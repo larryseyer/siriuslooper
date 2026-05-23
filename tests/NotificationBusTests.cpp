@@ -5,7 +5,7 @@
 // multi-category interleave preserving per-ring order, overflow drops + the
 // per-category counter, message truncation with forced null termination, and
 // a concurrent producer + consumer correctness stress.
-#include "sirius/NotificationBus.h"
+#include "ida/NotificationBus.h"
 
 #include <catch2/catch_test_macros.hpp>
 

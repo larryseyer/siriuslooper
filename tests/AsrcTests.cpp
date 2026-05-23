@@ -3,7 +3,7 @@
 // tests carry out the measurement the plan explicitly asks for: libsoxr's
 // variable-rate resampling latency, checked against the <30 ms trust budget of
 // white paper Part 14.8.
-#include "sirius/Asrc.h"
+#include "ida/Asrc.h"
 
 #include <catch2/catch_test_macros.hpp>
 

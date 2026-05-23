@@ -7,7 +7,7 @@
  #pragma GCC diagnostic ignored "-Wfloat-equal"
 #endif
 
-#include "sirius/MixerGraph.h"
+#include "ida/MixerGraph.h"
 
 #include <catch2/catch_test_macros.hpp>
 

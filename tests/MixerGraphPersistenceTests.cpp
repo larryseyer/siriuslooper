@@ -1,8 +1,8 @@
-#include "sirius/InputMixer.h"
-#include "sirius/OutputMixer.h"
-#include "sirius/MixerGraphState.h"
-#include "sirius/SessionFormat.h"
-#include "sirius/ChannelStrip.h"
+#include "ida/InputMixer.h"
+#include "ida/OutputMixer.h"
+#include "ida/MixerGraphState.h"
+#include "ida/SessionFormat.h"
+#include "ida/ChannelStrip.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <algorithm>

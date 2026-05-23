@@ -1,7 +1,7 @@
 // Golden-value tests for ida::Meter. Meter is a property of a Constituent,
 // not a global constraint (white paper Part 9.6); these tests pin down the
 // bar/beat lengths it derives, as exact rationals.
-#include "sirius/Meter.h"
+#include "ida/Meter.h"
 
 #include <catch2/catch_test_macros.hpp>
 

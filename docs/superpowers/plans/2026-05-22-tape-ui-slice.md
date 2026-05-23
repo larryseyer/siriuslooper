@@ -179,15 +179,15 @@ Extract the mirror as a free function so it is testable without `MainComponent`,
 - Create: `core/include/ida/TapePoolMirror.h`
 - Create: `tests/TapePoolMirrorTests.cpp`
 - Modify: `tests/CMakeLists.txt` (register the new test source)
-- Modify: `app/MainComponent.h` (add `#include "sirius/TapePool.h"` + a `ida::TapePool tapePool_;` member), `app/MainComponent.cpp` (init block ~1096, after `inputMixer_` exists / `flacTapeSink_` is constructed)
+- Modify: `app/MainComponent.h` (add `#include "ida/TapePool.h"` + a `ida::TapePool tapePool_;` member), `app/MainComponent.cpp` (init block ~1096, after `inputMixer_` exists / `flacTapeSink_` is constructed)
 
 - [ ] **Step 1: Write the failing test** — `tests/TapePoolMirrorTests.cpp`:
 
 ```cpp
 #include <catch2/catch_test_macros.hpp>
-#include "sirius/TapePool.h"
-#include "sirius/TapePoolMirror.h"
-#include "sirius/InputMixer.h"
+#include "ida/TapePool.h"
+#include "ida/TapePoolMirror.h"
+#include "ida/InputMixer.h"
 
 TEST_CASE ("mirrorTapePool registers every non-primary pool tape in the mixer", "[tape-pool][mirror]")
 {
@@ -217,8 +217,8 @@ Expected: FAIL — `TapePoolMirror.h` not found.
 ```cpp
 #pragma once
 
-#include "sirius/TapePool.h"
-#include "sirius/InputMixer.h"
+#include "ida/TapePool.h"
+#include "ida/InputMixer.h"
 
 namespace sirius
 {
@@ -244,7 +244,7 @@ inline void mirrorTapePool (const TapePool& pool, InputMixer& mixer)
 Run: `cmake --build build --target IdaTests && ctest --test-dir build -R "mirror|TapePool" --output-on-failure`
 Expected: PASS.
 
-- [ ] **Step 6: Own the pool in MainComponent.** In `app/MainComponent.h`, add near the other engine members: `#include "sirius/TapePool.h"` and `ida::TapePool tapePool_;`. In `app/MainComponent.cpp`, immediately after the `flacTapeSink_` construction + `inputMixer_->setTapeSink(...)` block (~1103), add:
+- [ ] **Step 6: Own the pool in MainComponent.** In `app/MainComponent.h`, add near the other engine members: `#include "ida/TapePool.h"` and `ida::TapePool tapePool_;`. In `app/MainComponent.cpp`, immediately after the `flacTapeSink_` construction + `inputMixer_->setTapeSink(...)` block (~1103), add:
 
 ```cpp
     // Tape-UI slice — TapePool is the single source of truth for which tapes exist.
@@ -252,7 +252,7 @@ Expected: PASS.
     ida::mirrorTapePool (tapePool_, *inputMixer_);
 ```
 
-Add `#include "sirius/TapePoolMirror.h"` to `MainComponent.cpp`.
+Add `#include "ida/TapePoolMirror.h"` to `MainComponent.cpp`.
 
 - [ ] **Step 7: Build the app to verify it compiles**
 

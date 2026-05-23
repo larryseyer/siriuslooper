@@ -3,7 +3,7 @@
 // sample's true capture time, and an output sample's true presentation time —
 // both exact, both relative to the audio callback. M2 Session 1 renamed the
 // conceptual "membrane" surface to "latency"; assertions are preserved.
-#include "sirius/LatencyTiming.h"
+#include "ida/LatencyTiming.h"
 
 #include <catch2/catch_test_macros.hpp>
 

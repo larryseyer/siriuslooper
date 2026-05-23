@@ -167,7 +167,7 @@ to `InputDescriptor`. JUCE-free.
 ```cpp
 #pragma once
 
-#include "sirius/TapeId.h"
+#include "ida/TapeId.h"
 
 #include <string>
 
@@ -214,8 +214,8 @@ API:
 ```cpp
 #pragma once
 
-#include "sirius/TapeDescriptor.h"
-#include "sirius/TapeId.h"
+#include "ida/TapeDescriptor.h"
+#include "ida/TapeId.h"
 
 #include <cstdint>
 #include <string>

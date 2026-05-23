@@ -48,11 +48,11 @@ Create `tests/TapePoolTests.cpp`:
 // Tests for ida::TapePool — the project's pool of tapes (tape subsystem
 // slice 1). Pins the >=1 invariant, monotonic id allocation, add/remove/rename,
 // the explicit-list ctor's validation, and the SessionFormat round-trip.
-#include "sirius/TapePool.h"
+#include "ida/TapePool.h"
 
-#include "sirius/SessionFormat.h"
-#include "sirius/TapeDescriptor.h"
-#include "sirius/TapeId.h"
+#include "ida/SessionFormat.h"
+#include "ida/TapeDescriptor.h"
+#include "ida/TapeId.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -96,7 +96,7 @@ Create `core/include/ida/TapeDescriptor.h`:
 ```cpp
 #pragma once
 
-#include "sirius/TapeId.h"
+#include "ida/TapeId.h"
 
 #include <string>
 
@@ -129,8 +129,8 @@ Create `core/include/ida/TapePool.h`:
 ```cpp
 #pragma once
 
-#include "sirius/TapeDescriptor.h"
-#include "sirius/TapeId.h"
+#include "ida/TapeDescriptor.h"
+#include "ida/TapeId.h"
 
 #include <cstdint>
 #include <string>
@@ -187,7 +187,7 @@ private:
 Create `core/src/TapePool.cpp`:
 
 ```cpp
-#include "sirius/TapePool.h"
+#include "ida/TapePool.h"
 
 #include <algorithm>
 #include <stdexcept>
@@ -593,10 +593,10 @@ Expected: FAIL — compile/link error, `serializeTapePool` / `deserializeTapePoo
 
 - [ ] **Step 3: Declare the functions in `SessionFormat.h`**
 
-In `persistence/include/ida/SessionFormat.h`, add the include and declarations. After the existing `#include "sirius/MixerGraphState.h"` line, add:
+In `persistence/include/ida/SessionFormat.h`, add the include and declarations. After the existing `#include "ida/MixerGraphState.h"` line, add:
 
 ```cpp
-#include "sirius/TapePool.h"
+#include "ida/TapePool.h"
 ```
 
 Then, before the closing `} // namespace ida::persistence` (after the `deserializeOutputMixerGraphState` declaration), add:
@@ -621,7 +621,7 @@ TapePool deserializeTapePool (const juce::String& json);
 In `persistence/src/SessionFormat.cpp`, add the include near the top with the other `sirius/` includes:
 
 ```cpp
-#include "sirius/TapePool.h"
+#include "ida/TapePool.h"
 ```
 
 Then add the two function definitions inside `namespace ida::persistence`, immediately before the closing `} // namespace ida::persistence` (after `deserializeOutputMixerGraphState`). These reuse the file's existing anon-namespace helpers (`makeObject`, `objectVar`, `requireProperty`, `requireInt64`, `fail`):

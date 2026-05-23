@@ -68,6 +68,10 @@ SUBS = [
     ("[FROM OTTO → SIRIUS]", "[FROM OTTO → IDA]"),
     ("Sirius ⇄ OTTO", "IDA ⇄ OTTO"),
     ("Sirius-originated", "IDA-originated"),
+    # Include path patterns the spec's row 24 (`/sirius/`) missed: C++ include
+    # statements use `"sirius/Foo.h"` and `<sirius/Foo.h>` (no leading slash).
+    ('"sirius/', '"ida/'),
+    ("<sirius/", "<ida/"),
 ]
 
 EXCLUDE_PATH_PREFIXES = (

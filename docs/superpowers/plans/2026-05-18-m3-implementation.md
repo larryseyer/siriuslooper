@@ -56,7 +56,7 @@ This preserves the data-layer / structure-layer split documented at `TapeStore.h
 
 ```cpp
 // At top of file, add include:
-#include "sirius/ChannelDefaults.h"
+#include "ida/ChannelDefaults.h"
 
 // At end of file, add new TEST_CASE:
 TEST_CASE ("ChannelDefaults is value-typed and round-trips its fields",
@@ -89,7 +89,7 @@ Expected: build failure, `'sirius/ChannelDefaults.h' file not found`.
 ```cpp
 #pragma once
 
-#include "sirius/TapeMode.h"
+#include "ida/TapeMode.h"
 
 namespace sirius
 {
@@ -113,7 +113,7 @@ struct ChannelDefaults
 } // namespace sirius
 ```
 
-Note: `TapeMode` lives in `engine/include/ida/TapeMode.h`, but `ChannelDefaults` is in `core/`. The `#include "sirius/TapeMode.h"` resolves because the `IdaEngine` target's `target_include_directories` exposes `engine/include` publicly. This is acceptable for M3 — if the include direction ever needs to reverse (engine depending on core only), `TapeMode` moves to `core/`. Note this in continue.md handoff if it surfaces.
+Note: `TapeMode` lives in `engine/include/ida/TapeMode.h`, but `ChannelDefaults` is in `core/`. The `#include "ida/TapeMode.h"` resolves because the `IdaEngine` target's `target_include_directories` exposes `engine/include` publicly. This is acceptable for M3 — if the include direction ever needs to reverse (engine depending on core only), `TapeMode` moves to `core/`. Note this in continue.md handoff if it surfaces.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -188,9 +188,9 @@ Expected: compile error mentioning `rawDirectMonitor` / aggregate initialization
 Replace the `InputDescriptor` struct body in `core/include/ida/InputDescriptor.h` with:
 
 ```cpp
-#include "sirius/ChannelDefaults.h"
-#include "sirius/InputKind.h"
-#include "sirius/TapeId.h"
+#include "ida/ChannelDefaults.h"
+#include "ida/InputKind.h"
+#include "ida/TapeId.h"
 
 #include <optional>
 #include <string>
@@ -251,8 +251,8 @@ Expected: all `[input-descriptor]` tests pass (existing + 2 new SECTIONs).
 // hierarchy added in M3 Session 1. M3 ships no-op bodies for all four
 // concrete subclasses; real DSP lands in M5 (AudioChain, per plan
 // amendment §3) / M9 (Midi) / M12 (Video) / M13 (File).
-#include "sirius/ProcessingChain.h"
-#include "sirius/SignalType.h"
+#include "ida/ProcessingChain.h"
+#include "ida/SignalType.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -337,7 +337,7 @@ Expected: `'sirius/ProcessingChain.h' file not found`.
 ```cpp
 #pragma once
 
-#include "sirius/SignalType.h"
+#include "ida/SignalType.h"
 
 #include <memory>
 
@@ -406,7 +406,7 @@ std::unique_ptr<ProcessingChain> makeProcessingChain (SignalType type);
 - [ ] **Step 4: Create the source file** `engine/src/ProcessingChain.cpp`
 
 ```cpp
-#include "sirius/ProcessingChain.h"
+#include "ida/ProcessingChain.h"
 
 #include <cassert>
 
@@ -524,7 +524,7 @@ TEST_CASE ("Channel admits every SignalType × TapeMode combination",
 }
 ```
 
-Add `#include "sirius/ProcessingChain.h"` to the test file's include section.
+Add `#include "ida/ProcessingChain.h"` to the test file's include section.
 
 - [ ] **Step 2: Run to verify failure**
 
@@ -539,7 +539,7 @@ Expected: compile error — `Channel` has no matching constructor; no `processin
 Replace the existing `struct Channel { ... };` block with:
 
 ```cpp
-#include "sirius/ProcessingChain.h"
+#include "ida/ProcessingChain.h"
 
 // ... (InputId and ChannelId class definitions stay as-is) ...
 
@@ -573,9 +573,9 @@ struct Channel
 - [ ] **Step 4: Implement the constructor** (replace `engine/src/Channel.cpp` body)
 
 ```cpp
-#include "sirius/Channel.h"
+#include "ida/Channel.h"
 
-#include "sirius/ProcessingChain.h"
+#include "ida/ProcessingChain.h"
 
 namespace sirius
 {
@@ -665,9 +665,9 @@ Do NOT push (Session 3 pushes per spec).
 ```cpp
 #pragma once
 
-#include "sirius/Channel.h"
-#include "sirius/LockFreeSpscQueue.h"
-#include "sirius/Rational.h"
+#include "ida/Channel.h"
+#include "ida/LockFreeSpscQueue.h"
+#include "ida/Rational.h"
 
 #include <juce_core/juce_core.h>
 
@@ -791,9 +791,9 @@ private:
 - [ ] **Step 1: Create the implementation**
 
 ```cpp
-#include "sirius/TapeWriter.h"
+#include "ida/TapeWriter.h"
 
-#include "sirius/CapabilityTier.h"
+#include "ida/CapabilityTier.h"
 
 #include <chrono>
 
@@ -997,9 +997,9 @@ Expected: clean build of `libIdaEngine.a`.
 // round-trip including the queue-full path; (2) the per-channel partial-
 // file output (bytes written match bytes enqueued); (3) the dtor lifecycle
 // (worker drains pending messages before joining).
-#include "sirius/CapabilityTier.h"
-#include "sirius/Channel.h"
-#include "sirius/TapeWriter.h"
+#include "ida/CapabilityTier.h"
+#include "ida/Channel.h"
+#include "ida/TapeWriter.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -1166,9 +1166,9 @@ Expected: all `[tape-writer]` tests pass. If the first test times out, the Lavis
 
 ```cpp
 // Replace existing trivial TEST_CASE with the real-body coverage:
-#include "sirius/CapabilityTier.h"
-#include "sirius/OverloadProtection.h"
-#include "sirius/TapeWriter.h"
+#include "ida/CapabilityTier.h"
+#include "ida/OverloadProtection.h"
+#include "ida/TapeWriter.h"
 
 #include <juce_core/juce_core.h>
 
@@ -1263,11 +1263,11 @@ TEST_CASE ("InputMixer::processBuffer reports overload when the writer queue is 
 ```cpp
 #pragma once
 
-#include "sirius/Channel.h"
-#include "sirius/ChannelDefaults.h"
-#include "sirius/InputDescriptor.h"
-#include "sirius/SignalType.h"
-#include "sirius/TapeMode.h"
+#include "ida/Channel.h"
+#include "ida/ChannelDefaults.h"
+#include "ida/InputDescriptor.h"
+#include "ida/SignalType.h"
+#include "ida/TapeMode.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -1334,10 +1334,10 @@ private:
 - [ ] **Step 3: Replace InputMixer.cpp with real bodies**
 
 ```cpp
-#include "sirius/InputMixer.h"
+#include "ida/InputMixer.h"
 
-#include "sirius/OverloadProtection.h"
-#include "sirius/TapeWriter.h"
+#include "ida/OverloadProtection.h"
+#include "ida/TapeWriter.h"
 
 #include <cassert>
 #include <cstring>
@@ -1557,7 +1557,7 @@ ida::persistence::TapeStore* tapeStore_ { nullptr };
 Add include:
 
 ```cpp
-#include "sirius/TapeStore.h"
+#include "ida/TapeStore.h"
 ```
 
 Add setter and real body:

@@ -1,10 +1,10 @@
-#include "sirius/OutOfProcessPluginInstance.h"
+#include "ida/OutOfProcessPluginInstance.h"
 
-#include "sirius/PluginGuiState.h"
-#include "sirius/PluginIpcMessage.h"
-#include "sirius/PluginStateRegion.h"
-#include "sirius/SharedMemoryRegion.h"
-#include "sirius/SharedMemorySpscQueue.h"
+#include "ida/PluginGuiState.h"
+#include "ida/PluginIpcMessage.h"
+#include "ida/PluginStateRegion.h"
+#include "ida/SharedMemoryRegion.h"
+#include "ida/SharedMemorySpscQueue.h"
 
 #include <juce_core/juce_core.h>
 

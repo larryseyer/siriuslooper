@@ -15,7 +15,7 @@
 // `[plugin-supervisor] ~[unit]` run skip these in favour of the
 // integration suite.
 
-#include "sirius/OutOfProcessEffectChainHost.h"
+#include "ida/OutOfProcessEffectChainHost.h"
 
 #include <juce_core/juce_core.h>
 

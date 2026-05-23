@@ -1,4 +1,4 @@
-#include "sirius/InternalFxFactory.h"
+#include "ida/InternalFxFactory.h"
 
 #include "fx/CmpAdapter.h"
 #include "fx/DlyAdapter.h"

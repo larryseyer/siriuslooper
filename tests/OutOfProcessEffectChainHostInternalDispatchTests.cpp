@@ -10,8 +10,8 @@
 // (~/.claude/plans/read-continue-and-proceed-structured-acorn.md,
 // "Modified" section in the T3a body + "Subagent B" sequence row).
 
-#include "sirius/IInternalFxAdapter.h"
-#include "sirius/OutOfProcessEffectChainHost.h"
+#include "ida/IInternalFxAdapter.h"
+#include "ida/OutOfProcessEffectChainHost.h"
 
 #include <catch2/catch_test_macros.hpp>
 

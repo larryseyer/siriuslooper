@@ -1,6 +1,6 @@
 // Tests for ClapScanner (M8 S2) — the non-JUCE walker that lists
 // CLAP plug-ins on disk and produces PluginDescriptors.
-#include "sirius/ClapScanner.h"
+#include "ida/ClapScanner.h"
 
 #include <catch2/catch_test_macros.hpp>
 

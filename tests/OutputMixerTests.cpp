@@ -6,14 +6,14 @@
 // send-level matrix accessors. Audio-thread `renderBuffer` body is still
 // a stub in S2; an integration test for the real renderBuffer lands in
 // M5 Session 3.
-#include "sirius/Bus.h"
-#include "sirius/Channel.h"
-#include "sirius/ChannelStrip.h"
-#include "sirius/EffectChain.h"
-#include "sirius/MixerGraphState.h"
-#include "sirius/OutputMixer.h"
-#include "sirius/PluginDescriptor.h"
-#include "sirius/SignalType.h"
+#include "ida/Bus.h"
+#include "ida/Channel.h"
+#include "ida/ChannelStrip.h"
+#include "ida/EffectChain.h"
+#include "ida/MixerGraphState.h"
+#include "ida/OutputMixer.h"
+#include "ida/PluginDescriptor.h"
+#include "ida/SignalType.h"
 
 #include <juce_core/juce_core.h>
 

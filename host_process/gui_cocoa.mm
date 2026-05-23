@@ -31,7 +31,7 @@
 
 #import <AppKit/AppKit.h>
 
-#include "sirius/PluginGuiState.h"
+#include "ida/PluginGuiState.h"
 
 #include <clap/clap.h>
 #include <clap/ext/gui.h>

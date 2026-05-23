@@ -1,6 +1,6 @@
 // Tests that drive the StatefulSynthFixture (M8 S2) directly through
 // the bundle loader — exercises params + state round-trip in-process.
-#include "sirius/ClapBundleLoader.h"
+#include "ida/ClapBundleLoader.h"
 
 #include <catch2/catch_test_macros.hpp>
 

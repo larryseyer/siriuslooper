@@ -2,13 +2,13 @@
 // §17.7). State is derived, never persisted: a leaf loop whose tape does not
 // resolve is Broken; a node placed outside its parent is Invalid; both render
 // as silence with identity intact.
-#include "sirius/ConstituentValidator.h"
+#include "ida/ConstituentValidator.h"
 
-#include "sirius/Constituent.h"
-#include "sirius/RenderPipeline.h"
-#include "sirius/TapeReference.h"
-#include "sirius/INotificationSink.h"
-#include "sirius/TempoMap.h"
+#include "ida/Constituent.h"
+#include "ida/RenderPipeline.h"
+#include "ida/TapeReference.h"
+#include "ida/INotificationSink.h"
+#include "ida/TempoMap.h"
 
 #include <catch2/catch_test_macros.hpp>
 

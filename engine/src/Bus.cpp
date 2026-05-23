@@ -1,7 +1,7 @@
-#include "sirius/Bus.h"
+#include "ida/Bus.h"
 
-#include "sirius/IWetCaptureSink.h"
-#include "sirius/Rational.h"
+#include "ida/IWetCaptureSink.h"
+#include "ida/Rational.h"
 
 #include <juce_core/juce_core.h>
 

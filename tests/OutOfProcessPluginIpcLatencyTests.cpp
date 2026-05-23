@@ -13,7 +13,7 @@
 // S4+ watchdog work introduces; the S2c kRingPollMicroseconds backoff
 // dominates the current baseline.
 
-#include "sirius/OutOfProcessPluginInstance.h"
+#include "ida/OutOfProcessPluginInstance.h"
 
 #include <juce_core/juce_core.h>
 

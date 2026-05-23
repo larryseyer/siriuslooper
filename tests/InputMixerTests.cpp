@@ -7,15 +7,15 @@
 //
 // Note: TapeWriter takes std::chrono::milliseconds for the flush interval;
 // the caller converts from CapabilityTier before constructing.
-#include "sirius/Channel.h"
-#include "sirius/ChannelStrip.h"
-#include "sirius/InputMixer.h"
-#include "sirius/ITapeSink.h"
-#include "sirius/MixerGraphState.h"
-#include "sirius/NotificationBus.h"
-#include "sirius/OverloadProtection.h"
-#include "sirius/TapeStore.h"
-#include "sirius/TapeWriter.h"
+#include "ida/Channel.h"
+#include "ida/ChannelStrip.h"
+#include "ida/InputMixer.h"
+#include "ida/ITapeSink.h"
+#include "ida/MixerGraphState.h"
+#include "ida/NotificationBus.h"
+#include "ida/OverloadProtection.h"
+#include "ida/TapeStore.h"
+#include "ida/TapeWriter.h"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>

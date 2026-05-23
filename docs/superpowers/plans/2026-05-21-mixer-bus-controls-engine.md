@@ -24,7 +24,7 @@ So this plan: (1) makes `LufsMeter` move-only via a defaulted `noexcept` move ct
 ## File structure
 
 - **Modify** `engine/include/ida/LufsMeter.h` — add `noexcept` move ctor + move assignment (keep copy deleted).
-- **Modify** `engine/include/ida/Bus.h` — add gain/mute/peak/LUFS API + members + a `noexcept` move ctor; include `<atomic>` and `"sirius/LufsMeter.h"`.
+- **Modify** `engine/include/ida/Bus.h` — add gain/mute/peak/LUFS API + members + a `noexcept` move ctor; include `<atomic>` and `"ida/LufsMeter.h"`.
 - **Modify** `engine/src/Bus.cpp` — implement the move ctor; apply gain+mute and write the post-fader meter inside `process()` (both the inline path and the effect-chain path), preserving the M8 S4 wet-capture tap point and default-config bit-equivalence.
 - **Modify** `engine/include/ida/InputMixer.h` + `engine/src/InputMixer.cpp` — add `Bus* busForId (BusId) noexcept` (message-thread accessor, mirrors `processingChainFor`).
 - **Modify** `tests/BusTests.cpp` — gain/mute/peak/LUFS/move-ctor cases.
@@ -49,7 +49,7 @@ So this plan: (1) makes `LufsMeter` move-only via a defaulted `noexcept` move ct
 - [ ] **Step 1: Confirm the test file**
 
 Run: `ls tests/LufsMeterTests.cpp 2>/dev/null && echo HAVE || echo USE_BusTests`
-If `USE_BusTests`, add the test below to `tests/BusTests.cpp` instead (it already includes Catch2). Adjust the include to `#include "sirius/LufsMeter.h"`.
+If `USE_BusTests`, add the test below to `tests/BusTests.cpp` instead (it already includes Catch2). Adjust the include to `#include "ida/LufsMeter.h"`.
 
 - [ ] **Step 2: Write the failing test**
 
@@ -224,7 +224,7 @@ Expected: compile errors — `'class ida::Bus' has no member named 'setGain'` (a
 At the top of `Bus.h`, add to the include block (alongside the existing `<cstddef>`/`<string>`/`<vector>`):
 
 ```cpp
-#include "sirius/LufsMeter.h"
+#include "ida/LufsMeter.h"
 
 #include <atomic>
 ```

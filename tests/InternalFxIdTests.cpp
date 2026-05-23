@@ -2,7 +2,7 @@
 // SessionFormat. The enum is the wire-stable identity of an Internal slot —
 // renaming a value would break every saved session that contains an Internal
 // effect, so these tests serve as the contract for both readers and writers.
-#include "sirius/InternalFxId.h"
+#include "ida/InternalFxId.h"
 
 #include <catch2/catch_test_macros.hpp>
 

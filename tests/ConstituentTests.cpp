@@ -3,10 +3,10 @@
 // claims that make the data model tractable: identity persists across every
 // content revision (Part 7.6), and edits are copy-on-write with untouched
 // children *shared*, not copied (Part 7.3).
-#include "sirius/Constituent.h"
+#include "ida/Constituent.h"
 
-#include "sirius/Phrase.h"
-#include "sirius/TapeReference.h"
+#include "ida/Phrase.h"
+#include "ida/TapeReference.h"
 
 #include <catch2/catch_test_macros.hpp>
 

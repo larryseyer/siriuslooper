@@ -3,7 +3,7 @@
 // non-audio work is shed in strict priority order as load rises, the hysteresis
 // band prevents flapping near a threshold, and the shed state is exposed for
 // the UI to announce (rule 3 — degradation is announced, not silent).
-#include "sirius/OverloadProtection.h"
+#include "ida/OverloadProtection.h"
 
 #include <catch2/catch_test_macros.hpp>
 

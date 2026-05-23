@@ -2,7 +2,7 @@
 // The plan calls proving this path the riskiest single piece of M2, so these
 // tests cover both single-threaded correctness and a concurrent producer/
 // consumer stress run that would expose loss, duplication, or reordering.
-#include "sirius/LockFreeSpscQueue.h"
+#include "ida/LockFreeSpscQueue.h"
 
 #include <catch2/catch_test_macros.hpp>
 

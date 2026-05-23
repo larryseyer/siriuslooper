@@ -1,4 +1,4 @@
-#include "sirius/MixerGraphState.h"
+#include "ida/MixerGraphState.h"
 
 #include <catch2/catch_test_macros.hpp>
 

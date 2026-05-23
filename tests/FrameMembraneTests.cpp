@@ -4,7 +4,7 @@
 // down the exact arithmetic of that selection — including the awkward
 // broadcast rates (23.976, 29.97, 59.94) where rounding has to stay rational
 // to avoid the 1953-NTSC drift the system exists to refuse.
-#include "sirius/FrameMembrane.h"
+#include "ida/FrameMembrane.h"
 
 #include <catch2/catch_test_macros.hpp>
 

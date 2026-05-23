@@ -1,6 +1,6 @@
 // Tests for PluginStateState (M8 S2) — POD layout used by the host
 // child and the engine to round-trip plug-in state bytes.
-#include "sirius/PluginStateRegion.h"
+#include "ida/PluginStateRegion.h"
 
 #include <catch2/catch_test_macros.hpp>
 

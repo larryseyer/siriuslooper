@@ -6,10 +6,10 @@
 // down construction, equality of the underlying fields, and the optional-
 // channel semantics for kinds that have no channel concept (Transport,
 // System).
-#include "sirius/ChannelDefaults.h"
-#include "sirius/InputDescriptor.h"
-#include "sirius/InputKind.h"
-#include "sirius/TapeId.h"
+#include "ida/ChannelDefaults.h"
+#include "ida/InputDescriptor.h"
+#include "ida/InputKind.h"
+#include "ida/TapeId.h"
 
 #include <catch2/catch_test_macros.hpp>
 

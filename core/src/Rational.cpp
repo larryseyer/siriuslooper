@@ -1,4 +1,4 @@
-#include "sirius/Rational.h"
+#include "ida/Rational.h"
 
 #include <limits>
 #include <numeric>

@@ -1,6 +1,6 @@
 // Tests for ida::SampleClock — the exact sample-count <-> time conversion
 // the membrane math is built on.
-#include "sirius/SampleClock.h"
+#include "ida/SampleClock.h"
 
 #include <catch2/catch_test_macros.hpp>
 

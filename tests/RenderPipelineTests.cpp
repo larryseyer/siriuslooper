@@ -3,13 +3,13 @@
 // pipeline reports as sounding: placement spans, exact loop-cycle arithmetic,
 // cardinality bounds, dormant non-free-running triggers, and the composition of
 // nested time domains that makes polymetric coexistence work.
-#include "sirius/RenderPipeline.h"
+#include "ida/RenderPipeline.h"
 
-#include "sirius/Constituent.h"
-#include "sirius/Position.h"
-#include "sirius/Rational.h"
-#include "sirius/TapeReference.h"
-#include "sirius/TempoMap.h"
+#include "ida/Constituent.h"
+#include "ida/Position.h"
+#include "ida/Rational.h"
+#include "ida/TapeReference.h"
+#include "ida/TempoMap.h"
 
 #include <catch2/catch_test_macros.hpp>
 

@@ -122,7 +122,7 @@ Add the routing members and registration. The graph is multi-terminal; channels 
 
 - [ ] **Step 1: Write the failing tests**
 
-Append to `tests/InputMixerTests.cpp` (add `#include "sirius/Bus.h"`, `#include "sirius/MixerGraph.h"` near the top if absent):
+Append to `tests/InputMixerTests.cpp` (add `#include "ida/Bus.h"`, `#include "ida/MixerGraph.h"` near the top if absent):
 
 ```cpp
 TEST_CASE ("InputMixer constructs with Tape+HardwareOutput terminals and default RVB/DLY returns",
@@ -167,7 +167,7 @@ Expected: FAIL — none of the new methods/members exist.
 - [ ] **Step 3: Implement the header additions**
 
 In `engine/include/ida/InputMixer.h`:
-- Add includes: `#include "sirius/Bus.h"` and `#include "sirius/MixerGraph.h"`.
+- Add includes: `#include "ida/Bus.h"` and `#include "ida/MixerGraph.h"`.
 - Add public constants and methods:
 
 ```cpp

@@ -2,8 +2,8 @@
 // (white paper Part IV). The clock source is injectable, so these tests drive a
 // controlled fake clock and confirm the LMC's epoch handling, its exact
 // rational time, and that it never runs backwards.
-#include "sirius/Lmc.h"
-#include "sirius/MonotonicClock.h"
+#include "ida/Lmc.h"
+#include "ida/MonotonicClock.h"
 
 #include <catch2/catch_test_macros.hpp>
 

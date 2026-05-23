@@ -1,6 +1,6 @@
-#include "sirius/TapeWriter.h"
+#include "ida/TapeWriter.h"
 
-#include "sirius/NotificationBus.h"
+#include "ida/NotificationBus.h"
 
 #include <juce_core/juce_core.h>
 

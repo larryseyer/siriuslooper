@@ -59,7 +59,7 @@ Create `tests/InternalFxIdTests.cpp`:
 // SessionFormat. The enum is the wire-stable identity of an Internal slot —
 // renaming a value would break every saved session that contains an Internal
 // effect, so these tests serve as the contract for both readers and writers.
-#include "sirius/InternalFxId.h"
+#include "ida/InternalFxId.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -325,10 +325,10 @@ Edit `core/include/ida/EffectChain.h`. Add the includes + new enum + factory dec
 ```cpp
 #pragma once
 
-#include "sirius/ArchivalMode.h"
-#include "sirius/InternalFxId.h"
-#include "sirius/PluginDescriptor.h"
-#include "sirius/VersionPinningRecord.h"
+#include "ida/ArchivalMode.h"
+#include "ida/InternalFxId.h"
+#include "ida/PluginDescriptor.h"
+#include "ida/VersionPinningRecord.h"
 
 #include <cstddef>
 #include <cstdint>

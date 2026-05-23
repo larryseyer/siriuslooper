@@ -79,9 +79,9 @@ Create `audio/include/ida/FlacTapeSink.h`:
 ```cpp
 #pragma once
 
-#include "sirius/ITapeSink.h"
-#include "sirius/LockFreeSpscQueue.h"
-#include "sirius/TapeId.h"
+#include "ida/ITapeSink.h"
+#include "ida/LockFreeSpscQueue.h"
+#include "ida/TapeId.h"
 
 #include <juce_audio_formats/juce_audio_formats.h>
 
@@ -199,8 +199,8 @@ In `tests/CMakeLists.txt`, add `FlacTapeSinkTests.cpp` to the `IdaTests` source 
 Create `tests/FlacTapeSinkTests.cpp`:
 
 ```cpp
-#include "sirius/FlacTapeSink.h"
-#include "sirius/TapeId.h"
+#include "ida/FlacTapeSink.h"
+#include "ida/TapeId.h"
 
 #include <juce_audio_formats/juce_audio_formats.h>
 
@@ -298,7 +298,7 @@ Expected: FAIL — link/compile error (`FlacTapeSink.cpp` missing / undefined sy
 Create `audio/src/FlacTapeSink.cpp`:
 
 ```cpp
-#include "sirius/FlacTapeSink.h"
+#include "ida/FlacTapeSink.h"
 
 #include <algorithm>
 
@@ -637,7 +637,7 @@ git commit -m "feat: renderInputGraph drives the live audio callback (tape slice
 
 - [ ] **Step 1: Add the member and the tapes-dir helper declaration**
 
-In `app/MainComponent.h`, near the `notificationBus_` members (around line 184), add the include `#include "sirius/FlacTapeSink.h"` at the top with the other engine/audio includes, and the member **after** `notificationBus_` but **before** `audioCallback_`-related teardown ordering matters: declare it so it is destroyed *after* `audioCallback_` is torn down. Place it immediately after `audioCallback_`'s declaration is NOT correct (it must outlive the callback's last use). Declare it right after `notificationBus_`:
+In `app/MainComponent.h`, near the `notificationBus_` members (around line 184), add the include `#include "ida/FlacTapeSink.h"` at the top with the other engine/audio includes, and the member **after** `notificationBus_` but **before** `audioCallback_`-related teardown ordering matters: declare it so it is destroyed *after* `audioCallback_` is torn down. Place it immediately after `audioCallback_`'s declaration is NOT correct (it must outlive the callback's last use). Declare it right after `notificationBus_`:
 
 ```cpp
     // Tape subsystem slice 3 — the live per-tape FLAC recorder behind ITapeSink.

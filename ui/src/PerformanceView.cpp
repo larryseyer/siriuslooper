@@ -1,4 +1,4 @@
-#include "sirius/PerformanceView.h"
+#include "ida/PerformanceView.h"
 
 namespace sirius
 {

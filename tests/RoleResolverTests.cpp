@@ -4,12 +4,12 @@
 // and provides resolveFirst as the trivial default policy. These tests pin down
 // the eligibility predicate (role match + isRoleFillable + carries
 // PhraseMetadata), the stable enumeration order, and the no-match fallback.
-#include "sirius/RoleResolver.h"
+#include "ida/RoleResolver.h"
 
-#include "sirius/Constituent.h"
-#include "sirius/Phrase.h"
-#include "sirius/Position.h"
-#include "sirius/Rational.h"
+#include "ida/Constituent.h"
+#include "ida/Phrase.h"
+#include "ida/Position.h"
+#include "ida/Rational.h"
 
 #include <catch2/catch_test_macros.hpp>
 

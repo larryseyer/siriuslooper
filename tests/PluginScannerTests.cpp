@@ -4,7 +4,7 @@
 // the plan promises, it returns a structured (descriptors + failures) result,
 // and it survives a scan over an empty path without throwing or producing
 // spurious entries.
-#include "sirius/PluginScanner.h"
+#include "ida/PluginScanner.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 

@@ -1,7 +1,7 @@
-#include "sirius/WetCaptureWriter.h"
+#include "ida/WetCaptureWriter.h"
 
-#include "sirius/NotificationBus.h"
-#include "sirius/TapeStore.h"
+#include "ida/NotificationBus.h"
+#include "ida/TapeStore.h"
 
 #include <juce_core/juce_core.h>
 

@@ -11,8 +11,8 @@
 // Note: TapeWriter takes std::chrono::milliseconds for the flush interval.
 // The caller (app layer) converts CapabilityTier → interval; TapeWriter
 // is intentionally free of the app-layer CapabilityTier header.
-#include "sirius/Channel.h"
-#include "sirius/TapeWriter.h"
+#include "ida/Channel.h"
+#include "ida/TapeWriter.h"
 
 #include <catch2/catch_test_macros.hpp>
 

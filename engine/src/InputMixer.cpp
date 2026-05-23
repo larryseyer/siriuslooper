@@ -1,10 +1,10 @@
-#include "sirius/InputMixer.h"
+#include "ida/InputMixer.h"
 
-#include "sirius/ChannelStrip.h"
-#include "sirius/NotificationBus.h"
-#include "sirius/OverloadProtection.h"
-#include "sirius/TapeStore.h"
-#include "sirius/TapeWriter.h"
+#include "ida/ChannelStrip.h"
+#include "ida/NotificationBus.h"
+#include "ida/OverloadProtection.h"
+#include "ida/TapeStore.h"
+#include "ida/TapeWriter.h"
 
 #include <juce_core/juce_core.h>
 

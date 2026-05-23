@@ -1,4 +1,4 @@
-#include "sirius/GenericParameterView.h"
+#include "ida/GenericParameterView.h"
 
 namespace sirius
 {

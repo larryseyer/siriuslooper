@@ -2,7 +2,7 @@
 // a loop carries (white paper Part VIII). Phrase metadata is plain data with no
 // invariants; these tests pin down its defaults and that its open-ended fields
 // hold what they are given.
-#include "sirius/Phrase.h"
+#include "ida/Phrase.h"
 
 #include <catch2/catch_test_macros.hpp>
 

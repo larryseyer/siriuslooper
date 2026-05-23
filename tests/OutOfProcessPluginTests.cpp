@@ -12,7 +12,7 @@
 // principle be invoked before host_process has finished building, and a
 // missing binary is not a Sirius-side regression worth a hard failure.
 
-#include "sirius/OutOfProcessPluginInstance.h"
+#include "ida/OutOfProcessPluginInstance.h"
 
 #include <juce_core/juce_core.h>
 

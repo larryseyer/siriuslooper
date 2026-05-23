@@ -1,4 +1,4 @@
-#include "sirius/LatencyBudget.h"
+#include "ida/LatencyBudget.h"
 
 #include <algorithm>
 #include <stdexcept>

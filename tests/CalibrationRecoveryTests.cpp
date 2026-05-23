@@ -1,7 +1,7 @@
-#include "sirius/CalibrationStore.h"
-#include "sirius/AudioDeviceCalibration.h"
-#include "sirius/INotificationSink.h"
-#include "sirius/Rational.h"
+#include "ida/CalibrationStore.h"
+#include "ida/AudioDeviceCalibration.h"
+#include "ida/INotificationSink.h"
+#include "ida/Rational.h"
 
 #include <catch2/catch_test_macros.hpp>
 

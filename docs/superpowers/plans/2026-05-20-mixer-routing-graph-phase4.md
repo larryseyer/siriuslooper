@@ -156,12 +156,12 @@ Mirror `Bus`'s set-once collaborators. `Bus` derives its `pumpSlot` key from its
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `tests/ChannelStripTests.cpp`. First add these includes near the existing includes at the top of the file (after `#include "sirius/SignalType.h"`):
+Append to `tests/ChannelStripTests.cpp`. First add these includes near the existing includes at the top of the file (after `#include "ida/SignalType.h"`):
 
 ```cpp
-#include "sirius/EffectChain.h"
-#include "sirius/IEffectChainHost.h"
-#include "sirius/PluginDescriptor.h"
+#include "ida/EffectChain.h"
+#include "ida/IEffectChainHost.h"
+#include "ida/PluginDescriptor.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -208,11 +208,11 @@ Expected: compile error — `setEffectChain` / `effectChain` / `setEffectChainHo
 
 - [ ] **Step 3: Add the collaborators to the header**
 
-In `engine/include/ida/ChannelStrip.h`, add these includes after `#include "sirius/SignalType.h"`:
+In `engine/include/ida/ChannelStrip.h`, add these includes after `#include "ida/SignalType.h"`:
 
 ```cpp
-#include "sirius/EffectChain.h"
-#include "sirius/IEffectChainHost.h"
+#include "ida/EffectChain.h"
+#include "ida/IEffectChainHost.h"
 
 #include <cstdint>
 ```

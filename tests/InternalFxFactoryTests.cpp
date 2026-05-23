@@ -3,9 +3,9 @@
 // landed in lock-step with its own sub-task (T3a-T3d). The smoke-check
 // reaches through the factory's IInternalFxAdapter* return to verify
 // polymorphic dispatch across the four built-in FX kinds.
-#include "sirius/InternalFxFactory.h"
-#include "sirius/IInternalFxAdapter.h"
-#include "sirius/InternalFxId.h"
+#include "ida/InternalFxFactory.h"
+#include "ida/IInternalFxAdapter.h"
+#include "ida/InternalFxId.h"
 
 #include <catch2/catch_test_macros.hpp>
 

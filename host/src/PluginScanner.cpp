@@ -1,5 +1,5 @@
-#include "sirius/PluginScanner.h"
-#include "sirius/ClapScanner.h"
+#include "ida/PluginScanner.h"
+#include "ida/ClapScanner.h"
 
 #include <cstdio>
 

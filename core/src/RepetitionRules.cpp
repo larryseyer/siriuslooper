@@ -1,4 +1,4 @@
-#include "sirius/RepetitionRules.h"
+#include "ida/RepetitionRules.h"
 
 #include <stdexcept>
 

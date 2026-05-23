@@ -1,7 +1,7 @@
-#include "sirius/Promotion.h"
+#include "ida/Promotion.h"
 
-#include "sirius/Phrase.h"
-#include "sirius/TapeReference.h"
+#include "ida/Phrase.h"
+#include "ida/TapeReference.h"
 
 #include <algorithm>
 #include <functional>

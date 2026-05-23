@@ -1,7 +1,7 @@
 // Golden-value tests for ida::Position — a symbolic point in conceptual
 // time, measured in whole notes. These tests pin down musical-coordinate
 // construction, including in odd meters, and confirm positions are exact.
-#include "sirius/Position.h"
+#include "ida/Position.h"
 
 #include <catch2/catch_test_macros.hpp>
 

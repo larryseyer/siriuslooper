@@ -4,16 +4,16 @@
 // phrase the playhead is inside (so "verse" wins over "demo session"), the
 // foreground loop's cycle status, and an honest "silent" report when nothing
 // is sounding.
-#include "sirius/PerformanceViewState.h"
+#include "ida/PerformanceViewState.h"
 
-#include "sirius/Arrangement.h"
-#include "sirius/Constituent.h"
-#include "sirius/Position.h"
-#include "sirius/Rational.h"
-#include "sirius/RepetitionRules.h"
-#include "sirius/TapeId.h"
-#include "sirius/TapeReference.h"
-#include "sirius/TempoMap.h"
+#include "ida/Arrangement.h"
+#include "ida/Constituent.h"
+#include "ida/Position.h"
+#include "ida/Rational.h"
+#include "ida/RepetitionRules.h"
+#include "ida/TapeId.h"
+#include "ida/TapeReference.h"
+#include "ida/TempoMap.h"
 
 #include <catch2/catch_test_macros.hpp>
 

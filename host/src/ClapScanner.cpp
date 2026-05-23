@@ -1,6 +1,6 @@
-#include "sirius/ClapScanner.h"
+#include "ida/ClapScanner.h"
 
-#include "sirius/ClapBundleLoader.h"
+#include "ida/ClapBundleLoader.h"
 
 #include <utility>
 

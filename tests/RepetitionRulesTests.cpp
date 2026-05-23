@@ -2,7 +2,7 @@
 // dimensions that describe how a loop plays back (white paper Part X). These
 // pin down the defaults the white paper calls the system's best guess, and
 // confirm the validating constructors reject nonsense loudly.
-#include "sirius/RepetitionRules.h"
+#include "ida/RepetitionRules.h"
 
 #include <catch2/catch_test_macros.hpp>
 

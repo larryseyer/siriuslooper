@@ -2,12 +2,12 @@
 // pin down the architectural payoff of the immutable-Constituent data model:
 // undo is just a stack of root pointers — instantaneous, multi-level,
 // reversible, and visible — without diffs, replay, or any special-case state.
-#include "sirius/UndoStack.h"
+#include "ida/UndoStack.h"
 
-#include "sirius/Constituent.h"
-#include "sirius/Position.h"
-#include "sirius/Rational.h"
-#include "sirius/TapeId.h"
+#include "ida/Constituent.h"
+#include "ida/Position.h"
+#include "ida/Rational.h"
+#include "ida/TapeId.h"
 
 #include <catch2/catch_test_macros.hpp>
 

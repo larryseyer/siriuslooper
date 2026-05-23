@@ -1,6 +1,6 @@
-#include "sirius/Channel.h"
+#include "ida/Channel.h"
 
-#include "sirius/ProcessingChain.h"
+#include "ida/ProcessingChain.h"
 
 namespace sirius
 {

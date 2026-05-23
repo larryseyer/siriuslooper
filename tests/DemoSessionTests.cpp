@@ -6,9 +6,9 @@
 
 #include "DemoSession.h"
 
-#include "sirius/Constituent.h"
-#include "sirius/Position.h"
-#include "sirius/Rational.h"
+#include "ida/Constituent.h"
+#include "ida/Position.h"
+#include "ida/Rational.h"
 
 #include <catch2/catch_test_macros.hpp>
 

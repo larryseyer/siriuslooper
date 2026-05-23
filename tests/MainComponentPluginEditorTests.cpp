@@ -10,7 +10,7 @@
 // Tag: [main-component-plugin-editor]
 
 #include "MainComponent.h"
-#include "sirius/PluginDescriptor.h"
+#include "ida/PluginDescriptor.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_events/juce_events.h>

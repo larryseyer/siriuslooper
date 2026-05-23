@@ -1,6 +1,6 @@
-#include "sirius/PerformanceViewState.h"
+#include "ida/PerformanceViewState.h"
 
-#include "sirius/RepetitionRules.h"
+#include "ida/RepetitionRules.h"
 
 #include <cstdint>
 #include <functional>

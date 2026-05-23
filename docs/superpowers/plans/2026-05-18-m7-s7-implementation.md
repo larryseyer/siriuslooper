@@ -56,10 +56,10 @@ Run: `grep -n "~MainComponent" app/MainComponent.cpp | head -3` to find the dtor
 
 - [ ] **Step 2: Add OutOfProcessEffectChainHost include + members in MainComponent.h**
 
-In `app/MainComponent.h`, near the top with the other `#include "sirius/..."` lines, add:
+In `app/MainComponent.h`, near the top with the other `#include "ida/..."` lines, add:
 
 ```cpp
-#include "sirius/OutOfProcessEffectChainHost.h"
+#include "ida/OutOfProcessEffectChainHost.h"
 ```
 
 In the private section after `std::unique_ptr<juce::FileChooser> pluginFolderChooser_;`, add a new block:
@@ -183,7 +183,7 @@ The `clapBundle` argument is the path to the .clap file (the descriptor's `fileP
 If not already included via the existing includes, add:
 
 ```cpp
-#include "sirius/EffectChain.h"
+#include "ida/EffectChain.h"
 ```
 
 (Likely already included transitively; verify via `grep -n "EffectChain" app/MainComponent.cpp`.)
@@ -509,10 +509,10 @@ Replace the Task 1 stub PluginEditorWindow with a real `juce::DocumentWindow` su
 
 - [ ] **Step 1: Add OutOfProcessEditorView include**
 
-In `app/MainComponent.h`, add near the existing `#include "sirius/..."` lines:
+In `app/MainComponent.h`, add near the existing `#include "ida/..."` lines:
 
 ```cpp
-#include "sirius/OutOfProcessEditorView.h"
+#include "ida/OutOfProcessEditorView.h"
 ```
 
 - [ ] **Step 2: Replace the Task 1 stub PluginEditorWindow with the real body**
@@ -756,7 +756,7 @@ Run: `grep -rln "MainComponent" tests/ | head` to see if any existing tests cons
 // Tag: [main-component-plugin-editor]
 
 #include "MainComponent.h"
-#include "sirius/PluginDescriptor.h"
+#include "ida/PluginDescriptor.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_events/juce_events.h>

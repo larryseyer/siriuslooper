@@ -1,4 +1,4 @@
-#include "sirius/EffectChain.h"
+#include "ida/EffectChain.h"
 
 #include <stdexcept>
 #include <string>

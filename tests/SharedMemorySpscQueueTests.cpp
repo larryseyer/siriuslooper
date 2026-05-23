@@ -4,7 +4,7 @@
 // round-trip is exercised in SharedMemoryRegionTests and at integration
 // time through OutOfProcessPluginInstance (M7 S2c+).
 
-#include "sirius/SharedMemorySpscQueue.h"
+#include "ida/SharedMemorySpscQueue.h"
 
 #include <catch2/catch_test_macros.hpp>
 

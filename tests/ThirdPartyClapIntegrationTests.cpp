@@ -3,8 +3,8 @@
 // (point it at any installed CLAP bundle — FabFilter, Surge XT, etc.).
 // Same instantiate / parameter / save / load cycle the synthetic
 // tests run, but against the real plug-in.
-#include "sirius/ClapBundleLoader.h"
-#include "sirius/OutOfProcessPluginInstance.h"
+#include "ida/ClapBundleLoader.h"
+#include "ida/OutOfProcessPluginInstance.h"
 
 #include <catch2/catch_test_macros.hpp>
 

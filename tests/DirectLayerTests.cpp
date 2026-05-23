@@ -5,8 +5,8 @@
 // AudioCallback wiring lands in Session 3.
 //
 // Per V7 alignment plan M4 §"Sessions 1-3" (line 355).
-#include "sirius/Channel.h"
-#include "sirius/DirectLayer.h"
+#include "ida/Channel.h"
+#include "ida/DirectLayer.h"
 
 #include <catch2/catch_test_macros.hpp>
 

@@ -3,16 +3,16 @@
 // down that the selector enumerates every Constituent in the tree with the
 // right indent, kind, and flags — and that role-fillable phrases (8.4) and
 // effect chains (7.7) show up where the performer will look for them.
-#include "sirius/PreparationViewState.h"
+#include "ida/PreparationViewState.h"
 
-#include "sirius/Constituent.h"
-#include "sirius/EffectChain.h"
-#include "sirius/Phrase.h"
-#include "sirius/PluginDescriptor.h"
-#include "sirius/Position.h"
-#include "sirius/Rational.h"
-#include "sirius/TapeId.h"
-#include "sirius/TapeReference.h"
+#include "ida/Constituent.h"
+#include "ida/EffectChain.h"
+#include "ida/Phrase.h"
+#include "ida/PluginDescriptor.h"
+#include "ida/Position.h"
+#include "ida/Rational.h"
+#include "ida/TapeId.h"
+#include "ida/TapeReference.h"
 
 #include <catch2/catch_test_macros.hpp>
 

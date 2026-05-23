@@ -51,9 +51,9 @@ Create `core/include/ida/MixerGraphState.h`:
 ```cpp
 #pragma once
 
-#include "sirius/EffectChain.h"
-#include "sirius/SignalType.h"
-#include "sirius/TapeMode.h"
+#include "ida/EffectChain.h"
+#include "ida/SignalType.h"
+#include "ida/TapeMode.h"
 
 #include <cstdint>
 #include <string>
@@ -209,7 +209,7 @@ struct OutputMixerGraphState
 Create `tests/MixerGraphStateTests.cpp`:
 
 ```cpp
-#include "sirius/MixerGraphState.h"
+#include "ida/MixerGraphState.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -318,7 +318,7 @@ git commit -m "feat: core MixerGraphState snapshot type + equality"
 
 - [ ] **Step 1: Write the failing export test**
 
-Add to `tests/InputMixerTests.cpp` (include `"sirius/MixerGraphState.h"` and `"sirius/ChannelStrip.h"` at the top if not already present):
+Add to `tests/InputMixerTests.cpp` (include `"ida/MixerGraphState.h"` and `"ida/ChannelStrip.h"` at the top if not already present):
 
 ```cpp
 TEST_CASE ("InputMixer exportGraphState reflects buses, routing, sends, inserts", "[input-mixer][persistence]")
@@ -376,7 +376,7 @@ Expected: FAIL to compile — `setBusEffectChain` and `exportGraphState` are not
 
 - [ ] **Step 3: Declare the new members**
 
-In `engine/include/ida/InputMixer.h`, add `#include "sirius/MixerGraphState.h"` to the include block, and in the public section (after `setBusSend`, near line 67):
+In `engine/include/ida/InputMixer.h`, add `#include "ida/MixerGraphState.h"` to the include block, and in the public section (after `setBusSend`, near line 67):
 
 ```cpp
     /// Message-thread setter — copies the chain into the named bus (parity
@@ -396,7 +396,7 @@ In `engine/include/ida/InputMixer.h`, add `#include "sirius/MixerGraphState.h"` 
     void importGraphState (const InputMixerGraphState&);
 ```
 
-Add the includes `#include "sirius/EffectChain.h"` and `#include "sirius/ChannelStrip.h"` to `InputMixer.h` if not transitively present (Bus.h already pulls EffectChain.h; ChannelStrip.h is needed for the strip down-cast in the .cpp — include it there instead to keep the header light). Add a private helper declaration in the private section (near `classifyMainOut`, line 179):
+Add the includes `#include "ida/EffectChain.h"` and `#include "ida/ChannelStrip.h"` to `InputMixer.h` if not transitively present (Bus.h already pulls EffectChain.h; ChannelStrip.h is needed for the strip down-cast in the .cpp — include it there instead to keep the header light). Add a private helper declaration in the private section (near `classifyMainOut`, line 179):
 
 ```cpp
     MixerMainOut mainOutSnapshot (MixerNodeId node) const noexcept;
@@ -406,7 +406,7 @@ Add the includes `#include "sirius/EffectChain.h"` and `#include "sirius/Channel
 
 - [ ] **Step 4: Implement `setBusEffectChain` + export in the .cpp**
 
-In `engine/src/InputMixer.cpp`, add `#include "sirius/ChannelStrip.h"` and `#include "sirius/MixerGraphState.h"` near the existing includes. Implement (place beside the existing bus/graph methods):
+In `engine/src/InputMixer.cpp`, add `#include "ida/ChannelStrip.h"` and `#include "ida/MixerGraphState.h"` near the existing includes. Implement (place beside the existing bus/graph methods):
 
 ```cpp
 void InputMixer::setBusEffectChain (BusId id, EffectChain chain)
@@ -726,7 +726,7 @@ git commit -m "feat: InputMixer importGraphState — engine round-trip"
 
 - [ ] **Step 1: Write the failing export/import test**
 
-Add to `tests/OutputMixerTests.cpp` (include `"sirius/MixerGraphState.h"`):
+Add to `tests/OutputMixerTests.cpp` (include `"ida/MixerGraphState.h"`):
 
 ```cpp
 TEST_CASE ("OutputMixer export/import round-trips buses, sends, subgroups, inserts", "[output-mixer][persistence]")
@@ -773,7 +773,7 @@ Expected: FAIL to compile — `exportGraphState` / `importGraphState` not member
 
 - [ ] **Step 3: Declare + implement**
 
-In `engine/include/ida/OutputMixer.h` add `#include "sirius/MixerGraphState.h"` and, in the public section:
+In `engine/include/ida/OutputMixer.h` add `#include "ida/MixerGraphState.h"` and, in the public section:
 
 ```cpp
     /// Message-thread snapshot of the routing graph for persistence (Phase 5).
@@ -786,7 +786,7 @@ In `engine/include/ida/OutputMixer.h` add `#include "sirius/MixerGraphState.h"` 
     void importGraphState (const OutputMixerGraphState&);
 ```
 
-In `engine/src/OutputMixer.cpp` (add `#include "sirius/MixerGraphState.h"`, `#include <algorithm>`):
+In `engine/src/OutputMixer.cpp` (add `#include "ida/MixerGraphState.h"`, `#include <algorithm>`):
 
 ```cpp
 namespace
@@ -915,7 +915,7 @@ git commit -m "feat: OutputMixer export/import graph state"
 
 - [ ] **Step 1: Write the failing serialize/deserialize tests**
 
-Add to `tests/SessionFormatTests.cpp` (include `"sirius/MixerGraphState.h"`):
+Add to `tests/SessionFormatTests.cpp` (include `"ida/MixerGraphState.h"`):
 
 ```cpp
 namespace
@@ -1000,7 +1000,7 @@ Expected: FAIL to compile — the four `serialize/deserialize*MixerGraphState` f
 
 - [ ] **Step 3: Declare the functions**
 
-In `persistence/include/ida/SessionFormat.h`, add `#include "sirius/MixerGraphState.h"` and:
+In `persistence/include/ida/SessionFormat.h`, add `#include "ida/MixerGraphState.h"` and:
 
 ```cpp
 /// Serializes one mixer's routing-graph snapshot (routing-graph Phase 5) to a
@@ -1018,7 +1018,7 @@ OutputMixerGraphState deserializeOutputMixerGraphState (const juce::String& json
 
 - [ ] **Step 4: Implement in the .cpp (reuse the existing helpers)**
 
-In `persistence/src/SessionFormat.cpp`, add `#include "sirius/MixerGraphState.h"` to the include block. Inside the existing anonymous namespace (so `fail`, `requireProperty`, `optionalProperty`, `requireInt`, `requireInt64`, `makeObject`, `objectVar`, `effectChainToVar`, `effectChainFromVar` are all in scope), add — after `effectChainFromVar` (line 603):
+In `persistence/src/SessionFormat.cpp`, add `#include "ida/MixerGraphState.h"` to the include block. Inside the existing anonymous namespace (so `fail`, `requireProperty`, `optionalProperty`, `requireInt`, `requireInt64`, `makeObject`, `objectVar`, `effectChainToVar`, `effectChainFromVar` are all in scope), add — after `effectChainFromVar` (line 603):
 
 ```cpp
     constexpr int currentMixerGraphVersion = 1;
@@ -1314,11 +1314,11 @@ git commit -m "feat: SessionFormat serialize/deserialize mixer graph state"
 Create `tests/MixerGraphPersistenceTests.cpp`:
 
 ```cpp
-#include "sirius/InputMixer.h"
-#include "sirius/OutputMixer.h"
-#include "sirius/MixerGraphState.h"
-#include "sirius/SessionFormat.h"
-#include "sirius/ChannelStrip.h"
+#include "ida/InputMixer.h"
+#include "ida/OutputMixer.h"
+#include "ida/MixerGraphState.h"
+#include "ida/SessionFormat.h"
+#include "ida/ChannelStrip.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <memory>

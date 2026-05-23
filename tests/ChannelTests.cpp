@@ -3,10 +3,10 @@
 // constructor. Strong-typed IDs follow the house pattern set by TapeId /
 // ConstituentId: explicit constexpr ctor, value() accessor, ==/!= operators,
 // no implicit conversion to or from the underlying integer.
-#include "sirius/Channel.h"
-#include "sirius/ProcessingChain.h"
-#include "sirius/SignalType.h"
-#include "sirius/TapeMode.h"
+#include "ida/Channel.h"
+#include "ida/ProcessingChain.h"
+#include "ida/SignalType.h"
+#include "ida/TapeMode.h"
 
 #include <catch2/catch_test_macros.hpp>
 

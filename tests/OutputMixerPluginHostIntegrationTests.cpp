@@ -18,11 +18,11 @@
 // makes this path the norm rather than the exception, but the SKIP keeps
 // the suite green under partial-build configurations.
 
-#include "sirius/Bus.h"
-#include "sirius/Channel.h"
-#include "sirius/EffectChain.h"
-#include "sirius/OutOfProcessEffectChainHost.h"
-#include "sirius/PluginDescriptor.h"
+#include "ida/Bus.h"
+#include "ida/Channel.h"
+#include "ida/EffectChain.h"
+#include "ida/OutOfProcessEffectChainHost.h"
+#include "ida/PluginDescriptor.h"
 
 #include <juce_core/juce_core.h>
 

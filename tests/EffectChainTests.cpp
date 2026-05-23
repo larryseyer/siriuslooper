@@ -5,12 +5,12 @@
 // These tests pin down the two claims that make the chain trustworthy: edits
 // preserve identity (the original is untouched) and ordering is meaningful
 // (effects compose in the order they were placed).
-#include "sirius/Constituent.h"
-#include "sirius/EffectChain.h"
-#include "sirius/PluginDescriptor.h"
-#include "sirius/Position.h"
-#include "sirius/Rational.h"
-#include "sirius/SessionFormat.h"
+#include "ida/Constituent.h"
+#include "ida/EffectChain.h"
+#include "ida/PluginDescriptor.h"
+#include "ida/Position.h"
+#include "ida/Rational.h"
+#include "ida/SessionFormat.h"
 
 #include <catch2/catch_test_macros.hpp>
 

@@ -1,12 +1,12 @@
 #include "DemoSession.h"
 
-#include "sirius/Arrangement.h"
-#include "sirius/InputDescriptor.h"
-#include "sirius/InputKind.h"
-#include "sirius/Phrase.h"
-#include "sirius/Position.h"
-#include "sirius/TapeId.h"
-#include "sirius/TapeReference.h"
+#include "ida/Arrangement.h"
+#include "ida/InputDescriptor.h"
+#include "ida/InputKind.h"
+#include "ida/Phrase.h"
+#include "ida/Position.h"
+#include "ida/TapeId.h"
+#include "ida/TapeReference.h"
 
 namespace sirius
 {

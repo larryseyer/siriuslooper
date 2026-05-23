@@ -24,9 +24,9 @@
 //
 // Tag: `[plugin-editor]`.
 
-#include "sirius/EffectChain.h"
-#include "sirius/OutOfProcessEffectChainHost.h"
-#include "sirius/PluginDescriptor.h"
+#include "ida/EffectChain.h"
+#include "ida/OutOfProcessEffectChainHost.h"
+#include "ida/PluginDescriptor.h"
 
 #include <juce_core/juce_core.h>
 

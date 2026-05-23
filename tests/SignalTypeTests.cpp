@@ -8,8 +8,8 @@
 //
 // signalTypeOf is constexpr, so the exhaustive mapping is also pinned at
 // compile time via static_assert.
-#include "sirius/InputKind.h"
-#include "sirius/SignalType.h"
+#include "ida/InputKind.h"
+#include "ida/SignalType.h"
 
 #include <catch2/catch_test_macros.hpp>
 

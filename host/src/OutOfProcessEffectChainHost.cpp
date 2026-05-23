@@ -1,7 +1,7 @@
-#include "sirius/OutOfProcessEffectChainHost.h"
+#include "ida/OutOfProcessEffectChainHost.h"
 
-#include "sirius/PluginInstanceId.h"
-#include "sirius/PluginIpcMessage.h"
+#include "ida/PluginInstanceId.h"
+#include "ida/PluginIpcMessage.h"
 
 #include <juce_core/juce_core.h>
 

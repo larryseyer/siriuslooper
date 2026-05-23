@@ -5,17 +5,17 @@
 // docs/superpowers/specs/2026-05-15-capture-promotion-design.md). The
 // multi-instance write-protect is verified here so the guard cannot be
 // removed silently.
-#include "sirius/Promotion.h"
+#include "ida/Promotion.h"
 
-#include "sirius/Arrangement.h"
-#include "sirius/CaptureSession.h"
-#include "sirius/Constituent.h"
-#include "sirius/Phrase.h"
-#include "sirius/Position.h"
-#include "sirius/Rational.h"
-#include "sirius/TapeId.h"
-#include "sirius/TapeReference.h"
-#include "sirius/TempoMap.h"
+#include "ida/Arrangement.h"
+#include "ida/CaptureSession.h"
+#include "ida/Constituent.h"
+#include "ida/Phrase.h"
+#include "ida/Position.h"
+#include "ida/Rational.h"
+#include "ida/TapeId.h"
+#include "ida/TapeReference.h"
+#include "ida/TempoMap.h"
 
 #include <catch2/catch_test_macros.hpp>
 

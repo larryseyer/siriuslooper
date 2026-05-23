@@ -25,11 +25,11 @@
 //
 // Tag: `[input-mixer][internal-fx][end-to-end]` per the umbrella plan.
 
-#include "sirius/EffectChain.h"
-#include "sirius/InputMixer.h"
-#include "sirius/InternalFxId.h"
-#include "sirius/OutOfProcessEffectChainHost.h"
-#include "sirius/SignalType.h"
+#include "ida/EffectChain.h"
+#include "ida/InputMixer.h"
+#include "ida/InternalFxId.h"
+#include "ida/OutOfProcessEffectChainHost.h"
+#include "ida/SignalType.h"
 
 #include <catch2/catch_test_macros.hpp>
 

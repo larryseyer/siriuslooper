@@ -5,15 +5,15 @@
 // and they preserve identity — a sequenced or layered child is the same
 // Constituent, only repositioned. RoleSlot is the one genuinely new type: a
 // role-fillable position resolved at play time (white paper Part 8.4).
-#include "sirius/Arrangement.h"
+#include "ida/Arrangement.h"
 
-#include "sirius/Constituent.h"
-#include "sirius/Phrase.h"
-#include "sirius/Position.h"
-#include "sirius/Rational.h"
-#include "sirius/RenderPipeline.h"
-#include "sirius/TapeReference.h"
-#include "sirius/TempoMap.h"
+#include "ida/Constituent.h"
+#include "ida/Phrase.h"
+#include "ida/Position.h"
+#include "ida/Rational.h"
+#include "ida/RenderPipeline.h"
+#include "ida/TapeReference.h"
+#include "ida/TempoMap.h"
 
 #include <catch2/catch_test_macros.hpp>
 

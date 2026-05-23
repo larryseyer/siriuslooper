@@ -1,9 +1,9 @@
-#include "sirius/AudioCallback.h"
+#include "ida/AudioCallback.h"
 
-#include "sirius/InputMixer.h"
-#include "sirius/Lmc.h"
-#include "sirius/NotificationBus.h"
-#include "sirius/OutputMixer.h"
+#include "ida/InputMixer.h"
+#include "ida/Lmc.h"
+#include "ida/NotificationBus.h"
+#include "ida/OutputMixer.h"
 
 #include <algorithm>
 #include <cstdio>

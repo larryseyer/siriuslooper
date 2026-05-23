@@ -1,7 +1,7 @@
 // Tests for plug-in state IPC (M8 S2). Round-trip 4 fixed bytes
 // through the synthetic CLAP's state extension via the new
 // state shm region.
-#include "sirius/OutOfProcessPluginInstance.h"
+#include "ida/OutOfProcessPluginInstance.h"
 
 #include <catch2/catch_test_macros.hpp>
 

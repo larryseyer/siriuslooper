@@ -1,6 +1,6 @@
-#include "sirius/Lmc.h"
+#include "ida/Lmc.h"
 
-#include "sirius/MonotonicClock.h"
+#include "ida/MonotonicClock.h"
 
 #include <cmath>
 #include <stdexcept>

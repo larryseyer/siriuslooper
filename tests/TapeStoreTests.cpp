@@ -3,7 +3,7 @@
 // claims that make a session safely copyable: identical content always lands
 // at the same path, files once written are not rewritten, and an absent tape
 // is a "not present" answer rather than an exception.
-#include "sirius/TapeStore.h"
+#include "ida/TapeStore.h"
 
 #include <juce_core/juce_core.h>
 

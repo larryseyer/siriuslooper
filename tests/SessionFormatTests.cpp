@@ -6,20 +6,20 @@
 // and children — without us having to compare each one by hand. Negative tests
 // pin down that corruption fails loud (white paper Part 13.3, rule 3 — never
 // silent).
-#include "sirius/Arrangement.h"
-#include "sirius/Constituent.h"
-#include "sirius/ConstituentId.h"
-#include "sirius/Meter.h"
-#include "sirius/MixerGraphState.h"
-#include "sirius/Phrase.h"
-#include "sirius/Position.h"
-#include "sirius/Promotion.h"
-#include "sirius/Rational.h"
-#include "sirius/RepetitionRules.h"
-#include "sirius/SessionFormat.h"
-#include "sirius/TapeId.h"
-#include "sirius/TapeReference.h"
-#include "sirius/TempoMap.h"
+#include "ida/Arrangement.h"
+#include "ida/Constituent.h"
+#include "ida/ConstituentId.h"
+#include "ida/Meter.h"
+#include "ida/MixerGraphState.h"
+#include "ida/Phrase.h"
+#include "ida/Position.h"
+#include "ida/Promotion.h"
+#include "ida/Rational.h"
+#include "ida/RepetitionRules.h"
+#include "ida/SessionFormat.h"
+#include "ida/TapeId.h"
+#include "ida/TapeReference.h"
+#include "ida/TempoMap.h"
 
 #include <catch2/catch_test_macros.hpp>
 

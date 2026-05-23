@@ -6,12 +6,12 @@
 // parameter events as faithfully as it carries audio, and that the recursion
 // — a Constituent whose tapeReference points at a parameter tape — is
 // representable without a single new Constituent type.
-#include "sirius/Constituent.h"
-#include "sirius/ParameterAutomation.h"
-#include "sirius/Position.h"
-#include "sirius/Rational.h"
-#include "sirius/TapeId.h"
-#include "sirius/TapeReference.h"
+#include "ida/Constituent.h"
+#include "ida/ParameterAutomation.h"
+#include "ida/Position.h"
+#include "ida/Rational.h"
+#include "ida/TapeId.h"
+#include "ida/TapeReference.h"
 
 #include <catch2/catch_test_macros.hpp>
 

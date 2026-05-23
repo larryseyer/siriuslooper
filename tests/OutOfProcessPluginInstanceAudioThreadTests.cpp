@@ -14,8 +14,8 @@
 // `[plugin-ipc][.rt-smoke]` latency case so a normal `[plugin-ipc]` run
 // exercises these by default.
 
-#include "sirius/OutOfProcessPluginInstance.h"
-#include "sirius/PluginIpcMessage.h"
+#include "ida/OutOfProcessPluginInstance.h"
+#include "ida/PluginIpcMessage.h"
 
 #include <juce_core/juce_core.h>
 

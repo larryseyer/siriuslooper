@@ -17,15 +17,15 @@
 // the M4 integration tests, mixers and DirectLayer are constructed inline; no
 // TapeWriter is attached, so InputMixer::processBuffer no-ops on the tape path
 // (verified by reading InputMixer.cpp: tapeWriter_ == nullptr early-returns).
-#include "sirius/AudioCallback.h"
-#include "sirius/DirectLayer.h"
-#include "sirius/EngineConfig.h"
-#include "sirius/InputMixer.h"
-#include "sirius/ITapeSink.h"
-#include "sirius/OutputMixer.h"
-#include "sirius/SignalType.h"
-#include "sirius/TapeId.h"
-#include "sirius/TapeMode.h"
+#include "ida/AudioCallback.h"
+#include "ida/DirectLayer.h"
+#include "ida/EngineConfig.h"
+#include "ida/InputMixer.h"
+#include "ida/ITapeSink.h"
+#include "ida/OutputMixer.h"
+#include "ida/SignalType.h"
+#include "ida/TapeId.h"
+#include "ida/TapeMode.h"
 
 #include <catch2/catch_test_macros.hpp>
 

@@ -2,7 +2,7 @@
 // single repeating loop. These encode the white paper's claim that loop
 // repetition is exact: the read position at the hundredth cycle is bit-
 // identical to the first (Part 9.3).
-#include "sirius/LoopRenderer.h"
+#include "ida/LoopRenderer.h"
 
 #include <catch2/catch_test_macros.hpp>
 

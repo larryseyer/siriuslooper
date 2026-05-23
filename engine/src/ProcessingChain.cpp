@@ -1,6 +1,6 @@
-#include "sirius/ProcessingChain.h"
+#include "ida/ProcessingChain.h"
 
-#include "sirius/ChannelStrip.h"
+#include "ida/ChannelStrip.h"
 
 #include <cassert>
 

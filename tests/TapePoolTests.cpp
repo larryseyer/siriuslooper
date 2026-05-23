@@ -1,11 +1,11 @@
 // Tests for ida::TapePool — the project's pool of tapes (tape subsystem
 // slice 1). Pins the >=1 invariant, monotonic id allocation, add/remove/rename,
 // the explicit-list ctor's validation, and the SessionFormat round-trip.
-#include "sirius/TapePool.h"
+#include "ida/TapePool.h"
 
-#include "sirius/SessionFormat.h"
-#include "sirius/TapeDescriptor.h"
-#include "sirius/TapeId.h"
+#include "ida/SessionFormat.h"
+#include "ida/TapeDescriptor.h"
+#include "ida/TapeId.h"
 
 #include <catch2/catch_test_macros.hpp>
 

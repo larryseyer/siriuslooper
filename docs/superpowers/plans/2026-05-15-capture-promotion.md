@@ -77,7 +77,7 @@ TEST_CASE ("UndoStack carries an optional CaptureRestorePoint per entry",
 Add the include at the top of the file with the other includes:
 
 ```cpp
-#include "sirius/TapeId.h"
+#include "ida/TapeId.h"
 ```
 
 - [ ] **Step 2: Run tests to verify the build fails (CaptureRestorePoint not defined)**
@@ -91,7 +91,7 @@ Expected: compile errors mentioning `CaptureRestorePoint`, `currentEntryRestoreP
 
 - [ ] **Step 3: Add `CaptureRestorePoint`, the new push overload, and the accessor to `ui/include/ida/UndoStack.h`**
 
-Add `#include "sirius/TapeId.h"` to the existing includes (sirius/Constituent.h is already there). After the existing `using RootPtr = ...` line (around line 29), add the struct:
+Add `#include "ida/TapeId.h"` to the existing includes (sirius/Constituent.h is already there). After the existing `using RootPtr = ...` line (around line 29), add the struct:
 
 ```cpp
     /// Captured-state snapshot recorded with a promotion entry so that undoing
@@ -213,16 +213,16 @@ Create `tests/PromotionTests.cpp`:
 // docs/superpowers/specs/2026-05-15-capture-promotion-design.md). The
 // multi-instance write-protect is verified here so the guard cannot be
 // removed silently.
-#include "sirius/Promotion.h"
+#include "ida/Promotion.h"
 
-#include "sirius/Arrangement.h"
-#include "sirius/CaptureSession.h"
-#include "sirius/Constituent.h"
-#include "sirius/Phrase.h"
-#include "sirius/Position.h"
-#include "sirius/Rational.h"
-#include "sirius/TapeId.h"
-#include "sirius/TempoMap.h"
+#include "ida/Arrangement.h"
+#include "ida/CaptureSession.h"
+#include "ida/Constituent.h"
+#include "ida/Phrase.h"
+#include "ida/Position.h"
+#include "ida/Rational.h"
+#include "ida/TapeId.h"
+#include "ida/TempoMap.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -290,11 +290,11 @@ TEST_CASE ("promote throws when any Constituent id appears more than once",
 ```cpp
 #pragma once
 
-#include "sirius/CaptureSession.h"
-#include "sirius/Constituent.h"
-#include "sirius/ConstituentId.h"
-#include "sirius/Rational.h"
-#include "sirius/TempoMap.h"
+#include "ida/CaptureSession.h"
+#include "ida/Constituent.h"
+#include "ida/ConstituentId.h"
+#include "ida/Rational.h"
+#include "ida/TempoMap.h"
 
 #include <functional>
 #include <optional>
@@ -353,7 +353,7 @@ PromotionResult promote (const Constituent&   root,
 - [ ] **Step 3: Create `core/src/Promotion.cpp` with the multi-instance guard only (other paths still throw)**
 
 ```cpp
-#include "sirius/Promotion.h"
+#include "ida/Promotion.h"
 
 #include <stdexcept>
 #include <unordered_set>
@@ -989,10 +989,10 @@ This is to confirm line numbers and exact wording — they may have drifted sinc
 
 - [ ] **Step 2: Update `app/MainComponent.h`**
 
-Add include near the existing `#include "sirius/UndoStack.h"` line:
+Add include near the existing `#include "ida/UndoStack.h"` line:
 
 ```cpp
-#include "sirius/Promotion.h"
+#include "ida/Promotion.h"
 ```
 
 Remove the `std::vector<CaptureRegion> capturedRegions_;` member (was around line 127). Add in its place:

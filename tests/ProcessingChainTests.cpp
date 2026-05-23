@@ -3,9 +3,9 @@
 // `AudioChain` with `ChannelStrip<SignalType::Audio>` (real gain/pan DSP)
 // per plan amendment §3; the Midi/Video/File chains remain no-op stubs
 // until M9 / M12 / M13.
-#include "sirius/ChannelStrip.h"
-#include "sirius/ProcessingChain.h"
-#include "sirius/SignalType.h"
+#include "ida/ChannelStrip.h"
+#include "ida/ProcessingChain.h"
+#include "ida/SignalType.h"
 
 #include <catch2/catch_test_macros.hpp>
 

@@ -76,8 +76,8 @@ Create `tests/PluginGuiBridgeTests.cpp`:
 //
 // Tag: [plugin-editor-xpc][unit]
 
-#include "sirius/IGuiBridge.h"
-#include "sirius/PluginGuiBridge.h"
+#include "ida/IGuiBridge.h"
+#include "ida/PluginGuiBridge.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -140,7 +140,7 @@ TEST_CASE ("PluginGuiBridge::resetForTesting clears injected instance",
 - [ ] **Step 2: Verify the test fails (compile error — symbols don't exist)**
 
 Run: `cmake --build build -j --target PluginGuiBridgeTests 2>&1 | tail -20`
-Expected: compile error on `#include "sirius/IGuiBridge.h"` (no such file).
+Expected: compile error on `#include "ida/IGuiBridge.h"` (no such file).
 
 - [ ] **Step 3: Create `host/include/ida/IGuiBridge.h`**
 
@@ -192,7 +192,7 @@ struct IGuiBridge
 ```cpp
 #pragma once
 
-#include "sirius/IGuiBridge.h"
+#include "ida/IGuiBridge.h"
 
 namespace sirius
 {
@@ -240,7 +240,7 @@ public:
 // the real XPC connection (Apple-only, via the .mm companion).
 // =============================================================================
 
-#include "sirius/PluginGuiBridge.h"
+#include "ida/PluginGuiBridge.h"
 
 #include <atomic>
 
@@ -628,7 +628,7 @@ Read the current `host/src/PluginGuiBridge.cpp` from Task 1, then replace it ent
 // children fall back to the S5 placeholder editor surface.
 // =============================================================================
 
-#include "sirius/PluginGuiBridge.h"
+#include "ida/PluginGuiBridge.h"
 
 #include <atomic>
 #include <mutex>
@@ -926,7 +926,7 @@ Identify where slots are first inserted into `instances_`.
 At the top of `configureBus` (after argument validation, before slot iteration), add:
 
 ```cpp
-#include "sirius/PluginGuiBridge.h"
+#include "ida/PluginGuiBridge.h"
 
 // ... inside configureBus:
 {

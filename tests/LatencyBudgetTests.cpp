@@ -3,7 +3,7 @@
 // the UI's honest mirror of the same number — it tracks measured frame
 // latencies and reports the fraction that landed within budget, so the system
 // can announce its own degradation rather than hiding it (Part 13.3, rule 3).
-#include "sirius/LatencyBudget.h"
+#include "ida/LatencyBudget.h"
 
 #include <catch2/catch_test_macros.hpp>
 

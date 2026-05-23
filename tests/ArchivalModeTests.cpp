@@ -4,18 +4,18 @@
 // engine-side populator/verifier that bridge the live session graph to
 // the persistence layer. JUCE-free for the core types; JUCE-using for
 // the SessionFormat round-trip and the NotificationBus verifier.
-#include "sirius/ArchivalMode.h"
-#include "sirius/Constituent.h"
-#include "sirius/EffectChain.h"
-#include "sirius/INotificationSink.h"
-#include "sirius/OutOfProcessEffectChainHost.h"
-#include "sirius/PluginDescriptor.h"
-#include "sirius/Position.h"
-#include "sirius/Rational.h"
-#include "sirius/SessionFormat.h"
-#include "sirius/SessionSnapshot.h"
-#include "sirius/Sha256.h"
-#include "sirius/VersionPinningRecord.h"
+#include "ida/ArchivalMode.h"
+#include "ida/Constituent.h"
+#include "ida/EffectChain.h"
+#include "ida/INotificationSink.h"
+#include "ida/OutOfProcessEffectChainHost.h"
+#include "ida/PluginDescriptor.h"
+#include "ida/Position.h"
+#include "ida/Rational.h"
+#include "ida/SessionFormat.h"
+#include "ida/SessionSnapshot.h"
+#include "ida/Sha256.h"
+#include "ida/VersionPinningRecord.h"
 
 #include <catch2/catch_test_macros.hpp>
 

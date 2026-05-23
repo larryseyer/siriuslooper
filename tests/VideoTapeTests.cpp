@@ -4,11 +4,11 @@
 // frame carries is correct, the per-frame duration accommodates variable-rate
 // streams, and `findFrameAt` returns the most recent frame ≤ the query time
 // (the minimal nearest-frame-on-display model, white paper Part 5.3).
-#include "sirius/VideoTape.h"
+#include "ida/VideoTape.h"
 
-#include "sirius/Position.h"
-#include "sirius/Rational.h"
-#include "sirius/TapeId.h"
+#include "ida/Position.h"
+#include "ida/Rational.h"
+#include "ida/TapeId.h"
 
 #include <catch2/catch_test_macros.hpp>
 

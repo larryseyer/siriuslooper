@@ -1,7 +1,7 @@
 // Golden-value tests for ida::TempoMap — the conceptual transformation
 // between two time domains (white paper Part 5.4). These tests pin down the
 // exact piecewise-linear mapping, including extrapolation past the breakpoints.
-#include "sirius/TempoMap.h"
+#include "ida/TempoMap.h"
 
 #include <catch2/catch_test_macros.hpp>
 

@@ -286,7 +286,7 @@ Expected: COMPILE FAILURE — `tapeCount` / `hasTape` / `addTape` / `removeTape`
 Add the includes (top of file, with the other `sirius/` includes near line 1-11):
 
 ```cpp
-#include "sirius/TapeId.h"
+#include "ida/TapeId.h"
 ```
 
 Add `kMaxTapes` beside the other caps (after line 42 `static constexpr int kMaxInputBuses = 64;`):
@@ -479,7 +479,7 @@ git commit -m "feat: InputMixer multi-tape terminal registry + per-tape routing 
 ```cpp
 #pragma once
 
-#include "sirius/TapeId.h"
+#include "ida/TapeId.h"
 
 namespace sirius
 {
@@ -511,7 +511,7 @@ public:
 Add to the top of `tests/InputMixerTests.cpp` (with the other includes):
 
 ```cpp
-#include "sirius/ITapeSink.h"
+#include "ida/ITapeSink.h"
 ```
 
 Add a recording fake + the delivery cases (free `TEST_CASE`s at end of file). The fake sums into per-tape accumulators so summing is observable:
@@ -677,7 +677,7 @@ Expected: COMPILE FAILURE — `setTapeSink` is not a member of `InputMixer`.
 Add the include (with the other `sirius/` includes):
 
 ```cpp
-#include "sirius/ITapeSink.h"
+#include "ida/ITapeSink.h"
 ```
 
 Add the setter beside the other injected collaborators (after `setNotificationBus`, ~line 106):

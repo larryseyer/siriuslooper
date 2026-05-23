@@ -1,6 +1,6 @@
-#include "sirius/TimelineView.h"
+#include "ida/TimelineView.h"
 
-#include "sirius/IdaPalette.h"
+#include "ida/IdaPalette.h"
 
 #include <algorithm>
 #include <limits>

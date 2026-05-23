@@ -1,8 +1,8 @@
-#include "sirius/SessionSnapshot.h"
+#include "ida/SessionSnapshot.h"
 
-#include "sirius/EffectChain.h"
-#include "sirius/OutOfProcessEffectChainHost.h"
-#include "sirius/VersionPinningRecord.h"
+#include "ida/EffectChain.h"
+#include "ida/OutOfProcessEffectChainHost.h"
+#include "ida/VersionPinningRecord.h"
 
 #include <array>
 #include <cstdio>

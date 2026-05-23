@@ -3,7 +3,7 @@
 // (white paper Parts 3.4, 3.6, IX). These tests encode the architecture's
 // headline claims: polymetric coexistence is exact, and there is no
 // accumulated drift at the hundredth cycle.
-#include "sirius/TimeDomain.h"
+#include "ida/TimeDomain.h"
 
 #include <catch2/catch_test_macros.hpp>
 

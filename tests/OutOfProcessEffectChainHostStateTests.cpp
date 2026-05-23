@@ -1,7 +1,7 @@
 // Tests for OutOfProcessEffectChainHost slot-keyed descriptor + state
 // accessors (M8 S2). Drive the synthetic CLAP through a single-slot
 // chain, then ask for descriptor + state bytes.
-#include "sirius/OutOfProcessEffectChainHost.h"
+#include "ida/OutOfProcessEffectChainHost.h"
 
 #include <catch2/catch_test_macros.hpp>
 

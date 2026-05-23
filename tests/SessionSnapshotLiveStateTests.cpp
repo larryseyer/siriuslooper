@@ -4,16 +4,16 @@
 // These configure a real OutOfProcessEffectChainHost against the
 // synthetic CLAP and consult its live state — they require both
 // IDA_HOST_BINARY_PATH and IDA_SYNTHETIC_CLAP_PATH.
-#include "sirius/SessionSnapshot.h"
+#include "ida/SessionSnapshot.h"
 
-#include "sirius/Constituent.h"
-#include "sirius/ConstituentId.h"
-#include "sirius/EffectChain.h"
-#include "sirius/INotificationSink.h"
-#include "sirius/OutOfProcessEffectChainHost.h"
-#include "sirius/Position.h"
-#include "sirius/Rational.h"
-#include "sirius/VersionPinningRecord.h"
+#include "ida/Constituent.h"
+#include "ida/ConstituentId.h"
+#include "ida/EffectChain.h"
+#include "ida/INotificationSink.h"
+#include "ida/OutOfProcessEffectChainHost.h"
+#include "ida/Position.h"
+#include "ida/Rational.h"
+#include "ida/VersionPinningRecord.h"
 
 #include <catch2/catch_test_macros.hpp>
 

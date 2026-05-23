@@ -278,7 +278,7 @@ TEST_CASE ("sequenceShared composes with the existing bare sequence",
 }
 ```
 
-If `tests/ArrangementTests.cpp` does not already `#include "sirius/Phrase.h"`, `#include "sirius/Constituent.h"` (for `isPlacementWrapper`), or `#include <stdexcept>`, add them.
+If `tests/ArrangementTests.cpp` does not already `#include "ida/Phrase.h"`, `#include "ida/Constituent.h"` (for `isPlacementWrapper`), or `#include <stdexcept>`, add them.
 
 - [ ] **Step 6: Run the new tests to verify they fail (sequenceShared not declared)**
 
@@ -290,7 +290,7 @@ Expected: compile error mentioning `sequenceShared`.
 
 - [ ] **Step 7: Declare `sequenceShared` in `core/include/ida/Arrangement.h`**
 
-Add `#include "sirius/Promotion.h"` is NOT what we want (avoids dependency cycles). The `IdAllocator` typedef should be referenced as a `std::function<ConstituentId()>` without pulling in promotion's header. The cleanest path: define an arrangement-local typedef with the same shape.
+Add `#include "ida/Promotion.h"` is NOT what we want (avoids dependency cycles). The `IdAllocator` typedef should be referenced as a `std::function<ConstituentId()>` without pulling in promotion's header. The cleanest path: define an arrangement-local typedef with the same shape.
 
 In the `namespace arrangement` block, immediately after the `layer` declaration, add:
 
@@ -1222,7 +1222,7 @@ Expected: build succeeds (the new fields default-initialise harmlessly); tests f
 
 - [ ] **Step 4: Update `ui/src/TimelineViewState.cpp` — wrapper-aware walk + post-pass grouping**
 
-Add `#include "sirius/Constituent.h"` is already present (transitively), and add an include for the predicate: it lives in the same header, so nothing new is needed.
+Add `#include "ida/Constituent.h"` is already present (transitively), and add an include for the predicate: it lives in the same header, so nothing new is needed.
 
 Modify the `walk` function. When a wrapper is encountered, emit a Pill *for the wrapper* whose content (`name`, `loopCount`, `primaryTape`, `memberTapes`, `phraseLoopActive`, `entranceName`, `exitName`) is derived from the wrapper's first child (the shared Phrase). Mark `hasOverlays = (wrapper.children().size() >= 2)`. Mark `isForked = (wrapper.phraseMetadata()->role == "forked-placement")` — note that this branch handles **both** `"placement"` (sharing) and `"forked-placement"` (post-fork); the predicate `isPlacementWrapper` only matches the former, so we check the role explicitly when emitting wrapper-style Pills.
 
@@ -1628,7 +1628,7 @@ TEST_CASE ("DemoSession's three verse wrappers share one Phrase ChildPtr",
 }
 ```
 
-Add `#include "sirius/Position.h"`, `#include "sirius/Rational.h"`, and `#include "sirius/Constituent.h"` (the last one provides `isPlacementWrapper`) to the includes if any are missing.
+Add `#include "ida/Position.h"`, `#include "ida/Rational.h"`, and `#include "ida/Constituent.h"` (the last one provides `isPlacementWrapper`) to the includes if any are missing.
 
 - [ ] **Step 2: Run the tests, verify they fail (demo still has the single-verse shape)**
 

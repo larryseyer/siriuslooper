@@ -5,7 +5,7 @@
 // Failure semantics matter: a malformed bundle must NOT crash the
 // scanner (which walks 100s of bundles), and a valid bundle must
 // produce descriptors equivalent to what the M7 inline loader produced.
-#include "sirius/ClapBundleLoader.h"
+#include "ida/ClapBundleLoader.h"
 
 #include <catch2/catch_test_macros.hpp>
 

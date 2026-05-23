@@ -5,12 +5,12 @@
 //
 // The signature is JUCE-free (raw float* const* + counts) because the
 // engine layer's public API is JUCE-free per engine/CMakeLists.txt.
-#include "sirius/ChannelStrip.h"
-#include "sirius/EffectChain.h"
-#include "sirius/IEffectChainHost.h"
-#include "sirius/PluginDescriptor.h"
-#include "sirius/ProcessingChain.h"
-#include "sirius/SignalType.h"
+#include "ida/ChannelStrip.h"
+#include "ida/EffectChain.h"
+#include "ida/IEffectChainHost.h"
+#include "ida/PluginDescriptor.h"
+#include "ida/ProcessingChain.h"
+#include "ida/SignalType.h"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>

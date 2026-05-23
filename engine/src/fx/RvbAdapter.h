@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sirius/IInternalFxAdapter.h"
+#include "ida/IInternalFxAdapter.h"
 
 #include <otto/effects/PlayerEffects.h>
 #include <otto/effects/PlayerIRConvolution.h>

@@ -1,6 +1,6 @@
 // Tests for ida::AudioDeviceCalibration — the device-clock-vs-LMC record
 // (white paper Part 4.3) and its two conversion directions.
-#include "sirius/AudioDeviceCalibration.h"
+#include "ida/AudioDeviceCalibration.h"
 
 #include <catch2/catch_test_macros.hpp>
 

@@ -2,7 +2,7 @@
 // truth (white paper Part VI). These tests pin down the append-only contract:
 // events go on the end in non-decreasing LMC time, existing events are never
 // touched, and a tape only accepts events that belong to it.
-#include "sirius/Tape.h"
+#include "ida/Tape.h"
 
 #include <catch2/catch_test_macros.hpp>
 
