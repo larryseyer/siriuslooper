@@ -1,3 +1,12 @@
+> **Historical archive.** This document was written when the product was named
+> "Sirius Looper". The product was renamed to **IDA — Idea Development
+> Arranger** on 2026-05-23 as part of the AutomagicArt brand structure (IDA
+> is the looping environment counterpart to OTTO). References to "Sirius
+> Looper" below reflect the contemporaneous name and are preserved as-is.
+> See `IDA_Naming_Decision.md` for the full rationale.
+
+---
+
 # Sirius Looper
 
 ### A Reference Architecture for Time-Domain Audio/Video Looping
@@ -7,7 +16,7 @@
 ---
 
 **Status:** Draft for review
-**Version:** V4
+**Version:** V6
 **License:** The Sirius Looper software is licensed under AGPLv3 with an Apple App Store distribution exception. The bundled Larry Seyer Acoustic Drum Library selection is proprietary and separately licensed. See `../LICENSE`, `LICENSE-THIRD-PARTY.md`, and `SAMPLE-LICENSE.md`. This document — the white paper — is offered for permissive public release.
 
 ---
@@ -50,15 +59,47 @@ The result is a looper that can do things existing loopers cannot — including 
 - **Part XIV:** The Ensemble
 - **Part XV:** Fidelity and Resources
 - **Part XVI:** The Performer's Instrument
-- **Part XVII:** What This Architecture Enables
+- **Part XVII:** Failure, Degradation, and Recovery
+- **Part XVIII:** What This Architecture Enables
 - **Appendix A:** Glossary
 - **Appendix B:** Decision Log
+- **Appendix C:** A Worked Example
 
 ---
 
+## Changes from V5
+
+V6 is a polish-and-diagrams pass. No architectural changes; no new substantive sections. Five Mermaid diagrams have been added at the points where the architecture is densest; one comparison table makes the looper-vs-DAW boundary visceral; export semantics are now explicit; security, hearing-impaired accessibility, and plug-in-format scope are addressed.
+
+- **Five Mermaid diagrams** added: signal path (Part VI), Constituent hierarchy (Part IX), rendering pipeline (Part III), fault-handling decision tree (Part XVII), and worked-example timeline (Appendix C). The paper goes from dense-but-rigorous to dense-but-scannable.
+- **Comparison table** added in §1.7. "Typical Looper vs Sirius Looper" on eight axes that matter to musicians (no competitor names; principle-focused).
+- **§6.11 Export as a first-class destination** added. Stems, MIDI files, and video files are first-class output destinations of the output mixer (decision 64 already implied this). DAW project-exchange formats (AAF, OMF, RPP, Logic XML) are explicitly out of scope and the architectural reason is given.
+- **§14.10 Security and privacy** added. End-to-end encryption of coordination messages, air-gapped solo as default, consent model for shared Constituents.
+- **Hearing-impaired accessibility** added to §16.10. Vibrotactile, visual-substitute, and captioning paths complete the symmetry with the visual-alternative paths.
+- **Plug-in format scope** noted in §15.6. CLAP, VST3, and AU are the target formats; AAX and platform-specific exotics are open.
+- **Capability tiers** referenced earlier (§1.6) with concrete hardware examples so readers know what each tier feels like before reaching Part XV.
+- **§6.2 two-layer routing** restructured as a small table (replacing dense prose).
+- **Glossary cross-references** added for *ASRC*, *direct layer*, *retroactive ring* on first body use, completing the set started in V4.
+- **Decision Log** gets a "Recent decisions" pointer at the top for findability, plus V6 entries.
+
+## Changes from V4
+
+V5 was a substantive revision pass. The architecture is unchanged; what's new is rigor about what the architecture *guarantees* and what happens when reality intrudes.
+
+- **Part XVII — Failure, Degradation, and Recovery** added (renumbering the previous Part XVII to Part XVIII). Defines the fault model the architecture is responsible for: resource exhaustion, device events, plug-in failure, network partition, clock instability, state corruption, power loss. The paper was previously ideal-path complete; this section makes it fault-model complete.
+- **§5.6 Realtime execution guarantees** added. The latency claims in §16.8 depend on the audio thread never blocking; this section makes the operational commitments architectural rather than implicit.
+- **§15.6 Plug-in determinism and archival fidelity** added. The archival-fidelity claim is now correctly qualified: symbolic fidelity is unconditional; re-render fidelity depends on the DSP chain. Three strategies (determinism contract, wet capture, version pinning) are defined.
+- **§1.7 Why this is still a looper** added. Answers the boundary question directly: the architecture expands outward from looping, not inward from DAW paradigms.
+- **§14.9 What this section does not yet specify** added. Honest acknowledgment that ensemble-layer specifics (consistency model, partition behavior, conflict resolution) are deferred. The constraints are committed; the specifics are not.
+- **A note on the term "Constituent"** added at the head of Part IX. The term is borrowed from grammar for exactly the right reason; the friction of learning it is paid once.
+- **Mathematical wording tightened** in several places. "Exact" and "bit-identical" claims now carry the implied qualifications they always required.
+- **Appendix C — A Worked Example** added. End-to-end narrative walkthrough of a single phrase from capture to archive.
+- **Decision Log** extended with V5 entries.
+- **Open Questions** updated to reflect V5 closures and remaining gaps.
+
 ## Changes from V3
 
-V4 is a polish-and-completeness pass over V3. No architectural revisions; the framework is unchanged.
+V4 was a polish-and-completeness pass over V3. No architectural revisions; the framework was unchanged.
 
 - **Numbering corrected** throughout Parts IX–XVII (V3 had stale subsection numbers from earlier drafts).
 - **MIDI 2.0 / UMP** treatment added in Part VI — the tape format and Constituent model are stated to be MIDI 2.0-native, with per-note expression as first-class automatable parameters.
@@ -66,9 +107,8 @@ V4 is a polish-and-completeness pass over V3. No architectural revisions; the fr
 - **Validation Strategy** added as Part XV, §15.5 — explicit measurement protocols for the paper's exactness claims.
 - **Glossary cross-references** added on first use of *Constituent*, *membrane*, *LMC*, *ASRC*.
 - **Decision Log** extended with V4 entries.
-- **Open Questions** in §17.3 expanded to reflect the gaps V4 explicitly acknowledges.
 
-A companion *Implementation Notes* document — pseudocode, benchmarks, JUCE 8 mapping, and worked examples — is referenced where appropriate but is deliberately not included here. The white paper remains pure architecture.
+A companion *Implementation Notes* document — pseudocode, benchmarks, JUCE 8 mapping, and worked examples beyond Appendix C — is referenced where appropriate but is deliberately not included here. The white paper remains pure architecture.
 
 ---
 
@@ -117,6 +157,37 @@ What remains out of scope:
 Everything else — capture, conditioning, looping, arrangement, mixing — is the looper's responsibility, because the artist's creative act spans the entire signal path and the architecture should not introduce seams the user has to live in.
 
 The single most important nuance: **arrangement is creation, not processing.** The order in which phrases play, the sections they form, the songs they compose into, the transitions between them — these are part of the musical idea, not separate from it. The looper is responsible for arrangement at every level of the *Constituent* hierarchy (see Glossary).
+
+The architecture is built to scale. **Capability tiers** (Part XV) let the system size itself once at startup against the hardware actually present, ranging from *Lavish* (Mac Studio class — unlimited effects, video, ensemble) through *Comfortable* (M-series laptop — typical home-studio loadout) and *Tight* (last-decade desktops, modern tablets — audio plus modest effects) down to *Survival* (2018-era iPad — rock-solid audio, no video, no ensemble). The rules across all tiers are the same; what changes is the budget. The performer never thinks about which tier they are on. The system does.
+
+### 1.7 Why this is still a looper.
+
+The principles above accrete scope: input mixer, output mixer, arrangement engine, archival system, video pipeline, MIDI 2.0 substrate, ensemble networking. A skeptical reader might reasonably ask whether this is still a looper at all, or merely a DAW reinvented from first principles.
+
+The answer is precise:
+
+- **Looping remains the primitive act.** Capture, repeat, vary, arrange. These are the central musical operations. Everything else exists to serve them.
+- **Repetition is the central musical operation.** The Constituent hierarchy exists so that repetition can scale from a one-bar loop to a complete set without changing structure. The five-axis repetition rules (Part XII) are not a feature of the looper; they *are* the looper.
+- **Arrangement emerges from repeated material.** The set list is the outermost Constituent because a performance is the largest scale at which loops cohere into meaning. Arrangement is not appended to looping; it is what looping becomes at scale.
+- **The system expands outward from looping rather than inward from DAW paradigms.** A DAW is a recording-and-arrangement system to which looping has been added as a feature. This is a looping system that took looping seriously and grew the rest of the production environment as its consequence. The architectural shape is different, and a reader who treats the two as variants of the same thing will misunderstand both.
+- **The user's central act is unchanged.** Capture an idea, hear it repeat, vary it, combine it. Every architectural commitment exists to make that central act fast, fluid, and trustable.
+
+What a DAW does that this architecture does not: stitching unrelated takes into a fixed timeline, surgical waveform editing, mastering, project management for hire-out engineers. Those are real activities. They are not loops. The architecture does not pretend to address them.
+
+The boundary is most legible in comparison. On the axes that matter to a performer:
+
+| Axis | Typical Looper | Sirius Looper |
+| --- | --- | --- |
+| Pre-declaration of loop length | Required before recording starts | Not required; tape is always running |
+| Punishment for imprecise timing | In-points and out-points commit at the footswitch press | Boundaries refined retroactively from the tape |
+| Polymetric / polytemporal coexistence | Single shared grid; loops must agree on tempo and meter | Each Constituent in its own conceptual time domain |
+| Micro-timing fidelity | Quantized or smoothed by the recording grid | Preserved exactly; conceptual time has no quantization grid |
+| Live monitoring latency | One audio-buffer round trip minimum | Sub-millisecond via direct layer, independent of tape |
+| Arrangement | Outside the looper's scope, handled by a host DAW | First-class; the set list is a Constituent |
+| Archival recoverability | Wet rendering only; original takes lost on overdub | Dry tape and parameter tape preserved; symbolic fidelity is unconditional |
+| Failure handling | Glitch on plug-in crash; corruption on power loss | Audio never glitches; tape integrity sacred across power loss |
+
+Each row is the consequence of one or more of the six first principles. The architecture is not a longer list of features; it is a different shape.
 
 ---
 
@@ -180,7 +251,7 @@ Three categories of problem dissolve once conceptual time is accepted as the eng
 
 **The polymetric reconciliation problem.** A 4/4 loop and a 7/8 loop in the same phrase cannot share a sample-level grid without one of them being approximated. *In conceptual time, they don't need to.* Each lives in its own conceptual time domain. They meet only at phrase boundaries, conceptually, and the rendering at the membrane resolves both to absolute time independently.
 
-**The accumulated-rounding problem.** Any system that stores time as floating-point or fixed-grid integers accumulates error over thousands of operations. A loop in its hundredth cycle drifts from a loop in its first cycle. *In conceptual time, there is nothing to round.* The conceptual position of "beat 3 of loop X, cycle 100" is identical to "beat 3 of loop X, cycle 1" — same position, same definition, different rendering moment.
+**The accumulated-rounding problem.** Any system that stores time as floating-point or fixed-grid integers accumulates error over thousands of operations. A loop in its hundredth cycle drifts from a loop in its first cycle. *Within the engine's conceptual time, there is nothing to round.* The conceptual position of "beat 3 of loop X, cycle 100" is identical to "beat 3 of loop X, cycle 1" — same position, same definition, different rendering moment. Rounding does happen — but only once per render, at the membrane, where it is bounded by the device's clock precision rather than accumulated across cycles.
 
 ### 3.4 The hierarchy of time domains
 
@@ -211,7 +282,26 @@ When a sample must be produced for the audio interface at the next callback, the
 4. Apply device calibration to convert LMC time to device sample index
 5. Render the sample
 
-This pipeline is executed only at the membrane, only when needed, and only with the precision the membrane requires. Above this layer, the engine knows nothing of samples, frames, or absolute time.
+```mermaid
+flowchart LR
+    A["Conceptual position<br/><i>beat 3 of phrase X, cycle 100</i>"]
+    B["Hierarchical unroll<br/><i>session → song → section<br/>→ phrase → loop</i>"]
+    C["Tempo-map application<br/><i>per level</i>"]
+    D["LMC absolute time"]
+    E["Device calibration<br/><i>per device</i>"]
+    F["Sample index<br/>or frame index"]
+
+    A --> B --> C --> D --> E --> F
+
+    style A fill:#e8f5e9,stroke:#2e7d32
+    style D fill:#fff3e0,stroke:#e65100
+    style F fill:#ffebee,stroke:#b71c1c
+
+    classDef membrane stroke-dasharray: 5 5
+    class D,E,F membrane
+```
+
+The dashed boundary marks the membrane. Everything to its left is symbolic and resolution-independent; everything to its right is numerical and device-specific. This pipeline is executed only at the membrane, only when needed, and only with the precision the membrane requires. Above this layer, the engine knows nothing of samples, frames, or absolute time.
 
 ### 3.7 Editing is symbolic
 
@@ -291,7 +381,7 @@ This is the fundamental architectural inversion of this looper. Most loopers cou
 
 ### 5.2 The signal path: input mixer → tape → output mixer, with direct layer
 
-The engine's architecture is a three-stage signal path with a parallel bypass. At each end is a **mixer** — a software object that handles channel topology, signal conditioning, and the crossing between physical and conceptual time. In the middle is the **tape**, the always-running source of truth. Bypassing the tape entirely is the **direct layer**, a parallel signal path used for sub-millisecond live monitoring and reinforcement. The direct layer is detailed in Part VII.
+The engine's architecture is a three-stage signal path with a parallel bypass. At each end is a **mixer** — a software object that handles channel topology, signal conditioning, and the crossing between physical and conceptual time. In the middle is the **tape**, the always-running source of truth. Bypassing the tape entirely is the *direct layer* (see Glossary), a parallel signal path used for sub-millisecond live monitoring and reinforcement. The direct layer is detailed in Part VII.
 
 ```
                        ┌──────── DIRECT LAYER ────────┐
@@ -313,7 +403,7 @@ Between these three stages, the engine operates entirely in conceptual time. Num
 
 ### 5.3 Continuous async sample-rate conversion at the mixers
 
-The mixers are where conceptual time meets the physical reality of an audio interface running at "48 kHz" that is actually running at some slightly different rate. Bridging this is the job of **continuous async sample-rate conversion (ASRC)** at each mixer's membrane.
+The mixers are where conceptual time meets the physical reality of an audio interface running at "48 kHz" that is actually running at some slightly different rate. Bridging this is the job of **continuous async sample-rate conversion** (*ASRC*; see Glossary) at each mixer's membrane.
 
 The ASRC's quality determines the looper's audible fidelity. Cheap ASRC produces audible chirping artifacts on sustained content; transparent ASRC (libsoxr's VHQ preset is the industry reference) is computationally expensive but inaudible. Budget approximately 3–5% of one CPU core per channel for VHQ-quality continuous resampling.
 
@@ -347,6 +437,20 @@ The rendering pipeline aims at this future time, not the present.
 
 Device latencies are typically reliable on CoreAudio and ASIO, less reliable on WASAPI, and effectively absent on USB Class-Compliant on some platforms. To handle this generally, the system performs a **one-time loopback calibration per device**: output a known click, capture it back, measure the round-trip in samples, store the result. Subsequent sessions on the same device read the stored calibration.
 
+### 5.6 Realtime execution guarantees
+
+The architecture makes claims about latency budgets (see §16.8) that are achievable only if the engine never blocks the audio thread. These are the operational commitments that make the latency claims real. They are architectural, not implementation details.
+
+- **The audio thread runs unbounded-latency-free.** No operation on the audio thread may have unbounded execution time. Memory allocation, lock acquisition, file I/O, synchronous device I/O, blocking on plug-in code, and any operation whose worst-case runtime cannot be bounded statically are forbidden. Parameter changes arrive via lock-free message queues.
+- **Constituent graph mutation is non-blocking from the audio thread's perspective.** Mutations happen on a non-realtime thread; the audio thread reads the graph through an atomically-swapped snapshot pointer. The audio thread never sees a partially-mutated graph and never blocks on a mutation in progress.
+- **Tape append is wait-free.** Tape events are written through a single-producer single-consumer queue from the audio thread to a non-realtime writer thread. The audio thread's contribution to a tape write is a fixed, bounded operation.
+- **ASRC operates on a bounded ring.** The ASRC's working memory is fixed at session startup based on the capability tier. The audio thread never allocates inside the ASRC.
+- **Plug-ins run in their own isolation.** A plug-in's misbehavior — a crash, a hang, an unbounded internal loop — cannot block the host audio thread. A watchdog timer bounds plug-in execution time per buffer; on timeout, the plug-in is bypassed and the user is informed.
+- **The direct layer is audio-thread-exclusive and stateless.** Direct routing is a pure function of input buffers. No allocation, no locks, no graph traversal.
+- **The graph is shallow at audio-thread depth.** The Constituent hierarchy can be deep (set → song → section → phrase → loop → cycle), but the audio thread sees a flattened, pre-computed schedule of active tape reads for the current buffer. Tree traversal happens on the non-realtime thread.
+
+Implementations that violate any of the above violate the architecture, regardless of how clever the workaround. The audio-thread budget is the architecture's hardest constraint and the source of the rest of the latency story.
+
 ---
 
 # Part VI — The Signal Path: Input Mixer, Tape, Output Mixer
@@ -354,6 +458,54 @@ Device latencies are typically reliable on CoreAudio and ASIO, less reliable on 
 Part V introduced the three-stage signal path. This part is its detailed treatment.
 
 The architecture has a deliberate symmetry: a full creative mixer on each side of the tape, with the tape as the always-running pivot between them. This symmetry matters. It means the looper is not a "recorder with playback" — it is **a production environment in which capture and playback are equally first-class operations, each with its own complete mixer.**
+
+```mermaid
+flowchart LR
+    subgraph SRC["Sources"]
+        AI["🎙️ Audio in"]
+        MI["🎹 MIDI in"]
+        VI["📹 Video in"]
+        FI["📁 File in"]
+    end
+
+    subgraph IM["Input Mixer<br/><i>full creative mixer</i>"]
+        ICH["Channels<br/>per modality<br/>per source"]
+    end
+
+    TAPE[("📼 Tape<br/><i>append-only<br/>always running<br/>source of truth</i>")]
+
+    subgraph OM["Output Mixer<br/><i>full creative mixer</i>"]
+        OCH["Channels<br/>per Constituent<br/>per destination"]
+    end
+
+    subgraph DST["Destinations"]
+        AO["🔊 Audio out"]
+        MO["🎹 MIDI out"]
+        VO["📺 Video out"]
+        FO["💾 File out"]
+    end
+
+    AI --> ICH
+    MI --> ICH
+    VI --> ICH
+    FI --> ICH
+
+    ICH -->|capture| TAPE
+    TAPE -->|render via<br/>Constituent hierarchy| OCH
+
+    OCH --> AO
+    OCH --> MO
+    OCH --> VO
+    OCH --> FO
+
+    ICH -.->|Direct Layer<br/><i>bypasses tape<br/>sub-ms monitoring</i>| OCH
+
+    style TAPE fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    style IM fill:#e3f2fd,stroke:#1565c0
+    style OM fill:#e3f2fd,stroke:#1565c0
+```
+
+The dashed arrow is the direct layer (Part VII): a parallel path that bypasses the tape entirely, carrying signal but not time-anchored data. Solid arrows are the canonical signal path. Each modality is first-class in both mixers; the channel processing inside each strip is appropriate to its modality.
 
 ## 6.1 The mixers are modality-agnostic
 
@@ -383,25 +535,16 @@ This architecture eliminates several seams that plague traditional production en
 
 The input mixer makes routing decisions at two distinct layers, each meaningful in its own right.
 
-**The input layer** governs what each physical or file source does at the membrane, before any channel processing. Input-layer decisions are about the *source itself*:
+| | **Input layer** | **Channel layer** |
+| --- | --- | --- |
+| **About** | The source itself | The processed signal |
+| **When configured** | Once at setup; rarely revisited | During musical work; changes with the music |
+| **Decisions** | Raw direct monitor on/off · Source enable · Source-level defaults · File transport (start, rate, loop region) | Channel processing chain · Tape mode (commit-to-tape / non-destructive / no-tape) · Processed direct routing · Destinations (tapes, buses, outputs) |
+| **Captured in snapshots?** | No — these are session topology | Yes — these are mix state |
 
-- **Raw direct monitor.** Whether this source feeds the direct layer (Part VII) with true sub-millisecond zero-processing bypass.
-- **Source enable.** Whether this source is active in the session at all. Disabling a source disables all channels fed by it, without tearing down the channel configuration.
-- **Source-level defaults.** Default tape mode and routing that channels fed by this source inherit unless overridden.
-- **File transport** (for file inputs). Start position, playback rate, loop region for the file's playback into the system.
+The two layers compose cleanly. One input may feed multiple channels with different musical roles: a guitar input might feed a "Clean Guitar" channel and a "Distorted Guitar" channel, each with its own processing and tape routing, while sharing the same input-layer raw-direct setting. Multiple inputs may sum into one channel. **The user works almost entirely at the channel layer; the input layer is configured once and forgotten.**
 
-Input-layer settings are configured once, typically at session setup, and rarely revisited. They are about the physical reality of the source.
-
-**The channel layer** governs what happens to the signal after it enters a channel strip. Channel-layer decisions are about the *processed signal*:
-
-- **Channel processing chain.** EQ, dynamics, effects, and processing applied to this channel.
-- **Tape mode.** Whether this channel writes to tape in *commit-to-tape* mode (processing baked into the tape) or *non-destructive* mode (dry signal + parameter tape captured separately) or *no-tape* (the channel feeds outputs and the direct layer but nothing is captured).
-- **Processed direct routing.** Whether this channel feeds the direct layer with its post-processing signal (in addition to or instead of the raw-direct path the input layer can provide).
-- **Destinations.** Which tapes, buses, and outputs this channel feeds.
-
-Channel-layer settings are where the user works musically. They change with the music — adjusted in the moment, captured in snapshots, recalled by scene.
-
-**The two layers compose cleanly:** one input may feed multiple channels with different musical roles. A guitar input might feed a "Clean Guitar" channel and a "Distorted Guitar" channel, each with its own processing and tape routing, while sharing the same input-layer raw-direct setting. Multiple inputs may sum into one channel. The user works almost entirely at the channel layer; the input layer is configured once and forgotten.
+A note on the tape mode column: *commit-to-tape* bakes the channel's processing into the tape (processing is permanent); *non-destructive* writes the dry signal to one tape and the channel's processing parameters to a parallel parameter tape (processing is recoverable); *no-tape* feeds outputs and the direct layer but captures nothing. The choice is per-channel and is itself part of the artistic act — see §6.3.
 
 ## 6.3 Commit-to-tape vs. non-destructive: the per-channel choice
 
@@ -527,6 +670,22 @@ The reasons for the revision, stated explicitly:
 3. **Eliminating the seam improves the user experience.** A looper that hands off to a separate mixer or DAW forces the user to think about two different conceptual models with two different time domains and two different storage models. Owning the whole path keeps the model coherent.
 4. **The performer's intent is preserved better.** Mix decisions made at capture time, refined during preparation, recalled during performance — all in the same system, with the same conceptual time, the same trust principles, the same gestures.
 
+## 6.11 Export as a first-class destination
+
+Render is just playback aimed at a file (decision 64). Stem export, full-mix export, MIDI file export, and video export are therefore first-class operations of the output mixer — not separate subsystems, not a "render engine," not an online-vs-offline mode. Routing a channel or bus to a file destination is the same gesture as routing it to a physical output. The same mixer, the same chain, the same processing.
+
+The supported export targets are deliberately the simplest ones that move work between contexts:
+
+- **Audio** renders to WAV, FLAC, or AIFF. Bit depth and sample rate are session settings; the membrane's ASRC handles the conversion if the export rate differs from the engine's canonical rate.
+- **MIDI** renders to standard MIDI files (Type 0 or Type 1). MIDI 2.0 content is downcast to MIDI 1.0 where Type 0/1 require it; full-fidelity UMP export is available as a separate target for systems that accept it.
+- **Video** renders to a chosen intra-frame codec (ProRes Proxy, motion JPEG, or similar). Frame rate matches the source unless the user explicitly converts.
+
+What the architecture deliberately does **not** support: DAW project-exchange formats — AAF, OMF, RPP, Logic XML, Cubase Project, Ableton Live Set, and their successors. These formats encode the assumptions this architecture rejects: a fixed sample-clock timeline, PPQ-quantized MIDI, a linear sequence of clips, no role-fillable phrase substitution, no polymetric coexistence. Translating a Constituent graph into AAF would either lose the architectural information (the receiving DAW gets flattened stems on a fixed timeline, with no phrase identity, no role metadata, no grammatical relationships) or produce something the receiving DAW cannot actually use. Neither outcome is better than honest stems.
+
+The performer's musical content is portable via stems and MIDI files; the architectural content is preserved in the session file itself. **Two complementary exchange formats: stems for everyone, the session file for any Sirius-Looper-compatible tool.** DAW project exchange is treated as out of scope in the same spirit as cross-application audio routing (§1.6) — the operating system and the receiving application can handle the translation if and when they care to.
+
+This is a deliberate refusal to chase the moving target of DAW interoperability. Project-exchange formats change with every major DAW release; chasing them would consume implementation effort that belongs elsewhere, and would mislead users about how lossless the exchange actually is. Rendered stems are lossless in the only sense that matters — they sound exactly like the production — and they play in every tool ever written. That is the right export contract.
+
 ---
 
 # Part VII — The Direct Layer
@@ -649,7 +808,7 @@ This is the architectural foundation that makes the entire system tractable. It 
 
 Because tapes are always running, the user never has to "start recording before the moment they want to capture." The moment is already on the tape. The user marks a boundary on a tape that has been running for some time, and pulls the in-point backward to grab the pickup note that preceded the mark.
 
-The **retroactive ring** is the in-memory portion of recent tape data, held against the possibility that the user will reach backward in time to capture something. Its depth depends on the capability tier (Part XV): seconds for tight resource budgets, minutes for comfortable ones, hours for lavish.
+The *retroactive ring* (see Glossary) is the in-memory portion of recent tape data, held against the possibility that the user will reach backward in time to capture something. Its depth depends on the capability tier (Part XV): seconds for tight resource budgets, minutes for comfortable ones, hours for lavish.
 
 > **The looper records the past. Because every event has been timestamped on the way in, the "record button" is a time bookmark, not a capture trigger.**
 
@@ -672,6 +831,8 @@ Tape data lives on the machine that captured it, always. The network carries onl
 # Part IX — The Constituent Hierarchy
 
 If the tape is the source of truth, the Constituent is the thing the system actually plays.
+
+**A note on the term.** "Constituent" is borrowed from grammar, where it denotes a syntactically coherent unit at any level of nesting — a morpheme, a phrase, a clause, a sentence, a paragraph, a discourse are all constituents at different scales, sharing recursive grammatical relationships. The musical analogue is exact: a tape slice, a loop, a phrase, a section, a song, and a set list are musically coherent units at different scales, sharing the same recursive structural relationships. The term is unusual in audio software, and the choice was deliberate. No more familiar synonym — *segment*, *clip*, *element*, *unit*, *block* — carries the recursive-containment-at-any-scale meaning the architecture requires, and the alternatives are already overloaded by DAW conventions that don't apply here. The friction of learning the term is paid once; the architectural payoff is paid forever.
 
 ### 9.1 The unifying abstraction
 
@@ -698,23 +859,50 @@ The Constituent does not store audio data. It contains *references* — either t
 
 The conventional musical hierarchy maps onto the Constituent system as:
 
-```
-Tape (immutable source of truth)
-   ↓
-Loop or non-looped tape slice (mechanism layer)
-   ↓
-Phrase (musical utterance; the unit of musical thought)
-   ↓
-Section (structural grouping of phrases)
-   ↓
-Song (narrative composed of sections)
-   ↓
-Set (sequence of songs)
-   ↓
-Performance arrangement (the outermost Constituent)
+```mermaid
+flowchart TD
+    SET["<b>Set list</b><br/><i>outermost Constituent</i>"]
+    SONG1["<b>Song</b><br/><i>narrative</i>"]
+    SONG2["<b>Song</b>"]
+    SEC1["<b>Section</b><br/><i>e.g. verse</i>"]
+    SEC2["<b>Section</b><br/><i>e.g. chorus</i>"]
+    SEC3["<b>Section</b>"]
+    P1["<b>Phrase</b><br/><i>role=verse<br/>unit of thought</i>"]
+    P2["<b>Phrase</b><br/><i>role=chorus</i>"]
+    P3["<b>Phrase</b><br/><i>role=fill</i>"]
+    BED["<b>Phrase</b><br/><i>bed, lives at<br/>section level</i>"]
+    L1["<b>Loop</b><br/><i>mechanism</i>"]
+    L2["<b>Loop</b>"]
+    L3["<b>Loop</b>"]
+    SLICE["<b>Tape slice</b><br/><i>non-looped<br/>first-class</i>"]
+    T1[("<b>Tape</b><br/><i>append-only<br/>source of truth</i>")]
+    T2[("<b>Tape</b>")]
+
+    SET --> SONG1
+    SET --> SONG2
+    SONG1 --> SEC1
+    SONG1 --> SEC2
+    SONG2 --> SEC3
+    SEC1 --> P1
+    SEC1 --> BED
+    SEC2 --> P2
+    SEC3 --> P3
+    P1 --> L1
+    P2 --> L2
+    P3 --> SLICE
+    BED --> L3
+    L1 --> T1
+    L2 --> T1
+    L3 --> T2
+    SLICE --> T2
+
+    style SET fill:#e1f5fe,stroke:#01579b
+    style T1 fill:#fff3e0,stroke:#e65100
+    style T2 fill:#fff3e0,stroke:#e65100
+    style BED fill:#f3e5f5,stroke:#6a1b9a,stroke-dasharray: 3 3
 ```
 
-This is the *typical* organization. The data model does not enforce it strictly: any Constituent may contain any other Constituent as long as the time-domain relationships are coherent. A bed that persists through several phrases may live directly at the section level, alongside its phrases, not inside any of them.
+Each level operates in its own conceptual time domain (Part XI). The dashed bed-phrase illustrates that the hierarchy is *typical*, not enforced: any Constituent may live at any level as long as the time-domain relationships are coherent. A bed that persists through several phrases may live directly at the section level, alongside its phrases, not inside any of them.
 
 ### 9.3 Constituents are immutable; edits are copy-on-write
 
@@ -1102,6 +1290,33 @@ Worst-case ensemble failure — a node loses network entirely, mid-performance �
 
 > **The network is not a substrate for audio. It is a substrate for coordination. Audio is local. Time is shared. Mixing the two — sending live audio over the network and treating it as part of the production signal path — is a category error that this architecture refuses to make.**
 
+### 14.9 What this section does not yet specify
+
+Part XIV defines the broad shape of distributed ensemble play: tapes are local, coordination crosses the network, the LMC is elected, session state is CRDT-compatible, audio is never sent. Several specifics remain genuinely sketched rather than fully defined, and the architecture is honest about which is which:
+
+- **Consistency model.** Whether ensemble session state is eventually consistent or causally consistent under partition is not yet committed. The CRDT substrate supports either; the right choice depends on UX commitments yet to be made.
+- **Partition behavior.** What happens when a peer goes silent long enough that its local state has diverged significantly is not yet defined. Candidates include automatic reconciliation, surfaced conflict resolution, or explicit forking with manual merge.
+- **Causal ordering of edits.** Whether ensemble edits respect causal ordering across nodes (via vector clocks or equivalent) is not yet committed.
+- **Edit conflicts on shared Constituents.** Two users editing the same phrase simultaneously requires a specific conflict-resolution policy. The architecture supports several but does not yet choose.
+- **Authority during divergence.** What "the truth" is when peers disagree — the anchor node, the majority, the most recent edit by causal time — is not yet defined.
+- **Replication granularity.** Whether Constituents are replicated wholesale to every peer, replicated by reference with on-demand fetch, or partitioned by ownership is not yet committed.
+
+These are deferred to the implementation companion. The architecture commits to the *constraints* — audio is local, only coordination crosses the network, the substrate is CRDT-compatible — without yet committing to the *specifics* of consistency, conflict, and replication.
+
+This honesty matters. The rest of the architecture is specified precisely; ensemble is the place where the precision has not yet caught up, and the paper says so rather than papering over it.
+
+### 14.10 Security and privacy
+
+Ensemble play introduces the network. The network introduces the obligations that come with carrying anything between consenting parties:
+
+- **Coordination messages are end-to-end encrypted by default.** Peers establish a shared secret at session-join time; all subsequent coordination — LMC discipline, Constituent metadata edits, CRDT merges, presence — is encrypted in transit. No coordination payload is ever readable by infrastructure between peers.
+- **Air-gapped solo is the default.** A session not explicitly opened for ensemble does not bind any network socket. The performer must take an explicit action to make a session reachable. Discovery is opt-in; broadcasting presence on a local network is a deliberate choice, not an ambient condition.
+- **Consent governs sharing.** No Constituent traverses the network without the owner's permission. Sharing a phrase, a song, or a set list with the ensemble is an explicit gesture; revoking access is symmetric (the revoked peer's local replica is invalidated; the Constituent's owner is informed of any divergent edits that occurred during the interval).
+- **The CRDT substrate excludes audio by construction.** §14.1 already commits to this on technical grounds (network audio is not disciplinable); the privacy consequence is that the actual sound a performer makes never leaves their machine without an explicit render-and-share action.
+- **Identity is per-session by default.** Long-lived identity across sessions is opt-in. A performer joining an ad-hoc ensemble does not require an account, a login, or a persistent profile.
+
+These commitments are the trust principle (§1.5) applied to networked performance. The performer is in control of what crosses the network, who can reach them, and what survives a session ending. The system's job is to make these defaults *safe by inaction* — the performer who does nothing extra is in the most private state available.
+
 ---
 
 # Part XV — Fidelity and Resources
@@ -1152,9 +1367,38 @@ The paper makes several claims that must be verifiable. They are not articles of
 
 **Subjective micro-timing fidelity.** Blind listening tests in which musicians compare an original performance against a Constituent-rendered playback of the same performance. The success criterion: trained listeners cannot reliably distinguish between original and rendered.
 
-**Long-term archival fidelity.** A session saved on day zero, opened and re-rendered after arbitrary time has passed and on different hardware, produces bit-identical output (modulo the LMC's per-device calibration). The success criterion: the archive is a complete, self-contained description of the music, not a recipe whose result depends on what the system happens to find around it.
+**Long-term archival fidelity.** A session saved on day zero, opened and re-rendered after arbitrary time has passed and on different hardware, produces output that is bit-identical *given a deterministic DSP chain* (modulo the LMC's per-device calibration). The success criterion: the archive is a complete, self-contained description of the music, not a recipe whose result depends on what the system happens to find around it. The DSP-chain qualification is essential and is the subject of §15.6.
 
 These tests belong in the implementation companion, not in this paper. Their inclusion as success criteria is what makes the paper's claims falsifiable rather than rhetorical.
+
+### 15.6 Plug-in determinism and archival fidelity
+
+The archival-fidelity claim needs careful qualification. The session is bit-exact in its *symbolic* content: tapes are byte-identical, Constituents are structurally identical, parameter automation is preserved on a parallel parameter tape, mix snapshots are recallable. What is *rendered* from that symbolic content is bit-identical only when the DSP chain is deterministic. Modern plug-ins routinely are not.
+
+Common sources of plug-in non-determinism:
+
+- **Random-seeded modulation.** Chorus, ensemble effects, and "humanize" widgets that draw from a PRNG seeded at instantiation.
+- **Time-of-day state.** Reverb tails, delay buffers, and modulation phases initialized to system time at load.
+- **GPU-accelerated DSP.** Convolution reverbs, neural-network plug-ins, and ML-driven effects whose output depends on driver, hardware, and floating-point rounding mode.
+- **Oversampling-variable behavior.** Plug-ins whose oversampling rate adapts to system load produce different output at different rates.
+- **Version-sensitive output.** Algorithm changes between plug-in versions produce subtly (or audibly) different output for identical input and state.
+
+The architecture distinguishes two fidelity guarantees:
+
+- **Symbolic fidelity** — the saved session is a complete description of the musical content. This is **unconditional**: dry tape, parameter tape, Constituent graph, mix snapshots, and arrangement are stored exactly. Whatever happens to the DSP layer in five years, the musical content survives bit-exactly.
+- **Re-render fidelity** — the same session reopened produces the same audio output. This is **conditional** on the DSP chain being deterministic and matching its original state.
+
+Three implementation strategies satisfy re-render fidelity:
+
+1. **Determinism contract.** Plug-ins that participate in the effect chain must declare and respect determinism. A `requiresDeterminism()` flag is checked at load; non-deterministic plug-ins are bypassed or refused. The performer chooses the policy.
+2. **Wet capture.** The session stores the wet-rendered output of every non-deterministic plug-in as a parallel parameter tape. On reopen, the wet capture replaces re-rendering. Storage cost is significant; fidelity is absolute.
+3. **Version pinning with state hashing.** Plug-in version, settings, oversampling rate, and any declared state are stored as hashes. On reopen, hash mismatch warns the user before re-rendering proceeds.
+
+The default disposition: the system *always* stores the dry signal and the parameter tape — symbolic fidelity is never optional. For non-deterministic plug-ins, the user chooses among the three strategies above per session, per channel, or per plug-in instance.
+
+What is unbreakable, regardless of plug-in behavior: the dry tape, the parameter tape, the Constituent graph, the arrangement. The musical *idea* is archivally permanent. The rendered audio is permanent only insofar as the DSP that rendered it is reproducible. The architecture is honest about which is which.
+
+**Plug-in format scope.** The target plug-in formats are **CLAP, VST3, and AU** — the three open or industry-standard formats with reasonable specifications, modern threading models, and viable cross-platform support. AAX support is open (its sandboxing model and license posture make it implementation-dependent). Platform-specific formats (LV2 on Linux, AUv3 on iOS as a host vs. plug-in surface) are open and per-platform. The determinism contract, watchdog timing, and version pinning described above apply uniformly across the supported formats; the format itself is not part of the architecture, only the host's contract with the format is.
 
 ---
 
@@ -1252,14 +1496,148 @@ Eyes-free operation already establishes the discipline of not requiring vision f
 - **Screen-reader support in preparation.** The performance state is glanceable-only, but the preparation state — where editing, naming, and arrangement happen — exposes a fully accessible tree to system screen readers, with named regions, role descriptions, and keyboard navigation throughout.
 - **Large-print glanceable HUD.** The glanceable readouts (transport position, active phrase, capture state) scale to large-print sizes without losing information density. Critical readouts are designed to remain legible at peripheral-vision distance.
 - **Audible confirmation.** Every consequential action emits an optional audible tick or tone. The performer can run blind on hearing alone.
+- **Vibrotactile feedback.** Every audible cue has a tactile equivalent — a pulse, a sustained vibration, a distinct pattern — deliverable to footswitches, pads, MIDI controllers with haptic motors, and wearable haptic devices. The performer who cannot or chooses not to process audio cues can run on touch alone.
+- **Visual substitutes for audible cues.** The audible-confirmation tick has a visible counterpart: a brief HUD flash, an animated waveform mark on the active Constituent, or a color-coded glanceable indicator state-change, delivered at the same moment. The system communicates the same information through whichever channel the performer is reading.
+- **Captioning during preparation.** When the system needs to convey state through audio (a count-in, a tonal cue, a spoken prompt), a visual transcription appears in the preparation HUD. Performance-state communication remains glanceable; preparation-state communication is fully readable.
 
-None of this is paternalism; it is the trust principle applied to bodies and senses that vary. The architecture does not assume a normative performer.
+None of this is paternalism; it is the trust principle applied to bodies and senses that vary. The architecture does not assume a normative performer. The visual-alternative and audible-alternative paths are deliberately symmetric: no information reaches the performer through exactly one channel, ever.
 
 ---
 
-# Part XVII — What This Architecture Enables
+# Part XVII — Failure, Degradation, and Recovery
 
-### 17.1 Capabilities unique to this architecture
+The architecture above describes the ideal path: signals flow, tapes are recorded, Constituents are rendered, the LMC is disciplined. Reality is less cooperative. Disks fill. Devices unplug. Plug-ins crash. Networks partition. Clocks lose their reference. Power fails. A serious architecture must specify what happens then.
+
+This part defines the fault model the architecture is responsible for. The premise: degradation is a first-class architectural concern, not an implementation afterthought. Three invariants hold across all of this:
+
+- **Audio output never glitches except under unrecoverable hardware fault.** Software faults must not produce audible artifacts in the rendered signal path.
+- **Tape integrity is sacred.** No fault — software or hardware, including abrupt power loss — may corrupt tape data already on disk.
+- **The user is told the truth.** The system never silently degrades. Every degradation is announced — visibly during preparation, audibly via discreet cues during performance.
+
+### 17.1 Two categories of fault
+
+Faults divide cleanly along the audio-thread boundary established in §5.6.
+
+**Audio-thread faults** are events the audio thread itself must handle without blocking, allocating, or pausing. The audio thread's response to any fault is to keep going: substitute silence for the affected channel, route around the failure, and post a notification to the non-realtime thread. The audio thread never "handles" a fault in any expensive sense; it merely refuses to glitch.
+
+**Background faults** are events handled off the audio thread. These may produce visible degradation but must not produce audible artifacts in still-functioning channels. They include disk events, network events, plug-in lifecycle, and most state-corruption recovery.
+
+Every fault below is classified as one, the other, or both at different stages.
+
+```mermaid
+flowchart TD
+    F["⚠️ Fault detected"]
+    AT{"Audio-thread<br/>or background?"}
+
+    AT -- "audio-thread<br/><i>plug-in timeout,<br/>device unplug,<br/>buffer underrun</i>" --> A
+    AT -- "background<br/><i>disk full,<br/>network partition,<br/>state corruption,<br/>plug-in crash</i>" --> B
+
+    A["<b>Audio thread response</b><br/>• Substitute silence<br/>• Route around failure<br/>• Post notification (non-blocking)<br/>• Never allocate, lock, or wait"]
+
+    B["<b>Background response</b><br/>• May degrade visibly<br/>• Must not glitch still-functioning audio<br/>• Repair on non-realtime thread<br/>• Announce truthfully"]
+
+    INV["<b>Three invariants hold across all faults</b><br/>1️⃣ Audio output never glitches except under unrecoverable hardware fault<br/>2️⃣ Tape integrity is sacred (no corruption, even on power loss)<br/>3️⃣ The user is told the truth (no silent degradation)"]
+
+    F --> AT
+    A --> INV
+    B --> INV
+
+    style F fill:#ffebee,stroke:#b71c1c
+    style INV fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style A fill:#fff3e0,stroke:#e65100
+    style B fill:#e3f2fd,stroke:#1565c0
+```
+
+### 17.2 Resource exhaustion
+
+**Disk full.** The tape is append-only and disk-resident. When the disk fills, the system must continue recording or stop recording — but it must not crash, corrupt existing tape data, or silently truncate. The architectural response: tape rotation. The oldest tape segments referenced by no active Constituent are reclaimed first. If no such segments exist, recording stops and the performer is informed audibly. The retroactive ring continues to function as long as RAM is available.
+
+**RAM pressure.** The retroactive ring is the first to give. Under memory pressure, oldest in-RAM tape segments are paged to disk; ASRC working memory may drop to a lower-quality preset; effect chains may reduce their internal buffers. The capability tier ratchets *down* (never up) for the remainder of the session. The performer is informed at the moment of ratchet.
+
+**CPU starvation.** Under sustained CPU shortfall, non-essential processing degrades in priority order: bus effects bypass first, then local effects on inactive Constituents, then ASRC quality, then video processing. The direct layer and the active-Constituent audio rendering are protected last. The performer is informed when any degradation crosses a threshold.
+
+**GPU stall.** Video processing degrades to nearest-frame selection without motion compensation; if the GPU is unrecoverable, video rendering is suspended and the audio path is unaffected.
+
+### 17.3 Device events
+
+**Hot unplug of audio device.** The audio path tears down cleanly. Tapes fed by the unplugged device's inputs stop appending but are not corrupted. Output routing reassigns to the next-available output device (with the performer informed). Active Constituents continue to render against the new output; if no output is available, rendering continues to the tape but is not audible.
+
+**Hot plug.** A newly-attached device is registered with the system, calibrated for latency (using cached calibration if available, otherwise marked as uncalibrated), and made available for routing. It is not auto-routed; the performer must explicitly route to or from it.
+
+**Sample-rate change.** The membrane's ASRC adjusts continuously. Tape data is device-independent, so no tape rewriting is required. Mid-buffer rate changes are handled by the ASRC's slew filter.
+
+**MIDI device events.** A disconnected MIDI controller leaves its bindings in place; the controller is marked offline; on reconnect, bindings resume automatically. Per-note expression streams in flight at the moment of disconnect terminate gracefully (note-offs synthesized; per-note pitch bend slewed to zero).
+
+### 17.4 Plug-in lifecycle faults
+
+**Plug-in crash.** The plug-in's process or sandbox dies. The host substitutes a bypass node in the channel; the dry signal passes through with no processing. The tape is unaffected (parameter automation continues to be captured against the bypass node, allowing re-rendering once the plug-in is restored). The performer is informed.
+
+**Plug-in hang.** A watchdog timer bounds plug-in execution per buffer. On timeout, the plug-in is unloaded and replaced with a bypass node. Subsequent buffers process correctly; the buffer that timed out becomes a brief gap in that channel's rendered output (silence, not glitch).
+
+**Plug-in version mismatch on session load.** The session stores plug-in version hashes (see §15.6). On reopen, mismatch presents the performer with options: load with current version and accept divergence, bypass the affected channel, substitute with a chosen alternative, or refuse to load. No automatic decision; the performer chooses.
+
+**Plug-in license failure.** A plug-in that requires authorization and cannot reach its license server fails gracefully to bypass mode. The session can be edited, rearranged, and re-rendered without that plug-in; archival fidelity is degraded but the symbolic content is preserved.
+
+### 17.5 Network events (ensemble)
+
+**Peer disconnect.** The local LMC continues uninterrupted. Local tape continues to be appended. The ensemble session continues with remaining peers. The disconnected peer's last-known state is held; on reconnect, CRDT reconciliation merges any divergent edits.
+
+**Network partition.** Each partition continues independently. Recording, playback, and editing proceed on each side with the locally-elected master LMC. On reunification, the CRDT layer attempts automatic reconciliation; edits that cannot auto-merge (per §14.9's still-open conflict policy) are surfaced for performer resolution. No partition condition causes corruption; the worst case is two divergent valid sessions that must be manually combined.
+
+**Master node loss.** Re-election by Marzullo intersection (§14.3) occurs among the remaining peers. The new master continues from its current LMC; the transition is logged but produces no audible artifact (the membrane discipline is local on every node).
+
+**Coordination message loss.** The CRDT substrate is designed to tolerate lost, reordered, and duplicate messages. Resync happens automatically; no out-of-band recovery is required.
+
+### 17.6 Clock instability
+
+**Loss of GPS/PTP discipline.** The LMC discipline hierarchy (§4.2) falls to the next available source — NTP if reachable, Ableton Link if a session is active, local CPU monotonic as the final fallback. The performer is informed. Tape data continues to be timestamped against the locally-disciplined LMC.
+
+**Reference recovery.** When a higher-tier source becomes available again, the system re-disciplines. The calibration table is updated; any offset accumulated during the lower-tier interval is reconciled retroactively in the table, not by rewriting tape timestamps. Tape data is never altered after capture.
+
+**Calibration table corruption.** The calibration table is reconstructible from device round-trip measurements. On detected corruption, the system performs fresh loopback calibration for each device. The session may be unavailable for the duration of recalibration; tape data is unaffected.
+
+**LMC race conditions during ensemble reconfiguration.** The Marzullo intersection algorithm is run on a non-realtime thread; results are atomically swapped into the audio thread's reference. No audio-thread blocking, no glitch.
+
+### 17.7 State corruption
+
+**Constituent graph contradicts itself.** A phrase that references a tape segment no longer present in the tape, or a section that references a phrase that has been removed: the offending Constituent is marked **broken**, not deleted. Its slot in the parent renders as silence; the performer is informed; repair is offered (substitute, reauthor, remove). The Constituent's identity persists so that subsequent edits can fix rather than recreate.
+
+**Tempo map contradiction.** A tempo map that produces non-monotonic time at its boundaries: the offending segment is reverted to the last valid tempo map; the affected Constituent is marked for review. Rendering uses the last valid map until the performer intervenes.
+
+**Recursive timing contradiction.** A Constituent whose anchor or bounds place it outside its parent's bounds: the Constituent is marked **invalid**; rendering treats it as silence; the performer can repair without losing the Constituent's identity, metadata, or content.
+
+**Mix snapshot corruption.** A snapshot referencing parameters that no longer exist (e.g., a channel that has been removed): missing references are skipped; the snapshot still recalls everything it can. The performer is informed of the partial recall.
+
+### 17.8 Power loss and abrupt termination
+
+This is the limit case and the architectural hardest test. The premise: at any instant, the power may fail. Whatever the system has written must survive.
+
+The architecture's defense:
+
+- **Tapes are append-only and flushed continuously.** The tape format is a sequence of self-delimiting records, each with a checksum. On reopen, the tape is scanned from the last known-good checkpoint; partial trailing records are truncated. No record already on disk is ever modified, so power loss cannot corrupt past data.
+- **Session-level metadata is written via atomic file-replace.** The session manifest (the index of tapes and Constituents) is written to a temporary file, fsynced, and atomically renamed. Either the old manifest or the new manifest is present at all times; never a partial write.
+- **Constituents are immutable; edits are copy-on-write.** A power-loss during an edit means the previous version of the Constituent is intact; the in-progress new version is discarded on reopen.
+- **The retroactive ring is volatile.** Anything in the retroactive ring that has not yet been flushed to tape is lost. This is acceptable: the ring's purpose is *recent capture*, and recent capture that has not been committed is by definition not yet a Constituent.
+
+The recovery model: on next launch, the system opens the most-recent intact session manifest, scans tapes for trailing partial records (truncating as needed), and reports any tapes or Constituents that needed repair. The performer is offered a chance to review the repaired session before continuing.
+
+**Bit-exact archival across power loss is guaranteed up to the last fully-flushed tape record.** Anything captured after the last flush is lost. The flush interval is a capability-tier setting (Lavish flushes per buffer; Survival flushes per second). The performer chooses the tradeoff between capture latency and durability.
+
+### 17.9 The truthfulness principle
+
+This is the section's underlying commitment. **The system never silently degrades.**
+
+Every degradation surfaces. During preparation, degradations appear as inline notifications with a path to remediation. During performance, degradations surface through the eyes-free vocabulary (Part XVI) — a discreet audible cue, a glanceable indicator color change, a haptic pulse on the control surface — never a modal dialog, never a forced interruption, but never silence either.
+
+The performer is trusted to make informed decisions. A guitarist on stage who is told via a discreet cue that the disk is 90% full can choose to commit a tape rotation, reduce the retroactive ring depth, or simply continue and accept the eventual stop. The system's job is to ensure the performer knows; the performer's job is to decide.
+
+This is the trust principle (§1.5) applied to the fault model. A system that hides its failures has failed to trust the user. A system that announces its failures has earned the user's trust in everything else it says.
+
+---
+
+# Part XVIII — What This Architecture Enables
+
+### 18.1 Capabilities unique to this architecture
 
 The following follow directly from the architectural commitments above. None is available in any commercial looper as of this writing.
 
@@ -1278,7 +1656,7 @@ The following follow directly from the architectural commitments above. None is 
 - **Grammatical phrase relationships.** Call/response, theme/variation as data, not interpretation.
 - **Drift-free synchronization at any timescale.** Hundredth cycle is as tight as the first.
 
-### 17.2 What this architecture gives up
+### 18.2 What this architecture gives up
 
 Honesty about trade-offs:
 
@@ -1287,9 +1665,9 @@ Honesty about trade-offs:
 - **Implementation effort.** Building the conceptual time engine, the Constituent hierarchy, the LMC discipline, the continuous ASRC, and the phrase-level UX is significantly more work than building a traditional looper. The payoff is in capability and longevity.
 - **No real-time AI assistance** (today). Inference latencies do not support sub-30ms creative response. The architecture is AI-compatible, but the creative authority is the performer.
 
-### 17.3 Open questions
+### 18.3 Open questions
 
-The architecture as specified is internally consistent and complete enough to implement. The following questions remain genuinely open:
+The architecture as specified is internally consistent and complete enough to implement. V5 closed several gaps from V4 (failure semantics, realtime guarantees, plug-in determinism, the boundary question). The following questions remain genuinely open:
 
 - **Optimal hardware control surface.** Footswitches, pads, knobs, touch — the right combination is likely use-case-specific.
 - **Cross-platform consistency of the membrane.** CoreAudio, ASIO, WASAPI, JACK, Android, browser, embedded — implementations vary.
@@ -1297,11 +1675,14 @@ The architecture as specified is internally consistent and complete enough to im
 - **Phrase-relationship UX.** How grammatical relationships between phrases are surfaced for editing and visualization is an open UX problem.
 - **Structured improvisation interfaces.** Role-fillable phrase slots are a powerful capability, but the UX for them at performance time is novel and untested.
 - **MIDI 2.0 integration details.** The tape format is UMP-shaped, but the surface details — controller learn UX, MPE channel allocation conventions, per-note expression visualization, MIDI 1.0/2.0 negotiation at the membrane — require implementation choices not specified here.
-- **Ensemble permissions model.** Multi-user sessions raise questions of who can edit which Constituents, read-only observer nodes, and audit traceability. The CRDT substrate supports any reasonable permissions model; the architecture does not prescribe one. The default disposition is the trust principle applied at ensemble scope: owner-writable by default, ensemble-wide readable.
+- **Ensemble specifics.** Per §14.9: consistency model, partition behavior, causal ordering of edits, conflict resolution on shared Constituents, replication granularity, and authority during divergence are all sketched but not committed. The CRDT substrate supports a range of policies; the right choices depend on UX commitments yet to be made.
+- **Ensemble permissions model.** Who can edit which Constituents, read-only observer nodes, audit traceability. The default disposition is the trust principle applied at ensemble scope: owner-writable by default, ensemble-wide readable. The full model is open.
 - **AI assistance layer.** Suggestion, completion, and arrangement assistance could be integrated, but the latency budget for any inference that touches the performance state is severe (sub-30 ms for the same reasons as the rest of the system). Whether a useful assistance layer can fit inside that budget is an open question.
-- **Long-term archival format.** A session captured in 2026 should still be bit-exact in 2056. The conceptual-time architecture is well-positioned for this — the session is a complete symbolic description — but the file format itself, third-party plug-in state, and dependent samples require versioning and migration strategies not specified here.
+- **Long-term archival format.** A session captured in 2026 should still be openable in 2056. Symbolic fidelity (the dry tape and parameter tape) is unconditionally permanent; the wet rendering's reproducibility depends on plug-in availability and version pinning (§15.6). The file format itself, plug-in state migration, and dependent sample asset preservation require versioning strategies not specified here.
+- **Plug-in sandboxing strategy.** Per §17.4, plug-in faults must not block the audio thread. The architectural commitment is clear; the implementation strategy (out-of-process, in-process with watchdog, separate audio worklet) is open and platform-dependent.
+- **Flush interval defaults per tier.** Per §17.8, capability tiers govern the tape flush interval. The exact intervals (Lavish per buffer, Survival per second, intermediate tiers somewhere between) are reasonable defaults but not validated against representative workloads.
 
-### 17.4 Closing
+### 18.4 Closing
 
 This paper does not prescribe an implementation. It prescribes a way of thinking about loopers, grounded in respect for the performer, honesty about digital time, and trust in the user.
 
@@ -1415,6 +1796,13 @@ The hope is that other developers — those building loopers as commercial produ
 
 The following decisions were made during the design process. They appear in roughly the order made, with brief justification. This log is offered for readers who want to understand *why* the architecture is what it is.
 
+> **Recent decisions, for findability:**
+> - V6 (polish + diagrams): **81–84** below
+> - V5 (substantive revision): **75–80** below
+> - V4 (clarifications): **70–74** below
+> - V3 (mixer architecture): **57–69** below
+> - V3 also revised decision **26** (the scope expansion to include mixing); see decision **57** for the rationale.
+
 1. **Absolute time is the master timebase at the membrane**; audio and video are both flawed substrates rendered against it.
 2. **A loop conceptually is a position interval over tape data**, not a sample count or frame count.
 3. **Time-domain at the core, sample-domain at the membrane.** Continuous ASRC bridges the two.
@@ -1497,8 +1885,146 @@ The following decisions were made during the design process. They appear in roug
 71. **MIDI 1.0 input is upcast to UMP at the membrane.** A 7-bit CC and a 32-bit per-note controller occupy the same architectural slot. The engine never sees a distinction between MIDI 1.0 and MIDI 2.0 once events have crossed the membrane.
 72. **The UI layer supports inclusive design without architectural change.** One-handed operation, switchable footswitch layouts, color-blind modes, screen-reader access to preparation state, large-print glanceable HUD, and audible confirmation are first-class capabilities, not afterthoughts. The architecture does not assume a normative performer.
 73. **The paper's exactness claims are falsifiable.** Drift-free behavior, exact micro-timing preservation, polymetric rendering, and long-term archival fidelity are stated with success criteria measurable by loopback tests, bit-comparison, and blind listening tests. Implementations are expected to validate against these.
-74. **The implementation companion is separate from the white paper.** Pseudocode, benchmarks, JUCE 8 / platform-specific mapping, and worked examples belong in a separate document. The white paper remains pure architecture.
+74. **The implementation companion is separate from the white paper.** Pseudocode, benchmarks, JUCE 8 / platform-specific mapping, and additional worked examples beyond Appendix C belong in a separate document. The white paper remains pure architecture.
+
+— *V5 decisions (substantive revision pass):*
+
+75. **The architecture defines its fault model explicitly.** Resource exhaustion, device events, plug-in lifecycle faults, network partition, clock instability, state corruption, and power loss are each given an architectural response (Part XVII). The paper is fault-model complete, not merely ideal-path complete.
+76. **Three invariants govern all failure handling.** Audio output never glitches except under unrecoverable hardware fault; tape integrity is sacred across power loss; the system never silently degrades. These are unbreakable.
+77. **Realtime execution is an architectural commitment, not an implementation detail.** The audio thread runs unbounded-latency-free; graph mutation is atomic from the audio thread's perspective; tape append is wait-free; ASRC operates on a bounded ring; plug-ins are isolated. Implementations that violate these violate the architecture (§5.6).
+78. **Archival fidelity is split into symbolic and re-render.** Symbolic fidelity (the saved session is a complete description) is unconditional. Re-render fidelity (the same session produces the same audio) is conditional on a deterministic DSP chain. Three implementation strategies — determinism contract, wet capture, version pinning — satisfy re-render fidelity per the performer's choice (§15.6).
+79. **The architecture is honest about what it has not yet specified.** Ensemble consistency model, partition behavior, edit-conflict resolution, and replication granularity are sketched but not committed (§14.9). The constraints are committed; the specifics are deferred.
+80. **"Constituent" is the correct term and is justified.** Borrowed from grammar, it carries the recursive-containment-at-any-scale meaning the architecture requires; no more familiar alternative does. The justification is now stated explicitly (Part IX preamble).
+
+— *V6 decisions (polish + diagrams pass; no architectural changes):*
+
+81. **Export targets the simplest universally-portable formats.** Audio renders to WAV/FLAC/AIFF; MIDI renders to Type 0/1 standard MIDI files; video renders to a chosen intra-frame codec. Stems and standard files are first-class output destinations of the output mixer (§6.11). DAW project-exchange formats (AAF, OMF, RPP, Logic XML, and successors) are explicitly out of scope; translating a Constituent graph into them would either lose architectural information or produce unusable artifacts in the receiving DAW.
+82. **The session file is the high-fidelity exchange format for the Sirius Looper ecosystem.** Stems are the high-portability exchange format for everyone else. Two complementary contracts, both lossless in the sense that matters.
+83. **Security defaults are safe-by-inaction.** Coordination messages are end-to-end encrypted; air-gapped solo is the default; sharing a Constituent across the ensemble requires explicit consent; identity is per-session by default (§14.10). The performer who does nothing extra is in the most private state available.
+84. **Inclusive design is symmetric across senses.** Every audible cue has a vibrotactile and visual counterpart; every visual cue has a text and audible counterpart (§16.10). No information reaches the performer through exactly one channel, ever.
 
 ---
 
-*End of Sirius Looper Whitepaper V4. Comments, criticism, and contributions welcome.*
+# Appendix C — A Worked Example
+
+This appendix walks through a single phrase from capture to archive. It is the only worked example in this document; broader examples belong in the implementation companion. The purpose is to demonstrate how the architectural parts combine in operation.
+
+**Setting.** A solo guitarist, sitting in a home studio. Capability tier *Comfortable*. M-series laptop, USB audio interface, no MIDI, no video, no ensemble. Session is fresh. Time is wall-clock 7:42 PM.
+
+The session at a glance, before the prose:
+
+```mermaid
+timeline
+    title One phrase from capture to archive
+    7:40 PM : Session start
+            : Capability tier selected (Comfortable)
+            : Device calibration loaded
+            : Tape begins running
+    7:42 PM : Performer plays riff
+            : Recognizes "this is The Idea" at bar 2
+            : Footswitch at 7:42:24
+            : Retroactive ring → Loop Constituent
+            : Boundary refined to musical downbeat
+            : Phrase Constituent wraps the Loop
+    7:42:31 : Playback begins, phrase repeats
+            : Live counter-line over the loop
+    7:43 PM : Role=verse assigned
+            : Free-form note attached
+    8:15 PM : New verse phrase captured
+            : Old verse displaced (not deleted)
+            : Identity preserved; undoable
+    8:30 PM : Mix snapshot captured at chorus
+    9:30 PM : Session archived
+            : Tapes + Constituent graph saved
+            : Symbolic fidelity unconditional
+            : Re-render fidelity per §15.6 policy
+```
+
+The diagram is a sketch; the section walkthrough below is the canonical description.
+
+### C.1 Pre-capture state
+
+At session startup, the system performed a one-time-per-device loopback calibration (§5.5). The audio interface's round-trip latency is stored. The capability tier was selected at 7:40 PM based on the laptop's measured throughput; Comfortable allows 24-bit PCM tape format, a 12-second retroactive ring, VHQ-quality ASRC, and per-channel effect chains.
+
+The performer has configured one input channel, *Guitar Clean*. The channel's input-layer settings say raw direct monitor is on (§7.2). The channel-layer settings say tape mode is non-destructive (§6.3): two tapes will be written in parallel — one carrying the dry guitar signal, one carrying the channel's processing parameters as a parameter tape.
+
+At 7:42 PM, the tape is already running. **Everything is always recorded** (§8.1). The performer has been noodling for two minutes; those two minutes exist on tape as timestamped audio events, available for retroactive capture.
+
+The LMC (§4.1) is locked to local CPU monotonic. No GPS, no PTP, no Link — solo session — but the LMC is honest: it knows it has only the laptop's clock to discipline against, and the calibration table records that. The performer hears their guitar via the direct layer (§7.2), routed raw-direct from the input mixer to the main outputs with sub-millisecond latency.
+
+### C.2 The capture moment
+
+At 7:42:18, the performer plays a four-bar riff that they recognize, two bars in, as The Idea. They hit the *capture-last-four-bars* footswitch at 7:42:24.
+
+The system reads the retroactive ring (§8.4). The last 12 seconds of tape are still in RAM; the requested four bars (at the working tempo of 96 BPM, that's 10 seconds) fit entirely within the ring. The tape itself is unchanged — its append-only nature is sacred. What the system creates is a **Loop Constituent** (§9.4) whose conceptual boundaries point into the tape at the appropriate timestamps.
+
+Boundary detection runs a transient analysis to refine the in-point. The performer hit the footswitch on beat 1 of the fifth bar, but their first strum landed half a beat early on beat 4.5 of the fourth bar. The loop's in-point is set to beat 1 of bar 1 (eight beats before that first transient), aligned to the captured musical content rather than the footswitch timestamp.
+
+The Loop Constituent now exists. It carries an identity (a UUID-shaped ID that will persist across all future edits, §9.6), a pointer to the dry tape, a pointer to the parameter tape, conceptual boundaries in tape time, a local tempo of 96 BPM, a meter of 4/4, and an empty repetition-rules block (defaults to: triggered by play, cardinality infinite, phase aligned to phrase start, no mutation, terminated by performer action).
+
+### C.3 From Loop to Phrase
+
+A bare Loop is rarely the unit of musical thought. The system anticipates (§16.3): without the performer doing anything, a **Phrase Constituent** (§10.1) is created containing the Loop. The phrase inherits the Loop's tempo, meter, and boundaries; it adds metadata slots that the Loop doesn't have — role, intent, entrance character, exit character, grammatical relationships.
+
+The performer has not yet decided what role this phrase plays. They can capture more material and decide later; the phrase's identity is locked in.
+
+### C.4 Playback
+
+At 7:42:31, the performer hits *play*. The phrase begins repeating. Each cycle, the rendering pipeline executes:
+
+1. The audio-thread's pre-computed schedule (§5.6) lists which tape segments must be read for the upcoming buffer. For the current buffer, that's a slice from the Guitar Clean dry tape, with the parameter tape's current values for EQ, compressor, and any other channel processing.
+2. The Constituent hierarchy is walked on the non-realtime thread; the schedule is updated when the boundaries of active Constituents would shift in the next buffer. The audio thread reads from an atomically-swapped snapshot pointer (§5.6); it never traverses the tree.
+3. The tape data is decoded; the parameter tape's values are applied to the channel-strip processing chain; the result is mixed into the output mixer's per-Constituent channel.
+4. The ASRC at the membrane converts the engine's canonical sample rate to the audio interface's actual measured rate. The conversion is continuous; no rate change ever introduces an audible artifact.
+5. The output mixer routes to the main outputs, where the performer hears the loop.
+6. Simultaneously, the direct layer continues routing the live guitar over the top, so the performer can play counter-lines against the loop.
+
+The performer plays a melodic counter-line for three cycles. Those three cycles, like everything else, are being written to tape continuously. The counter-line is not yet a Constituent — it is just tape data — but the performer could turn it into one with another retroactive capture at any moment.
+
+### C.5 Annotation
+
+At 7:43:00, the performer pauses. They tap *role: verse* on the phrase. The phrase's role field is now populated. The phrase is now interchangeable with any other phrase of role=verse (§10.4) — structural improvisation becomes possible.
+
+They also add a one-line free-form note: *"tuning is a little sharp on the high E."* The note is stored as phrase metadata, not as audio data, and travels with the phrase through all subsequent edits.
+
+### C.6 Phrase substitution
+
+At 8:15:00, after capturing several more phrases, the performer has built a small song: an intro phrase, a verse phrase (the one we've been following), a chorus phrase, and an outro phrase. The verse phrase has cycled six times by now.
+
+They capture a new verse phrase — different riff, same role. In the song's section-1 slot, they drag the new verse into place. The arrangement engine swaps the phrases (§13.3): the new verse takes the section-1 slot's role; the old verse is unbound from that slot but **not deleted**. Its tape is intact; its Constituent record is intact; it can be brought back via undo (§16.7) or re-bound to any slot of role=verse at any time.
+
+### C.7 The mix evolves
+
+The performer decides the chorus should be louder. They navigate to the chorus phrase and adjust its channel's output gain. The system captures a **mix snapshot** (§6.8) at the chorus's conceptual start position. The snapshot is itself a Constituent: it has identity, metadata, and a conceptual position. On playback, when the rendering pipeline crosses the snapshot's anchor, the snapshot's parameter values are interpolated into the active state via a linear-fade transition over 100 milliseconds.
+
+No continuous automation lane is needed; the snapshot is one captured state at one captured position. If the performer wants a swell, they capture a second snapshot at the swell's peak; the linear interpolation between them produces the swell. Continuous automation is just many snapshots, densely placed.
+
+### C.8 Archival
+
+At 9:30 PM, the performer saves the session.
+
+The save writes:
+
+- Every tape on disk in its append-only format, including the dry guitar tape, the parameter tape, and the always-running master tape from which the captured segments were extracted.
+- The Constituent graph — every loop, phrase, section, song, and snapshot — as immutable, copy-on-write records.
+- The LMC calibration history for the session, so a future re-open can reconcile the laptop clock's tiny drift over the session duration.
+- The plug-in version hashes for any non-deterministic plug-ins in the chain (§15.6). The performer chose, at session start, to use *determinism contract* mode, so this session contains no non-deterministic plug-ins; the wet rendering is reproducible.
+- A session manifest indexing all of the above, written via atomic file-replace (§17.8).
+
+The session is now self-contained. The performer could open it on a different laptop in 2030, and assuming the plug-ins are still available at the pinned versions, the wet rendering would be bit-identical to what they hear today (modulo the new device's LMC calibration at the membrane). Even without those plug-ins, the dry tape and parameter tape preserve the musical content exactly; the session is editable, rearrangeable, and re-mixable for as long as the file format itself is readable.
+
+### C.9 What this example shows
+
+The system did several things that look small individually but are architecturally significant in combination:
+
+- **Capture was retroactive.** The performer did not declare "I am about to record" before playing. The tape was already running; the footswitch was a time bookmark, not a capture trigger.
+- **Boundaries were refined for the performer, not by the performer.** The transient-aligned in-point is musically right; the footswitch press's wall-clock timestamp is musically irrelevant. The system anticipated.
+- **Identity persisted across edits.** The original verse, displaced from its slot, still exists with its identity intact, its tape intact, its metadata intact. Editing did not destroy it.
+- **The mix changed without an automation lane.** A snapshot captured at the chorus is structurally identical to any other Constituent and is recalled the same way.
+- **The session is archivally honest.** The dry tape and parameter tape are unconditionally permanent. The wet rendering's reproducibility depends on which strategy the performer chose, and they chose with full knowledge of the tradeoff.
+
+That is the architecture executing as a story. Every part has appeared. No part was special-cased.
+
+---
+
+*End of Sirius Looper Whitepaper V6. Comments, criticism, and contributions welcome.*

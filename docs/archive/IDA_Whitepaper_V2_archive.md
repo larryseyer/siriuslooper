@@ -1,3 +1,12 @@
+> **Historical archive.** This document was written when the product was named
+> "Sirius Looper". The product was renamed to **IDA — Idea Development
+> Arranger** on 2026-05-23 as part of the AutomagicArt brand structure (IDA
+> is the looping environment counterpart to OTTO). References to "Sirius
+> Looper" below reflect the contemporaneous name and are preserved as-is.
+> See `IDA_Naming_Decision.md` for the full rationale.
+
+---
+
 # The Sirius Looper
 
 ### A Reference Architecture for Time-Domain Audio/Video Looping

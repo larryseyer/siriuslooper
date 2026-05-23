@@ -1,4 +1,13 @@
-# Sirius Looper
+> **Historical archive.** This document was written when the product was named
+> "Sirius Looper". The product was renamed to **IDA — Idea Development
+> Arranger** on 2026-05-23 as part of the AutomagicArt brand structure (IDA
+> is the looping environment counterpart to OTTO). References to "Sirius
+> Looper" below reflect the contemporaneous name and are preserved as-is.
+> See `IDA_Naming_Decision.md` for the full rationale.
+
+---
+
+# The Sirius Looper
 
 ### A Reference Architecture for Time-Domain Audio/Video Looping
 
@@ -7,8 +16,8 @@
 ---
 
 **Status:** Draft for review
-**Version:** V3
-**License:** The Sirius Looper software is licensed under AGPLv3 with an Apple App Store distribution exception. The bundled Larry Seyer Acoustic Drum Library selection is proprietary and separately licensed. See `../LICENSE`, `LICENSE-THIRD-PARTY.md`, and `SAMPLE-LICENSE.md`. This document — the white paper — is offered for permissive public release.
+**Version:** 1.0
+**License:** TBD (intended for permissive public release)
 
 ---
 
@@ -26,9 +35,9 @@ The reframe is built on three principles that hold together:
 
 3. **A loop is an idea, and ideas are worth repeating.** Every architectural decision exists to serve the capture, repetition, and arrangement of musical ideas without the friction that has always come with that capture.
 
-What follows is built around a **Logical Master Clock (LMC)** treated as the only honest external timebase at the membrane, an **input mixer → tape → output mixer** signal path in which both mixers handle live audio, live MIDI, live video, and file I/O as first-class signal types, a **direct layer** that bypasses the tape for sub-millisecond live monitoring, the tape as the always-running source of truth, a unified **Constituent hierarchy** (tape → loop → phrase → section → song → set) in which each level operates in its own conceptual time domain, and a user interface that trusts the musician absolutely.
+What follows is built around a **Logical Master Clock (LMC)** treated as the only honest external timebase at the membrane, an **always-running tape per input** treated as the source of truth, a unified **Constituent hierarchy** (tape → loop → phrase → section → song → set) in which each level operates in its own conceptual time domain, and a user interface that trusts the musician absolutely.
 
-The result is a looper that can do things existing loopers cannot — including capturing polymetric phrases, supporting structural improvisation through role-fillable phrases, and reproducing micro-timing and feel exactly — while also doing the things existing loopers already do, without the friction that has always come with them. The architecture is a complete production environment from physical input to physical output, with no architectural distinction between live signals and file I/O.
+The result is a looper that can do things existing loopers cannot — including capturing polymetric phrases, supporting structural improvisation through role-fillable phrases, and reproducing micro-timing and feel exactly — while also doing the things existing loopers already do, without the friction that has always come with them.
 
 ---
 
@@ -39,18 +48,16 @@ The result is a looper that can do things existing loopers cannot — including 
 - **Part III:** Time as Concept
 - **Part IV:** The Logical Master Clock
 - **Part V:** The Engine
-- **Part VI:** The Signal Path — Input Mixer, Tape, Output Mixer
-- **Part VII:** The Direct Layer
-- **Part VIII:** The Tape
-- **Part IX:** The Constituent Hierarchy
-- **Part X:** Phrases
-- **Part XI:** Polymetric and Polytemporal Coexistence
-- **Part XII:** Repetition
-- **Part XIII:** Arrangement and Narrative
-- **Part XIV:** The Ensemble
-- **Part XV:** Fidelity and Resources
-- **Part XVI:** The Performer's Instrument
-- **Part XVII:** What This Architecture Enables
+- **Part VI:** The Tape
+- **Part VII:** The Constituent Hierarchy
+- **Part VIII:** Phrases
+- **Part IX:** Polymetric and Polytemporal Coexistence
+- **Part X:** Repetition
+- **Part XI:** Arrangement and Narrative
+- **Part XII:** The Ensemble
+- **Part XIII:** Fidelity and Resources
+- **Part XIV:** The Performer's Instrument
+- **Part XV:** What This Architecture Enables
 - **Appendix A:** Glossary
 - **Appendix B:** Decision Log
 
@@ -88,19 +95,11 @@ The user is a musician. They know what they want, when they want it, and how the
 
 Many design decisions in existing loopers can be traced to a quiet assumption that the user might make a mistake. That assumption is itself the failure. A looper built on trust will be vastly more powerful and vastly more transparent than one built on caution.
 
-### 1.6 The looper is a complete production environment from physical input to physical output.
+### 1.6 The looper's responsibility ends at the membrane.
 
-The looper captures, conditions, repeats, arranges, mixes, and renders. It owns the full signal path: **input mixer → tape → output mixer**. It is the input mixer, it is the tape, and it is the output mixer. The mixing decisions on both sides of the tape are part of the artistic act and therefore part of the looper's responsibility.
+The looper captures, repeats, arranges. It does *not* mix, route, EQ, dynamically process, or master. Those are downstream concerns with mature dedicated tools. A looper that respects its scope becomes the best possible front end to whatever downstream tools the user prefers.
 
-What remains out of scope:
-
-- **Cross-application audio routing.** Sending audio to/from other applications via JACK, Soundflower, loopback drivers — the operating system handles this.
-- **Mastering as a final delivery step.** True mastering for commercial distribution is a specialized post-production discipline with its own tools and conventions.
-- **External instrument control as primary output.** The looper produces audio and video; it may emit MIDI as a side effect, but driving external hardware instruments is not its central function.
-
-Everything else — capture, conditioning, looping, arrangement, mixing — is the looper's responsibility, because the artist's creative act spans the entire signal path and the architecture should not introduce seams the user has to live in.
-
-The single most important nuance: **arrangement is creation, not processing.** The order in which phrases play, the sections they form, the songs they compose into, the transitions between them — these are part of the musical idea, not separate from it. The looper is responsible for arrangement at every level of the Constituent hierarchy.
+The single exception: **arrangement is creation, not processing.** The order in which phrases play, the sections they form, the songs they compose into, the transitions between them — these are part of the musical idea, not separate from it. The looper is responsible for arrangement at every level of the Constituent hierarchy.
 
 ---
 
@@ -273,31 +272,29 @@ The looper engine does not deal in samples, frames, or absolute time. It deals i
 
 This is the fundamental architectural inversion of this looper. Most loopers count samples and bolt time-correction layers on top. This one *thinks in music* and emits samples at the edges.
 
-### 5.2 The signal path: input mixer → tape → output mixer, with direct layer
+### 5.2 The two membranes
 
-The engine's architecture is a three-stage signal path with a parallel bypass. At each end is a **mixer** — a software object that handles channel topology, signal conditioning, and the crossing between physical and conceptual time. In the middle is the **tape**, the always-running source of truth. Bypassing the tape entirely is the **direct layer**, a parallel signal path used for sub-millisecond live monitoring and reinforcement. The direct layer is detailed in Part VII.
+The engine has exactly two membrane layers — one inbound, one outbound.
 
-```
-                       ┌──────── DIRECT LAYER ────────┐
-                       │   (zero-tape latency)        │
-                       │                              ▼
-Physical inputs → INPUT MIXER → TAPE → OUTPUT MIXER → Physical outputs
-& file inputs                                          & file outputs
-```
+**The inbound membrane** receives sample buffers from audio devices and frame buffers from video devices. For each sample or frame, it:
 
-Each channel in the input mixer makes its own routing decisions: whether it writes to tape (and in what mode), whether it feeds the direct layer (and in what mode), and to which destinations. Each channel in the output mixer similarly chooses among physical outputs, file destinations, MIDI outputs, video outputs, and internal buses. **Routing decisions are per-channel, not per-input or per-output**, because the channel is the natural unit of processing and routing in mixer architecture.
+1. Reads the device's reported capture timestamp and applies the device calibration to convert to LMC time
+2. Records the data on its source tape (Part VI) with its LMC timestamp
+3. The tape entry is now in the engine's hands, addressable conceptually
 
-**The input mixer** is the inbound stage. It accepts four signal types as first-class inputs: **live audio, live MIDI, live video, and file inputs**. Routing decisions exist at two layers: **input-layer** decisions about the source itself (raw direct monitor on/off, source enable, source-level defaults that channels inherit) and **channel-layer** decisions about the processed signal (tape mode, processed direct routing, destinations, per-channel processing). One input may feed multiple channels with different musical roles; multiple inputs may sum into one channel. The input layer is configured once at setup; the channel layer is where the user works musically. Each channel applies capture-time conditioning appropriate to its signal type — gain staging, EQ, dynamics, and bus routing for audio; transpose, velocity curve, and event filtering for MIDI; scaling, color, and format conversion for video; transport and rate control for file inputs. Each channel may operate in *commit-to-tape* mode or *non-destructive* mode. Critically — and this is the consequential decision in V3 of this paper — the input mixer is **a full creative mixer**, not merely a structural router. See Part VI for the deeper treatment.
+**The outbound membrane** receives a request to produce a sample buffer for an audio device or frame buffer for a video device. For each output, it:
 
-**The output mixer** is the outbound stage. It accepts the rendered output of the Constituent hierarchy — every active loop, phrase, and section, rendered against absolute time at the present moment — as well as direct-layer signals bypassing the tape, and produces four output types as first-class destinations: **live audio, live MIDI, live video, and file outputs**. Routing decisions are similarly two-layered: **channel-layer** decisions about each output channel's processing and destinations, and **output-layer** decisions about each physical or file destination (master gain, dither, file format, format conversion). Each output mixer channel applies channel-strip processing and chooses its destinations per channel: physical outputs, file destinations, internal buses, monitor sends, or any combination. Like the input mixer, it is **a full creative mixer**, with per-Constituent channel strips, session-level effect buses, recallable mix snapshots, and master bus processing.
+1. Determines the LMC time window the buffer corresponds to
+2. Queries the active Constituent hierarchy for what should sound during that window
+3. Unrolls each active constituent's conceptual position through its hierarchical context to produce LMC times
+4. Reads the appropriate tape data via the conceptual-to-LMC mapping
+5. Mixes, applies effects, and produces the output buffer
 
-**The tape** sits between them. Everything the input mixer produces is captured to tape. Everything the output mixer renders is sourced from tape (via the Constituent hierarchy). The tape is the architectural pivot point: above it (toward the user) is the world of musical ideas; below it (toward the hardware) is the world of samples and frames.
+In between, the engine operates entirely in conceptual time.
 
-Between these three stages, the engine operates entirely in conceptual time. Numerical time exists only at the input mixer's inbound membrane (where samples arrive) and the output mixer's outbound membrane (where samples leave).
+### 5.3 Continuous async sample-rate conversion at the membranes
 
-### 5.3 Continuous async sample-rate conversion at the mixers
-
-The mixers are where conceptual time meets the physical reality of an audio interface running at "48 kHz" that is actually running at some slightly different rate. Bridging this is the job of **continuous async sample-rate conversion (ASRC)** at each mixer's membrane.
+The membranes are where conceptual time meets the physical reality of an audio interface running at "48 kHz" that is actually running at some slightly different rate. Bridging this is the job of **continuous async sample-rate conversion (ASRC)** at each membrane.
 
 The ASRC's quality determines the looper's audible fidelity. Cheap ASRC produces audible chirping artifacts on sustained content; transparent ASRC (libsoxr's VHQ preset is the industry reference) is computationally expensive but inaudible. Budget approximately 3–5% of one CPU core per channel for VHQ-quality continuous resampling.
 
@@ -313,15 +310,15 @@ For piecewise-constant tempo, the transformation is linear in each segment. For 
 
 ### 5.5 Latency compensation as architectural
 
-When the input mixer receives a sample buffer from a device, the samples were not captured *now*. The sample at index N in a buffer of size B was captured at:
+When the inbound membrane receives a sample buffer, the samples were not captured *now*. The sample at index N in a buffer of size B was captured at:
 
 ```
 LMC_capture_time = LMC_callback_time − latency_input − (B − N − 1) / device_rate
 ```
 
-The input mixer applies this transformation before the sample becomes a tape entry. From the engine's perspective, **every tape entry carries its true conceptual time of capture**, not its arrival time.
+The membrane applies this transformation before the sample becomes a tape entry. From the engine's perspective, **every tape entry carries its true conceptual time of capture**, not its arrival time.
 
-Outbound, the mirror transformation tells the output mixer when each sample in an output buffer will actually be heard:
+Outbound, the mirror transformation tells the membrane when each sample in an output buffer will actually be heard:
 
 ```
 LMC_present_time = LMC_callback_time + latency_output + N / device_rate
@@ -333,268 +330,17 @@ Device latencies are typically reliable on CoreAudio and ASIO, less reliable on 
 
 ---
 
-# Part VI — The Signal Path: Input Mixer, Tape, Output Mixer
-
-Part V introduced the three-stage signal path. This part is its detailed treatment.
-
-The architecture has a deliberate symmetry: a full creative mixer on each side of the tape, with the tape as the always-running pivot between them. This symmetry matters. It means the looper is not a "recorder with playback" — it is **a production environment in which capture and playback are equally first-class operations, each with its own complete mixer.**
-
-## 6.1 The mixers are modality-agnostic
-
-Both mixers handle four signal modalities as first-class citizens, not as special cases:
-
-**Live audio.** Sample buffers from microphones, line inputs, USB audio interfaces, network audio sources. Processed with audio-appropriate tools (gain, EQ, dynamics, sends). Written to and read from audio tapes.
-
-**Live MIDI.** Event streams from USB MIDI, DIN MIDI, virtual MIDI ports, MIDI controllers. Processed with MIDI-appropriate tools (transpose, velocity curve, channel filter, event remap, quantize). Written to and read from MIDI tapes.
-
-**Live video.** Frame buffers from webcams, capture cards, NDI sources, screen captures. Processed with video-appropriate tools (color, scaling, format conversion, framing). Written to and read from video tapes.
-
-**File I/O.** Pre-existing audio, MIDI, and video files entering the session as inputs (import) or being produced by the session as outputs (export, render, stems). File I/O is not a separate operation outside the mixer — it is just another input or output type.
-
-The mixer is a single architectural concept; the processing inside each channel strip is appropriate to the signal type carried by that channel. **An audio channel strip and a MIDI channel strip and a video channel strip and a file channel strip are different in their internal processing but identical in their role in the signal path.** They all route, condition, and gate their signals between the physical-or-file world and the tape world.
-
-This architecture eliminates several seams that plague traditional production environments:
-
-- **File import is not modal.** A pre-existing audio file dropped into the session enters via the input mixer just like a live mic. The system downstream of the input mixer cannot distinguish "live capture" from "imported file" — and shouldn't need to. A file is just a tape that already exists, with a synthesized capture timestamp.
-- **File export is not modal.** Rendering a session (or any portion of it, or any bus, or any combination of buses) is just routing the output mixer's selected signals to a file destination instead of a hardware destination. Same mixer, same chain, same processing. **Render is just playback aimed at a file.** There is no separate render engine and no online-vs-offline mode discrepancy.
-- **MIDI is not segregated.** MIDI does not have a separate "MIDI section" of the application with its own architecture. It flows through the same input mixer as audio, through the same tapes, through the same Constituent hierarchy, and out through the same output mixer.
-- **Video is not bolted on.** Video is a first-class signal type from the start, with the same architectural status as audio. It is captured, processed, looped, arranged, and rendered through the same pipeline.
-- **Cross-modality routing is free.** A MIDI tape can drive a software synth whose audio output enters the audio side of the output mixer; a video tape can be modulated by an audio tape's envelope; an audio tape's transients can trigger MIDI events. These are just routing choices in mixers that already speak all four modalities.
-
-## 6.2 Two layers of routing: input layer and channel layer
-
-The input mixer makes routing decisions at two distinct layers, each meaningful in its own right.
-
-**The input layer** governs what each physical or file source does at the membrane, before any channel processing. Input-layer decisions are about the *source itself*:
-
-- **Raw direct monitor.** Whether this source feeds the direct layer (Part VII) with true sub-millisecond zero-processing bypass.
-- **Source enable.** Whether this source is active in the session at all. Disabling a source disables all channels fed by it, without tearing down the channel configuration.
-- **Source-level defaults.** Default tape mode and routing that channels fed by this source inherit unless overridden.
-- **File transport** (for file inputs). Start position, playback rate, loop region for the file's playback into the system.
-
-Input-layer settings are configured once, typically at session setup, and rarely revisited. They are about the physical reality of the source.
-
-**The channel layer** governs what happens to the signal after it enters a channel strip. Channel-layer decisions are about the *processed signal*:
-
-- **Channel processing chain.** EQ, dynamics, effects, and processing applied to this channel.
-- **Tape mode.** Whether this channel writes to tape in *commit-to-tape* mode (processing baked into the tape) or *non-destructive* mode (dry signal + parameter tape captured separately) or *no-tape* (the channel feeds outputs and the direct layer but nothing is captured).
-- **Processed direct routing.** Whether this channel feeds the direct layer with its post-processing signal (in addition to or instead of the raw-direct path the input layer can provide).
-- **Destinations.** Which tapes, buses, and outputs this channel feeds.
-
-Channel-layer settings are where the user works musically. They change with the music — adjusted in the moment, captured in snapshots, recalled by scene.
-
-**The two layers compose cleanly:** one input may feed multiple channels with different musical roles. A guitar input might feed a "Clean Guitar" channel and a "Distorted Guitar" channel, each with its own processing and tape routing, while sharing the same input-layer raw-direct setting. Multiple inputs may sum into one channel. The user works almost entirely at the channel layer; the input layer is configured once and forgotten.
-
-## 6.3 Commit-to-tape vs. non-destructive: the per-channel choice
-
-The most consequential channel-layer decision is **whether processing is committed to tape or recorded as recoverable metadata.** This is settable per channel.
-
-**Commit-to-tape mode (printed).** The channel's processing is applied to the signal *before* the tape. The tape captures the processed, artistically conditioned signal. The processing is permanent — it cannot be undone later by editing the channel settings, because what's on the tape is the processed result, not the raw input.
-
-This is appropriate when:
-- The engineer is confident in the sound
-- The processing is part of the artistic character (a known amp simulation, a familiar compressor)
-- Storage economy matters (one tape per channel, not two)
-- The recording will not need retroactive treatment changes
-
-**Non-destructive mode (recoverable).** Two tapes are written in parallel: one carries the dry input signal as it entered the channel; the other carries the channel's processing parameters as a parameter tape running alongside. The signal heard during capture is the processed version (monitoring sounds right), but the dry signal is preserved on tape. Retroactive editing of the channel's processing changes the playback output without touching the dry tape.
-
-This is appropriate when:
-- The engineer is uncertain about the final sound
-- The same source might want different treatment in different contexts
-- Archival recoverability matters
-- The performance is exploratory and the engineer wants to preserve options
-
-The two modes coexist freely across channels. A single session might have a vocal channel in non-destructive mode (because the singer's tone might need adjustment in the mix) and a guitar channel in commit-to-tape mode (because the amp simulation is part of the song's identity). The data model supports both natively, because *processing parameters are themselves a tape* — committing to tape is just choosing not to keep the parameter tape separately.
-
-## 6.4 The user chooses the session's tape topology
-
-A direct consequence of channel-layer routing decisions: **the number of tapes in a session is determined by the user's channel configuration, not by the system.** The user composes their tape topology by composing their channel topology.
-
-- A channel may write to **zero** tapes (live monitoring/reinforcement only — signal flows through the mixers and the direct layer but is never captured)
-- A channel may write to **one** tape (commit-to-tape mode — the common case)
-- A channel may write to **two** tapes (non-destructive mode — dry tape + parameter tape running in parallel)
-- A channel may write to **multiple** tapes if explicitly routed (one channel feeding several tapes for parallel takes, A/B comparison, redundancy)
-
-And inversely:
-
-- A tape may be fed by **one** channel (the common case)
-- A tape may be fed by **multiple** channels summing to a sub-mix tape (a bus channel's output going to tape)
-- A tape may currently be fed by **zero** channels but contain historical content from past sessions or imports
-
-A session with one mic and a single channel strip is one tape. A session with eight drum mics, each on its own channel plus a drum bus channel capturing the sub-mix, is nine tapes. A session with non-destructive mode on every channel is double the tape count. **Tapes appear because channels demand them.**
-
-This makes session resource cost transparent and user-controlled. A user who needs a lighter session reduces channels; a user who needs more capture flexibility adds channels. The system imposes no fixed tape count; the capability tier (Part XV) determines what is *practical* rather than what is *possible*.
-
-There is no hidden tape-management layer. The user sees their mixer; the mixer's channels imply the tapes; the tapes are the source of truth. **Tape topology is mixer topology.**
-
-## 6.5 The tape, briefly
-
-The tape is detailed fully in Part VIII. The signal-path summary: it is append-only, immutable, always-running, and carries timestamped events from one input each. Multiple parallel tapes accommodate multi-channel sources and parallel dry/processing recordings. **The tape is the source of truth and the architectural pivot point of the entire system.**
-
-## 6.6 The output mixer
-
-The output mixer receives the Constituent hierarchy's rendered output and direct-layer signals, and produces output buffers (hardware or file). Its responsibilities:
-
-- **Per-Constituent channel strips.** Each active Constituent — loop, phrase, section — gets its own channel strip with gain, pan, EQ, dynamics. This is where the performer makes the moment-to-moment level and tonal decisions that constitute "the mix."
-- **Direct-layer channels.** Signals routed via the direct layer arrive at their own channels in the output mixer, just like Constituent-rendered signals, and can be processed and routed alongside them.
-- **Send/return architecture.** Session-level effect buses (a main reverb, a delay, a parallel compressor) live in the output mixer. Constituents send to these buses by name. The bus return is mixed back into the master alongside the dry signals.
-- **Bus structure.** Subgroups (drum bus, vocal bus, etc.) sum collections of channels before the master bus. This is the same bus structure as a hardware mixing console.
-- **Master bus processing.** Master EQ, master compression, master limiting if desired. The final stage before the outbound membrane.
-- **Output routing.** Per-channel decisions about which physical outputs, file destinations, MIDI ports, or video destinations each channel feeds. Main outputs, monitor outputs, headphone outputs, FOH feeds, render-to-file destinations — all configurable per channel.
-
-## 6.7 The dual effects architecture: local vs. bus
-
-Effects exist in two distinct places in this architecture, each appropriate to a different musical purpose:
-
-**Local effects on a Constituent** are bound to that Constituent. The effect is *part of the idea*. A loop that is "the dub-delayed vocal" carries the delay as part of its identity; changing the delay changes what the loop *is*. Local effects travel with the Constituent through edits, copies, role substitutions, and arrangement changes.
-
-**Bus effects in the output mixer** are session-level resources. They exist as part of *the production*, not as part of any individual Constituent. A session's main reverb provides a shared space that multiple Constituents send to; changing the reverb changes everything that uses it. Bus effects are typically broad — reverbs, delays, parallel compressors, master processing.
-
-The choice between local and bus is artistic, not technical. A vocalist's signature delay might be local (it's part of the vocal idea); the room reverb is on a bus (multiple sources share it). The architecture supports both freely and lets the user move effects between the two locations as their intent evolves.
-
-The signal path through both stages:
-
-```
-Constituent rendering 
-  → local effect chain (private to Constituent)
-  → output mixer channel strip (gain, pan, EQ, dynamics)
-  → channel sends to buses (parallel processing, shared effects)
-  → bus returns mixed back into master
-  → master bus processing
-  → outbound membrane → physical outputs
-```
-
-## 6.8 Mix snapshots over continuous automation
-
-Mix state — the complete configuration of the input and output mixers at a given moment — is captured and recalled as **snapshots**, not continuous automation. A snapshot stores values for every mix parameter and is anchored to a position in conceptual time. When playback crosses a snapshot's anchor, the mix state transitions to the snapshot's values, either instantly (cut) or over a defined window (interpolated).
-
-This is the right default for several reasons:
-
-- **Snapshots match how musicians think about mixing.** "The verse mix, the chorus mix, the bridge mix" are snapshot-shaped concepts. Most musicians don't think in continuous automation curves.
-- **Snapshots are recallable.** A snapshot is a named, addressable mix state. The performer can return to it deliberately. Continuous automation is harder to navigate as a mental model.
-- **Snapshots are composable with the Constituent hierarchy.** A snapshot is a Constituent. It has a `conceptual_in` (the position where it becomes active) and metadata. It participates in the recursive arrangement model.
-- **Snapshots accommodate continuous automation as a special case.** A power user who wants smooth mix changes places many snapshots in close succession with interpolated transitions. This is structurally identical to keyframe animation, a model users already understand.
-
-A mix snapshot Constituent:
-
-```
-MixSnapshot {
-    id                          // identity
-    conceptual_in               // when this snapshot becomes active
-    transition_type             // cut, linear fade, curve
-    transition_duration         // 0 for cut, otherwise length of fade
-    input_mixer_state           // all input mixer values at this snapshot
-    output_mixer_state          // all output mixer values at this snapshot
-    metadata                    // name (e.g., "verse mix"), notes, etc.
-}
-```
-
-The snapshot system also gives the architecture mute groups, VCA-style group control, and recallable scenes as natural cases — they are all just snapshots that affect specific subsets of channels.
-
-## 6.9 The mixers are themselves authorable
-
-Because the mixers are part of the architecture and their state is captured in snapshots that live in conceptual time, **the mix is itself part of the creative work**, not an opaque rendering step downstream. The performer authors the mix the way they author any other aspect of the music: by capturing moments, refining them, arranging them in time, and trusting the system to render them faithfully.
-
-This is the deeper reason mixing belongs inside the looper rather than downstream. **The mix is the music.** Separating them creates a seam in the artistic act that doesn't reflect how musicians actually work.
-
-## 6.10 What this changes about the architecture's identity
-
-This part of the paper reflects a real revision of the looper's scope. Earlier drafts treated mixing as a downstream concern. V3 brings it in.
-
-The reasons for the revision, stated explicitly:
-
-1. **The artistic act spans the full signal path.** A vocalist who hears themselves through their headphones during capture is making mix decisions; those decisions shape what they sing. The capture mix and the production mix are not separable.
-2. **The Constituent hierarchy already supports it.** Mix snapshots, effect chains, parameter automation — all are natural Constituents. No new data model is needed; the existing one extends cleanly.
-3. **Eliminating the seam improves the user experience.** A looper that hands off to a separate mixer or DAW forces the user to think about two different conceptual models with two different time domains and two different storage models. Owning the whole path keeps the model coherent.
-4. **The performer's intent is preserved better.** Mix decisions made at capture time, refined during preparation, recalled during performance — all in the same system, with the same conceptual time, the same trust principles, the same gestures.
-
----
-
-# Part VII — The Direct Layer
-
-The direct layer is the system's response to a fundamental physical constraint: **monitoring latency.** No amount of architectural cleverness elsewhere can solve it. The performer must hear themselves, their bandmates, and their instruments with imperceptible delay, and the only way to achieve that is to provide a signal path that bypasses the tape entirely.
-
-This is the architectural mechanism that makes the looper viable for *live performance*, as distinct from studio use. Without it, monitoring latency makes performance painful regardless of how elegantly the rest of the system is designed.
-
-## 7.1 What the direct layer is and isn't
-
-**The direct layer is a parallel signal path that runs from the input mixer to the output mixer without touching the tape.** Signals that travel via direct are heard immediately; they are not captured, not stored, not part of the Constituent hierarchy, not subject to playback latency.
-
-**The direct layer carries signal, not time-anchored data.** It is not part of the conceptual time architecture. It does not feed the Constituent hierarchy. It does not participate in looping. **It is a real-time signal path with no memory.**
-
-This is important because it preserves the architectural integrity of everything else built in this paper. The tape remains the source of truth. Loops, phrases, Constituents — all sourced from tape. The direct layer is a *signal bypass*, used for monitoring, sound reinforcement, and any other case where the signal needs to reach the output without being remembered.
-
-**The direct layer coexists freely with the tape path.** They are not mutually exclusive. A typical setup routes signals to *both*: the tape gets the signal for capture and looping; the direct layer gets the signal for immediate monitoring. A channel can write to tape, feed direct, both, or neither — independent per-channel choices.
-
-## 7.2 Two modes of direct routing: raw and processed
-
-The direct layer offers two modes for each input, the user's choice:
-
-**Raw direct.** The signal is tapped *before* the input mixer's channel processing and routed straight to the output. True sub-millisecond zero-processing latency. The performer hears their instrument exactly as the preamp captured it, with no digital coloration. This is the appropriate choice when the performer wants pristine, unprocessed self-monitoring (a guitarist who wants to hear their physical instrument; a vocalist who finds processed monitoring distracting; any context where the direct sound is musically preferred).
-
-Raw direct is implemented at the **input layer**, before any channel processing. It is a per-input decision: each physical or file input has a "raw direct on/off" setting that determines whether the input's signal is also dispatched to the direct path immediately upon arrival.
-
-**Processed direct.** The signal is tapped *after* the input mixer's channel processing and routed to the output. Adds a few milliseconds of latency (the cost of the processing chain), but the performer hears their signal with the gain staging, EQ, compression, and effects the engineer has applied. This is the appropriate choice when the processing is part of the performer's monitoring need (a vocalist whose compressor defines their sound; a guitarist hearing their amp simulation; any context where unprocessed monitoring would be musically wrong).
-
-Processed direct is implemented at the **channel layer**, after channel processing. It is a per-channel decision: each channel strip has a "processed direct" routing option that sends the channel's processed signal to the direct path.
-
-**Both modes may be active simultaneously for the same input.** A vocalist's mic might have raw direct routed to one monitor send (for low-latency cue) and processed direct routed to a different monitor send (so they can hear the production mix). The two paths coexist; the user routes each to its appropriate destination.
-
-## 7.3 The system decides direct routing automatically
-
-A core principle of this architecture (Part I.5) is that the system anticipates the user's needs. Direct routing is a paradigm example: **the user does not configure a direct-routing matrix manually. The system infers which signals need direct monitoring from context and configures the direct paths automatically.**
-
-The signals the system reads:
-
-- **Whether the channel is currently armed for capture.** Active channels almost always want direct monitoring; idle channels almost certainly don't.
-- **Whether a loop or phrase is currently playing back the same source.** If the channel is being recorded *and* the playback of its recent capture is audible, double-monitoring causes phase/comb issues. The system mutes the direct path during such playback, or fades between them at the appropriate moment.
-- **Whether the input is declared as a utility signal** (click, talkback, scratch reference). These have known monitoring patterns — click goes only to the performer's monitor send, never to FOH; talkback routes only when its push-to-talk is active.
-- **Recent performer action.** If a footswitch engaged record on channel N, the system knows N is now the active performer signal and routes its direct path accordingly.
-- **The thermal/processing tier.** On marginal hardware, the system biases toward raw-direct (lower cost) over processed-direct (higher cost) for the same channel.
-
-The user can override any inference (preparation mode), but they should rarely need to. **Inference is correct nearly always; override is the escape hatch.**
-
-This is harder to implement than a static routing matrix, but it is significantly better UX. The performer simply hears themselves. They do not think about routing; they think about music.
-
-## 7.4 What the direct layer enables musically
-
-This is not just monitoring. Once direct routing exists, it enables a class of musical operations that would otherwise be impossible or awkward:
-
-- **Live processing without latency.** A guitarist whose signal goes through the input mixer's effects chain hears that effect chain in real time via processed-direct, with no tape round-trip. The effects are applied to the direct signal as well as the tape signal.
-- **Talkback.** A bandleader speaking into a talkback mic routed directly to specific monitor destinations (the bassist's in-ears) without ever being recorded.
-- **Live FX as a performance instrument.** A vocalist whose direct signal is sent through a granular delay or pitch shifter, with the shifted result going both to FOH (live) and to tape (captured for later looping). The performer manipulates the effect parameters in real time and the result is both heard immediately and preserved.
-- **Reinforcement of un-amplified sources.** An acoustic guitar mic'd and sent direct to FOH for live amplification, simultaneously captured to tape for looping. The audience hears the live performance via direct; the looper builds on the same signal via tape.
-- **Click-through-to-FOH protection.** A click track going to the drummer's headphones directly (sub-millisecond) while the click never appears in the FOH feed and is never captured on tape.
-- **Side-by-side comparison.** Direct and tape-played-back versions of the same source heard simultaneously, for verifying processing decisions or checking latency compensation.
-
-## 7.5 The direct layer and the trust principle
-
-The direct layer also illustrates the trust-the-user principle from a slightly different angle. The system's automatic routing is not paternalistic; it is *anticipatory*. The system makes the assumption the user almost always wants ("you're playing — you want to hear yourself"), but the assumption is overridable, visible, and never imposed.
-
-A performer in preparation mode can inspect every direct-routing decision the system has made, override any of them, save the overrides as part of a snapshot, and trust that the system will honor those overrides during performance. The system's intelligence is in its defaults; the user's authority is in the override.
-
-## 7.6 The direct layer is not a violation of tape-as-truth
-
-This is worth stating explicitly because it is a real architectural question. The earlier parts of this paper established that **the tape is the source of truth.** Loops, phrases, edits, arrangement — everything is sourced from tape, addressable conceptually, immutable, archivally exact.
-
-The direct layer does not violate this. The direct layer is *not part of the data architecture*. It is a *signal-routing concern that is architecturally separate from the data-and-time concern*. The tape is still the truth about *what was performed*. The direct layer is *a routing path for hearing the present moment without delay*. They serve different jobs and they coexist freely.
-
-If a performer wants something they only ever heard via direct to be captured, they route it to a channel that also writes to tape. The direct layer doesn't *prevent* capture; it just doesn't *require* it. Signals can travel both paths simultaneously, and almost always do.
-
----
-
-# Part VIII — The Tape
+# Part VI — The Tape
 
 This is the architectural inversion at the heart of the system's storage model.
 
-### 8.1 Everything is always recorded
+### 6.1 Everything is always recorded
 
 The looper is not "armed" or "recording" or "in standby." From the moment the user opens a session, **every input is being captured to a tape, continuously, until the session ends.** The tapes run whether the user has any plans to use them or not. They run during silence. They run during conversation. They run during the act of thinking.
 
 This is not an exotic recording mode. It is the default — the only — mode. Storage is cheap; ideas are precious. The architecture refuses to lose ideas.
 
-### 8.2 All inputs are tapes
+### 6.2 All inputs are tapes
 
 The tape abstraction is not specific to audio. **Every signal in the system is a tape**, sharing one uniform event format:
 
@@ -621,21 +367,21 @@ Tape sources include:
 
 All of these are *the same kind of thing*. They all live on tapes. They are all queryable by conceptual or LMC time. They are all the source of truth for "what happened."
 
-### 8.3 Tapes are append-only and immutable
+### 6.3 Tapes are append-only and immutable
 
-Tapes are never modified. They are written once, at the moment of capture, and never edited. **Every edit in the system happens elsewhere** — in Constituents (Part IX), in overlay layers, in effect chains — never on the tape itself.
+Tapes are never modified. They are written once, at the moment of capture, and never edited. **Every edit in the system happens elsewhere** — in Constituents (Part VII), in overlay layers, in effect chains — never on the tape itself.
 
 This is the architectural foundation that makes the entire system tractable. It enables trivial undo, trivial multi-take, trivial collaboration, trivial archival, and trivial reproducibility.
 
-### 8.4 The retroactive ring
+### 6.4 The retroactive ring
 
 Because tapes are always running, the user never has to "start recording before the moment they want to capture." The moment is already on the tape. The user marks a boundary on a tape that has been running for some time, and pulls the in-point backward to grab the pickup note that preceded the mark.
 
-The **retroactive ring** is the in-memory portion of recent tape data, held against the possibility that the user will reach backward in time to capture something. Its depth depends on the capability tier (Part XV): seconds for tight resource budgets, minutes for comfortable ones, hours for lavish.
+The **retroactive ring** is the in-memory portion of recent tape data, held against the possibility that the user will reach backward in time to capture something. Its depth depends on the capability tier (Part XIII): seconds for tight resource budgets, minutes for comfortable ones, hours for lavish.
 
 > **The looper records the past. Because every event has been timestamped on the way in, the "record button" is a time bookmark, not a capture trigger.**
 
-### 8.5 Tape format strategy
+### 6.5 Tape format strategy
 
 Three reasonable strategies for tape storage:
 
@@ -643,15 +389,15 @@ Three reasonable strategies for tape storage:
 - **Lossless compressed** (FLAC for audio, intra-frame codec for video): roughly half the storage cost, with decompression overhead at read time
 - **Tiered**: uncompressed in the retroactive ring (RAM), lossless on disk during the live session, optional offline archival compression on session close
 
-The tier system (Part XV) chooses among these at startup based on measured hardware capability.
+The tier system (Part XIII) chooses among these at startup based on measured hardware capability.
 
-### 8.6 Tapes are local
+### 6.6 Tapes are local
 
-Tape data lives on the machine that captured it, always. The network carries only coordination metadata. This is non-negotiable and is justified fully in Part XIV.
+Tape data lives on the machine that captured it, always. The network carries only coordination metadata. This is non-negotiable and is justified fully in Part XII.
 
 ---
 
-# Part IX — The Constituent Hierarchy
+# Part VII — The Constituent Hierarchy
 
 If the tape is the source of truth, the Constituent is the thing the system actually plays.
 
@@ -710,7 +456,7 @@ A loop is the Constituent type that directly references tape data. Its specifics
 
 - `children` is empty (or contains overlays; see effects below)
 - `conceptual_in` and `conceptual_out` reference positions on its source tape(s)
-- `repetition_rules` describe how it plays back (the five dimensions of Part XII)
+- `repetition_rules` describe how it plays back (the five dimensions of Part X)
 - `effect_chain` describes processing applied to its output
 
 A loop is the *mechanism* — the thing that actually causes tape data to become sound. Everything above it in the hierarchy is structure that organizes when and how loops are heard.
@@ -719,7 +465,7 @@ A loop is the *mechanism* — the thing that actually causes tape data to become
 
 Inside a phrase, content may be looped or not looped. A non-looped tape slice is structurally similar to a loop with `repetition_rules.cardinality = Once`, but is named differently because the intent is different. A loop is "this is meant to repeat." A non-looped slice is "this is meant to be heard once, in this moment."
 
-The distinction matters for the user interface (Part XVI) — a performer should be able to capture content with an inferred intent (loop vs. one-shot) without having to declare it explicitly. The data model accommodates both as first-class.
+The distinction matters for the user interface (Part XIV) — a performer should be able to capture content with an inferred intent (loop vs. one-shot) without having to declare it explicitly. The data model accommodates both as first-class.
 
 ### 7.6 Identity persists across content revision
 
@@ -736,7 +482,7 @@ This is closer to how a screenwriter thinks about a scene than how a sound engin
 
 ---
 
-# Part X — Phrases
+# Part VIII — Phrases
 
 The phrase is the unit of musical thought. It deserves its own treatment.
 
@@ -752,10 +498,10 @@ A phrase contains zero or more child Constituents — typically loops and non-lo
 
 Critically, a phrase may contain:
 
-- **Multiple loops in different time domains.** A 4/4 drum loop and a 7/8 ostinato in the same phrase (Part XI).
+- **Multiple loops in different time domains.** A 4/4 drum loop and a 7/8 ostinato in the same phrase (Part IX).
 - **Non-looped one-shot material.** A spoken line, a sampled hit, a vocal phrase delivered once.
 - **Silence as content.** A rest, a held breath, a deliberate absence. The phrase's interior may contain regions where nothing sounds; the silence is part of the phrase's structure.
-- **Rubato or unmetered passages.** Content not aligned to any metric grid (Part XI).
+- **Rubato or unmetered passages.** Content not aligned to any metric grid (Part IX).
 
 ### 8.3 Phrase metadata
 
@@ -797,7 +543,7 @@ These relationships are stored as `grammatical_links` in the phrase metadata. Th
 
 ### 8.6 The phrase's internal time
 
-A phrase has its own conceptual time, which may have its own meter and tempo independent of its parent. This is detailed in Part XI. The crucial point: **a phrase's interior is a complete time domain.** It is not just a slice of the song's time.
+A phrase has its own conceptual time, which may have its own meter and tempo independent of its parent. This is detailed in Part IX. The crucial point: **a phrase's interior is a complete time domain.** It is not just a slice of the song's time.
 
 ### 8.7 Entrance and exit are part of the phrase
 
@@ -811,7 +557,7 @@ The entrance and exit characters interact with arrangement: a phrase that ends w
 
 ---
 
-# Part XI — Polymetric and Polytemporal Coexistence
+# Part IX — Polymetric and Polytemporal Coexistence
 
 The Constituent hierarchy admits something almost no music software has ever admitted: **multiple time domains coexisting within a single phrase.**
 
@@ -858,7 +604,7 @@ Constituents in different time domains inside the same parent must *meet* somewh
 
 Whatever the constituents are doing inside, they must be at musically sensible positions at the phrase's start and end. A polyrhythmic phrase that ends mid-cycle for one of its constituents is usually a mistake or a deliberate effect; it is not the default. The default behavior is **align at boundaries; do whatever you want internally.**
 
-For constituents that don't naturally complete by the phrase's boundary, the system applies termination rules (Part XII): hard cut, complete current cycle, fade, hand off. The phrase boundary is itself a termination trigger for its interior.
+For constituents that don't naturally complete by the phrase's boundary, the system applies termination rules (Part X): hard cut, complete current cycle, fade, hand off. The phrase boundary is itself a termination trigger for its interior.
 
 ### 9.6 Meter is a property, not a constraint
 
@@ -874,7 +620,7 @@ The architecture does not need a special "micro-timing mode" or a "groove templa
 
 ---
 
-# Part XII — Repetition
+# Part X — Repetition
 
 A phrase contains loops; a loop is an idea; ideas are worth repeating. Repetition is what makes a loop music rather than mere capture.
 
@@ -947,7 +693,7 @@ The performer can override at any time, by any of the five axes. But the default
 
 ---
 
-# Part XIII — Arrangement and Narrative
+# Part XI — Arrangement and Narrative
 
 Arrangement is composition in real time. The looper is responsible for arrangement at every level.
 
@@ -1012,7 +758,7 @@ This has practical consequences:
 
 ---
 
-# Part XIV — The Ensemble
+# Part XII — The Ensemble
 
 The single-machine architecture extends gracefully to ensembles under one strict commitment.
 
@@ -1086,7 +832,7 @@ Worst-case ensemble failure — a node loses network entirely, mid-performance �
 
 ---
 
-# Part XV — Fidelity and Resources
+# Part XIII — Fidelity and Resources
 
 The system runs on hardware of widely varying capability. It must size itself to that hardware honestly.
 
@@ -1122,7 +868,7 @@ The performer authors musical intent. The system chooses fidelity. **The perform
 
 ---
 
-# Part XVI — The Performer's Instrument
+# Part XIV — The Performer's Instrument
 
 Everything above this point has been architecture. What follows is what the performer actually touches.
 
@@ -1208,7 +954,7 @@ The highest UI achievement for a performance looper is **eyes-free operation**: 
 
 ---
 
-# Part XVII — What This Architecture Enables
+# Part XV — What This Architecture Enables
 
 ### 15.1 Capabilities unique to this architecture
 
@@ -1268,19 +1014,9 @@ The hope is that other developers — those building loopers as commercial produ
 
 **ASRC (Async Sample Rate Conversion)** — Continuous resampling between the engine's canonical internal rate and the device's actual measured rate. Lives at the membrane.
 
-**Bus** — A session-level summing point in the output mixer to which multiple Constituents can route their signals, typically for shared effects (e.g., a main reverb bus) or for grouping (e.g., a drum bus).
-
-**Bus effects** — Effects placed on a session-level bus in the output mixer, shared by all Constituents sending to that bus. Distinct from local effects, which are bound to a single Constituent.
-
 **Capability tier** — One of four operating profiles selected at session startup based on hardware capability. Governs format, effect strategy, and resource budgets.
 
 **Cardinality** — One of the five repetition dimensions. How many times a loop plays before stopping.
-
-**Channel layer** — One of the two routing layers of the input mixer. Governs decisions about the processed signal: tape mode, processed direct routing, destinations, and per-channel processing. The user works musically at this layer.
-
-**Channel strip** — The mixer's per-channel processing chain: gain, pan, EQ, dynamics, sends. The standard unit of mixer architecture.
-
-**Commit-to-tape** — Input mixer mode in which the processing is applied to the signal before the tape, baking the processed result into the tape data. Opposed to non-destructive mode.
 
 **Conceptual time** — The engine's internal time domain. Symbolic, hierarchical, exact by construction. Becomes numerical only at the membrane.
 
@@ -1288,21 +1024,13 @@ The hope is that other developers — those building loopers as commercial produ
 
 **CRDT (Conflict-Free Replicated Data Type)** — A data structure that replicates across nodes and merges without manual conflict resolution. The append-only-tape + immutable-Constituent architecture is naturally CRDT-compatible.
 
-**Direct layer** — A parallel signal path that runs from the input mixer to the output mixer without touching the tape. Used for sub-millisecond live monitoring and reinforcement. Carries signal, not time-anchored data. Architecturally separate from the data-and-time concerns of the rest of the system.
-
 **Ensemble LMC** — The shared logical master clock across a distributed ensemble. Calibrated against the elected master node.
-
-**File I/O** — One of the four signal modalities handled as first-class by both mixers. Audio, MIDI, and video files entering or leaving the session. Architecturally identical to live signals; a file input is a tape that already exists, and file export is just playback aimed at a file destination.
 
 **Grammatical relationship** — A linked relationship between phrases (call/response, statement/variation, theme/development, tension/release, punctuation) stored as phrase metadata.
 
 **Hierarchy of time domains** — The tree of nested conceptual time domains: session → song → section → phrase → loop → cycle. Each level may have its own tempo map and meter.
 
 **Identity** — The persistent ID of a Constituent, surviving all content revisions. "The verse" remains the verse across edits.
-
-**Input layer** — One of the two routing layers of the input mixer. Governs decisions about each physical or file source itself: raw direct monitor, source enable, source-level defaults. Configured once at setup; rarely revisited.
-
-**Input mixer** — The inbound stage of the signal path. A full creative mixer that handles four signal modalities (live audio, live MIDI, live video, file inputs), with routing decisions at two layers (input layer and channel layer). Each channel may operate in commit-to-tape or non-destructive mode.
 
 **Inspiration** — The fragile creative state during which the performer captures musical ideas. Designed for above all other considerations.
 
@@ -1312,33 +1040,19 @@ The hope is that other developers — those building loopers as commercial produ
 
 **Local LMC** — A node's own monotonic time reference, used for stamping local tape events.
 
-**Local effects** — Effects bound to a single Constituent, traveling with it through edits and arrangement changes. The effect is part of the idea, not part of the production. Distinct from bus effects.
-
 **Loop** — A Constituent that directly references tape data. The mechanism by which content within a phrase may repeat. *Not* the unit of musical thought.
 
 **Marzullo's algorithm** — The interval-intersection algorithm used to elect the LMC master across a distributed ensemble.
 
 **Membrane** — The boundary between digital time and physical reality. The only place in the system where conceptual time becomes numerical time. Exists exactly once per node per direction (inbound and outbound).
 
-**Mix snapshot** — A recallable, addressable mix state captured as a Constituent in conceptual time. Stores values for input and output mixer parameters; activates when playback crosses its anchor position. The architectural primitive for mix changes; continuous automation is a special case of densely-placed snapshots with interpolated transitions.
-
-**Modality** — One of the four signal types handled as first-class by both mixers: live audio, live MIDI, live video, and file I/O. The mixer architecture is modality-agnostic; channel-strip processing is appropriate to the modality each channel carries.
-
 **Mutation** — One of the five repetition dimensions. How a loop's content varies as it repeats. The art is in its invisibility.
-
-**Non-destructive mode** — Input mixer mode in which dry signal is captured to one tape while processing parameters are captured to a parallel parameter tape. Allows retroactive editing of input processing without touching the captured signal. Opposed to commit-to-tape mode.
-
-**Output mixer** — The outbound stage of the signal path. A full creative mixer that handles four output modalities (live audio, live MIDI, live video, file outputs), with per-Constituent channel strips, direct-layer channels, session-level effect buses, send/return architecture, mix snapshots, and master bus processing.
 
 **Phrase** — A complete musical utterance with its own identity, internal time domain, role, intent, entrance/exit characters, and relationship to other phrases. The unit of musical thought. May contain loops, non-looped tape slices, sub-phrases, silence.
 
 **Polymetric** — Multiple meters coexisting in the same parent Constituent (e.g., 4/4 and 7/8 in the same phrase).
 
 **Polytemporal** — Multiple time domains (metric and unmetered) coexisting in the same parent.
-
-**Processed direct** — Direct-layer mode in which the signal is routed to the output after passing through the channel's processing chain. Adds the channel processing's latency but lets the performer monitor the processed sound. Per-channel decision.
-
-**Raw direct** — Direct-layer mode in which the signal is routed to the output before any channel processing. True sub-millisecond zero-processing latency. Per-input decision; the input's signal is dispatched to direct immediately upon arrival at the membrane.
 
 **Repetition rules** — The five-axis description of how a Constituent plays back: trigger, cardinality, phase, mutation, termination.
 
@@ -1347,8 +1061,6 @@ The hope is that other developers — those building loopers as commercial produ
 **Role** — A phrase's structural function (verse, chorus, response, fill, etc.). Makes phrases interchangeable by role for structured improvisation.
 
 **Tape** — An append-only, immutable stream of timestamped events from a single input source. The source of truth.
-
-**Tape topology** — The set and configuration of tapes in a session, determined by the user's channel configuration. Tapes appear because channels demand them; the system imposes no fixed tape count.
 
 **Tempo map** — A transformation between two conceptual time domains, parameterized by tempo and time signature events at boundaries.
 
@@ -1387,7 +1099,7 @@ The following decisions were made during the design process. They appear in roug
 23. **Mutation exists to sustain engagement, not to add complexity.** Its art is invisibility.
 24. **Termination matches attention decay.**
 25. **The looper trusts the user.**
-26. ~~**The looper's scope ends at the membrane.** Mixing, routing, effects topology are downstream.~~ **[REVISED in V3, see #57]**
+26. **The looper's scope ends at the membrane.** Mixing, routing, effects topology are downstream.
 27. **Arrangement is creation, not processing.** The looper handles arrangement natively.
 28. **Inspiration is fragile** and is the design target.
 29. **Defaults are sacred.**
@@ -1422,22 +1134,6 @@ The following decisions were made during the design process. They appear in roug
 55. **Arrangement happens at the phrase level and above**, not at the loop level.
 56. **The set list is the outermost Constituent.** An entire concert is a single Constituent graph.
 
-— *V3 decisions adding the signal-path / mixer architecture:*
-
-57. **The looper is a complete production environment from physical input to physical output.** Mixing is in scope, on both sides of the tape. *(Revises decision 26.)*
-58. **The signal path is input mixer → tape → output mixer.** Both mixers are full creative mixers, not merely structural routers.
-59. **The input mixer's processing is committed-to-tape or non-destructive, per channel, user's choice.** Commit-to-tape bakes the processing into the tape; non-destructive records a parallel parameter tape alongside the dry signal for retroactive recoverability.
-60. **Mix state is captured as snapshots**, not continuous automation. Snapshots are Constituents anchored to conceptual-time positions; continuous automation is structurally equivalent to many densely-placed snapshots with interpolated transitions.
-61. **Effects exist in two places**: local to a Constituent (the effect is part of the idea) and on session-level buses (the effect is part of the production). The choice is artistic, not technical.
-62. **The mix is the music.** Mixing is part of the creative work, not an opaque downstream rendering step. This is why mixing belongs inside the looper, not after it.
-63. **Both mixers are modality-agnostic.** They handle live audio, live MIDI, live video, and file I/O as first-class signal types with the same architectural status, eliminating the seams between live capture, MIDI, video, and file import/export.
-64. **File I/O is not modal.** Importing a file is just creating a tape with a synthesized capture timestamp; rendering is just playback aimed at a file destination. There is no separate render engine and no online-vs-offline mode discrepancy.
-65. **The direct layer is a parallel signal path that bypasses the tape**, enabling sub-millisecond live monitoring and reinforcement. It carries signal, not time-anchored data, and is architecturally separate from the data-and-time concerns of the rest of the system.
-66. **The direct layer offers raw and processed modes**, user's choice per input. Raw direct bypasses all channel processing (true zero-latency); processed direct routes the post-channel signal with a few milliseconds of processing latency.
-67. **The system decides direct routing automatically.** The user does not configure a static routing matrix; the system infers direct-routing decisions from context (channel arm state, playback overlap, declared utility signals, performer action, capability tier). The user can override; the system anticipates.
-68. **Routing decisions exist at two layers: input layer and channel layer.** Input-layer decisions are about the source itself (raw direct, source enable, defaults). Channel-layer decisions are about the processed signal (tape mode, processed direct, destinations, processing). The user works at the channel layer; the input layer is configured once.
-69. **The user chooses the session's tape topology.** The number of tapes is determined by the user's channel configuration, not by the system. Tapes appear because channels demand them. Channels may write to zero, one, two, or multiple tapes; tapes may be fed by one channel, multiple channels (sub-mixes), or zero channels (historical content).
-
 ---
 
-*End of Sirius Looper Whitepaper V3. Comments, criticism, and contributions welcome.*
+*End of Sirius Looper Whitepaper. Comments, criticism, and contributions welcome.*
