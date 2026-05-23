@@ -132,7 +132,16 @@ public:
     /// Message-thread setter — copies the chain in. Set-once before the
     /// audio thread starts; mutating after start is a threading-contract
     /// violation (see class doc + continue.md constraint #6).
-    void setEffectChain (EffectChain chain) { effectChain_ = std::move (chain); }
+    ///
+    /// P7 T3a-C: after the chain is stored, if a host is bound, sweeps
+    /// every slot index up to `EffectChain::kMaxSlots` and re-binds each
+    /// internal adapter (`kind == Internal`) or unbinds (`kind == Plugin |
+    /// Empty` and any index past the chain's size) via
+    /// `host_->setInternalFxAtSlot(...)`. The unbind-on-non-Internal step
+    /// is defense-in-depth — it prevents the OOP-side `configureBus`
+    /// jassert (instances_ vs internalAdapters_ exclusivity) from firing
+    /// when a previous-Internal slot is now Plugin.
+    void setEffectChain (EffectChain chain);
 
     const EffectChain& effectChain() const noexcept { return effectChain_; }
 

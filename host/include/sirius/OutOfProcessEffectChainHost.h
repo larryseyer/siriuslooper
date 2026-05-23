@@ -198,7 +198,7 @@ public:
     // returns true rather than the unprepared-miss `false`.
     void setInternalFxAtSlot (std::int64_t                nodeKey,
                               std::size_t                 slotIdx,
-                              std::optional<InternalFxId> id);
+                              std::optional<InternalFxId> id) override;
 
     // Message-thread only. Forwards `prepare(sampleRate, maxBlockSize)` to
     // every currently-bound internal-FX adapter and remembers the values
@@ -214,7 +214,7 @@ public:
     // sample-rate / max-block changes (the engine already has the hooks
     // for this — wiring those hooks into the live audio device is
     // Subagent C's scope, not T3a-B).
-    void prepareInternalFx (double sampleRate, int maxBlockSize);
+    void prepareInternalFx (double sampleRate, int maxBlockSize) override;
 
     // ---- Editor wire-through (M7 S5) — message-thread only --------------
     //

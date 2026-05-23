@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <utility>
 
 namespace sirius
@@ -122,7 +123,33 @@ public:
     /// Phase 4). Set-once before the audio thread starts; mutating after
     /// start is a threading-contract violation (same collaborator contract
     /// as Bus::setEffectChain).
-    void setEffectChain (EffectChain chain) { effectChain_ = std::move (chain); }
+    ///
+    /// P7 T3a-C: after the chain is stored, if a host is bound, sweeps
+    /// every slot index up to `EffectChain::kMaxSlots` and re-binds each
+    /// internal adapter (`kind == Internal`) or unbinds (`kind == Plugin |
+    /// Empty` and any index past the chain's size) via
+    /// `host_->setInternalFxAtSlot(...)`. Same shape as Bus::setEffectChain
+    /// — see the docblock there for the unbind-on-non-Internal rationale.
+    void setEffectChain (EffectChain chain)
+    {
+        effectChain_ = std::move (chain);
+
+        if (host_ == nullptr) return;
+
+        const auto& entries = effectChain_.entries();
+        for (std::size_t slotIdx = 0; slotIdx < EffectChain::kMaxSlots; ++slotIdx)
+        {
+            if (slotIdx < entries.size()
+                && entries[slotIdx].kind == EffectChainSlotKind::Internal)
+            {
+                host_->setInternalFxAtSlot (nodeKey_, slotIdx, entries[slotIdx].internalId);
+            }
+            else
+            {
+                host_->setInternalFxAtSlot (nodeKey_, slotIdx, std::nullopt);
+            }
+        }
+    }
 
     const EffectChain& effectChain() const noexcept { return effectChain_; }
 

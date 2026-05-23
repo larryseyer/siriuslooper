@@ -1632,6 +1632,20 @@ MainComponent::MainComponent()
     if (flacTapeSink_ != nullptr)
         flacTapeSink_->setSampleRate (audioDeviceManager_.getAudioDeviceSetup().sampleRate);
 
+    // P7 T3a-C — prepare any internal-FX adapters bound to the OOP host so
+    // their first audio-thread `process` returns true rather than the
+    // unprepared-miss `false`. Today no internal-FX is bound at startup (the
+    // insert-chain UI hasn't shipped), but adapter binds that happen later
+    // (via Bus::setEffectChain when an Internal slot lands) will read these
+    // values back out of the host and auto-prepare. Re-issued from
+    // rebuildInputStrips() / rebuildBusStrips() on sample-rate change, with
+    // the audio callback already detached there.
+    {
+        const auto setup = audioDeviceManager_.getAudioDeviceSetup();
+        if (setup.sampleRate > 0.0 && setup.bufferSize > 0)
+            effectChainHost_.prepareInternalFx (setup.sampleRate, setup.bufferSize);
+    }
+
     // --- Performance tab ---
     tabs_.addTab ("Performance", juce::Colours::black, &performanceView_, false);
 
@@ -2360,6 +2374,16 @@ void MainComponent::rebuildInputStrips()
     // thread, before audio starts or between removeAudioCallback/addAudioCallback).
     if (flacTapeSink_ != nullptr)
         flacTapeSink_->setSampleRate (sampleRate);
+
+    // P7 T3a-C — re-prepare every bound internal-FX adapter against the live
+    // device configuration. The audio callback is detached here, so the host's
+    // internal-adapter table can be walked safely. No-op when no adapters are
+    // bound (today's startup state).
+    {
+        const auto setup = audioDeviceManager_.getAudioDeviceSetup();
+        if (setup.sampleRate > 0.0 && setup.bufferSize > 0)
+            effectChainHost_.prepareInternalFx (setup.sampleRate, setup.bufferSize);
+    }
 
     audioDeviceManager_.addAudioCallback (audioCallback_.get());
 }

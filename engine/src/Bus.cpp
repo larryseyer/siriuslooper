@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <optional>
 #include <utility>
 
 namespace sirius
@@ -39,6 +40,43 @@ Bus::Bus (Bus&& other) noexcept
       peakRight_ (other.peakRight_.load (std::memory_order_relaxed)),
       lufsMeter_ (std::move (other.lufsMeter_))
 {
+}
+
+void Bus::setEffectChain (EffectChain chain)
+{
+    // Message-thread only. Caller has detached the audio callback (same
+    // collaborator contract as setEffectChainHost). Storing the chain first
+    // means the host's internal-adapter table re-bind below reflects the
+    // POST-mutation chain shape — important for the unbind-stale-slots
+    // sweep that follows.
+    effectChain_ = std::move (chain);
+
+    if (host_ == nullptr)
+        return;
+
+    // P7 T3a-C — re-bind every potential slot. For each [0, kMaxSlots):
+    //   * Internal slot → bind that adapter id (auto-prepared if host has
+    //     been prepared).
+    //   * Plugin / Empty slot, or any index past the chain's size → unbind
+    //     (nullopt). The unbind on Plugin is defense-in-depth against the
+    //     OOP host's configureBus jassert that the (nodeKey, slot) key is
+    //     NOT simultaneously in both internalAdapters_ and instances_.
+    //     The unbind on indices past chain.size() prevents orphan adapters
+    //     from a previous, longer chain.
+    const auto& entries = effectChain_.entries();
+    const std::int64_t nodeKey = id_.value();
+    for (std::size_t slotIdx = 0; slotIdx < EffectChain::kMaxSlots; ++slotIdx)
+    {
+        if (slotIdx < entries.size()
+            && entries[slotIdx].kind == EffectChainSlotKind::Internal)
+        {
+            host_->setInternalFxAtSlot (nodeKey, slotIdx, entries[slotIdx].internalId);
+        }
+        else
+        {
+            host_->setInternalFxAtSlot (nodeKey, slotIdx, std::nullopt);
+        }
+    }
 }
 
 void Bus::process (float* const* output, int numChannels, int numSamples) const noexcept

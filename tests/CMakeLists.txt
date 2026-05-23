@@ -84,7 +84,9 @@ add_executable(SiriusTests
     # EqAdapter lives in engine/src/fx/ (private to the engine target);
     # the include path below lets the test reach it.
     EqAdapterTests.cpp
-    InternalFxFactoryTests.cpp)
+    InternalFxFactoryTests.cpp
+    # P7 T3a-C — end-to-end Bus → host → adapter dispatch test.
+    BusInternalFxEndToEndTests.cpp)
 
 # T3a: EqAdapterTests includes "fx/EqAdapter.h" (engine-private header) and
 # EqAdapter.h transitively includes <otto/effects/PlayerEQ.h>. Both paths

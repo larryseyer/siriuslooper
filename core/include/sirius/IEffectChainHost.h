@@ -1,7 +1,10 @@
 #pragma once
 
+#include "sirius/InternalFxId.h"
+
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 
 namespace sirius
 {
@@ -61,6 +64,28 @@ public:
                            float* const*       outChannels,
                            int                 numChannels,
                            int                 numSamples) noexcept = 0;
+
+    /// P7 T3a-C — message-thread binder for Sirius's built-in FX adapters.
+    /// Engine call sites (`Bus::setEffectChain`, `ChannelStrip::setEffectChain`,
+    /// `OutputMixer::setBusEffectChain`) invoke this from inside the same
+    /// audio-callback-bracketed region that already configures plug-in slots,
+    /// passing one of:
+    ///   - `id == value`  → bind/replace an adapter at `(nodeKey, slotIdx)`.
+    ///   - `id == nullopt`→ unbind any existing adapter at `(nodeKey, slotIdx)`.
+    /// Default no-op so test fakes that only care about `pumpSlot` keep
+    /// compiling. The OOP host overrides to maintain its `internalAdapters_`
+    /// table; the audio thread's `pumpSlot` checks that table FIRST and
+    /// falls through to the plug-in dispatch on miss.
+    virtual void setInternalFxAtSlot (std::int64_t                /*nodeKey*/,
+                                      std::size_t                 /*slotIdx*/,
+                                      std::optional<InternalFxId> /*id*/) {}
+
+    /// P7 T3a-C — message-thread prepare for every bound internal adapter.
+    /// Called once at audio-device init and again on every sample-rate /
+    /// max-block change (the engine has the hooks; `MainComponent` wires
+    /// them). Default no-op for the same fake-compat reason as
+    /// `setInternalFxAtSlot`.
+    virtual void prepareInternalFx (double /*sampleRate*/, int /*maxBlockSize*/) {}
 };
 
 } // namespace sirius
