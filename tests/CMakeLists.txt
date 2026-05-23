@@ -100,7 +100,12 @@ add_executable(IdaTests
     # P7 T3a-C — end-to-end Bus → host → adapter dispatch test.
     BusInternalFxEndToEndTests.cpp
     # P7 T3a I-2 — end-to-end InputMixer → Bus → host → adapter dispatch.
-    InputMixerInternalFxEndToEndTests.cpp)
+    InputMixerInternalFxEndToEndTests.cpp
+    # P7 T5 slice 4 — InsertChainPopup (ui/) callback-driven coverage.
+    # JUCE Component is constructed inside ScopedJuceInitialiser_GUI; the
+    # public simulate* test seams drive the callback contract without
+    # painting pixels (pixel rendering is operator-eyes-on at slice 5).
+    InsertChainPopupTests.cpp)
 
 # T3a: EqAdapterTests includes "fx/EqAdapter.h" (engine-private header) and
 # EqAdapter.h transitively includes <otto/effects/PlayerEQ.h>. Both paths

@@ -1,6 +1,131 @@
-# Session Continuation — 2026-05-23 (IDA rename — Phases 1-5 SHIPPED)
+# Session Continuation — 2026-05-23 (P7 T5 slice 4 SHIPPED)
 
-> **TL;DR for a fresh chat picking this up cold:** the product formerly called
+> **TL;DR for a fresh chat picking this up cold:** P7 T5 slice 4
+> (`InsertChainPopup` ui/ component) landed in one focused commit on
+> origin/master. The popup is a `juce::Component` subclass in the `IdaUi`
+> library with four `std::function` callbacks (`onSlotChanged`,
+> `onSlotBypassToggled`, `onSlotsReordered`, `onClose`) and four public
+> `simulate*` test seams that let Catch2 drive the callback contract
+> without painting pixels. **ctest: 631 → 639 pass** (+8 cases tagged
+> `[insert-chain-popup]`, all green), with the one not-run sentinel
+> (`MainComponentPluginEditorTests_NOT_BUILT`) unchanged from baseline.
+> Both `IdaTests` and `IDA` rebuild clean. Pixel rendering (geometry,
+> fonts, accent colours, drag-handle gesture) is operator-eyes-on at
+> slice 5 once the INS button + MainComponent wiring exists.
+>
+> **NEXT:** slice 5 — INS button on Input + Bus strips +
+> `MainComponent` relay wiring. Operator-eyes-on. The full 6-slice T5
+> plan lives at `/Users/larryseyer/.claude/plans/t5-insert-ui.md`;
+> slice 4 implementation plan lives at
+> `/Users/larryseyer/.claude/plans/we-recently-renamed-sirius-deep-raccoon.md`.
+>
+> **MANDATORY at session start:** read
+> `external/OTTO/CROSS_PROJECT_INBOX.md` and acknowledge any
+> `[FROM OTTO → IDA]` entries. Confirmed clean from IDA's side at
+> 2026-05-23 — `[FROM OTTO → IDA]` is empty; the only outbound
+> `needs-ack` is the 2026-05-23 rename announcement waiting for OTTO's
+> next session.
+
+## ✅ DONE THIS SESSION (2026-05-23 — T5 Insert UI slice 4)
+
+One focused commit landed on origin/master. Slice 4 ships the popup
+component the INS button in slice 5 will open. The popup is stateless
+w.r.t. the audio thread — it never touches `IEffectChainHost`; the
+caller (slice 5, `MainComponent`) translates each callback into the
+detach-mutate-reattach sequence around the engine APIs.
+
+### Slice 4 — `InsertChainPopup` ui/ component
+
+- **`ui/include/ida/InsertChainPopup.h`** — new. `juce::Component`
+  subclass with the four `std::function` callbacks above, a
+  `setInitialChain(EffectChain&)` seeder, a read-only `slotStates()`
+  view, and four public `simulate*` test seams (`simulatePickFx`,
+  `simulateBypassToggle`, `simulateReorder`, `simulateClose`). Nested
+  private `SlotRow` (one per slot index) owns the picker + bypass +
+  remove + drag-handle children.
+- **`ui/src/InsertChainPopup.cpp`** — new. `SlotRow` definition + the
+  popup's funnel methods (`handlePickerChange`, `handleBypassClick`)
+  that update local state, refresh the row UI, and fire the registered
+  callback in one place — so the JUCE-event path and the `simulate*`
+  test-seam path share the exact same behaviour. Picker is
+  `juce::ComboBox` with five entries (Empty / EQ / CMP / DLY / RVB,
+  signal-chain display order); item IDs are mapped explicitly because
+  the underlying enum stores `kEq=0 / kCmp=1 / kRvb=2 / kDly=3` out of
+  display order. Geometry from `otto::Sizing::kMenuRowHeight` +
+  `kMenuHorizontalPadding`; colours from
+  `otto::OTTOLookAndFeel::getMenuColors()`. Non-Internal slots
+  (Empty / Plugin) read as Empty in the popup — Plugin slots are out
+  of T5 scope per `project_plugin_scanner_broken`.
+- **`tests/InsertChainPopupTests.cpp`** — new. Eight Catch2 cases
+  tagged `[insert-chain-popup]`. Each opens with
+  `juce::ScopedJuceInitialiser_GUI juceInit;` (same shape as
+  `MainComponentPluginEditorTests.cpp:50`). Coverage:
+  1. `setInitialChain` seeds slot state; `simulatePickFx` fires
+     `onSlotChanged` with the expected args + updates local state.
+  2. `simulatePickFx(slot, std::nullopt)` fires `onSlotChanged` with
+     nullopt (remove semantics).
+  3. `simulateBypassToggle` fires `onSlotBypassToggled` for both
+     true→false transitions + updates local state.
+  4. `simulateReorder` fires `onSlotsReordered` and swaps local state
+     for both slots.
+  5. `simulateReorder(N, N)` is a no-op — no callback fires.
+  6. `simulateClose` fires `onClose` exactly once.
+  7. Unregistered callback path is a no-op (no crash) — all
+     `simulate*` methods invoked without `setOn*` wiring.
+  8. `setInitialChain` ignores non-Internal slots — Plugin and Empty
+     slots both read as Empty in the popup.
+- **`ui/CMakeLists.txt`** — appended `src/InsertChainPopup.cpp` to the
+  `IdaUi` target_sources list (line 87 region).
+- **`tests/CMakeLists.txt`** — appended `InsertChainPopupTests.cpp` to
+  the `IdaTests` source list (line 103 region) with a docstring
+  matching the existing P7 T3a/b/c/d annotation style.
+
+**RT-safety:** the popup never touches the audio thread. All gestures
+go through `std::function` callbacks the caller (slice 5,
+`MainComponent`) is responsible for translating into the
+detach-mutate-reattach sequence around `setInternalFxAtSlot` /
+`setInternalFxBypassAtSlot` / `moveInternalFxSlot`.
+
+ctest: **631 → 639 pass** (+8 new `[insert-chain-popup]` cases, 100 %
+pass). The one not-run sentinel is `MainComponentPluginEditorTests_NOT_BUILT`,
+unchanged from baseline. Both `IdaTests` and `IDA` rebuild clean (only
+the pre-existing duplicate-library link warnings — same as baseline).
+
+## ▶ NEXT — T5 slice 5 (INS button + MainComponent wiring, operator-eyes-on)
+
+Slice 5 is the operator-visible piece that finally lets the operator
+drop an RVB slot on a strip and hear plate reverb after the 4-6 s OTTO
+worker IR load. Per the T5 plan at
+`/Users/larryseyer/.claude/plans/t5-insert-ui.md` (slice 5 section):
+
+- **`app/MainComponent.cpp`** — extend
+  `InputMixerPane::setStrips()` and `setBusStrips()` to add an "INS"
+  button next to the existing destination picker. Mirror the existing
+  `destButton` plumbing (LookAndFeel + lambda callback). Add parallel
+  arrays `inputStripInsButtons_` / `busStripInsButtons_`.
+- **Lambda relay** (parallel to `onDestinationChosen`):
+  `std::function<void (int stripIdx)> onInsertChainClicked`. On click,
+  read the strip's `nodeKey` from `inputStripChannelIds_` /
+  `busStripIds_`, pull the current `EffectChain` for that node
+  (likely `getChainForBus(nodeKey)` already exists; if not, add it
+  in this slice), construct an `InsertChainPopup` seeded with the
+  Internal-only subset, wire the popup's four callbacks to
+  `host.setInternalFxAtSlot` / `setInternalFxBypassAtSlot` /
+  `moveInternalFxSlot` / popup teardown. Show anchored to the clicked
+  INS button.
+- **`app/MainComponent.h`** — declarations for the relay lambdas +
+  the popup `unique_ptr`.
+
+Operator gate after slice 5: drop an RVB slot on the first input
+strip with signal routed through it; expect 4-6 s of dry pass-through
+then audible plate reverb tail. Toggle bypass mid-signal: instant dry.
+Toggle off: audible wet again, no re-load. Add an EQ above the RVB,
+drag EQ down past RVB: chain re-orders, EQ now post-RVB. Save + close
++ reopen + load: chain restored with bypass state intact.
+
+## (archived) — prior session: 2026-05-23 IDA rename Phases 1-5
+
+
 > **Sirius Looper** is now **IDA — Idea Development Arranger** (the looping
 > environment counterpart to OTTO under the AutomagicArt brand). The rename
 > spanned 13 commits across `master` and 3 commits in the OTTO submodule, all
