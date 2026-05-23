@@ -1,19 +1,143 @@
-# Session Continuation — 2026-05-24 (T07) (**P7 T07 SHIPPED via ralph loop iteration #7 — `MainComponent::refreshAll()` extracted as a private composition of `refreshPerformance(); refreshPreparation(); refreshCaptureControls(); refreshDiagnostics();`. Three full-sequence call sites collapsed to a single `refreshAll();` each: `onUndo()` post-restore refresh, `onRedo()` post-redo refresh, and `forkPlacement()` end-of-gesture refresh. Historical line numbers from the deferral (`:525-528 / :938-941 / :966-969 / :1013-1016` plus a fifth at Task-8 site `38667d0`) have drifted heavily since T3a-C landed on `869318f` — re-locating by symbol via multiline-regex grep surfaced exactly THREE current full-sequence sites, not five (the prior duplications were folded or split during intervening edits). Two partial sites cited in the deferral (`:821-826`, `:1085-1086`) deliberately stay partial: `playhead_.onValueChange = [this] { refreshPerformance(); refreshPreparation(); };` is a 2-of-4 scope-limited to playhead drag (collapsing would fire `refreshCaptureControls()` + `refreshDiagnostics()` on every drag, wasteful), and the ctor's startup refresh interleaves `refreshTimeline()` which `refreshAll()` does NOT include (timeline isn't a per-capture / per-edit concern). The `onMarkOut()` 2+2 split across the `if (region)` brace at `:2720-2725` is also deliberately left as-is (Performance/Preparation fires inside the region-promoted branch, CaptureControls/Diagnostics fires unconditionally outside — collapsing would change semantics on the no-region-found path). Pure refactor, no new tests, no behavior change. ctest baseline preserved **621 pass / 2 skipped** (the 2 skipped remain the operator-only OOP editor cases). NEXT = T08 (`announceCapture` Overlay `value_or` → `jassert`).**)
+# Session Continuation — 2026-05-24 (T08) (**P7 T08 SHIPPED via ralph loop iteration #8 — `MainComponent::announceCapture`'s Overlay branch swapped from `value_or` fallbacks (`"the phrase here"` / `0u`) to direct `*result.hostPhraseName` / `*result.overlayPlacementIndex` dereference, gated by one `jassert (result.hostPhraseName.has_value() && result.overlayPlacementIndex.has_value());` immediately above the reads. The branch is contractually unreachable when the invariant holds (`Promotion::promote` populates both fields whenever `resolvedMode == Overlay`); the swap converts a silent-wrong-copy regression mode (`"Added to the phrase here 0 only"`) into a loud-debug-trap regression mode per CLAUDE.md philosophy rule 8 ("fail loud"). A three-line WHY comment cites rule 8 and names the silently-wrong string the change exists to prevent. Release builds run identical code (`jassert` compiles out); Debug builds trap if the contract ever regresses. Operator gate re-verification of the four §11 banner scenarios is OUT OF LOOP SCOPE per the prd.json task body — left to the operator after the loop exits. ctest baseline preserved **621 pass / 2 skipped** (the 2 skipped remain the operator-only OOP editor cases #619 / #620). **LOOP EXITS HERE** — T08 was the final loop-eligible task. All eight prd.json tasks done. Remaining roadmap (T4 Sends tab UI, T5 Insert UI, T6 P4/P5 persistence wiring into MainComponent save/load) is GUI-heavy and ralph cannot verify it headlessly — operator picks up.**)
 
 > **For a fresh chat picking this up cold:** read this whole file before
 > doing anything. Memory + project + user CLAUDE.md load automatically;
 > this file is the *state* (what just shipped + what's queued next).
-> Newest commit on Sirius origin/master: **`f08d13e`** (this session's T07
-> commit landed on top of `df89949`); OTTO origin/main:
-> **`abf8e4d4`** (unchanged this session); ctest baseline **621 pass / 2
-> skipped** (unchanged — refactor only, no new tests).
+> Newest commit on Sirius origin/master: **`<TBD>`** (this session's T08
+> commit landed on top of `e85efc3`, which was T07's follow-up SHA bump);
+> OTTO origin/main: **`abf8e4d4`** (unchanged this session); ctest
+> baseline **621 pass / 2 skipped** (unchanged — defensive-trap addition,
+> no behavior shift in correct execution).
 > **MANDATORY at session start:** read
 > `external/OTTO/CROSS_PROJECT_INBOX.md` and acknowledge any
 > `[FROM OTTO → SIRIUS]` entries (per `project_cross_project_inbox_protocol`).
 > The whitepaper lives at `docs/Sirius_Looper_Whitepaper_V7.md`
 > (underscores — `project_whitepaper_path`).
 
-## ✅ DONE THIS SESSION (2026-05-24 — T07 extract MainComponent::refreshAll, ralph iteration #7)
+## ✅ DONE THIS SESSION (2026-05-24 — T08 announceCapture Overlay value_or → jassert, ralph iteration #8)
+
+Single-commit ralph iteration. Pure defensive-trap addition — no behavior
+shift in correct execution, no new tests. Closes the final of the three
+2026-05-16 code-review follow-ups queued for the loop (prd.json T06 / T07
+/ T08); after this commit the loop exits because remaining prd.json
+scope is GUI work (T4 / T5) that ralph cannot verify headlessly.
+
+- **`app/MainComponent.cpp`** — `announceCapture` Overlay branch
+  (currently lines ~2747-2754). Replaced
+  `result.hostPhraseName.value_or (std::string ("the phrase here"))`
+  with direct `*result.hostPhraseName` and
+  `result.overlayPlacementIndex.value_or (0u)` with direct
+  `*result.overlayPlacementIndex`, guarded immediately above by one
+  combined `jassert (result.hostPhraseName.has_value()
+  && result.overlayPlacementIndex.has_value());`. A three-line WHY
+  comment cites CLAUDE.md philosophy rule 8 (fail loud) and names the
+  silently-wrong banner string the change exists to prevent
+  (`"Added to the phrase here 0 only"`). The dereference style matches
+  the file's existing convention at line ~2769
+  (`juce::String (*result.hostPhraseName)` in the Shared / host-found
+  branch).
+
+- **Contract preservation.** The branch is unreachable by contract —
+  `Promotion::promote` populates `hostPhraseName` + `overlayPlacementIndex`
+  whenever `resolvedMode == Overlay` (an Overlay attachment by
+  definition located a wrapper and computed the placement ordinal).
+  The swap therefore changes nothing in correct operation; it only
+  changes the failure mode if the invariant ever regresses — from a
+  silent-wrong-copy banner to a loud debug trap. Release builds run
+  identical code (`jassert` is a no-op there).
+
+- **`todo.md`** — the 2026-05-16 `'announceCapture Overlay branch:
+  replace value_or fallbacks with jassert'` entry marked RESOLVED with
+  a paragraph describing what landed (combined jassert above both reads,
+  three-line WHY comment citing rule 8, named-string call-out), the
+  Release vs Debug semantics, the operator-gate-out-of-loop-scope note,
+  and the loop-exit observation.
+
+- **`progress.txt`** — `[ ] T08` flipped to `[x] T08`; header fields
+  flipped (`state` → `complete`, `current_task` → `none`,
+  `last_commit`, `last_updated`) — this is the final task in the loop.
+
+**RT-safety:** N/A — `announceCapture` is a message-thread method
+called from the UI promotion banner path. Not reached from the audio
+callback. `jassert` itself is message-thread / debug-only.
+
+**Operator gate scenarios still apply.** Per the prd.json task body,
+the four §11 banner scenarios (capture → "Added to verse 2 only",
+shared → "Added to <phrase name>", mint → "New phrase captured",
+downgrade → "Added — no section here yet") are not loop-verifiable.
+Confidence is high because: (a) the swap is a no-op in correct
+operation, (b) ctest is green and the OOP editor lifecycle test #621
+constructs/destructs MainComponent cleanly, (c) the branch under
+contract NEVER fires the new jassert.
+
+**ctest baseline:** **621 pass / 2 skipped** (the 2 skipped remain the
+operator-only OOP editor cases #619 / #620 from
+`MainComponentPluginEditorTests`). Build clean.
+`cmake --build build --target SiriusTests && ctest --test-dir build
+--output-on-failure` was the gate this iteration passed. `SiriusLooper`
+was also rebuilt (compile-only, no launch) to verify the edit compiles
+— clean (the prior duplicate-library link warnings are pre-existing
+and unrelated).
+
+## ▶ NEXT — loop exits; operator picks up GUI work (T4 Sends UI / T5 Insert UI / T6 persistence wiring)
+
+**The ralph loop is DONE for this prd.json.** All eight tasks shipped
+green; the three 2026-05-16 code-review follow-ups (Shared-splice hoist
+T06, `refreshAll` extraction T07, this `value_or`→`jassert` swap T08)
+are all resolved. Per the prd.json `description` field ("After T3c the
+work pivots to GUI (T4/T5) which ralph cannot verify; the loop must
+exit before then"), this iteration is the loop's exit point.
+
+```
+T0  OTTO submodule          ✅ DONE
+T1  docs                    ✅ DONE
+T2  engine union slot       ✅ DONE
+T3  internal-FX adapters    NEAR DONE
+    T3a-EQ                  ✅ DONE
+    T3b-CMP                 ✅ DONE
+    T3c-DLY                 ✅ DONE
+    T3d-RVB                 last (background-thread IR loading)
+T3a follow-up debt          ✅ ALL DONE via prd.json T03-T05
+2026-05-16 code-review      ✅ ALL DONE via prd.json T06-T08
+    T06 Promotion splice    ✅ DONE
+    T07 MainComponent refresh ✅ DONE
+    T08 announceCapture jassert ✅ DONE (this iteration)
+T4  Sends tab UI            (after T3d + GUI handoff)
+T5  Insert UI               (internal-FX-only picker until "P7-scanner")
+T6  P4/P5 persistence wiring into MainComponent save/load
+T3d-RVB                     queued (operator-prioritized: background-
+                            thread IR loading is the lone remaining
+                            internal-FX adapter; ralph could in principle
+                            do it if a fresh prd.json adds it, but the
+                            IR-load async work touches the worker-thread
+                            boundary and the operator may want eyes-on)
+```
+
+**First moves for the operator next session (NOT for ralph):**
+
+1. Read this file's DONE section to confirm what landed.
+2. Run the four §11 banner gate scenarios in the standalone app:
+   - Mark In → Mark Out inside an existing verse → expect "Added to
+     verse 2 only" (or similar — the placement ordinal varies).
+   - Mark In → Mark Out where no host exists, no Overlay request →
+     expect "New phrase captured".
+   - Mark In → Mark Out with Overlay request where no host exists →
+     expect "Added — no section here yet".
+   - Mark In → Mark Out where a Shared host is found (no Overlay) →
+     expect "Added to <phrase name>" (or with downgrade tail
+     "— no section here yet" if `lastRequestWasOverlay_` was true).
+3. Decide the next prd.json focus: either continue engine-side with
+   a new prd.json that resumes M8 milestones (S7+), or hand off to
+   the GUI track (T4 Sends UI / T5 Insert UI) with operator eyes-on.
+4. T3d-RVB (background-thread IR loading) remains the lone open
+   internal-FX adapter. Operator decides whether that's a new ralph
+   loop entry or operator-side work given the worker-thread boundary.
+
+---
+
+# (archived header — 2026-05-24) — P7 T07 SHIPPED via ralph loop iteration #7 — `MainComponent::refreshAll()` extracted as a private composition of `refreshPerformance(); refreshPreparation(); refreshCaptureControls(); refreshDiagnostics();`. Three full-sequence call sites collapsed to a single `refreshAll();` each: `onUndo()` post-restore refresh, `onRedo()` post-redo refresh, and `forkPlacement()` end-of-gesture refresh. Two partial sites + the `onMarkOut()` 2+2 split deliberately left as-is. Pure refactor, no new tests, no behavior change. ctest **621 pass / 2 skipped**.
+
+## (archived body — T07 extract MainComponent::refreshAll, ralph iteration #7)
 
 Single-commit ralph iteration. Pure refactor — no new tests, no behavior
 change. Closes the third of the three 2026-05-16 code-review follow-ups
@@ -107,70 +231,6 @@ operator-only OOP editor cases #619 / #620 from
 + `MainComponentPluginEditorTests` targets were also rebuilt
 (compile-only, no launch) to verify the MainComponent edits compile —
 both clean.
-
-## ▶ NEXT — announceCapture Overlay value_or → jassert (T08 in `prd.json`)
-
-Active prd.json: `T08` — the final loop-eligible task before GUI work.
-In `app/MainComponent.cpp`'s `announceCapture` Overlay branch (deferral
-cited ~line 780; re-locate by grep because the line MAY have drifted),
-replace `result.hostPhraseName.value_or("the phrase here")` and
-`result.overlayPlacementIndex.value_or(0u)` with direct dereference
-(`*result.hostPhraseName` / `*result.overlayPlacementIndex` or
-`.value()` if the file prefers that style), guarded immediately above
-by `jassert(result.hostPhraseName.has_value() &&
-result.overlayPlacementIndex.has_value());`. The branch is
-contractually unreachable when the invariant holds — converts
-silent-wrong-copy failure to loud-debug-trap failure per CLAUDE.md
-philosophy rule 8 (`fail loud`). Operator gate re-verification (the
-four banner scenarios) is OUT OF LOOP SCOPE — left to operator after
-the loop exits.
-
-```
-T0  OTTO submodule          ✅ DONE
-T1  docs                    ✅ DONE
-T2  engine union slot       ✅ DONE
-T3  internal-FX adapters    NEAR DONE
-    T3a-EQ                  ✅ DONE
-    T3b-CMP                 ✅ DONE
-    T3c-DLY                 ✅ DONE
-    T3d-RVB                 last (background-thread IR loading)
-T3a follow-up debt          ✅ ALL DONE via prd.json T03-T05
-    T03 I-1 idempotency     ✅ DONE
-    T04 I-2 InputMixer wire ✅ DONE
-    T05 M-2 Bus split       ✅ DONE
-2026-05-16 code-review      NEAR DONE via prd.json T06-T08
-    T06 Promotion splice    ✅ DONE
-    T07 MainComponent refresh ✅ DONE (this iteration)
-    T08 announceCapture jassert next (this entry)
-T4  Sends tab UI            (after T3d + GUI handoff)
-T5  Insert UI               (internal-FX-only picker until "P7-scanner")
-T6  P4/P5 persistence wiring into MainComponent save/load
-```
-
-**First moves for T08:**
-
-1. Read `app/MainComponent.cpp`. Use Grep to find the
-   `announceCapture` Overlay branch — search for `value_or` near
-   `hostPhraseName` / `overlayPlacementIndex`. Confirm the line drift
-   from the deferral's cited ~line 780.
-2. Replace `result.hostPhraseName.value_or("the phrase here")` with
-   `*result.hostPhraseName` (or `result.hostPhraseName.value()`, to
-   match the surrounding style if it already uses `.value()`). Same
-   for `result.overlayPlacementIndex.value_or(0u)`.
-3. Immediately above both dereferences, add the guard:
-   `jassert(result.hostPhraseName.has_value() &&
-   result.overlayPlacementIndex.has_value());` (combine into one
-   `jassert` if the dereferences are adjacent).
-4. Verify with `cmake --build build --target SiriusTests &&
-   ctest --test-dir build --output-on-failure` — EXACTLY the same
-   case count as before T08 (currently **621 pass / 2 skipped**;
-   refactor only, no new tests).
-5. Mark the 2026-05-16 'announceCapture Overlay branch: replace
-   value_or fallbacks with jassert' entry in `todo.md` resolved.
-
-After T08 → the loop exits. Remaining work (T4 Sends tab UI,
-T5 Insert UI, T6 persistence wiring) is GUI-heavy and ralph cannot
-verify it headlessly — operator picks up.
 
 ---
 

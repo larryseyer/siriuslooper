@@ -1,10 +1,10 @@
 # Sirius Looper Ralph Loop Progress
 
 ## Status
-state: in_progress
-current_task: T08
-last_commit: f08d13e
-last_updated: 2026-05-24T00:25:00Z
+state: complete
+current_task: none
+last_commit: <TBD>
+last_updated: 2026-05-24T01:10:00Z
 
 ## Tasks
 [x] T01 - T3b-CMP — wrap otto::effects::PlayerCompressor as CmpAdapter
@@ -14,7 +14,7 @@ last_updated: 2026-05-24T00:25:00Z
 [x] T05 - P7 T3a M-2 — split Bus::process into processInline + processChain helpers
 [x] T06 - Hoist Shared-path splice out of Promotion::promote into helper
 [x] T07 - Extract MainComponent::refreshAll and replace duplicated sites
-[ ] T08 - announceCapture Overlay — value_or fallbacks → jassert per fail-loud rule
+[x] T08 - announceCapture Overlay — value_or fallbacks → jassert per fail-loud rule
 
 ## Codebase Patterns
 

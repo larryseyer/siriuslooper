@@ -887,31 +887,31 @@
 - ctest baseline: **621 pass / 2 skipped** (unchanged from before the
   refactor — pure restructure, no behavior change).
 
-### 2026-05-16 — `announceCapture` Overlay branch: replace `value_or` fallbacks with `jassert`
+### 2026-05-16 — `announceCapture` Overlay branch: replace `value_or` fallbacks with `jassert` — RESOLVED 2026-05-24 by P7 T08
 
-- **Files:** `app/MainComponent.cpp` (the `announceCapture` Overlay
-  branch in the §11 templates, around line 780).
-- **What was deferred:** the Overlay branch uses
-  `result.hostPhraseName.value_or("the phrase here")` and
-  `result.overlayPlacementIndex.value_or(0u)`. Both fallbacks are
-  unreachable by contract — when `resolvedMode == Overlay`, promote()
-  guarantees both fields are populated (a wrapper was located and the
-  placement ordinal computed). If the invariant ever broke, the banner
-  would render `"Added to the phrase here 0 only"` — silently wrong
-  copy that violates CLAUDE.md philosophy rule 8 ("fail loud").
-- **What's needed to finish:**
-  1. Replace `value_or` with direct dereference, gated by `jassert
-     (result.hostPhraseName.has_value() && result.overlayPlacementIndex
-     .has_value());` so debug builds catch contract regressions loudly.
-  2. Re-verify the four banner scenarios still read correctly on
-     operator gate.
-- **Why deferred:** shipped Task 7 commit (`dd1c28c`) as the plan
-  specified plus the dead-`wasDowngrade` deletion. The `value_or` ->
-  `jassert` swap is a small follow-up that turns an unreachable-but-
-  silent failure mode into an unreachable-but-loud one.
-- **Operational consequence today:** none. The branch is unreachable
-  in practice; tests + operator gate pass cleanly.
-- **Surfaced by:** code-quality review of commit `dd1c28c` (Task 7).
+- Replaced both `value_or` fallbacks in `MainComponent::announceCapture`'s
+  Overlay branch (currently lines ~2747-2754) with direct
+  `*result.hostPhraseName` / `*result.overlayPlacementIndex` dereference,
+  guarded by a single `jassert (result.hostPhraseName.has_value()
+  && result.overlayPlacementIndex.has_value());` immediately above the
+  reads. A three-line WHY comment cites CLAUDE.md rule 8 (fail loud) and
+  names the silently-wrong banner string the change exists to prevent
+  (`"Added to the phrase here 0 only"`).
+- Branch remains unreachable by contract — `Promotion::promote` populates
+  both fields whenever `resolvedMode == Overlay`. The change converts a
+  silent-wrong-copy regression mode into a loud-debug-trap regression mode.
+  No behavior change in correct operation; Release builds still run
+  identical code (`jassert` compiles out).
+- Operator gate re-verification of the four §11 banner scenarios remains
+  outside loop scope per the prd.json task body — left to the operator
+  after the loop exits.
+- ctest baseline: **621 pass / 2 skipped** (unchanged — pure
+  defensive-trap addition, no behavior shift in correct execution).
+- Loop-eligible code-review follow-ups from 2026-05-16 are now ALL
+  resolved (Shared-splice hoist via T06, `refreshAll` extraction via T07,
+  this `value_or`→`jassert` swap via T08). After this commit the loop
+  exits — remaining prd.json scope is GUI work (T4 / T5) which ralph
+  cannot verify.
 
 ### 2026-05-16 — Extract `MainComponent::refreshAll()` and use it everywhere — RESOLVED 2026-05-23 by P7 T07
 

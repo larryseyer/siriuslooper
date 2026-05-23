@@ -2744,9 +2744,13 @@ void MainComponent::announceCapture (const CaptureRegion& region,
     if (wasOverlay)
     {
         // "Added to verse 2 only"  (placement ordinal from the data field)
-        const juce::String hostName =
-            result.hostPhraseName.value_or (std::string ("the phrase here"));
-        const auto idx = result.overlayPlacementIndex.value_or (0u);
+        // Contract: when resolvedMode == Overlay, promote() guarantees both
+        // fields are populated. Trap loudly in debug rather than silently
+        // rendering "Added to the phrase here 0 only" (CLAUDE.md rule 8).
+        jassert (result.hostPhraseName.has_value()
+                 && result.overlayPlacementIndex.has_value());
+        const juce::String hostName (*result.hostPhraseName);
+        const auto idx = *result.overlayPlacementIndex;
         msg << "Added to " << hostName << " " << static_cast<int> (idx) << " only";
     }
     else if (result.mintedPhraseId.has_value() && ! result.hostPhraseName.has_value())
