@@ -171,6 +171,14 @@ void OutputMixer::setEffectChainHost (IEffectChainHost* host) noexcept
         bus.setEffectChainHost (host);
 }
 
+Bus* OutputMixer::busForId (BusId id) noexcept
+{
+    for (auto& bus : buses_)
+        if (bus.id() == id)
+            return &bus;
+    return nullptr;
+}
+
 void OutputMixer::routeChannelToBus (OutputChannelId channel, BusId bus, float sendLevel)
 {
     const std::size_t idx = sendMatrixIndex (channel, bus);

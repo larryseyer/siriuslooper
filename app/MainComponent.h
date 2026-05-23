@@ -99,6 +99,11 @@ private:
     /// composition; no behaviour beyond the four constituent refreshes.
     void refreshAll();
     void refreshInputMixer();
+    /// Pushes the OutputMixer master bus's post-fader peak + short-term LUFS
+    /// into the OutputMixerPane's master strip. Called from the 30 Hz timer.
+    /// No-op when the pane is absent (lower tier) or the master bus lookup
+    /// fails. Message-thread only.
+    void refreshOutputMixer();
     /// Resolves each input strip's current tape destination + the pooled-tape
     /// choice list and pushes both into the pane's per-strip picker buttons.
     /// Message-thread only.
@@ -137,6 +142,10 @@ private:
     /// Bus-side mirror of openInsertChainPopupForChannel. Same shape; the
     /// strip lookup uses inputMixer_->busForId(busStripIds_[busIdx]).
     void openInsertChainPopupForBus     (int busIdx);
+    /// Output-side mirror — opens the popup anchored to the OutputMixerPane's
+    /// master INS button. Drives outputMixer_->busForId(BusId{0})->setEffectChain
+    /// through the same detach/re-attach bracket as the input variants.
+    void openInsertChainPopupForMasterBus();
 
     // --- per-tape arm + focus (refined Mockup A, this session's UX) ---
     void toggleArm    (TapeId tape);
@@ -280,6 +289,14 @@ private:
     // ChannelId; meters read the strip's post-fader peaks on the 30 Hz timer.
     class InputMixerPane;
     std::unique_ptr<InputMixerPane> inputMixerPane_;
+
+    // --- Output Mixer tab (whitepaper §5.2/§6.6/§7.1 — the mixdown console) ---
+    // Slice 1: a single Master bus strip wired to OutputMixer::busForId(BusId{0}).
+    // Fader → Bus::setGain, mute → Bus::setMute, INS → InsertChainPopup. Meters
+    // read post-fader peak + short-term LUFS on the 30 Hz refresh. Channels and
+    // aux buses land in subsequent slices.
+    class OutputMixerPane;
+    std::unique_ptr<OutputMixerPane> outputMixerPane_;
 
     // --- Tapes tab (tape-UI T5 — operator-facing tape-pool management:
     // list + create/rename/remove with a >=1 floor, plus the dropped-block

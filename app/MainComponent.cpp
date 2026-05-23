@@ -985,6 +985,99 @@ private:
 };
 
 // =============================================================================
+// OutputMixerPane — the Output Mixer tab (white paper §5.2/§6.6/§7.1, the
+// mixdown console). Slice 1: ONE strip representing the master bus
+// (OutputMixer::BusId{0}, auto-created in the engine ctor). Fader drives
+// Bus::setGain, mute drives Bus::setMute, INS opens the same InsertChainPopup
+// the input bus row uses. Meters read post-fader peak + short-term LUFS on
+// the parent's 30 Hz refresh. No channels and no aux buses yet — those land
+// in subsequent slices once the operator UX for adding them is wired.
+// Per project_two_mixers_totally_separate: this shares no state with
+// InputMixerPane; reuses generic CompactFaderStrip and InsertChainPopup
+// TYPES per-instance, not a shared base class.
+// =============================================================================
+class MainComponent::OutputMixerPane final : public juce::Component,
+                                             public otto::ui::CompactFaderStripListener
+{
+public:
+    OutputMixerPane()
+    {
+        master_ = std::make_unique<otto::ui::CompactFaderStrip> (
+            /*id*/ 0, otto::ui::ChannelType::Bus);
+        master_->setChannelName ("Master");
+        master_->setOutputComboVisible (false);   // master is terminal — no destination picker
+        master_->addListener (this);
+        addAndMakeVisible (*master_);
+
+        masterIns_ = std::make_unique<juce::TextButton>();
+        masterIns_->setButtonText ("INS");
+        masterIns_->onClick = [this]
+        {
+            if (onMasterInsertChainClicked) onMasterInsertChainClicked();
+        };
+        addAndMakeVisible (*masterIns_);
+    }
+
+    // Gesture relays. Set by MainComponent.
+    std::function<void (float gainLinear)> onMasterGain;
+    std::function<void (bool muted)>       onMasterMute;
+    std::function<void()>                  onMasterInsertChainClicked;
+
+    void setMasterLevelDb (float dbL, float dbR)
+    {
+        if (master_) master_->setLevel (dbL, dbR);
+    }
+
+    void setMasterLufs (float lufs)
+    {
+        if (master_) master_->setLUFSLevel (lufs);
+    }
+
+    /// Screen bounds of the master INS button, used to anchor the InsertChainPopup
+    /// CallOutBox. Empty rect if the button hasn't been built yet.
+    juce::Rectangle<int> masterInsButtonScreenArea() const
+    {
+        return masterIns_ ? masterIns_->getScreenBounds() : juce::Rectangle<int>{};
+    }
+
+    void resized() override
+    {
+        constexpr int kGap = 6;
+        constexpr int kInsHeight = 26;
+        auto area = getLocalBounds().reduced (kGap);
+
+        // INS row at the bottom (mirrors InputMixerPane's stacking).
+        auto insRow = area.removeFromBottom (kInsHeight);
+        area.removeFromBottom (kGap);
+
+        // Slice 1: a single fixed-width master strip pinned to the left.
+        // Future slices add channel strips left + aux-bus strips between
+        // them and master; for now the rest of the pane is empty space.
+        constexpr int kStripW = otto::ui::CompactFaderStrip::kStripWidth;
+        if (master_)    master_->setBounds    (area.removeFromLeft (kStripW));
+        if (masterIns_) masterIns_->setBounds (insRow.removeFromLeft (kStripW));
+    }
+
+    void paint (juce::Graphics& g) override { g.fillAll (otto::Colours::bg2); }
+
+    // --- CompactFaderStripListener ---
+    void stripGainChanged (int, otto::ui::ChannelType, float gain) override
+    {
+        if (onMasterGain) onMasterGain (gain);
+    }
+    void stripMuteChanged (int, otto::ui::ChannelType, bool muted) override
+    {
+        if (onMasterMute) onMasterMute (muted);
+    }
+    void stripSoloChanged (int, otto::ui::ChannelType, bool) override {}   // master has no solo
+    void stripChannelSelected (int, otto::ui::ChannelType) override {}     // no detail panel in slice 1
+
+private:
+    std::unique_ptr<otto::ui::CompactFaderStrip> master_;
+    std::unique_ptr<juce::TextButton>            masterIns_;
+};
+
+// =============================================================================
 // TapesPane — the Tapes tab: an operator-facing management surface for the
 // project tape pool (one of the few places tape internals are deliberately
 // exposed — names + create/rename/remove). Pure presentation + intent relay:
@@ -1917,6 +2010,27 @@ MainComponent::MainComponent()
 
         rebuildInputStrips();
         rebuildBusStrips();
+
+        // Output Mixer tab (whitepaper §5.2/§6.6/§7.1 — the mixdown console).
+        // Slice 1: master bus strip only. Fader → Bus::setGain, mute →
+        // Bus::setMuted, INS → openInsertChainPopupForMasterBus. Channels +
+        // aux buses land in subsequent slices once the operator UX for adding
+        // them is wired (per project_tapecolor_per_bus_model: IDA's bus count
+        // is dynamic, operator-driven; nothing auto-seeds).
+        outputMixerPane_ = std::make_unique<OutputMixerPane>();
+        outputMixerPane_->onMasterGain = [this] (float gain)
+        {
+            if (auto* b = outputMixer_->busForId (ida::BusId{ 0 })) b->setGain (gain);
+        };
+        outputMixerPane_->onMasterMute = [this] (bool muted)
+        {
+            if (auto* b = outputMixer_->busForId (ida::BusId{ 0 })) b->setMuted (muted);
+        };
+        outputMixerPane_->onMasterInsertChainClicked = [this]
+        {
+            openInsertChainPopupForMasterBus();
+        };
+        tabs_.addTab ("Output Mixer", juce::Colours::black, outputMixerPane_.get(), false);
     }
 
     // --- Tapes tab (tape-UI T5 — the operator-facing tape-pool management
@@ -2172,6 +2286,7 @@ void MainComponent::timerCallback()
     }
 
     refreshInputMixer();
+    refreshOutputMixer();
     refreshDiagnostics();
 }
 
@@ -2340,6 +2455,65 @@ void MainComponent::openInsertChainPopupForBus (int busIdx)
     juce::CallOutBox::launchAsynchronously (std::move (popup), target, nullptr);
 }
 
+void MainComponent::openInsertChainPopupForMasterBus()
+{
+    if (outputMixerPane_ == nullptr) return;
+    auto* bus = outputMixer_->busForId (ida::BusId{ 0 });
+    if (bus == nullptr) return;
+
+    auto popup = std::make_unique<ida::InsertChainPopup>();
+    popup->setInitialChain (bus->effectChain());
+
+    auto chainRef = std::make_shared<ida::EffectChain> (bus->effectChain());
+
+    auto apply = [this, chainRef]
+    {
+        auto* b = outputMixer_->busForId (ida::BusId{ 0 });
+        if (b == nullptr) return;
+        audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+        b->setEffectChain (*chainRef);
+        audioDeviceManager_.addAudioCallback (audioCallback_.get());
+    };
+
+    popup->setOnSlotChanged ([chainRef, apply] (std::size_t slot,
+                                                std::optional<ida::InternalFxId> id)
+    {
+        auto updated = growChainToSlot (*chainRef, slot);
+        if (slot >= updated.size()) return;
+        ida::EffectChainEntry entry;
+        if (id.has_value()) entry = ida::EffectChainEntry::makeInternal (*id);
+        *chainRef = updated.withReplaced (slot, entry);
+        apply();
+    });
+
+    popup->setOnSlotBypassToggled ([chainRef, apply] (std::size_t slot, bool bypassed)
+    {
+        if (slot >= chainRef->size()) return;
+        auto entry = chainRef->at (slot);
+        entry.bypassed = bypassed;
+        *chainRef = chainRef->withReplaced (slot, entry);
+        apply();
+    });
+
+    popup->setOnSlotsReordered ([chainRef, apply] (std::size_t from, std::size_t to)
+    {
+        const auto maxSlot = std::max (from, to);
+        auto updated = growChainToSlot (*chainRef, maxSlot);
+        if (from >= updated.size() || to >= updated.size()) return;
+        *chainRef = updated.withMoved (from, to);
+        apply();
+    });
+
+    popup->setOnClose ([]{});
+
+    popup->setSize (static_cast<int> (otto::Sizing::kMenuMinWidth),
+                    static_cast<int> (ida::EffectChain::kMaxSlots)
+                    * static_cast<int> (otto::Sizing::kMenuRowHeight));
+
+    const auto target = outputMixerPane_->masterInsButtonScreenArea();
+    juce::CallOutBox::launchAsynchronously (std::move (popup), target, nullptr);
+}
+
 void MainComponent::recomputeInputStripMutes()
 {
     // Solo-in-place: if any strip is soloed, every non-soloed strip is silenced.
@@ -2384,6 +2558,21 @@ void MainComponent::refreshInputMixer()
         }
 
     refreshInputDestinations();
+}
+
+void MainComponent::refreshOutputMixer()
+{
+    if (outputMixerPane_ == nullptr) return;
+    auto* master = outputMixer_->busForId (ida::BusId{ 0 });
+    if (master == nullptr) return;
+
+    const auto linToDb = [] (float linear) -> float
+    {
+        return linear <= 1.0e-6f ? -60.0f : 20.0f * std::log10 (linear);
+    };
+    outputMixerPane_->setMasterLevelDb (linToDb (master->peakLeft()),
+                                        linToDb (master->peakRight()));
+    outputMixerPane_->setMasterLufs (master->lufsShortTerm());
 }
 
 // Resolves each strip's current main-out destination and builds the full choice

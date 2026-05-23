@@ -113,6 +113,13 @@ public:
     /// MainComponent wiring post-M7).
     void setEffectChainHost (IEffectChainHost* host) noexcept;
 
+    /// Message-thread accessor — the live Bus for `id`, or nullptr if unknown.
+    /// Mirrors `InputMixer::busForId`. The Output Mixer UI uses this to drive
+    /// a bus strip's fader/mute and read its peak/LUFS meter at refresh rate.
+    /// NOT for the audio thread (the bus is held by value in a reserved
+    /// vector; the pointer is stable for the bus's lifetime within this mixer).
+    Bus* busForId (BusId id) noexcept;
+
     /// Sets the send level from `channel` into `bus`. `sendLevel` is linear
     /// in [0, 1]; values outside the range are clamped. Routing to
     /// `BusId{0}` (master) sets the channel's master direct level; newly
