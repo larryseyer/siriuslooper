@@ -91,6 +91,12 @@ add_executable(SiriusTests
     # P7 T3c — DlyAdapter (PlayerDelay wrapper). Same include-path
     # pattern as EqAdapterTests above.
     DlyAdapterTests.cpp
+    # P7 T3d — RvbAdapter (PlayerIRConvolution wrapper, the last of four
+    # internal-FX adapters). Same include-path pattern as EqAdapterTests
+    # above. Case #5 (IR-loaded smoke) polls the async load with a 5 s
+    # timeout and SKIPs cleanly when assets are unavailable so CI stays
+    # green without bundled OTTO assets.
+    RvbAdapterTests.cpp
     # P7 T3a-C — end-to-end Bus → host → adapter dispatch test.
     BusInternalFxEndToEndTests.cpp
     # P7 T3a I-2 — end-to-end InputMixer → Bus → host → adapter dispatch.
