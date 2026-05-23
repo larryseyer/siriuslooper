@@ -1,10 +1,12 @@
 #pragma once
 
 #include "sirius/ArchivalMode.h"
+#include "sirius/InternalFxId.h"
 #include "sirius/PluginDescriptor.h"
 #include "sirius/VersionPinningRecord.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
@@ -12,28 +14,69 @@
 namespace sirius
 {
 
-/// One slot in an effect chain — a single hosted plugin instance, with the
-/// state it should be restored to and the bypass flag. The state blob is an
-/// opaque byte string (base64-encoded for JSON safety) produced by the host
-/// runtime when it serializes a plugin; the data model does not interpret it.
+/// Discriminant for `EffectChainEntry`'s tagged union (the "union slot type"
+/// contract in `docs/design/sirius-internal-fx.md`). Each slot is one of:
+///   - `Empty`    — slot is unallocated; host skips it at render time.
+///   - `Internal` — slot identifies one of Sirius's four built-in FX by
+///                  `InternalFxId`; the host wraps the matching OTTO Player FX.
+///   - `Plugin`   — slot carries a `PluginDescriptor` for an externally
+///                  hosted VST/CLAP/AU(v3). Unchanged from the pre-union shape.
+/// Wire-stable order: do not reorder values without a SessionFormat migration.
+enum class EffectChainSlotKind : std::uint8_t
+{
+    Empty    = 0,
+    Internal = 1,
+    Plugin   = 2,
+};
+
+/// One slot in an effect chain — a tagged union over Empty / Internal / Plugin.
+/// `kind` is the discriminant; `internalId` is meaningful iff `kind == Internal`;
+/// `descriptor` + `stateBase64` + `archivalMode` + `persistedSnapshot` are
+/// meaningful iff `kind == Plugin`. Default construction yields an Empty slot
+/// — a safer default than Plugin, because an uninitialized entry with
+/// `kind == Plugin` and a default `descriptor` would look like a legitimate
+/// (but invalid) plugin reference. Use the static factories `makePlugin` and
+/// `makeInternal` at construction sites; the field-by-field constructor is
+/// retained only because it is implicit in the aggregate-initialization style
+/// the persistence layer uses.
+///
+/// The state blob is an opaque byte string (base64-encoded for JSON safety)
+/// produced by the host runtime when it serializes a plugin; the data model
+/// does not interpret it.
 ///
 /// `archivalMode` selects the per-instance strategy for handling plug-in
 /// non-determinism (white paper §15.6). Default is `VersionPinning` per V7
 /// plan line 563. `persistedSnapshot` is the frozen identity at the moment
 /// of the last `serializeSession`; populated by `populateVersionPinningRecords`
-/// on save and compared by `verifyVersionPinningOnLoad` on load.
+/// on save and compared by `verifyVersionPinningOnLoad` on load. Both fields
+/// are meaningless on `Empty` and `Internal` slots and are persisted only on
+/// `Plugin` slots.
 struct EffectChainEntry
 {
-    PluginDescriptor descriptor;
-    std::string      displayName; ///< chain-local name, defaults to descriptor.name
-    std::string      stateBase64; ///< plugin state as base64; empty when not yet captured
+    EffectChainSlotKind kind { EffectChainSlotKind::Empty };
+    InternalFxId        internalId { InternalFxId::kEq }; ///< valid iff kind == Internal
+
+    PluginDescriptor descriptor;                          ///< valid iff kind == Plugin
+    std::string      displayName;                         ///< chain-local name
+    std::string      stateBase64;                         ///< plugin state as base64 (Plugin only)
     bool             bypassed { false };
-    ArchivalMode     archivalMode { ArchivalMode::VersionPinning };
-    std::optional<VersionPinningRecord> persistedSnapshot;
+    ArchivalMode     archivalMode { ArchivalMode::VersionPinning }; ///< Plugin only
+    std::optional<VersionPinningRecord> persistedSnapshot;          ///< Plugin only
+
+    /// Factory: construct an Internal slot for a built-in FX.
+    static EffectChainEntry makeInternal (InternalFxId id);
+
+    /// Factory: construct a Plugin slot from a descriptor + display name +
+    /// state blob (state may be empty when not yet captured).
+    static EffectChainEntry makePlugin (PluginDescriptor descriptor,
+                                        std::string      displayName,
+                                        std::string      stateBase64 = "");
 
     bool operator== (const EffectChainEntry& other) const noexcept
     {
-        return descriptor == other.descriptor
+        return kind == other.kind
+            && internalId == other.internalId
+            && descriptor == other.descriptor
             && displayName == other.displayName
             && stateBase64 == other.stateBase64
             && bypassed == other.bypassed

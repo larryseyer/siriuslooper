@@ -27,7 +27,7 @@ TEST_CASE ("InputMixer survives export -> serialize -> deserialize -> import", "
     source.registerInput (InputId (1), makeInputDescriptor());
     const auto drums  = source.addBus (BusConfig { 2, "Drums", BusKind::Bus });
     const auto reverb = source.addFxReturn ("Reverb");
-    EffectChainEntry comp; comp.displayName = "comp";
+    const auto comp = EffectChainEntry::makePlugin (PluginDescriptor{}, "comp", "");
     source.setBusEffectChain (drums, EffectChain{}.withAppended (comp));
     const auto ch = source.addChannel (InputId (1), SignalType::Audio);
     source.setChannelInputSource (ch, 2, 3, true);
@@ -35,7 +35,7 @@ TEST_CASE ("InputMixer survives export -> serialize -> deserialize -> import", "
     source.setChannelSend (ch, reverb, 0.5f);
     auto* strip = static_cast<ChannelStrip<SignalType::Audio>*> (source.processingChainFor (ch));
     REQUIRE (strip != nullptr);
-    EffectChainEntry eq; eq.displayName = "eq";
+    const auto eq = EffectChainEntry::makePlugin (PluginDescriptor{}, "eq", "");
     strip->setEffectChain (EffectChain{}.withAppended (eq));
 
     const auto original = source.exportGraphState();
@@ -60,11 +60,11 @@ TEST_CASE ("OutputMixer survives export -> serialize -> deserialize -> import", 
     OutputMixer source;
     const auto aux = source.addBus (BusConfig { 2, "Aux", BusKind::Bus });
     REQUIRE (source.routeBusToBus (aux, BusId (0)));
-    EffectChainEntry comp; comp.displayName = "comp";
+    const auto comp = EffectChainEntry::makePlugin (PluginDescriptor{}, "comp", "");
     source.setBusEffectChain (aux, EffectChain{}.withAppended (comp));
     const auto ch = source.addChannel (SignalType::Audio);
     auto strip = std::make_unique<ChannelStrip<SignalType::Audio>>();
-    EffectChainEntry eq; eq.displayName = "eq";
+    const auto eq = EffectChainEntry::makePlugin (PluginDescriptor{}, "eq", "");
     strip->setEffectChain (EffectChain{}.withAppended (eq));
     source.setChannelStrip (ch, std::move (strip));
     source.routeChannelToBus (ch, BusId (0), 1.0f);

@@ -53,4 +53,25 @@ EffectChain EffectChain::withMoved (std::size_t fromIndex, std::size_t toIndex) 
     return next;
 }
 
+EffectChainEntry EffectChainEntry::makeInternal (InternalFxId id)
+{
+    EffectChainEntry e;
+    e.kind = EffectChainSlotKind::Internal;
+    e.internalId = id;
+    e.displayName = internalFxIdToString (id);
+    return e;
+}
+
+EffectChainEntry EffectChainEntry::makePlugin (PluginDescriptor descriptor,
+                                               std::string      displayName,
+                                               std::string      stateBase64)
+{
+    EffectChainEntry e;
+    e.kind = EffectChainSlotKind::Plugin;
+    e.descriptor = std::move (descriptor);
+    e.displayName = std::move (displayName);
+    e.stateBase64 = std::move (stateBase64);
+    return e;
+}
+
 } // namespace sirius

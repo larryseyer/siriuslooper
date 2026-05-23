@@ -377,7 +377,8 @@ namespace
         MixerBusState bus; bus.busId = 1; bus.channelCount = 2; bus.name = "Drums";
         bus.kind = MixerBusKind::Bus;
         bus.mainOut.kind = MixerMainOut::Kind::Terminal; bus.mainOut.terminal = MixerTerminalKind::Tape;
-        EffectChainEntry comp; comp.displayName = "comp"; comp.bypassed = true;
+        auto comp = EffectChainEntry::makePlugin (PluginDescriptor{}, "comp", "");
+        comp.bypassed = true;
         bus.inserts = EffectChain{}.withAppended (comp);
         s.buses.push_back (bus);
         MixerBusState rev; rev.busId = 2; rev.name = "Reverb"; rev.kind = MixerBusKind::FxReturn;
@@ -387,7 +388,7 @@ namespace
         ch.source = { 2, 3, true }; ch.tapeMode = TapeMode::CommitToTape;
         ch.mainOut.kind = MixerMainOut::Kind::Bus; ch.mainOut.busId = 1;
         ch.sends.push_back ({ 2, 0.5f });
-        EffectChainEntry eq; eq.displayName = "eq";
+        const auto eq = EffectChainEntry::makePlugin (PluginDescriptor{}, "eq", "");
         ch.inserts = EffectChain{}.withAppended (eq);
         s.channels.push_back (ch);
         s.nextBusId = 3; s.nextChannelId = 6;

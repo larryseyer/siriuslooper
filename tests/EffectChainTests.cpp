@@ -26,19 +26,19 @@ using sirius::Rational;
 
 namespace
 {
+    // Existing fixtures used to assemble plugin-kind entries by hand. After the
+    // union widening this is a one-call factory; keeping it as a helper preserves
+    // the spelling of every downstream test case.
     EffectChainEntry makeEntry (const char* uniqueId, const char* name)
     {
-        EffectChainEntry e;
-        e.descriptor.format       = PluginFormat::Vst3;
-        e.descriptor.uniqueId     = uniqueId;
-        e.descriptor.version      = "1.0.0";
-        e.descriptor.name         = name;
-        e.descriptor.manufacturer = "AcmeAudio";
-        e.descriptor.filePath     = std::string ("/plugins/") + name + ".vst3";
-        e.displayName = name;
-        e.stateBase64 = "abc=";
-        e.bypassed = false;
-        return e;
+        sirius::PluginDescriptor desc;
+        desc.format       = sirius::PluginFormat::Vst3;
+        desc.uniqueId     = uniqueId;
+        desc.version      = "1.0.0";
+        desc.name         = name;
+        desc.manufacturer = "AcmeAudio";
+        desc.filePath     = std::string ("/plugins/") + name + ".vst3";
+        return EffectChainEntry::makePlugin (std::move (desc), name, "abc=");
     }
 }
 
@@ -186,4 +186,80 @@ TEST_CASE ("EffectChain at the cap still allows replace / remove / move", "[effe
     const EffectChain shortened = chain.withRemoved (0);
     CHECK_FALSE (shortened.full());
     CHECK_NOTHROW (shortened.withAppended (makeEntry ("again", "Again")));
+}
+
+TEST_CASE ("EffectChainEntry default-constructs as Empty kind", "[effect-chain][union-slot]")
+{
+    // A fresh entry must NOT silently look like a Plugin — empty-by-default
+    // protects callers who forget to set the discriminant.
+    EffectChainEntry e;
+    CHECK (e.kind == sirius::EffectChainSlotKind::Empty);
+    CHECK (e.descriptor.uniqueId.empty());
+}
+
+TEST_CASE ("EffectChainEntry::makeInternal stamps the kind + internalId", "[effect-chain][union-slot]")
+{
+    const auto eq  = EffectChainEntry::makeInternal (sirius::InternalFxId::kEq);
+    const auto cmp = EffectChainEntry::makeInternal (sirius::InternalFxId::kCmp);
+
+    CHECK (eq.kind == sirius::EffectChainSlotKind::Internal);
+    CHECK (eq.internalId == sirius::InternalFxId::kEq);
+
+    CHECK (cmp.kind == sirius::EffectChainSlotKind::Internal);
+    CHECK (cmp.internalId == sirius::InternalFxId::kCmp);
+
+    // descriptor stays default-empty on an Internal slot (no plugin payload)
+    CHECK (eq.descriptor.uniqueId.empty());
+}
+
+TEST_CASE ("EffectChainEntry::makePlugin stamps the kind + descriptor", "[effect-chain][union-slot]")
+{
+    sirius::PluginDescriptor d;
+    d.format       = sirius::PluginFormat::Vst3;
+    d.uniqueId     = "EQ-1";
+    d.name         = "Saturn EQ";
+    d.manufacturer = "AcmeAudio";
+
+    const auto e = EffectChainEntry::makePlugin (d, "EQ", "");
+
+    CHECK (e.kind == sirius::EffectChainSlotKind::Plugin);
+    CHECK (e.descriptor.uniqueId == "EQ-1");
+    CHECK (e.displayName == "EQ");
+}
+
+TEST_CASE ("EffectChainEntry equality includes the kind + internalId", "[effect-chain][union-slot]")
+{
+    const auto a = EffectChainEntry::makeInternal (sirius::InternalFxId::kEq);
+    const auto b = EffectChainEntry::makeInternal (sirius::InternalFxId::kEq);
+    const auto c = EffectChainEntry::makeInternal (sirius::InternalFxId::kCmp);
+
+    EffectChainEntry empty;          // kind == Empty
+    EffectChainEntry pluginLooking;  // kind == Empty but with plugin data filled in
+    pluginLooking.descriptor.uniqueId = "EQ-1";
+
+    CHECK (a == b);
+    CHECK (a != c);
+    CHECK (a != empty);
+    CHECK (empty != pluginLooking);  // descriptor mismatch is still detected on Empty entries
+}
+
+TEST_CASE ("a chain can mix Internal and Plugin slots", "[effect-chain][union-slot]")
+{
+    sirius::PluginDescriptor d;
+    d.format = sirius::PluginFormat::Vst3;
+    d.uniqueId = "RV-1";
+    d.name = "Plate Reverb";
+
+    EffectChain chain;
+    chain = chain.withAppended (EffectChainEntry::makeInternal (sirius::InternalFxId::kEq))
+                 .withAppended (EffectChainEntry::makePlugin (d, "Reverb", ""))
+                 .withAppended (EffectChainEntry::makeInternal (sirius::InternalFxId::kCmp));
+
+    REQUIRE (chain.size() == 3);
+    CHECK (chain.entries()[0].kind == sirius::EffectChainSlotKind::Internal);
+    CHECK (chain.entries()[0].internalId == sirius::InternalFxId::kEq);
+    CHECK (chain.entries()[1].kind == sirius::EffectChainSlotKind::Plugin);
+    CHECK (chain.entries()[1].descriptor.uniqueId == "RV-1");
+    CHECK (chain.entries()[2].kind == sirius::EffectChainSlotKind::Internal);
+    CHECK (chain.entries()[2].internalId == sirius::InternalFxId::kCmp);
 }

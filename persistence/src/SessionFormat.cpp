@@ -562,6 +562,9 @@ namespace
     EffectChainEntry effectChainEntryFromVar (const juce::var& v)
     {
         EffectChainEntry e;
+        e.kind = EffectChainSlotKind::Plugin; // Task 2 backstop: old JSON had no `kind` field;
+                                              // every entry it could encode was a plugin.
+                                              // Task 3 replaces this with proper discriminant read.
         e.descriptor  = pluginDescriptorFromVar (requireProperty (v, "plugin"));
         e.displayName = requireProperty (v, "displayName").toString().toStdString();
         e.stateBase64 = requireProperty (v, "state").toString().toStdString();
