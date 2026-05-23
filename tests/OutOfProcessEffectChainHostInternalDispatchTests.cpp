@@ -243,36 +243,6 @@ TEST_CASE ("bind-then-prepare also auto-prepares — adapter is ready on first p
     REQUIRE (pumped);
 }
 
-TEST_CASE ("setInternalFxAtSlot with an un-shipped id (kRvb) is a no-op rebind",
-           "[internal-fx-host]")
-{
-    sirius::OutOfProcessEffectChainHost host;
-    host.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
-
-    // T3a/T3b shipped kEq + kCmp. The factory still returns nullptr for
-    // kRvb (T3d) and kDly (T3c). setInternalFxAtSlot(kRvb) should erase
-    // any existing entry without storing a null adapter; subsequent
-    // pumpSlot must miss (and leave outputs untouched).
-    host.setInternalFxAtSlot (5, 0, sirius::InternalFxId::kEq);
-    host.setInternalFxAtSlot (5, 0, sirius::InternalFxId::kRvb);
-
-    std::array<float, kBlockSamples> lin {}, rin {}, lout {}, rout {};
-    fillSine (lin, rin);
-    constexpr float kSentinel = 0.314159f;
-    lout.fill (kSentinel);
-    rout.fill (kSentinel);
-
-    const bool pumped = pump (host, 5, 0,
-                              lin.data(), rin.data(),
-                              lout.data(), rout.data());
-    CHECK_FALSE (pumped);
-    for (std::size_t i = 0; i < kBlockSamples; ++i)
-    {
-        CHECK (lout[i] == kSentinel);
-        CHECK (rout[i] == kSentinel);
-    }
-}
-
 namespace
 {
     /// P7 T3a I-1 — minimal counting mock adapter used to verify

@@ -162,11 +162,11 @@ void OutOfProcessEffectChainHost::setInternalFxAtSlot (
         return;
     }
 
-    // Factory returns nullptr for ids whose adapter sub-task hasn't shipped
-    // yet (T3a: only kEq is implemented; kCmp/kRvb/kDly return nullptr).
-    // Treat that as "no adapter for this slot" — erase any existing entry
-    // so a previous (different-id) adapter doesn't linger, and bail without
-    // storing a null.
+    // Factory returns nullptr for reserved-but-undeclared enum values
+    // (the enum reserves space up to 15; only kEq/kCmp/kDly/kRvb are
+    // shipped today). Treat that as "no adapter for this slot" — erase
+    // any existing entry so a previous (different-id) adapter doesn't
+    // linger, and bail without storing a null.
     auto adapter = makeInternalFxAdapter (*id);
     if (adapter == nullptr)
     {
