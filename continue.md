@@ -1,4 +1,145 @@
-# Session Continuation — 2026-05-22 (**P6b shipped + Minimal-Default Mixers rule applied end-to-end. NEXT = P7.**)
+# Session Continuation — 2026-05-22 (**OTTO submodule consolidation LIVE + LUFS fade-to-floor aligned with peak hold. NEXT = brainstorm OTTO further before resuming T1.**)
+
+> **For a fresh chat picking this up cold:** read this whole file before doing anything.
+> Memory + project CLAUDE.md load automatically. This file is the *state*: what just
+> shipped, what's queued next. Newest commit on Sirius origin/master: **`e068f10`**;
+> OTTO origin/main: **`6b066db2`**; ctest baseline **568 pass / 1 documented Not-Run**
+> (`MainComponentPluginEditorTests_NOT_BUILT`, run separately via `bash/test-s7.sh`).
+
+## ✅ DONE THIS SESSION (2026-05-22 — evening) — T0a + T0b SHIPPED
+
+**The byte-faithful copy of OTTO under `ui/lookandfeel/` is gone.** Sirius now consumes
+OTTO L&F sources directly from `external/OTTO/src/otto-plugin/ui/` via a git submodule.
+Single source of truth: bug fix in OTTO → `git submodule update --remote external/OTTO`
+→ SHA bump in Sirius → done. **No double-fix.**
+
+Plan file (still live): `~/.claude/plans/read-continue-and-proceed-ancient-phoenix.md`
+(P7 umbrella, re-sequenced. T0 marked complete here; T1..T6 remain).
+
+**Sirius master, 5 new commits `1965389..e068f10`:**
+- `0910273` **T0a** — add OTTO submodule at `external/OTTO` (no functional change;
+  `.gitignore` pattern changed `external/` → `external/*` + `!external/OTTO` so the
+  submodule pointer is tracked while other vendored deps stay ignored).
+- `02efe63` **T0b** — cut over: bump submodule 88faba5a→3f535a53, add
+  `OTTO_OUTPUT_COMBO_AS_JUCE_COMBOBOX` define on `SiriusLookAndFeel`, delete the 9
+  byte-faithful files under `ui/lookandfeel/`. ⚠ this commit was buggy — see f15640b.
+- `f15640b` **fix** — `ui/CMakeLists.txt` rewrite was UNSTAGED in `02efe63`, so master
+  briefly couldn't configure (CMakeLists still referenced deleted `lookandfeel/...`
+  paths). Lesson: `git status` ` M file` with leading space = UNSTAGED; check before
+  committing. Local build worked only because my working tree had the right
+  CMakeLists; pushed state was broken until this commit.
+- `79fc019` **feat** — LUFS bar fade-to-floor aligned with peak hold (bump → e4feb923).
+- `e068f10` **fix** — LUFS flutter from competing branches (bump → 6b066db2). The
+  first LUFS-fade commit drove `displayLufs_` toward floor while leaving the tracking
+  branch unconditional; tracking then snapped `displayLufs_` back up to `lufsTarget_`
+  (still draining from 3 s EBU integration) every frame, causing visible flutter.
+  Fix gated the two branches as mutually exclusive states.
+
+**OTTO main, 3 new commits this session `88faba5a..6b066db2`** (under explicit
+one-time operator auth — see "rules" below):
+- `94a9c054` **docs** — FaderMeter.h "integrated-LUFS" → "short-term-LUFS" comment
+  cleanup (OTTO had stale comments referring to integrated-LUFS while `setLUFS` was
+  already documented + behaving as short-term — internal inconsistency in OTTO).
+- `3f535a53` **refactor** — CompactFaderStrip switchable `OutputComboType`: defaults
+  to `TouchComboBox` (OTTO's GRIM Menu Surface rule preserved); external consumers
+  can `#define OTTO_OUTPUT_COMBO_AS_JUCE_COMBOBOX` to substitute `juce::ComboBox`.
+- `6b066db2` **fix** — FaderMeter LUFS ballistics state machine: when peak hold has
+  expired on BOTH channels (signal silent > `kPeakHoldMs`), `displayLufs_` fades to
+  `kLUFSMin` at `kPeakFadeMs` (200 ms) ignoring `lufsTarget_` — matches the peak
+  hold fade so both halves of the meter reach silence together. The two branches
+  (tracking vs silence-fade) are mutually exclusive — no flutter.
+
+**Operator confirmed eyes-on:** app launches identically; LUFS + peak reach floor
+together on signal-stop; no flutter.
+
+## ⚠ NEW STANDING RULES (memory + MEMORY.md updated this session)
+
+- **`project_otto_is_a_submodule_now`** (NEW) — OTTO consumed via `external/OTTO/`
+  submodule; single source of truth; direction is **strictly one-way** (Sirius pulls
+  OTTO; OTTO never pulls Sirius). Sirius normally never edits OTTO source. **THIS
+  SESSION's OTTO edits were under explicit one-time operator authorization;** future
+  Sirius sessions revert to OTTO-read-only unless re-authorized.
+- **`project_otto_assets_out_of_git`** (NEW) — OTTO's `/assets` (IRs, samples,
+  patterns, graphics) is gitignored (copyright). Submodule pulls **CODE ONLY**. Any
+  OTTO asset Sirius needs (e.g. impulse-response files for T3-RVB later) must be
+  copied by hand into Sirius's own `/assets`. T0/T1/T2/T3-EQ/T3-CMP/T3-DLY unaffected;
+  T3-RVB is the only slice that hits this.
+- **`project_internal_fx_first_class`** (NEW) — Sirius ships internal EQ/CMP/RVB/DLY
+  (header-only — `PlayerEQ.h`/`PlayerCompressor.h`/`PlayerIRConvolution.h`/`PlayerDelay.h`
+  all live at `external/OTTO/src/otto-core/include/otto/effects/`, depend only on
+  `juce_dsp`) as first-class product; 3rd-party VST/CLAP hosting is **additional**,
+  not the model. Engine slot type becomes a union (`InternalFxId | PluginDescriptor`)
+  in T2.
+- **`project_plugin_scanner_broken`** (NEW) — plugin scanner GUI-locks on Scan
+  (pre-existing). Insert-chain UI's VST/CLAP picker cannot ship until that's fixed
+  (own slice provisionally "P7-scanner"). T5 insert UI ships **internal-FX-only**
+  with a greyed-out "VST/CLAP plugin… (scanner unavailable)" entry so the absence
+  is visible, not silent.
+- **`feedback_avoid_word_vendor`** (NEW) — don't say "vendor X from OTTO" — operator
+  reads as outsourcing. Use "consume from the OTTO submodule" / "link OTTO's target".
+- **`project_sirius_branding_and_otto`** (UPDATED) — one-way containment at product
+  level: Sirius's installer bundles full OTTO (paywalled OTTO features runtime-gated);
+  OTTO's installer does NOT contain Sirius.
+
+## ▶ NEXT — operator wants to brainstorm OTTO further before T1
+
+The active plan is `~/.claude/plans/read-continue-and-proceed-ancient-phoenix.md` (P7
+umbrella, re-sequenced):
+
+```
+T0  OTTO submodule          ✅ DONE (T0a + T0b shipped this session)
+T1  docs                    ⏸ paused — brainstorm OTTO first
+T2  engine union slot       (after T1)
+T3  internal-FX adapters    (after T2; T3-RVB has an asset-copy step — see memory)
+T4  Sends tab UI            (after T3 at least partially)
+T5  Insert UI               (internal-FX-only picker until "P7-scanner")
+T6  P4/P5 persistence wiring into MainComponent save/load
+```
+
+**Operator (end of session, 2026-05-22 evening):** "go into brainstorming mode. We
+need to discuss OTTO further before you continue on your current path."
+
+**Resume next session:**
+1. Read this whole file first (per `feedback_update_continue_md_every_session`).
+2. Invoke `superpowers:brainstorming` and ask the operator what OTTO question(s)
+   he wants to explore. Open questions queued from this session:
+   - **OTTO read-only rule + submodule interaction.** This session needed
+     explicit OTTO edit auth twice. Some changes are inherently OTTO-side
+     (UI ballistics in `FaderMeter`, CMake target shape). Possible topics:
+     when/how can a Sirius session legitimately edit OTTO? Does OTTO need
+     its own queue of "Sirius-requested" stories?
+   - **Asset out-of-band model.** T3-RVB needs IR files. Are we copying
+     OTTO's IRs by hand? Selecting a subset? Sourcing new ones?
+   - **OTTO's `assets/data/` (the git-tracked subset).** Some OTTO assets
+     ARE tracked (Fonts subset + `assets/data/`). What's in `data/`?
+     Anything Sirius wants?
+   - **OTTO's `OutputRouter` / global output strategy** (OTTO CLAUDE.md
+     mentions a "Per player bus assignment" vs "Global output strategy"
+     distinction). Does Sirius need either model?
+   - **Internal-FX adapter shape (T3 specifics).** Each Sirius adapter wraps
+     an OTTO header-only Player FX. Where does adapter state live, who owns
+     the `juce_dsp` lifetime, how does `prepare(sr, maxBlock)` flow?
+3. **⚠ Meter bug / design flaw — ASK THE OPERATOR.** End-of-session note from
+   the operator (2026-05-22 evening): "I just found a bug or a design flaw with
+   the meters... I'll discuss that after I discuss OTTO." He explicitly asked
+   that the next chat **prompt him about this**. Surface as a question after
+   the OTTO brainstorming converges. NO details captured — the conversation
+   ended before he described the bug, so the next chat needs to ask, not guess.
+4. After brainstorming converges, resume the P7 umbrella at T1 (docs).
+
+## Plan + memory state at session end
+- Plan: `~/.claude/plans/read-continue-and-proceed-ancient-phoenix.md` (live, T0 ✅).
+- 5 new memory files in `~/.claude/projects/-Users-larryseyer-SiriusLooper/memory/`:
+  `project_otto_is_a_submodule_now.md`, `project_otto_assets_out_of_git.md`,
+  `project_internal_fx_first_class.md`, `project_plugin_scanner_broken.md`,
+  `feedback_avoid_word_vendor.md`. `project_sirius_branding_and_otto.md` updated.
+- `MEMORY.md` updated with 5 new index lines.
+- `todo.md` net change: zero this session (added OTTO-backport-queue entry mid-session,
+  removed it when the backports landed inline).
+
+---
+
+# (archived header — earlier 2026-05-22) — P6b shipped + Minimal-Default Mixers rule applied end-to-end. NEXT = P7.
 
 > **For a fresh chat picking this up cold:** read this whole file before doing anything.
 > The user's `~/.claude/CLAUDE.md` + the project's auto-memory (`MEMORY.md` + `*.md` in the
