@@ -155,10 +155,13 @@ void OutOfProcessEffectChainHost::setInternalFxAtSlot (
     // bucket emplace, optional adapter->prepare).
     const SlotKey key { nodeKey, slotIdx };
 
-    // No id → erase any existing adapter and we're done.
+    // No id → erase any existing adapter and we're done. Also drop any
+    // bypass flag at this key — a future re-bind via setInternalFxAtSlot
+    // starts non-bypassed (see the symmetric reset below).
     if (! id.has_value())
     {
         internalAdapters_.erase (key);
+        internalBypass_.erase   (key);
         return;
     }
 
@@ -166,13 +169,22 @@ void OutOfProcessEffectChainHost::setInternalFxAtSlot (
     // (the enum reserves space up to 15; only kEq/kCmp/kDly/kRvb are
     // shipped today). Treat that as "no adapter for this slot" — erase
     // any existing entry so a previous (different-id) adapter doesn't
-    // linger, and bail without storing a null.
+    // linger, and bail without storing a null. Bypass flag also drops
+    // for symmetry with the nullopt path.
     auto adapter = makeInternalFxAdapter (*id);
     if (adapter == nullptr)
     {
         internalAdapters_.erase (key);
+        internalBypass_.erase   (key);
         return;
     }
+
+    // P7 T5 slice 1 — a fresh-id bind resets bypass to false. The audio
+    // thread reads `internalBypass_` after the adapter lookup hit; an
+    // absent entry behaves as "not bypassed", so the erase here is both
+    // semantically correct and the cheapest path. A subsequent
+    // `setInternalFxBypassAtSlot(..., true)` call would re-create it.
+    internalBypass_.erase (key);
 
     // If the host has already been prepared with a (sampleRate, maxBlock)
     // pair, prepare the fresh adapter immediately so its first audio-thread
@@ -190,6 +202,28 @@ void OutOfProcessEffectChainHost::setInternalFxAtSlot (
     // pre-existing adapter at this key (the old one's destructor runs
     // on the message thread, never touching the audio path).
     internalAdapters_[key] = std::move (adapter);
+}
+
+void OutOfProcessEffectChainHost::setInternalFxBypassAtSlot (
+    std::int64_t nodeKey,
+    std::size_t  slotIdx,
+    bool         bypassed)
+{
+    // Message-thread only — precondition documented in the header. Caller
+    // MUST have detached the audio callback before invoking. The map
+    // mutation (try_emplace bucket allocation on first-touch of this key)
+    // is not safe to race against the audio thread's `find()` in pumpSlot;
+    // the atomic store, once the entry exists, is acquire/release-safe.
+    const SlotKey key { nodeKey, slotIdx };
+
+    // try_emplace constructs the atomic in place from the bool argument
+    // (std::atomic<bool> has an implicit value constructor). If the entry
+    // already exists, try_emplace returns inserted=false and we fall
+    // through to the explicit store — which is the steady-state path
+    // for a flip-after-flip sequence.
+    auto [it, inserted] = internalBypass_.try_emplace (key, bypassed);
+    if (! inserted)
+        it->second.store (bypassed, std::memory_order_release);
 }
 
 void OutOfProcessEffectChainHost::prepareInternalFx (double sampleRate, int maxBlockSize)
@@ -276,6 +310,22 @@ bool OutOfProcessEffectChainHost::pumpSlot (std::int64_t        busId,
         const auto adapterIt = internalAdapters_.find (internalKey);
         if (adapterIt != internalAdapters_.end() && adapterIt->second != nullptr)
         {
+            // P7 T5 slice 1 — bypass short-circuit. Absent entry behaves
+            // as "not bypassed" (the common case — bypass is opt-in). An
+            // acquire load pairs with the message-thread release store in
+            // setInternalFxBypassAtSlot; the map's bucket layout is stable
+            // because the message thread mutates only with the audio
+            // callback detached (same contract as internalAdapters_).
+            const auto bypassIt = internalBypass_.find (internalKey);
+            if (bypassIt != internalBypass_.end()
+                && bypassIt->second.load (std::memory_order_acquire))
+            {
+                // Bypass = dry pass-through. Contract is "leave outChannels
+                // unmodified, caller treats as dry pass-through" — exactly
+                // the same as an unprepared-miss false return.
+                return false;
+            }
+
             // Internal adapter handles the slot. Its `process` returns
             // false on the unprepared-or-malformed-input miss path, which
             // matches `IEffectChainHost::pumpSlot`'s contract (leave

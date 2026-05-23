@@ -343,6 +343,133 @@ TEST_CASE ("prepareInternalFx — first call always proceeds even if sr/block de
     CHECK (mock->prepareCallCount == 1);
 }
 
+TEST_CASE ("setInternalFxBypassAtSlot true makes pumpSlot return false (bypass = dry passthrough)",
+           "[internal-fx-host][bypass]")
+{
+    // P7 T5 slice 1 — bypass short-circuit. With an EQ adapter bound and
+    // prepared, a true bypass flag must make pumpSlot return false WITHOUT
+    // touching the output buffers (so the caller's pre-loaded dry signal
+    // survives). Same observable contract as the unbound / unprepared
+    // miss paths, but reached via a different code branch.
+    sirius::OutOfProcessEffectChainHost host;
+    host.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
+    host.setInternalFxAtSlot (42, 0, sirius::InternalFxId::kEq);
+
+    // Sanity: dispatch hits the adapter before bypass.
+    std::array<float, kBlockSamples> lin {}, rin {}, lout {}, rout {};
+    fillSine (lin, rin);
+    lout.fill (0.0f); rout.fill (0.0f);
+    REQUIRE (pump (host, 42, 0,
+                   lin.data(), rin.data(),
+                   lout.data(), rout.data()));
+
+    // Now bypass. pumpSlot must return false; the sentinel-loaded outputs
+    // must survive.
+    host.setInternalFxBypassAtSlot (42, 0, true);
+
+    constexpr float kSentinel = 0.314159f;
+    lout.fill (kSentinel);
+    rout.fill (kSentinel);
+    const bool bypassedPump = pump (host, 42, 0,
+                                    lin.data(), rin.data(),
+                                    lout.data(), rout.data());
+    CHECK_FALSE (bypassedPump);
+    for (std::size_t i = 0; i < kBlockSamples; ++i)
+    {
+        CHECK (lout[i] == kSentinel);
+        CHECK (rout[i] == kSentinel);
+    }
+}
+
+TEST_CASE ("setInternalFxBypassAtSlot false restores pumpSlot dispatching to the adapter",
+           "[internal-fx-host][bypass]")
+{
+    // P7 T5 slice 1 — bypass-flip restoration. Bypass on → bypass off must
+    // re-enable dispatch through the bound adapter on the very next
+    // pumpSlot call. Verifies the atomic store + load pair handles the
+    // false-then-true-then-false ping without state corruption.
+    sirius::OutOfProcessEffectChainHost host;
+    host.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
+    host.setInternalFxAtSlot (42, 0, sirius::InternalFxId::kEq);
+
+    // Bypass on → expect miss.
+    host.setInternalFxBypassAtSlot (42, 0, true);
+
+    std::array<float, kBlockSamples> lin {}, rin {}, lout {}, rout {};
+    fillSine (lin, rin);
+    {
+        constexpr float kSentinel = -0.5f;
+        lout.fill (kSentinel); rout.fill (kSentinel);
+        REQUIRE_FALSE (pump (host, 42, 0,
+                             lin.data(), rin.data(),
+                             lout.data(), rout.data()));
+        REQUIRE (lout[0] == kSentinel);
+    }
+
+    // Bypass off → expect dispatch.
+    host.setInternalFxBypassAtSlot (42, 0, false);
+
+    lout.fill (0.0f); rout.fill (0.0f);
+    REQUIRE (pump (host, 42, 0,
+                   lin.data(), rin.data(),
+                   lout.data(), rout.data()));
+
+    // The freshly-restored adapter produces finite, non-trivial output
+    // (the EQ is flat-default, so output tracks input across the settled
+    // tail).
+    for (std::size_t i = kBlockSamples / 2; i < kBlockSamples; ++i)
+    {
+        CHECK (std::isfinite (lout[i]));
+        CHECK (std::isfinite (rout[i]));
+    }
+}
+
+TEST_CASE ("setInternalFxAtSlot with a fresh id resets bypass to false even if prior slot was bypassed",
+           "[internal-fx-host][bypass]")
+{
+    // P7 T5 slice 1 — fresh-bind bypass reset. Bind → bypass on → unbind
+    // → re-bind must leave the new adapter dispatching, not silently
+    // inheriting the prior bypass state. (Symmetric: bypass off → fresh
+    // bind also stays off, but that's the default.) This pins the
+    // operator-intuitive contract that a re-added FX slot starts active.
+    sirius::OutOfProcessEffectChainHost host;
+    host.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
+
+    // Bind and bypass.
+    host.setInternalFxAtSlot      (42, 0, sirius::InternalFxId::kEq);
+    host.setInternalFxBypassAtSlot (42, 0, true);
+
+    std::array<float, kBlockSamples> lin {}, rin {}, lout {}, rout {};
+    fillSine (lin, rin);
+    {
+        constexpr float kSentinel = 0.75f;
+        lout.fill (kSentinel); rout.fill (kSentinel);
+        REQUIRE_FALSE (pump (host, 42, 0,
+                             lin.data(), rin.data(),
+                             lout.data(), rout.data()));
+        REQUIRE (lout[0] == kSentinel);
+    }
+
+    // Re-bind with a fresh id (same kind here is fine — the contract is
+    // "any non-null setInternalFxAtSlot call resets bypass"). Re-binding
+    // through nullopt-then-id covers the unbind+rebind shape; this case
+    // covers the direct id-then-id replace shape.
+    host.setInternalFxAtSlot (42, 0, sirius::InternalFxId::kEq);
+
+    lout.fill (0.0f); rout.fill (0.0f);
+    REQUIRE (pump (host, 42, 0,
+                   lin.data(), rin.data(),
+                   lout.data(), rout.data()));
+
+    // Output is finite — the rebound adapter is active, not silently
+    // bypassed from the prior state.
+    for (std::size_t i = kBlockSamples / 2; i < kBlockSamples; ++i)
+    {
+        CHECK (std::isfinite (lout[i]));
+        CHECK (std::isfinite (rout[i]));
+    }
+}
+
 TEST_CASE ("in-place aliasing through the host — inChannels == outChannels survives the round trip",
            "[internal-fx-host]")
 {

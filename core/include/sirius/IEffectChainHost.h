@@ -80,6 +80,26 @@ public:
                                       std::size_t                 /*slotIdx*/,
                                       std::optional<InternalFxId> /*id*/) {}
 
+    /// P7 T5 slice 1 — message-thread bypass toggle for a bound internal
+    /// adapter. Mirrors `setInternalFxAtSlot`'s message-thread + audio-
+    /// detached contract. When `bypassed == true`, the audio thread's
+    /// `pumpSlot` short-circuits the bound adapter and returns false
+    /// (caller treats as dry pass-through — same semantics as the
+    /// adapter-not-bound miss). When `bypassed == false`, dispatch
+    /// resumes through `adapter->process(...)` on the next call.
+    ///
+    /// Calling on a slot with no bound adapter is harmless — the flag is
+    /// recorded but ignored until a future `setInternalFxAtSlot(...)`
+    /// installs an adapter. Calling `setInternalFxAtSlot(..., id_value)`
+    /// resets the bypass flag to false so a re-added slot starts active
+    /// regardless of any prior bypass state at that key.
+    ///
+    /// Default no-op so test fakes that only care about `pumpSlot` keep
+    /// compiling — same fake-compat reason as `setInternalFxAtSlot`.
+    virtual void setInternalFxBypassAtSlot (std::int64_t /*nodeKey*/,
+                                            std::size_t  /*slotIdx*/,
+                                            bool         /*bypassed*/) {}
+
     /// P7 T3a-C — message-thread prepare for every bound internal adapter.
     /// Called once at audio-device init and again on every sample-rate /
     /// max-block change (the engine has the hooks; `MainComponent` wires

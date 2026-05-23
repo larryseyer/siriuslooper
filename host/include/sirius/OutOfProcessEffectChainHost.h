@@ -200,6 +200,25 @@ public:
                               std::size_t                 slotIdx,
                               std::optional<InternalFxId> id) override;
 
+    // P7 T5 slice 1 — message-thread bypass toggle. Same precondition as
+    // `setInternalFxAtSlot`: the caller MUST detach the audio callback
+    // before invoking (atomic store is release-ordered to pair with the
+    // audio thread's acquire-load in `pumpSlot`, but the underlying
+    // map's bucket layout could still rehash if a brand-new key is
+    // inserted, so we keep the established "mutate only when detached"
+    // contract rather than rely on bucket stability).
+    //
+    // The flag is stored independently of `setInternalFxAtSlot` —
+    // calling on a key with no bound adapter records the flag for any
+    // future bind, but has no audio-thread effect until an adapter is
+    // installed (the `pumpSlot` bypass check only runs after the
+    // adapter lookup succeeds). `setInternalFxAtSlot(...)` with a
+    // non-null id resets the matching bypass entry to false so a
+    // re-added slot starts non-bypassed regardless of prior state.
+    void setInternalFxBypassAtSlot (std::int64_t nodeKey,
+                                    std::size_t  slotIdx,
+                                    bool         bypassed) override;
+
     // Message-thread only. Forwards `prepare(sampleRate, maxBlockSize)` to
     // every currently-bound internal-FX adapter and remembers the values
     // so adapters bound later by `setInternalFxAtSlot` are auto-prepared
@@ -393,6 +412,20 @@ private:
     std::unordered_map<SlotKey,
                        std::unique_ptr<IInternalFxAdapter>,
                        SlotKeyHash> internalAdapters_;
+
+    /// P7 T5 slice 1 — parallel bypass-flag table for the internal-FX
+    /// dispatch path. Keyed identically to `internalAdapters_`; entries
+    /// are only ever created or erased on the message thread with the
+    /// audio callback detached (same contract as `internalAdapters_`).
+    /// The audio thread's `pumpSlot` reads `it->second.load(acquire)`
+    /// only after an adapter lookup hit, so a default-absent entry
+    /// (no bypass ever set for this key) behaves identically to
+    /// `bypassed == false`. `std::atomic<bool>` because the message
+    /// thread writes it (release) while the audio thread reads it
+    /// (acquire) on every pumpSlot call to a bound adapter.
+    std::unordered_map<SlotKey,
+                       std::atomic<bool>,
+                       SlotKeyHash> internalBypass_;
 
     /// P7 T3a-B — last-known `prepareInternalFx(sampleRate, maxBlockSize)`
     /// values. `prepared_` flips to true on the first call to
