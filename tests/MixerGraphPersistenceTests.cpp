@@ -154,6 +154,8 @@ TEST_CASE ("OutputMixer survives serialize -> deserialize with an Internal-FX in
     using sirius::InternalFxId;
 
     OutputMixer source;
+    // OutputMixer has no addFxReturn; use addBus + routeBusToBus (same shape as
+    // the existing round-trip test at line 58).
     // Seed an aux bus (BusId{1}) with an Internal-RVB insert.
     // BusId{0} is the master, auto-created in the ctor.
     const auto auxId = source.addBus (BusConfig { 2, "Aux", BusKind::Bus });
@@ -166,6 +168,8 @@ TEST_CASE ("OutputMixer survives serialize -> deserialize with an Internal-FX in
     auto strip = std::make_unique<ChannelStrip<SignalType::Audio>>();
     strip->setEffectChain (
         sirius::EffectChain{}.withAppended (EffectChainEntry::makeInternal (InternalFxId::kDly)));
+    // No routeChannelToBus — this test covers insert-chain persistence only,
+    // not the routing matrix (already covered by the test at line 58 above).
     source.setChannelStrip (ch, std::move (strip));
 
     const auto json  = persistence::serializeMixerGraphState (source.exportGraphState());
@@ -176,6 +180,10 @@ TEST_CASE ("OutputMixer survives serialize -> deserialize with an Internal-FX in
     const auto auxIt = std::find_if (round.buses.begin(), round.buses.end(),
         [&] (const sirius::MixerBusState& b) { return b.busId == auxId.value(); });
     REQUIRE (auxIt != round.buses.end());
+    const auto masterIt = std::find_if (round.buses.begin(), round.buses.end(),
+        [&] (const sirius::MixerBusState& b) { return b.busId != auxId.value(); });
+    REQUIRE (masterIt != round.buses.end());
+    CHECK (masterIt->inserts.empty()); // inserts must not bleed onto the master bus
     REQUIRE (auxIt->inserts.size() == 1);
     CHECK (auxIt->inserts.entries()[0].kind == sirius::EffectChainSlotKind::Internal);
     CHECK (auxIt->inserts.entries()[0].internalId == InternalFxId::kRvb);
