@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://siriuslooper.com/sitemap.xml
+Sitemap: https://automagicart.com/ida/sitemap.xml

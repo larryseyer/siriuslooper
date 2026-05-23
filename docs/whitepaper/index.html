@@ -3,23 +3,23 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>White Paper · Sirius Looper</title>
-  <meta name="description" content="The canonical V7 design thesis. Conceptual time, the Logical Master Clock, input and output mixers, the direct layer, the Constituent hierarchy, and the trade-offs that make Sirius Looper possible.">
+  <title>White Paper · IDA</title>
+  <meta name="description" content="The canonical V7 design thesis. Conceptual time, the Logical Master Clock, input and output mixers, the direct layer, the Constituent hierarchy, and the trade-offs that make IDA possible.">
 
-  <link rel="canonical" href="https://siriuslooper.com/docs/whitepaper/">
+  <link rel="canonical" href="https://automagicart.com/docs/whitepaper/">
   <link rel="icon" type="image/svg+xml" href="/assets/img/favicon.svg">
   <link rel="alternate icon" href="/assets/img/favicon.svg">
 
   <meta property="og:type" content="website">
-  <meta property="og:site_name" content="Sirius Looper">
-  <meta property="og:title" content="White Paper · Sirius Looper">
-  <meta property="og:description" content="The canonical V7 design thesis. Conceptual time, the Logical Master Clock, input and output mixers, the direct layer, the Constituent hierarchy, and the trade-offs that make Sirius Looper possible.">
-  <meta property="og:url" content="https://siriuslooper.com/docs/whitepaper/">
-  <meta property="og:image" content="https://siriuslooper.com/assets/img/og.png">
+  <meta property="og:site_name" content="IDA">
+  <meta property="og:title" content="White Paper · IDA">
+  <meta property="og:description" content="The canonical V7 design thesis. Conceptual time, the Logical Master Clock, input and output mixers, the direct layer, the Constituent hierarchy, and the trade-offs that make IDA possible.">
+  <meta property="og:url" content="https://automagicart.com/docs/whitepaper/">
+  <meta property="og:image" content="https://automagicart.com/assets/img/og.png">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="White Paper · Sirius Looper">
-  <meta name="twitter:description" content="The canonical V7 design thesis. Conceptual time, the Logical Master Clock, input and output mixers, the direct layer, the Constituent hierarchy, and the trade-offs that make Sirius Looper possible.">
-  <meta name="twitter:image" content="https://siriuslooper.com/assets/img/og.png">
+  <meta name="twitter:title" content="White Paper · IDA">
+  <meta name="twitter:description" content="The canonical V7 design thesis. Conceptual time, the Logical Master Clock, input and output mixers, the direct layer, the Constituent hierarchy, and the trade-offs that make IDA possible.">
+  <meta name="twitter:image" content="https://automagicart.com/assets/img/og.png">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -33,7 +33,7 @@
 
   <header class="site-header" role="banner">
     <div class="container header-row">
-      <a href="/" class="brand" aria-label="Sirius Looper home">
+      <a href="/" class="brand" aria-label="IDA home">
         <span class="brand-mark"><span class="brand-mark-accent">S</span>IRIUS</span>
         <span class="brand-suffix">LOOPER</span>
       </a>
@@ -42,7 +42,7 @@
         <a href="/architecture/">Architecture</a>
         <a href="/docs/user-guide/" aria-current="page">Docs</a>
         <a href="/about/">About</a>
-        <a href="https://github.com/larryseyer/siriuslooper" class="nav-external" rel="noopener">GitHub</a>
+        <a href="https://github.com/larryseyer/ida" class="nav-external" rel="noopener">GitHub</a>
       </nav>
     </div>
   </header>
@@ -52,14 +52,14 @@
   <div class="container doc-grid">
     <aside class="doc-aside" aria-label="Document navigation">
       <div class="doc-aside-inner">
-        <p class="doc-kicker">Sirius Looper · Documentation</p>
+        <p class="doc-kicker">IDA · Documentation</p>
         <h2 class="doc-title-aside">White Paper</h2>
         <nav class="doc-toc" aria-label="On this page">
           <p class="doc-toc-label">On this page</p>
           <ol id="doc-toc-list"><!-- populated by signup.js companion --></ol>
         </nav>
         <p class="doc-aside-meta">
-          <a href="https://github.com/larryseyer/siriuslooper/blob/master/docs/Sirius%20Looper%20Whitepaper%20V7.md" rel="noopener">View source on GitHub →</a>
+          <a href="https://github.com/larryseyer/ida/blob/master/docs/IDA%20Whitepaper%20V7.md" rel="noopener">View source on GitHub →</a>
         </p>
       </div>
     </aside>
@@ -70,7 +70,7 @@
 <p><em>Looping as the Capture and Repetition of Musical Ideas</em></p>
 <hr>
 <p><strong>Status:</strong> Implementation reference
-<strong>License:</strong> The Sirius Looper software is licensed under AGPLv3 with an Apple App Store distribution exception. The bundled Larry Seyer Acoustic Drum Library selection is proprietary and separately licensed. See <code>../LICENSE</code>, <code>LICENSE-THIRD-PARTY.md</code>, and <code>SAMPLE-LICENSE.md</code>. This document — the white paper — is offered for permissive public release.</p>
+<strong>License:</strong> The IDA software is licensed under AGPLv3 with an Apple App Store distribution exception. The bundled Larry Seyer Acoustic Drum Library selection is proprietary and separately licensed. See <code>../LICENSE</code>, <code>LICENSE-THIRD-PARTY.md</code>, and <code>SAMPLE-LICENSE.md</code>. This document — the white paper — is offered for permissive public release.</p>
 <hr>
 <h2>Abstract</h2>
 <p>This paper proposes a reference architecture for audio/video loopers that rejects assumptions built into nearly every existing looper, and proposes a foundational reframe that follows from rejecting them.</p>
@@ -161,7 +161,7 @@
 <tr>
 <th>Axis</th>
 <th>Typical Looper</th>
-<th>Sirius Looper</th>
+<th>IDA</th>
 </tr>
 </thead>
 <tbody>
@@ -477,7 +477,7 @@ Physical inputs → INPUT MIXER → TAPE → OUTPUT MIXER → Physical outputs
 <li><strong>Cross-modality routing is free.</strong> A MIDI tape can drive a software synth whose audio output enters the audio side of the output mixer; a video tape can be modulated by an audio tape's envelope; an audio tape's transients can trigger MIDI events. These are just routing choices in mixers that already speak all four modalities.</li>
 </ul>
 <p><strong>MIDI 2.0 / per-note expression is first-class.</strong> The tape format is event-shaped (timestamp + payload), and the payload is wide enough to carry a full UMP packet without translation. Per-note pitch bend, per-note pressure, per-note articulation, and 32-bit-resolution controllers are stored on tape exactly as received and reproduced exactly on playback. Per-note expression streams are treated as automatable parameters in the Constituent model: a phrase can carry, repeat, and mutate per-note vibrato as easily as it carries notes themselves. MIDI 1.0 input is upcast to UMP at the membrane and stored in the same canonical form, so a 7-bit CC and a 32-bit per-note controller occupy the same architectural slot. This is not a forward-compatibility hedge; it is the only sensible representation given the rest of the architecture, and it differentiates the looper from every existing system that treats MIDI as a 7-bit afterthought.</p>
-<p><strong>Audio is stereo, always.</strong> Every audio channel, bus, send, output, and master in either mixer is a <strong>stereo pair</strong> — Sirius, like its sister app OTTO, has no mono audio path anywhere. The <em>channel</em> is always stereo internally; what the operator chooses is each channel's <strong>input source format</strong>. A <strong>stereo source</strong> maps two device channels to the channel's left and right. A <strong>mono source</strong> (a single mic, one side of an interface) takes one device channel, is presented dual-mono from the channel boundary inward, and is positioned with pan. A stereo channel can be <strong>split</strong> into two independent mono-source channels and <strong>collapsed</strong> back into one — so a stereo interface shows clean stereo strips by default, while a bank of mono mics can be split out, each split strip still a stereo channel internally fed by one device input. The operator never sees or routes a mono audio <em>bus</em>, and no channel is ever mono internally; pan operates within the stereo field; metering is per-side (dual meters). This is a hard invariant, not a default — engine routing, mixer UI, and metering all assume stereo pairs. (It applies to the audio modality; MIDI and video channels carry their own native payloads.)</p>
+<p><strong>Audio is stereo, always.</strong> Every audio channel, bus, send, output, and master in either mixer is a <strong>stereo pair</strong> — IDA, like its sister app OTTO, has no mono audio path anywhere. The <em>channel</em> is always stereo internally; what the operator chooses is each channel's <strong>input source format</strong>. A <strong>stereo source</strong> maps two device channels to the channel's left and right. A <strong>mono source</strong> (a single mic, one side of an interface) takes one device channel, is presented dual-mono from the channel boundary inward, and is positioned with pan. A stereo channel can be <strong>split</strong> into two independent mono-source channels and <strong>collapsed</strong> back into one — so a stereo interface shows clean stereo strips by default, while a bank of mono mics can be split out, each split strip still a stereo channel internally fed by one device input. The operator never sees or routes a mono audio <em>bus</em>, and no channel is ever mono internally; pan operates within the stereo field; metering is per-side (dual meters). This is a hard invariant, not a default — engine routing, mixer UI, and metering all assume stereo pairs. (It applies to the audio modality; MIDI and video channels carry their own native payloads.)</p>
 <h2>6.2 Two layers of routing: input layer and channel layer</h2>
 <p>The input mixer makes routing decisions at two distinct layers, each meaningful in its own right.</p>
 <table>
@@ -617,11 +617,11 @@ Physical inputs → INPUT MIXER → TAPE → OUTPUT MIXER → Physical outputs
 <li><strong>Video</strong> renders to a chosen intra-frame codec (ProRes Proxy, motion JPEG, or similar). Frame rate matches the source unless the user explicitly converts.</li>
 </ul>
 <p>What the architecture deliberately does <strong>not</strong> support: DAW project-exchange formats — AAF, OMF, proprietary DAW project formats, and their successors. These formats encode the assumptions this architecture rejects: a fixed sample-clock timeline, PPQ-quantized MIDI, a linear sequence of clips, no role-fillable phrase substitution, no polymetric coexistence. Translating a Constituent graph into AAF would either lose the architectural information (the receiving DAW gets flattened stems on a fixed timeline, with no phrase identity, no role metadata, no grammatical relationships) or produce something the receiving DAW cannot actually use. Neither outcome is better than honest stems.</p>
-<p>The performer's musical content is portable via stems and MIDI files; the architectural content is preserved in the session file itself. <strong>Two complementary exchange formats: stems for everyone, the session file for any Sirius-Looper-compatible tool.</strong> DAW project exchange is treated as out of scope in the same spirit as cross-application audio routing (§1.6) — the operating system and the receiving application can handle the translation if and when they care to.</p>
+<p>The performer's musical content is portable via stems and MIDI files; the architectural content is preserved in the session file itself. <strong>Two complementary exchange formats: stems for everyone, the session file for any IDA-compatible tool.</strong> DAW project exchange is treated as out of scope in the same spirit as cross-application audio routing (§1.6) — the operating system and the receiving application can handle the translation if and when they care to.</p>
 <p>This is a deliberate refusal to chase the moving target of DAW interoperability. Project-exchange formats change with every major DAW release; chasing them would consume implementation effort that belongs elsewhere, and would mislead users about how lossless the exchange actually is. Rendered stems are lossless in the only sense that matters — they sound exactly like the production — and they play in every tool ever written. That is the right export contract.</p>
 <h3>Future direction: parts, timeline, and song rendering</h3>
 <p>A forward direction under exploration extends rendering beyond export-to-file. Recording everything is not the same as keeping everything: the always-on tapes are the raw substrate, and the creative act is selecting from it and committing. Defined phrases are rendered into keepable <strong>parts</strong> (&quot;pills&quot;) that the performer arranges on a timeline, which is in turn rendered into a finished song — an arrangement environment reached from the capture-and-loop foundation rather than a linear-DAW one. In this sense render becomes a <em>mode</em> that stops the always-on capture tapes and commits a selection of them to durable, arrangeable assets.</p>
-<p>This direction must be reconciled with the export philosophy above. Section 6.11 today frames render as &quot;just playback aimed at a file&quot; and rejects the fixed clip-timeline assumptions of DAW project-exchange. Whether a Sirius timeline-of-parts preserves those same principles — phrase identity, role substitution, polymetric coexistence — or revises them is an open question reserved for a dedicated design pass. The working record of the direction and its open questions lives in <code>docs/design/render-and-arrangement-vision.md</code>.</p>
+<p>This direction must be reconciled with the export philosophy above. Section 6.11 today frames render as &quot;just playback aimed at a file&quot; and rejects the fixed clip-timeline assumptions of DAW project-exchange. Whether a IDA timeline-of-parts preserves those same principles — phrase identity, role substitution, polymetric coexistence — or revises them is an open question reserved for a dedicated design pass. The working record of the direction and its open questions lives in <code>docs/design/render-and-arrangement-vision.md</code>.</p>
 <h2>6.12 MIDI 2.0 integration</h2>
 <p>§6.1 established that the tape format is MIDI 2.0-native. This subsection specifies what that means at the implementation level.</p>
 <p><strong>UMP storage on tape.</strong> Every MIDI event on tape is a Universal MIDI Packet stored exactly as the engine received it. UMP packets are 32, 64, 96, or 128 bits depending on type; the tape format accommodates all four sizes natively, with the size encoded in the leading 4-bit type nibble per the MIDI 2.0 specification. No conversion or normalization happens at storage time. A Channel Voice 2.0 note-on with 16-bit velocity and full per-note attribute is stored byte-identical to what the source produced.</p>
@@ -1227,8 +1227,8 @@ ostinato:     7/8 at 120 BPM  →  shorter bars, same beat
 <p>GUI hosting is also out-of-process. The plug-in's GUI runs in its own host process and communicates with the main UI process via the same IPC mechanism. A plug-in GUI that hangs or crashes affects only its own host process; the main UI and audio paths are unaffected.</p>
 <p>The cost of out-of-process hosting is implementation complexity: the host must marshal parameter changes, manage host-process lifecycle, handle GUI window embedding across processes, and recover from supervisor-detected failures. The benefit is the architectural commitment that no third-party code can cross a process boundary into the engine. <strong>The &quot;audio never glitches on plug-in failure&quot; invariant in §15.3 is true because the architecture refuses to share an address space with plug-in code, not because plug-ins are well-behaved.</strong></p>
 <p>This is well-trodden ground in modern audio software: out-of-process plug-in hosting and sandboxed extension models are an established discipline across the field. The architecture commits to that discipline.</p>
-<h3>15.7 Sirius Archive Format</h3>
-<p>The session file is the durable artifact of a Sirius Looper session. It must be readable across decades, portable across machines, and complete enough that a session captured today can be reopened, edited, and re-rendered indefinitely. This section specifies that format.</p>
+<h3>15.7 IDA Archive Format</h3>
+<p>The session file is the durable artifact of a IDA session. It must be readable across decades, portable across machines, and complete enough that a session captured today can be reopened, edited, and re-rendered indefinitely. This section specifies that format.</p>
 <p><strong>Container.</strong> The session is a single directory tree wrapped in an uncompressed <code>.saf</code> container (effectively a ZIP archive with no compression, for tooling compatibility, but treated as a directory by the engine). The top-level layout:</p>
 <pre><code>session_name.saf/
     manifest.json          // session identification and version
@@ -1283,7 +1283,7 @@ ostinato:     7/8 at 120 BPM  →  shorter bars, same beat
 </ol>
 <p>The performer always sees what the migration policy decided and can override per-instance.</p>
 <p><strong>Asset preservation.</strong> Tapes, parameter tapes, and wet captures are stored in the archive itself, never as external references. A session is a single self-contained artifact; moving it between machines requires moving exactly one directory. Plug-in state is also in the archive; only the plug-in <em>binary</em> must be available at the destination, and the version-migration policy above handles binary availability.</p>
-<p><strong>Forward compatibility.</strong> A Sirius Archive Format 1.0.0 session must remain openable for the lifetime of the architecture. New versions of the format add fields and modalities; they never silently change the meaning of existing fields. A reader that encounters a session at a MINOR version higher than its own opens the file and uses the fields it understands, ignoring those it does not, after notifying the performer.</p>
+<p><strong>Forward compatibility.</strong> A IDA Archive Format 1.0.0 session must remain openable for the lifetime of the architecture. New versions of the format add fields and modalities; they never silently change the meaning of existing fields. A reader that encounters a session at a MINOR version higher than its own opens the file and uses the fields it understands, ignoring those it does not, after notifying the performer.</p>
 <p><strong>The archive is the durable artifact.</strong> The engine, the plug-ins, the operating system, even the hardware will change. The archive — symbolic content, parameter tapes, dry tapes, calibration history, and the format version that describes how to read all of it — is what survives. Symbolic fidelity (§15.6) is preserved unconditionally; re-render fidelity is preserved to the extent that plug-ins are still loadable and their state migrates cleanly.</p>
 <hr>
 <h2>Part XVI — The Performer's Instrument</h2>
@@ -1570,7 +1570,7 @@ ostinato:     7/8 at 120 BPM  →  shorter bars, same beat
 <p><strong>Repetition rules</strong> — The five-axis description of how a Constituent plays back: trigger, cardinality, phase, mutation, termination.</p>
 <p><strong>Retroactive ring</strong> — The in-memory portion of recent tape data, available for retroactive capture.</p>
 <p><strong>Role</strong> — A phrase's structural function (verse, chorus, response, fill, etc.). Makes phrases interchangeable by role for structured improvisation.</p>
-<p><strong>Sirius Archive Format (SAF)</strong> — The versioned container format for Sirius Looper sessions. A single self-contained directory tree (uncompressed ZIP container) holding tapes, the Constituent graph, mix snapshots, calibration history, plug-in state, and permissions. SemVer-versioned for forward and backward read compatibility within a major version. See §15.7.</p>
+<p><strong>IDA Archive Format (IAF)</strong> — The versioned container format for IDA sessions. A single self-contained directory tree (uncompressed ZIP container) holding tapes, the Constituent graph, mix snapshots, calibration history, plug-in state, and permissions. SemVer-versioned for forward and backward read compatibility within a major version. See §15.7.</p>
 <p><strong>Tape</strong> — An append-only, immutable stream of timestamped events from a single input source. The source of truth.</p>
 <p><strong>Tape topology</strong> — The set and configuration of tapes in a session, determined by the user's channel configuration. Tapes appear because channels demand them; the system imposes no fixed tape count.</p>
 <p><strong>Tempo map</strong> — A transformation between two conceptual time domains, parameterized by tempo and time signature events at boundaries.</p>
@@ -1753,7 +1753,7 @@ ostinato:     7/8 at 120 BPM  →  shorter bars, same beat
 <p><strong>Export targets the simplest universally-portable formats.</strong> Audio renders to WAV/FLAC/AIFF; MIDI renders to Type 0/1 standard MIDI files; video renders to a chosen intra-frame codec. Stems and standard files are first-class output destinations of the output mixer (§6.11). DAW project-exchange formats (AAF, OMF, proprietary DAW project formats, and successors) are explicitly out of scope; translating a Constituent graph into them would either lose architectural information or produce unusable artifacts in the receiving DAW.</p>
 </li>
 <li>
-<p><strong>The session file is the high-fidelity exchange format for the Sirius Looper ecosystem.</strong> Stems are the high-portability exchange format for everyone else. Two complementary contracts, both lossless in the sense that matters.</p>
+<p><strong>The session file is the high-fidelity exchange format for the IDA ecosystem.</strong> Stems are the high-portability exchange format for everyone else. Two complementary contracts, both lossless in the sense that matters.</p>
 </li>
 <li>
 <p><strong>Security defaults are safe-by-inaction.</strong> Coordination messages are end-to-end encrypted; air-gapped solo is the default; sharing a Constituent across the ensemble requires explicit consent; identity is per-session by default (§14.10). The performer who does nothing extra is in the most private state available.</p>
@@ -1780,7 +1780,7 @@ ostinato:     7/8 at 120 BPM  →  shorter bars, same beat
 <p><strong>Ensemble permissions are owner-writable, ensemble-readable, with explicit grant for write-sharing.</strong> A Constituent's owner is the node that created it. Others may read by default within the ensemble; write access is granted explicitly per-Constituent or per-namespace. Revocation is symmetric and immediate (§14.9).</p>
 </li>
 <li>
-<p><strong>The session file format is the Sirius Archive Format (SAF), a versioned container.</strong> Tapes are stored in their captured format; the Constituent graph, calibration history, plug-in state hashes, and parameter tapes live in JSON within the container. The format version is in the manifest; readers reject formats they don't understand and offer to migrate where migration is possible (§15.7).</p>
+<p><strong>The session file format is the IDA Archive Format (IAF), a versioned container.</strong> Tapes are stored in their captured format; the Constituent graph, calibration history, plug-in state hashes, and parameter tapes live in JSON within the container. The format version is in the manifest; readers reject formats they don't understand and offer to migrate where migration is possible (§15.7).</p>
 </li>
 <li>
 <p><strong>Plug-in state migration on version mismatch is opt-in, never silent.</strong> The session manifest records each plug-in's version and state hash at save time. On reopen with a different version, the performer chooses among load-current/bypass/substitute/refuse, with the wet-capture parallel parameter tape available as fallback (§15.7).</p>
@@ -1881,7 +1881,7 @@ ostinato:     7/8 at 120 BPM  →  shorter bars, same beat
 </ul>
 <p>That is the architecture executing as a story. Every part has appeared. No part was special-cased.</p>
 <hr>
-<p><em>End of Sirius Looper Architecture.</em></p>
+<p><em>End of IDA Architecture.</em></p>
 
     </div>
   </div>
@@ -1907,7 +1907,7 @@ ostinato:     7/8 at 120 BPM  →  shorter bars, same beat
         <h4>Reference</h4>
         <ul>
           <li><a href="/docs/whitepaper/">White Paper</a></li>
-          <li><a href="https://github.com/larryseyer/siriuslooper" rel="noopener">Source (GitHub)</a></li>
+          <li><a href="https://github.com/larryseyer/ida" rel="noopener">Source (GitHub)</a></li>
         </ul>
       </div>
       <div class="footer-block">

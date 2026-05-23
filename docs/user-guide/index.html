@@ -3,23 +3,23 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>User Guide · Sirius Looper</title>
-  <meta name="description" content="Step-by-step workflows, gestures, and glossary for Sirius Looper. Read in order if you&#39;re new; jump to the chapter you need otherwise.">
+  <title>User Guide · IDA</title>
+  <meta name="description" content="Step-by-step workflows, gestures, and glossary for IDA. Read in order if you&#39;re new; jump to the chapter you need otherwise.">
 
-  <link rel="canonical" href="https://siriuslooper.com/docs/user-guide/">
+  <link rel="canonical" href="https://automagicart.com/docs/user-guide/">
   <link rel="icon" type="image/svg+xml" href="/assets/img/favicon.svg">
   <link rel="alternate icon" href="/assets/img/favicon.svg">
 
   <meta property="og:type" content="website">
-  <meta property="og:site_name" content="Sirius Looper">
-  <meta property="og:title" content="User Guide · Sirius Looper">
-  <meta property="og:description" content="Step-by-step workflows, gestures, and glossary for Sirius Looper. Read in order if you&#39;re new; jump to the chapter you need otherwise.">
-  <meta property="og:url" content="https://siriuslooper.com/docs/user-guide/">
-  <meta property="og:image" content="https://siriuslooper.com/assets/img/og.png">
+  <meta property="og:site_name" content="IDA">
+  <meta property="og:title" content="User Guide · IDA">
+  <meta property="og:description" content="Step-by-step workflows, gestures, and glossary for IDA. Read in order if you&#39;re new; jump to the chapter you need otherwise.">
+  <meta property="og:url" content="https://automagicart.com/docs/user-guide/">
+  <meta property="og:image" content="https://automagicart.com/assets/img/og.png">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="User Guide · Sirius Looper">
-  <meta name="twitter:description" content="Step-by-step workflows, gestures, and glossary for Sirius Looper. Read in order if you&#39;re new; jump to the chapter you need otherwise.">
-  <meta name="twitter:image" content="https://siriuslooper.com/assets/img/og.png">
+  <meta name="twitter:title" content="User Guide · IDA">
+  <meta name="twitter:description" content="Step-by-step workflows, gestures, and glossary for IDA. Read in order if you&#39;re new; jump to the chapter you need otherwise.">
+  <meta name="twitter:image" content="https://automagicart.com/assets/img/og.png">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -33,7 +33,7 @@
 
   <header class="site-header" role="banner">
     <div class="container header-row">
-      <a href="/" class="brand" aria-label="Sirius Looper home">
+      <a href="/" class="brand" aria-label="IDA home">
         <span class="brand-mark"><span class="brand-mark-accent">S</span>IRIUS</span>
         <span class="brand-suffix">LOOPER</span>
       </a>
@@ -42,7 +42,7 @@
         <a href="/architecture/">Architecture</a>
         <a href="/docs/user-guide/" aria-current="page">Docs</a>
         <a href="/about/">About</a>
-        <a href="https://github.com/larryseyer/siriuslooper" class="nav-external" rel="noopener">GitHub</a>
+        <a href="https://github.com/larryseyer/ida" class="nav-external" rel="noopener">GitHub</a>
       </nav>
     </div>
   </header>
@@ -52,14 +52,14 @@
   <div class="container doc-grid">
     <aside class="doc-aside" aria-label="Document navigation">
       <div class="doc-aside-inner">
-        <p class="doc-kicker">Sirius Looper · Documentation</p>
+        <p class="doc-kicker">IDA · Documentation</p>
         <h2 class="doc-title-aside">User Guide</h2>
         <nav class="doc-toc" aria-label="On this page">
           <p class="doc-toc-label">On this page</p>
           <ol id="doc-toc-list"><!-- populated by signup.js companion --></ol>
         </nav>
         <p class="doc-aside-meta">
-          <a href="https://github.com/larryseyer/siriuslooper/blob/master/docs/Sirius%20Looper%20User%20Guide.md" rel="noopener">View source on GitHub →</a>
+          <a href="https://github.com/larryseyer/ida/blob/master/docs/IDA%20User%20Guide.md" rel="noopener">View source on GitHub →</a>
         </p>
       </div>
     </aside>
@@ -67,7 +67,7 @@
       <h1>User Guide</h1>
       <p class="doc-subtitle">The operator&#39;s manual — workflow-first.</p>
       <p>The operator's manual. Workflow-first: each chapter walks through
-something you can actually do with Sirius. Read in order if you're new;
+something you can actually do with IDA. Read in order if you're new;
 jump to the chapter you need otherwise.</p>
 <p>For the conceptual model, design philosophy, and architectural rationale,
 see the <a href="/docs/whitepaper/">white paper</a>.
@@ -86,7 +86,7 @@ says <em>how</em> to make music with it.</p>
 <tbody>
 <tr>
 <td><strong>Tape</strong></td>
-<td>The always-running recording of one input. Every audio input has a tape that is continuously capturing while Sirius is open. Tapes are infrastructure — you usually don't see them in the normal view. They make retroactive capture possible.</td>
+<td>The always-running recording of one input. Every audio input has a tape that is continuously capturing while IDA is open. Tapes are infrastructure — you usually don't see them in the normal view. They make retroactive capture possible.</td>
 </tr>
 <tr>
 <td><strong>Input</strong></td>
@@ -138,7 +138,7 @@ says <em>how</em> to make music with it.</p>
 <li>
 <p><strong>Arm</strong> — tap the Arm button (or the per-input Arm in the Preparation
 tab). The button turns red. The system is now listening for capture
-gestures. Until you arm, nothing captures — Sirius starts disarmed
+gestures. Until you arm, nothing captures — IDA starts disarmed
 on purpose, so you never capture by surprise.</p>
 </li>
 <li>
@@ -157,16 +157,16 @@ without losing the armed state. You can also switch which input you're
 capturing onto in between Mark In and Mark Out, by tapping a different
 input's row.</p>
 <h3>What Mark Out does — the auto-promotion rule</h3>
-<p>When Mark Out fires, Sirius decides what to do with the captured region
+<p>When Mark Out fires, IDA decides what to do with the captured region
 based on the playhead position at the moment of <strong>Mark In</strong>:</p>
 <ul>
 <li>
-<p><strong>Mark In was outside any existing Phrase</strong> → Sirius mints a <em>new
+<p><strong>Mark In was outside any existing Phrase</strong> → IDA mints a <em>new
 Phrase</em> containing the captured Loop, and adds it to the song. A
 new Pill appears on the timeline.</p>
 </li>
 <li>
-<p><strong>Mark In was inside an existing Phrase's span</strong> → Sirius adds the
+<p><strong>Mark In was inside an existing Phrase's span</strong> → IDA adds the
 captured Loop <em>as a child of that Phrase</em>. No new Pill — the existing
 Pill quietly gains another layer.</p>
 </li>
@@ -227,7 +227,7 @@ banner is visible.</p>
 <p><strong>Tap the bottom-bar Undo button</strong>. Always works.</p>
 </li>
 </ul>
-<p>After undoing a promotion, Sirius restores the capture session to its
+<p>After undoing a promotion, IDA restores the capture session to its
 state <em>before</em> Mark Out: your Mark In is intact, the system is armed and
 awaiting an out-point. The tape never stopped recording — it has all the
 samples between Mark In and where you (mistakenly) marked out, and
@@ -302,7 +302,7 @@ history list.</li>
         <h4>Reference</h4>
         <ul>
           <li><a href="/docs/whitepaper/">White Paper</a></li>
-          <li><a href="https://github.com/larryseyer/siriuslooper" rel="noopener">Source (GitHub)</a></li>
+          <li><a href="https://github.com/larryseyer/ida" rel="noopener">Source (GitHub)</a></li>
         </ul>
       </div>
       <div class="footer-block">
