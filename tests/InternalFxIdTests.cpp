@@ -13,8 +13,8 @@ using sirius::InternalFxId;
 
 TEST_CASE ("InternalFxId enum values are stable", "[internal-fx-id]")
 {
-    // The underlying type is uint8_t with a reserved range for future FX.
-    // Values are pinned because they appear (as strings) in saved sessions.
+    // Pinned to guard against reordering — the discriminant order must match the
+    // string-to-id mapping and the reserved-range contract in InternalFxId.h.
     CHECK (static_cast<std::uint8_t> (InternalFxId::kEq)  == 0);
     CHECK (static_cast<std::uint8_t> (InternalFxId::kCmp) == 1);
     CHECK (static_cast<std::uint8_t> (InternalFxId::kRvb) == 2);

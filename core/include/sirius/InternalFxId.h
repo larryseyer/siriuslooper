@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 
 namespace sirius
 {
@@ -30,7 +31,7 @@ enum class InternalFxId : std::uint8_t
 /// needs to serialize / log an Internal id. The strings are the public ones
 /// the operator sees on insert pickers (UI lookup is allowed to render a
 /// friendlier label, but the canonical id stays).
-inline std::string internalFxIdToString (InternalFxId id)
+inline const char* internalFxIdToString (InternalFxId id) noexcept
 {
     switch (id)
     {
@@ -39,16 +40,16 @@ inline std::string internalFxIdToString (InternalFxId id)
         case InternalFxId::kRvb: return "RVB";
         case InternalFxId::kDly: return "DLY";
     }
-    throw std::invalid_argument ("sirius::internalFxIdToString: unknown InternalFxId");
+    return ""; // unreachable; noexcept prevents throw
 }
 
-inline InternalFxId internalFxIdFromString (const std::string& s)
+inline InternalFxId internalFxIdFromString (std::string_view s)
 {
     if (s == "EQ")  return InternalFxId::kEq;
     if (s == "CMP") return InternalFxId::kCmp;
     if (s == "RVB") return InternalFxId::kRvb;
     if (s == "DLY") return InternalFxId::kDly;
-    throw std::invalid_argument ("sirius::internalFxIdFromString: unknown id \"" + s + "\"");
+    throw std::invalid_argument ("sirius::internalFxIdFromString: unknown id \"" + std::string (s) + "\"");
 }
 
 } // namespace sirius
