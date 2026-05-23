@@ -29,9 +29,22 @@ add_library(SiriusEngine STATIC
     src/NotificationBus.cpp
     src/SessionSnapshot.cpp
     src/ConstituentValidator.cpp
-    src/MixerGraph.cpp)
+    src/MixerGraph.cpp
+    # Internal-FX adapters — T3a of the P7 internal-FX umbrella. EqAdapter
+    # wraps OTTO's header-only PlayerEQ; the factory resolves an InternalFxId
+    # to a freshly-constructed adapter. CMP/DLY/RVB land in T3b/c/d.
+    src/InternalFxFactory.cpp
+    src/fx/EqAdapter.cpp)
 
 target_include_directories(SiriusEngine PUBLIC include)
+
+# OTTO header-only Player FX (PlayerEQ, PlayerCompressor, PlayerDelay,
+# PlayerIRConvolution + PlayerEffectsConfig) consumed from the submodule.
+# PRIVATE — only the adapter .cpp files in src/fx/ include these headers;
+# the engine's public include surface stays JUCE-free / OTTO-free per the
+# layering rule in CLAUDE.md.
+target_include_directories(SiriusEngine PRIVATE
+    ${CMAKE_SOURCE_DIR}/external/OTTO/src/otto-core/include)
 
 target_compile_features(SiriusEngine PUBLIC cxx_std_20)
 
@@ -39,9 +52,14 @@ target_compile_features(SiriusEngine PUBLIC cxx_std_20)
 # Sirius::Persistence are private (implementation details of .cpp files that
 # never leak into engine public headers — Persistence is used by
 # InputMixer.cpp for the finalizeChannel → TapeStore::store flow).
+# juce_audio_basics + juce_dsp are private: EqAdapter.cpp (T3a) drives
+# OTTO's PlayerEQ via juce::AudioBuffer + juce::dsp::ProcessContextReplacing.
+# They stay out of the engine's PUBLIC surface.
 target_link_libraries(SiriusEngine
     PUBLIC  Sirius::Core
     PRIVATE juce::juce_core
+            juce::juce_audio_basics
+            juce::juce_dsp
             Sirius::Persistence
             Sirius::Host
             soxr)

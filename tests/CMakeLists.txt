@@ -78,7 +78,20 @@ add_executable(SiriusTests
     PluginStateExtensionTests.cpp
     StatefulSynthFixtureTests.cpp
     MixerGraphTests.cpp
-    FlacTapeSinkTests.cpp)
+    FlacTapeSinkTests.cpp
+    # P7 T3a (internal-FX adapters — EQ first): adapter wrapper + factory.
+    # EqAdapter lives in engine/src/fx/ (private to the engine target);
+    # the include path below lets the test reach it.
+    EqAdapterTests.cpp
+    InternalFxFactoryTests.cpp)
+
+# T3a: EqAdapterTests includes "fx/EqAdapter.h" (engine-private header) and
+# EqAdapter.h transitively includes <otto/effects/PlayerEQ.h>. Both paths
+# stay PRIVATE — the engine's public include surface remains JUCE-free /
+# OTTO-free, and only the test target reaches into the engine internals.
+target_include_directories(SiriusTests PRIVATE
+    ${CMAKE_SOURCE_DIR}/engine/src
+    ${CMAKE_SOURCE_DIR}/external/OTTO/src/otto-core/include)
 
 target_compile_features(SiriusTests PRIVATE cxx_std_20)
 
@@ -93,6 +106,12 @@ target_link_libraries(SiriusTests PRIVATE
     Sirius::Ui
     Sirius::Net
     Sirius::Video
+    # T3a: EqAdapterTests transitively includes <otto/effects/PlayerEQ.h>
+    # through "fx/EqAdapter.h", which pulls juce_dsp + juce_audio_basics.
+    # Engine links them PRIVATE so they don't propagate; the test target
+    # picks them up here.
+    juce::juce_audio_basics
+    juce::juce_dsp
     Catch2::Catch2WithMain
     Threads::Threads)
 
