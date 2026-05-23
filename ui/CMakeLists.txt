@@ -15,14 +15,16 @@
 # =============================================================================
 
 # -----------------------------------------------------------------------------
-# SiriusLookAndFeel — OTTO's LookAndFeel, vendored for sister-app visual parity
+# SiriusLookAndFeel — OTTO's LookAndFeel, consumed from the OTTO submodule
 # -----------------------------------------------------------------------------
-# Copied verbatim from OTTO (src/otto-plugin/ui) with identical class names and
-# binary-data namespace, so re-syncing is a straight file copy and the .cpp
-# needs zero edits. Kept in its own target and compiled WITHOUT Sirius's strict
-# warning flags: this is vendored third-party code, held byte-faithful to OTTO
-# rather than reformatted to Sirius conventions. The proper long-term form is a
-# shared submodule (a one-time extraction out of OTTO), tracked separately.
+# Sources live in the OTTO git submodule at external/OTTO/src/otto-plugin/ui
+# (see .gitmodules). Sirius links these source files directly so that bug
+# fixes in OTTO propagate via `git submodule update --remote external/OTTO`
+# without a byte-faithful copy to keep in sync. Sirius never edits OTTO
+# source — see project memory `project_otto_is_a_submodule_now`. Kept in its
+# own target and compiled WITHOUT Sirius's strict warning flags: this is
+# third-party code held byte-faithful to OTTO rather than reformatted to
+# Sirius conventions.
 juce_add_binary_data(SiriusBinaryData
     HEADER_NAME "OTTOBinaryData.h"
     NAMESPACE OTTOBinaryData
@@ -40,13 +42,30 @@ juce_add_binary_data(SiriusBinaryData
         "${CMAKE_SOURCE_DIR}/assets/Fonts/JetBrains_Mono/JetBrainsMono-Medium.ttf"
         "${CMAKE_SOURCE_DIR}/assets/Fonts/JetBrains_Mono/JetBrainsMono-SemiBold.ttf")
 
-add_library(SiriusLookAndFeel STATIC
-    lookandfeel/OTTOLookAndFeel.cpp
-    lookandfeel/components/FaderMeter.cpp
-    lookandfeel/components/CompactFaderStrip.cpp
-    lookandfeel/components/ChannelDetailPanWidTab.cpp)
+# Source layout (T0b, 2026-05-22): all L&F sources consumed from the OTTO
+# submodule at external/OTTO/src/otto-plugin/ui. Bug fixes in OTTO
+# propagate via `git submodule update --remote external/OTTO` followed by
+# `git add external/OTTO && git commit` to record the new SHA. Sirius
+# never edits the submodule.
+#
+# OTTO_OUTPUT_COMBO_AS_JUCE_COMBOBOX (defined below) tells OTTO's
+# CompactFaderStrip to substitute juce::ComboBox for OTTO's TouchComboBox
+# at compile time — Sirius is desktop-first and does not link OTTO's
+# iOS touch-menu stack. The default OTTO behavior is unchanged.
+set(OTTO_UI_DIR ${CMAKE_SOURCE_DIR}/external/OTTO/src/otto-plugin/ui)
 
-target_include_directories(SiriusLookAndFeel PUBLIC lookandfeel)
+add_library(SiriusLookAndFeel STATIC
+    ${OTTO_UI_DIR}/OTTOLookAndFeel.cpp
+    ${OTTO_UI_DIR}/components/FaderMeter.cpp
+    ${OTTO_UI_DIR}/components/CompactFaderStrip.cpp
+    ${OTTO_UI_DIR}/components/ChannelDetailPanWidTab.cpp)
+
+target_include_directories(SiriusLookAndFeel PUBLIC
+    ${OTTO_UI_DIR}
+    ${OTTO_UI_DIR}/components)
+
+target_compile_definitions(SiriusLookAndFeel PUBLIC
+    OTTO_OUTPUT_COMBO_AS_JUCE_COMBOBOX)
 
 target_compile_features(SiriusLookAndFeel PUBLIC cxx_std_20)
 
