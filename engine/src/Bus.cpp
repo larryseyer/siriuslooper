@@ -54,11 +54,29 @@ void Bus::process (float* const* output, int numChannels, int numSamples) const 
     //      false), the slot's contribution is the dry mix carried into
     //      processedBuffer_ in step 1 — pipelined 1-buffer delay model
     //      per the M7 S3 design decisions.
-    if (output == nullptr || numChannels <= 0 || numSamples <= 0) return;
+    if (numSamples <= 0) return;
 
-    const int activeChannels = std::min (numChannels, kMaxBusChannelsHard);
     const int clampedSamples = std::min (numSamples,
                                          static_cast<int> (kMaxBusMixSamples));
+
+    // Metering / output decoupling (2026-05-22 fix for operator-reported
+    // "bus meter dead on direct-out" bug). When the caller hands us a usable
+    // output buffer, meter and write at their requested width (existing
+    // behavior). When they don't (e.g. InputMixer::renderInputGraph dispatching
+    // a direct-out route before the P8 input→output bridge supplies a real
+    // buffer — numDirectOutChannels == 0), fall back to the bus's own
+    // configured channel width so metering still runs on the queued signal
+    // in mixBuffer_. Output writeback is per-channel-guarded and silently
+    // skipped when no usable destination is available.
+    const bool outputUsable  = (output != nullptr) && (numChannels > 0);
+    const int  activeChannels = outputUsable
+                                    ? std::min (numChannels, kMaxBusChannelsHard)
+                                    : std::clamp (config_.channelCount, 1,
+                                                  static_cast<int> (kMaxBusChannelsHard));
+    const auto canWriteOutput = [output, outputUsable, activeChannels] (int c) noexcept -> bool
+    {
+        return outputUsable && c < activeChannels && output[c] != nullptr;
+    };
 
     // Determine whether the effect-chain path applies. Empty chain or
     // all-bypassed counts as "no chain" — same as not having a host bound.
@@ -89,7 +107,7 @@ void Bus::process (float* const* output, int numChannels, int numSamples) const 
                 const float v = mix[s] * inlineGain;
                 mix[s] = v;                              // post-fader, in place for the LUFS feed
                 p = std::max (p, std::fabs (v));
-                if (output[c] != nullptr) output[c][s] += v;
+                if (canWriteOutput (c)) output[c][s] += v;
             }
             inlinePeak[c] = p;
         }

@@ -331,3 +331,78 @@ TEST_CASE ("Bus LUFS rises with a 1 kHz post-fader signal after prepare()", "[bu
     }
     REQUIRE (bus.lufsIntegrated() > -70.0f);
 }
+
+// 2026-05-22 regression coverage for the operator-reported "bus meter dead on
+// direct-out" bug. InputMixer::renderInputGraph dispatches a bus routed to the
+// direct-out destination via:
+//   float* dp[2] { numDirectOutChannels > 0 ? directOut[0] : nullptr,
+//                  numDirectOutChannels > 1 ? directOut[1] : nullptr };
+//   bus.process(dp, std::min(numDirectOutChannels, 2), n);
+// While the input→output bridge slice (P8) is parked, numDirectOutChannels is 0
+// at the live audio callback, so the call shape is bus.process(dp, 0, n). The
+// prior Bus::process implementation early-returned on numChannels<=0, silently
+// skipping the metering call — the bus meter sat dead. Tape destination calls
+// with numChannels=2 sailed past, hence "meter works on tape, dead on direct-
+// out." Fix: decouple metering from output writeback so meters update whenever
+// input signal is queued in mixBuffer_, regardless of caller's output buffer.
+TEST_CASE ("Bus::process feeds meters when output buffer is missing (direct-out path)",
+           "[bus][rt-safety][meter][regression-2026-05-22]")
+{
+    Bus bus (BusId { 0 }, BusConfig { 2, "Master" });
+
+    constexpr int kSamples = 64;
+    float* const busLeft  = bus.mixBufferChannel (0);
+    float* const busRight = bus.mixBufferChannel (1);
+    REQUIRE (busLeft  != nullptr);
+    REQUIRE (busRight != nullptr);
+
+    SECTION ("output pointer nullptr with numChannels=0 still updates peak meter")
+    {
+        for (int s = 0; s < kSamples; ++s) { busLeft[s] = 0.5f; busRight[s] = 0.75f; }
+
+        bus.process (nullptr, 0, kSamples);
+
+        CHECK (bus.peakLeft()  == Catch::Approx (0.5f));
+        CHECK (bus.peakRight() == Catch::Approx (0.75f));
+
+        for (int s = 0; s < kSamples; ++s)
+        {
+            CHECK (busLeft[s]  == Catch::Approx (0.0f));
+            CHECK (busRight[s] == Catch::Approx (0.0f));
+        }
+    }
+
+    SECTION ("output array of nullptrs with numChannels=0 still updates peak meter")
+    {
+        // Exact call shape from InputMixer.cpp:738 when numDirectOutChannels == 0.
+        for (int s = 0; s < kSamples; ++s) { busLeft[s] = 0.3f; busRight[s] = 0.6f; }
+
+        std::array<float*, 2> dp { nullptr, nullptr };
+        bus.process (dp.data(), 0, kSamples);
+
+        CHECK (bus.peakLeft()  == Catch::Approx (0.3f));
+        CHECK (bus.peakRight() == Catch::Approx (0.6f));
+    }
+
+    SECTION ("LUFS short-term rises on sustained signal with no output buffer")
+    {
+        constexpr double kSampleRate = 48000.0;
+        constexpr int    kBlock      = 512;
+        bus.prepare (kSampleRate, kBlock);
+
+        double phase = 0.0;
+        const double inc = 2.0 * M_PI * 1000.0 / kSampleRate;
+        for (int i = 0; i < 300; ++i)   // ~3.2 s — past the short-term window
+        {
+            for (int s = 0; s < kBlock; ++s)
+            {
+                const float v = 0.5f * static_cast<float> (std::sin (phase));
+                phase += inc;
+                bus.mixBufferChannel (0)[s] = v;
+                bus.mixBufferChannel (1)[s] = v;
+            }
+            bus.process (nullptr, 0, kBlock);
+        }
+        REQUIRE (bus.lufsShortTerm() > -70.0f);
+    }
+}
