@@ -607,6 +607,9 @@ namespace
         {
             if (obj->hasProperty ("displayName"))
                 e.displayName = obj->getProperty ("displayName").toString().toStdString();
+            else if (kind != EffectChainSlotKind::Empty)
+                fail ("effectChainEntry missing required `displayName` for non-Empty slot");
+
             if (obj->hasProperty ("bypassed"))
                 e.bypassed = bool (obj->getProperty ("bypassed"));
         }

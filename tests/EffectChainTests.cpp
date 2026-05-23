@@ -20,7 +20,6 @@ using sirius::Constituent;
 using sirius::ConstituentId;
 using sirius::EffectChain;
 using sirius::EffectChainEntry;
-using sirius::PluginFormat;
 using sirius::Position;
 using sirius::Rational;
 
