@@ -7,7 +7,7 @@
 
 #include <memory>
 
-namespace sirius
+namespace ida
 {
 
 /// A node in the tree of conceptual time domains (white paper Part 3.4):
@@ -57,4 +57,4 @@ private:
     TempoMap tempoMap_;
 };
 
-} // namespace sirius
+} // namespace ida

@@ -1,6 +1,6 @@
 #include "CapabilityTier.h"
 
-namespace sirius
+namespace ida
 {
 
 namespace
@@ -112,4 +112,4 @@ const char* toString (CapabilityTier tier)
     return "Survival";
 }
 
-} // namespace sirius
+} // namespace ida

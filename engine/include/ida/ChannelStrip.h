@@ -14,7 +14,7 @@
 #include <optional>
 #include <utility>
 
-namespace sirius
+namespace ida
 {
 
 /// π/2 — pan-law angle ceiling for the equal-power pan curve in
@@ -366,4 +366,4 @@ static_assert (noexcept (std::declval<ChannelStrip<SignalType::Audio>&>()
                              .process (static_cast<float* const*> (nullptr), 0, 0)),
                "ChannelStrip<Audio>::process must be noexcept (RT-safety contract §6)");
 
-} // namespace sirius
+} // namespace ida

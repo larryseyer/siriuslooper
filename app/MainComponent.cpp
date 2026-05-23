@@ -26,7 +26,7 @@
 #include <optional>
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 namespace
@@ -1557,7 +1557,7 @@ MainComponent::MainComponent()
     pluginScanner_.setNotificationSink (notificationBus_.get());
     // TapeWriter::setNotificationBus deferred — MainComponent doesn't
     // currently construct a TapeWriter (per M6 S2 audit). When TapeWriter
-    // joins the owned app graph (M11 SAF wiring, likely), add a parallel
+    // joins the owned app graph (M11 IAF wiring, likely), add a parallel
     // `tapeWriter_->setNotificationBus(notificationBus_.get())` here.
 
     // M1 Session 3 — engine pieces handed to the audio callback as
@@ -2952,7 +2952,7 @@ void MainComponent::chooseFileAndSave()
             // itself is forward-compat (unknown top-level keys are ignored on
             // load). Pre-envelope files are still loadable — see chooseFileAndLoad.
             auto envelope = juce::DynamicObject::Ptr { new juce::DynamicObject() };
-            envelope->setProperty ("sirius_version", kSessionEnvelopeVersion);
+            envelope->setProperty ("ida_version", kSessionEnvelopeVersion);
             envelope->setProperty ("session",        sessionJson);
             envelope->setProperty ("pool",           poolJson);
             const auto fileText = juce::JSON::toString (juce::var (envelope.get()));
@@ -2982,14 +2982,14 @@ void MainComponent::chooseFileAndLoad()
             {
                 // Detect envelope format (written by the current save path) vs
                 // the legacy format (a raw session JSON document). The envelope
-                // carries a "sirius_version" key; legacy files carry "version".
+                // carries a "ida_version" key; legacy files carry "version".
                 juce::String sessionJson;
                 TapePool loadedPool;                    // default: 1 tape, id=1
 
                 juce::var envelope;
                 if (juce::JSON::parse (fileText, envelope).wasOk()
                     && envelope.isObject()
-                    && envelope.getDynamicObject()->hasProperty ("sirius_version"))
+                    && envelope.getDynamicObject()->hasProperty ("ida_version"))
                 {
                     sessionJson = envelope.getProperty ("session", {}).toString();
                     if (sessionJson.isEmpty())
@@ -3250,4 +3250,4 @@ void MainComponent::closePluginEditor (std::int64_t busId)
         openEditorBusIds_.end());
 }
 
-} // namespace sirius
+} // namespace ida

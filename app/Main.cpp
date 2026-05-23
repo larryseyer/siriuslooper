@@ -4,7 +4,7 @@
 
 #include <juce_gui_extra/juce_gui_extra.h>
 
-namespace sirius
+namespace ida
 {
 
 class IDAApplication final : public juce::JUCEApplication
@@ -70,6 +70,6 @@ private:
     std::unique_ptr<MainWindow> mainWindow;
 };
 
-} // namespace sirius
+} // namespace ida
 
 START_JUCE_APPLICATION (ida::IDAApplication)

@@ -2,7 +2,7 @@
 
 #include "ida/IdaPalette.h"
 
-namespace sirius
+namespace ida
 {
 
 void PreparationView::setState (PreparationViewState newState)
@@ -75,4 +75,4 @@ void PreparationView::paint (juce::Graphics& g)
     }
 }
 
-} // namespace sirius
+} // namespace ida

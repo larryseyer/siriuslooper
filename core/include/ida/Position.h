@@ -5,7 +5,7 @@
 
 #include <cstdint>
 
-namespace sirius
+namespace ida
 {
 
 /// A symbolic position in conceptual time, measured in whole notes from the
@@ -50,4 +50,4 @@ private:
     Rational wholeNotes_;
 };
 
-} // namespace sirius
+} // namespace ida

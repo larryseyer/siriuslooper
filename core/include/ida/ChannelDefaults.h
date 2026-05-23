@@ -2,7 +2,7 @@
 
 #include "ida/TapeMode.h"
 
-namespace sirius
+namespace ida
 {
 
 /// Initial-value bundle for channels created from a given input. Carried on
@@ -21,4 +21,4 @@ struct ChannelDefaults
     bool defaultEnabled { true };
 };
 
-} // namespace sirius
+} // namespace ida

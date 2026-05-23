@@ -8,7 +8,7 @@
 #include <utility>
 #include <variant>
 
-namespace sirius
+namespace ida
 {
 
 namespace
@@ -133,4 +133,4 @@ std::vector<ActiveRead> RenderPipeline::activeReadsAt (Rational lmcTime) const
     return reads;
 }
 
-} // namespace sirius
+} // namespace ida

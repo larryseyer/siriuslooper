@@ -4,7 +4,7 @@
 #include <string>
 #include <utility>
 
-namespace sirius
+namespace ida
 {
 
 const EffectChainEntry& EffectChain::at (std::size_t index) const
@@ -74,4 +74,4 @@ EffectChainEntry EffectChainEntry::makePlugin (PluginDescriptor descriptor,
     return e;
 }
 
-} // namespace sirius
+} // namespace ida

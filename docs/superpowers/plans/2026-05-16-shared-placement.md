@@ -127,7 +127,7 @@ Expected: compile error mentioning `isPlacementWrapper` — the symbol does not 
 
 - [ ] **Step 3: Add the predicate to `core/include/ida/Constituent.h`**
 
-Immediately after the closing `}` of the `class Constituent` and before the `} // namespace sirius`, insert:
+Immediately after the closing `}` of the `class Constituent` and before the `} // namespace ida`, insert:
 
 ```cpp
 /// Wrapper recognition predicate — the single source of truth for the

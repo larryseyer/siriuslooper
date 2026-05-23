@@ -1,6 +1,6 @@
 // Tests for ida::RvbAdapter — the fourth and final internal-FX adapter
 // (T3d of the P7 umbrella). We do NOT test convolution DSP correctness
-// (PlayerIRConvolution owns that); we test the Sirius-side wrapper:
+// (PlayerIRConvolution owns that); we test the IDA-side wrapper:
 // prepare/process/reset state, the miss contract on an un-prepared
 // adapter, finite bounded output on a known sine, in-place vs out-of-place
 // equivalence, and an IR-loaded smoke case that asserts non-silent output

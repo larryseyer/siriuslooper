@@ -6,7 +6,7 @@
 #include <stdexcept>
 #include <utility>
 
-namespace sirius
+namespace ida
 {
 
 namespace
@@ -54,4 +54,4 @@ std::int64_t Lmc::sampleCount() const noexcept
     return sampleCount_.load (std::memory_order_acquire);
 }
 
-} // namespace sirius
+} // namespace ida

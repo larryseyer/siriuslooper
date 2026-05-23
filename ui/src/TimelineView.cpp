@@ -6,7 +6,7 @@
 #include <limits>
 #include <unordered_map>
 
-namespace sirius
+namespace ida
 {
 
 namespace
@@ -412,4 +412,4 @@ void TimelineView::mouseDown (const juce::MouseEvent& e)
     if (onFocusClicked) onFocusClicked (row.tapeId);
 }
 
-} // namespace sirius
+} // namespace ida

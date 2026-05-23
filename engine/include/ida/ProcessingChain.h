@@ -4,7 +4,7 @@
 
 #include <memory>
 
-namespace sirius
+namespace ida
 {
 
 /// Per-channel processing applied during `InputMixer::processBuffer`. M3 ships
@@ -12,7 +12,7 @@ namespace sirius
 /// per-modality:
 ///
 ///   - Audio  — real DSP (gain/pan) shipped in M5 as `ChannelStrip<SignalType::Audio>`
-///              (header: `sirius/ChannelStrip.h`); supersedes the M3-era
+///              (header: `ida/ChannelStrip.h`); supersedes the M3-era
 ///              `AudioChain` per plan amendment §3.
 ///   - MidiChain   — real UMP handling lands with M9.
 ///   - VideoChain  — real video processing lands with M12.
@@ -60,4 +60,4 @@ public:
 /// (`MidiChain` / `VideoChain` / `FileChain`) until M9 / M12 / M13.
 std::unique_ptr<ProcessingChain> makeProcessingChain (SignalType type);
 
-} // namespace sirius
+} // namespace ida

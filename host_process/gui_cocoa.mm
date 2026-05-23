@@ -18,9 +18,9 @@
 // directly via `OutOfProcessEffectChainHost::editorIsOpenForBus`.
 //
 // **AppKit run-loop integration.** The child process is single-threaded.
-// `sirius_appkit_init()` (called once from main()) brings AppKit online
+// `ida_appkit_init()` (called once from main()) brings AppKit online
 // with `NSApplicationActivationPolicyAccessory` (no Dock icon, no Cmd-Tab
-// entry, windows still receive events). `sirius_appkit_drain_events()`
+// entry, windows still receive events). `ida_appkit_drain_events()`
 // (called per pump iteration AND inside the popMessageBlocking onIdle
 // hook) services NSWindow input events without blocking. Empirically
 // sub-microsecond when the event queue is empty.
@@ -39,7 +39,7 @@
 #include <atomic>
 #include <cstdint>
 
-@interface SiriusPluginWindowDelegate : NSObject<NSWindowDelegate>
+@interface IdaPluginWindowDelegate : NSObject<NSWindowDelegate>
 @end
 
 namespace
@@ -47,7 +47,7 @@ namespace
     struct EditorState
     {
         NSWindow*                       window   { nil };
-        SiriusPluginWindowDelegate*     delegate { nil };
+        IdaPluginWindowDelegate*     delegate { nil };
         const clap_plugin_t*            plugin   { nullptr };
         std::uint32_t                   width    { 0 };
         std::uint32_t                   height   { 0 };
@@ -57,7 +57,7 @@ namespace
     EditorState g_editor {};
 
     /// The engine's shm region for state echo. Set once by
-    /// `sirius_gui_set_state` (called from main.cpp once the region is
+    /// `ida_gui_set_state` (called from main.cpp once the region is
     /// attached). The NSWindowDelegate uses it to publish editor-closed
     /// when the user clicks the X button — without that path, the
     /// engine's PluginsPane button would stay "Close editor" forever.
@@ -115,7 +115,7 @@ namespace
     }
 }
 
-@implementation SiriusPluginWindowDelegate
+@implementation IdaPluginWindowDelegate
 
 - (BOOL)windowShouldClose: (NSWindow*) sender
 {
@@ -128,7 +128,7 @@ namespace
     (void) note;
     // User clicked the close box. Tear down the plug-in's editor in this
     // same run-loop iteration so the engine's next poll sees a closed
-    // state. The pump loop calls sirius_appkit_drain_events from the
+    // state. The pump loop calls ida_appkit_drain_events from the
     // same thread, so the synchronous teardown is safe here.
     if (g_editor.created && g_editor.plugin != nullptr)
         teardownEditor (g_editor.plugin);
@@ -142,12 +142,12 @@ namespace
 // C-linkage entry points consumed by host_process/main.cpp
 // =============================================================================
 
-extern "C" void sirius_gui_set_state (ida::PluginGuiState* state) noexcept
+extern "C" void ida_gui_set_state (ida::PluginGuiState* state) noexcept
 {
     g_guiState = state;
 }
 
-extern "C" void sirius_appkit_init (void) noexcept
+extern "C" void ida_appkit_init (void) noexcept
 {
     static bool inited = false;
     if (inited) return;
@@ -159,7 +159,7 @@ extern "C" void sirius_appkit_init (void) noexcept
     }
 }
 
-extern "C" void sirius_appkit_drain_events (void) noexcept
+extern "C" void ida_appkit_drain_events (void) noexcept
 {
     @autoreleasepool {
         NSEvent* event;
@@ -173,7 +173,7 @@ extern "C" void sirius_appkit_drain_events (void) noexcept
     }
 }
 
-extern "C" std::uint32_t sirius_gui_show (const struct clap_plugin* plugin,
+extern "C" std::uint32_t ida_gui_show (const struct clap_plugin* plugin,
                                           std::uint32_t width,
                                           std::uint32_t height)
 {
@@ -240,7 +240,7 @@ extern "C" std::uint32_t sirius_gui_show (const struct clap_plugin* plugin,
     window.title              = @"Plug-in editor";
     window.releasedWhenClosed = NO;       // we manage releases via teardownEditor
 
-    SiriusPluginWindowDelegate* delegate = [[SiriusPluginWindowDelegate alloc] init];
+    IdaPluginWindowDelegate* delegate = [[IdaPluginWindowDelegate alloc] init];
     window.delegate = delegate;
 
     NSView* content = window.contentView;
@@ -276,13 +276,13 @@ extern "C" std::uint32_t sirius_gui_show (const struct clap_plugin* plugin,
     return kEditorOpenMarker;
 }
 
-extern "C" bool sirius_gui_hide (const struct clap_plugin* plugin)
+extern "C" bool ida_gui_hide (const struct clap_plugin* plugin)
 {
     teardownEditor (plugin);
     return true;
 }
 
-extern "C" std::uint32_t sirius_gui_resize (const struct clap_plugin* plugin,
+extern "C" std::uint32_t ida_gui_resize (const struct clap_plugin* plugin,
                                             std::uint32_t width,
                                             std::uint32_t height)
 {

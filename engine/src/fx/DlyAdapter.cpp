@@ -4,7 +4,7 @@
 
 #include <cstring>
 
-namespace sirius
+namespace ida
 {
 
 DlyAdapter::DlyAdapter()
@@ -102,4 +102,4 @@ bool DlyAdapter::process (const float* const* inChannels,
     return true;
 }
 
-} // namespace sirius
+} // namespace ida

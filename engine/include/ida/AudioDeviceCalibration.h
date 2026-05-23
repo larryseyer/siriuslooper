@@ -2,7 +2,7 @@
 
 #include "ida/Rational.h"
 
-namespace sirius
+namespace ida
 {
 
 /// A device clock's calibration against the LMC (white paper Part 4.3).
@@ -41,4 +41,4 @@ private:
     Rational offsetSeconds_;
 };
 
-} // namespace sirius
+} // namespace ida

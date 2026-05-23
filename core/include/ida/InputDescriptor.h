@@ -7,7 +7,7 @@
 #include <optional>
 #include <string>
 
-namespace sirius
+namespace ida
 {
 
 /// Light, free-standing metadata about a single input source. Pairs a
@@ -35,4 +35,4 @@ struct InputDescriptor
     ChannelDefaults defaults {};
 };
 
-} // namespace sirius
+} // namespace ida

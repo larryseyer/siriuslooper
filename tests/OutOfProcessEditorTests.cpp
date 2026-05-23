@@ -19,7 +19,7 @@
 // the actual pixel path.
 //
 // macOS only. The synthetic plug-in's GUI extension is gated on
-// `__APPLE__` and `sirius_gui_*` shims live only in host_process/
+// `__APPLE__` and `ida_gui_*` shims live only in host_process/
 // gui_cocoa.mm; on other platforms these cases SKIP cleanly.
 //
 // Tag: `[plugin-editor]`.

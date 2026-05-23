@@ -4,7 +4,7 @@
 
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 /// The quality tiers of a clock-discipline source (white paper Part 12.3 —
@@ -63,4 +63,4 @@ struct ElectionResult
 /// marked `isAnchor`, or if any node's interval is inverted (max < min).
 ElectionResult electLmc (const std::vector<NodeClockEstimate>& nodes);
 
-} // namespace sirius
+} // namespace ida

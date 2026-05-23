@@ -4,7 +4,7 @@
 
 #include <string>
 
-namespace sirius
+namespace ida
 {
 
 /// One entry in the project tape pool: light metadata naming a tape that exists
@@ -23,4 +23,4 @@ struct TapeDescriptor
     }
 };
 
-} // namespace sirius
+} // namespace ida

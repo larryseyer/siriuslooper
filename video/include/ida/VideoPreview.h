@@ -2,7 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-namespace sirius
+namespace ida
 {
 
 /// A minimal video-preview surface: it takes a `juce::Image` and paints it
@@ -40,4 +40,4 @@ private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (VideoPreview)
 };
 
-} // namespace sirius
+} // namespace ida

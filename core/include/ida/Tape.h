@@ -8,7 +8,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 /// One event on a tape, in the uniform format every tape shares (white paper
@@ -89,4 +89,4 @@ private:
     std::vector<Event> events_;
 };
 
-} // namespace sirius
+} // namespace ida

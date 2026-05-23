@@ -5,7 +5,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace sirius
+namespace ida
 {
 
 namespace
@@ -105,4 +105,4 @@ double Asrc::delaySamples() const
     return soxr_delay (static_cast<soxr_t> (handle_));
 }
 
-} // namespace sirius
+} // namespace ida

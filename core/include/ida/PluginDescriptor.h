@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace sirius
+namespace ida
 {
 
 /// The plugin formats IDA hosts (white paper Part 5.5). VST3 is the only
@@ -43,4 +43,4 @@ struct PluginDescriptor
     bool operator!= (const PluginDescriptor& other) const noexcept { return ! (*this == other); }
 };
 
-} // namespace sirius
+} // namespace ida

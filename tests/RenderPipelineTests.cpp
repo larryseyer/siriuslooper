@@ -116,7 +116,7 @@ TEST_CASE ("a loop placed partway into the session sounds only within its span",
 
 TEST_CASE ("cardinality bounds how many cycles a loop sounds", "[renderpipeline][repetition]")
 {
-    using namespace sirius;
+    using namespace ida;
 
     SECTION ("Once: only the first cycle sounds")
     {
@@ -154,7 +154,7 @@ TEST_CASE ("cardinality bounds how many cycles a loop sounds", "[renderpipeline]
 
 TEST_CASE ("a loop whose trigger is not free-running is dormant", "[renderpipeline][repetition]")
 {
-    using namespace sirius;
+    using namespace ida;
 
     // White paper Part 10.1: an on-demand loop is dormant until triggered. The
     // M3 pipeline has no trigger events, so the loop correctly does not sound.

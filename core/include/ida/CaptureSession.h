@@ -5,7 +5,7 @@
 
 #include <optional>
 
-namespace sirius
+namespace ida
 {
 
 /// The performer-facing capture state. The IDA tape is always running
@@ -100,4 +100,4 @@ private:
     std::optional<TapeId> pendingTape_;
 };
 
-} // namespace sirius
+} // namespace ida

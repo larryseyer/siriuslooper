@@ -8,7 +8,7 @@
 #include <memory>
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 /// A demo Constituent tree plus the tempo map that places it in LMC time
@@ -30,4 +30,4 @@ struct DemoSession
 /// active reads as the UI scrubs through time.
 DemoSession buildDemoSession();
 
-} // namespace sirius
+} // namespace ida

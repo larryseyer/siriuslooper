@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 /// A role-fillable position within an arrangement (white paper Parts 8.4, 11.3):
@@ -102,4 +102,4 @@ Constituent sequenceShared (const Constituent&             parent,
 
 } // namespace arrangement
 
-} // namespace sirius
+} // namespace ida

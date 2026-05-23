@@ -5,7 +5,7 @@
 
 #include <string>
 
-namespace sirius
+namespace ida
 {
 
 /// Result of validating a persisted calibration sidecar (M8 S6).
@@ -49,4 +49,4 @@ CalibrationParseResult parseAndValidateCalibration (const std::string& fileConte
 void postCalibrationRecoveryNotification (CalibrationLoadStatus status,
                                           INotificationSink&    sink);
 
-} // namespace sirius
+} // namespace ida

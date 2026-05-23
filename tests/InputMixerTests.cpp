@@ -56,7 +56,7 @@ TEST_CASE ("InputMixer::processBuffer enqueues one message per tape-bearing chan
     using ida::TapeWriter;
 
     const auto tempDirJuce = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                                 .getChildFile ("sirius-inputmixer-process-"
+                                 .getChildFile ("ida-inputmixer-process-"
                                                 + juce::String (juce::Time::getMillisecondCounterHiRes()));
     tempDirJuce.createDirectory();
     const std::filesystem::path tempDir (tempDirJuce.getFullPathName().toStdString());
@@ -103,7 +103,7 @@ TEST_CASE ("InputMixer::processBuffer reports overload when the writer queue is 
     using ida::TapeWriter;
 
     const auto tempDirJuce = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                                 .getChildFile ("sirius-inputmixer-overload-"
+                                 .getChildFile ("ida-inputmixer-overload-"
                                                 + juce::String (juce::Time::getMillisecondCounterHiRes()));
     tempDirJuce.createDirectory();
     const std::filesystem::path tempDir (tempDirJuce.getFullPathName().toStdString());
@@ -146,7 +146,7 @@ TEST_CASE ("InputMixer::processBuffer posts a CpuPressure notification on queue-
     using ida::TapeWriter;
 
     const auto tempDirJuce = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                                 .getChildFile ("sirius-inputmixer-notification-"
+                                 .getChildFile ("ida-inputmixer-notification-"
                                                 + juce::String (juce::Time::getMillisecondCounterHiRes()));
     tempDirJuce.createDirectory();
     const std::filesystem::path tempDir (tempDirJuce.getFullPathName().toStdString());
@@ -186,11 +186,11 @@ TEST_CASE ("InputMixer::processBuffer posts a CpuPressure notification on queue-
 TEST_CASE ("InputMixer::finalizeChannel produces a content-addressed tape and clears the partial",
            "[input-mixer][finalize]")
 {
-    using namespace sirius;
+    using namespace ida;
     using ida::persistence::TapeStore;
 
     auto root = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                    .getChildFile ("sirius-finalize-"
+                    .getChildFile ("ida-finalize-"
                                    + juce::String (juce::Time::getMillisecondCounterHiRes()));
     root.createDirectory();
     auto partials = root.getChildFile ("partials"); partials.createDirectory();
@@ -235,11 +235,11 @@ TEST_CASE ("InputMixer::finalizeChannel produces a content-addressed tape and cl
 TEST_CASE ("NonDestructive channel writes both audio partial and JSONL params partial",
            "[input-mixer][non-destructive]")
 {
-    using namespace sirius;
+    using namespace ida;
     using ida::persistence::TapeStore;
 
     auto root = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                    .getChildFile ("sirius-nondestructive-"
+                    .getChildFile ("ida-nondestructive-"
                                    + juce::String (juce::Time::getMillisecondCounterHiRes()));
     root.createDirectory();
     auto partials = root.getChildFile ("partials"); partials.createDirectory();
@@ -281,7 +281,7 @@ TEST_CASE ("NonDestructive channel writes both audio partial and JSONL params pa
 TEST_CASE ("addChannel honors the per-input default TapeMode set via setInputDefaults",
            "[input-mixer][defaults]")
 {
-    using namespace sirius;
+    using namespace ida;
 
     InputMixer mixer;
 
@@ -298,7 +298,7 @@ TEST_CASE ("addChannel honors the per-input default TapeMode set via setInputDef
     // Observe via a TapeWriter: a buffer pushed through processBuffer
     // must produce a partial file iff the channel inherited CommitToTape.
     auto tempDir = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                       .getChildFile ("sirius-defaults-"
+                       .getChildFile ("ida-defaults-"
                                       + juce::String (juce::Time::getMillisecondCounterHiRes()));
     tempDir.createDirectory();
 
@@ -320,7 +320,7 @@ TEST_CASE ("addChannel honors the per-input default TapeMode set via setInputDef
 TEST_CASE ("InputMixer applies ChannelStrip<Audio> gain before enqueueing to TapeWriter",
            "[input-mixer][audio-dsp]")
 {
-    using namespace sirius;
+    using namespace ida;
 
     // Per V7 alignment plan amendment §3 / M5 Session 1: InputMixer channels
     // run their ProcessingChain on the inbound buffer before writing to tape.
@@ -328,7 +328,7 @@ TEST_CASE ("InputMixer applies ChannelStrip<Audio> gain before enqueueing to Tap
     // buffer of all-1.0f samples with strip gain=0.5 must land on tape as
     // all-0.5f samples.
     auto tempDirJuce = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                           .getChildFile ("sirius-audio-dsp-"
+                           .getChildFile ("ida-audio-dsp-"
                                           + juce::String (juce::Time::getMillisecondCounterHiRes()));
     tempDirJuce.createDirectory();
     const std::filesystem::path tempDir (tempDirJuce.getFullPathName().toStdString());

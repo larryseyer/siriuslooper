@@ -2,7 +2,7 @@
 
 #include <cstddef>
 
-namespace sirius
+namespace ida
 {
 
 /// Continuous async sample-rate conversion at a membrane (white paper Part 5.3).
@@ -78,4 +78,4 @@ private:
     void* handle_; ///< soxr_t — kept opaque so soxr.h stays out of this header
 };
 
-} // namespace sirius
+} // namespace ida

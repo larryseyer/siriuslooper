@@ -7,7 +7,7 @@
 #include <cstdint>
 #include <memory>
 
-namespace sirius
+namespace ida
 {
 
 /// Identifies a single physical or virtual input source the InputMixer
@@ -121,4 +121,4 @@ struct Channel
     // M3+: std::vector<Destination> destinations; — TapeId | BusId
 };
 
-} // namespace sirius
+} // namespace ida

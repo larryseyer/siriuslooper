@@ -6,7 +6,7 @@
 #include <span>
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 /// Non-owning view of a raw input buffer for a single AudioCallback block.
@@ -195,4 +195,4 @@ private:
     std::int64_t                nextProcessedGeneration_ { 1 };
 };
 
-} // namespace sirius
+} // namespace ida

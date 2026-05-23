@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace sirius
+namespace ida
 {
 
 MixerGraph::MixerGraph (std::initializer_list<MixerTerminal> terminals)
@@ -286,4 +286,4 @@ void MixerGraph::recomputeOrder()
         order_.push_back (t.id);
 }
 
-} // namespace sirius
+} // namespace ida

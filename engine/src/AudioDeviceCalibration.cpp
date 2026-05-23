@@ -2,7 +2,7 @@
 
 #include <stdexcept>
 
-namespace sirius
+namespace ida
 {
 
 AudioDeviceCalibration::AudioDeviceCalibration (Rational rateFactor, Rational offsetSeconds)
@@ -28,4 +28,4 @@ Rational AudioDeviceCalibration::lmcToDevice (Rational lmcSeconds) const
     return (lmcSeconds - offsetSeconds_) / rateFactor_;
 }
 
-} // namespace sirius
+} // namespace ida

@@ -11,7 +11,7 @@
 #include <utility>
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 class IWetCaptureSink;
@@ -283,4 +283,4 @@ private:
     mutable LufsMeter lufsMeter_;
 };
 
-} // namespace sirius
+} // namespace ida

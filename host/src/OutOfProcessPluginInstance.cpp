@@ -18,7 +18,7 @@
 #include <utility>
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 namespace
@@ -609,4 +609,4 @@ bool OutOfProcessPluginInstance::requestStateLoad (
            == PluginStateState::Ok;
 }
 
-} // namespace sirius
+} // namespace ida

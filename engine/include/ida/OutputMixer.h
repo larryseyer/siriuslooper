@@ -14,7 +14,7 @@
 #include <memory>
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 /// V3 §2.2 / V7 alignment plan M5: the output-side mixer. Symmetric to
@@ -225,4 +225,4 @@ private:
     IEffectChainHost* effectChainHost_ { nullptr };
 };
 
-} // namespace sirius
+} // namespace ida

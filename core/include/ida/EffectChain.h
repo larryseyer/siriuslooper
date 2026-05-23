@@ -11,7 +11,7 @@
 #include <string>
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 /// Discriminant for `EffectChainEntry`'s tagged union (the "union slot type"
@@ -151,4 +151,4 @@ private:
     std::vector<EffectChainEntry> entries_;
 };
 
-} // namespace sirius
+} // namespace ida

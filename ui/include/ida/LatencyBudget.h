@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 /// The four perceptual latency bands of white paper 14.8. The whole UI exists
@@ -78,4 +78,4 @@ private:
     std::size_t nextWriteIndex_ { 0 };
 };
 
-} // namespace sirius
+} // namespace ida

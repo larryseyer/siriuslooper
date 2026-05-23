@@ -59,7 +59,7 @@ Create `core/include/ida/MixerGraphState.h`:
 #include <string>
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 /// Routing-graph Phase 5 — a JUCE-free, engine-free plain-data snapshot of one
@@ -201,7 +201,7 @@ struct OutputMixerGraphState
     bool operator!= (const OutputMixerGraphState& o) const noexcept { return ! (*this == o); }
 };
 
-} // namespace sirius
+} // namespace ida
 ```
 
 - [ ] **Step 2: Write the failing equality test**
@@ -213,7 +213,7 @@ Create `tests/MixerGraphStateTests.cpp`:
 
 #include <catch2/catch_test_macros.hpp>
 
-using namespace sirius;
+using namespace ida;
 
 namespace
 {
@@ -796,7 +796,7 @@ namespace
                                              const std::vector<ida::MixerNodeId>& busNodeIds,
                                              const std::vector<ida::Bus>& buses)
     {
-        using namespace sirius;
+        using namespace ida;
         const auto dest = graph.mainOutOf (node);
         MixerMainOut out;
         if (dest == graph.terminalNode (MixerTerminal::HardwareOutput))
@@ -922,7 +922,7 @@ namespace
 {
     ida::InputMixerGraphState sampleInputState()
     {
-        using namespace sirius;
+        using namespace ida;
         InputMixerGraphState s;
         MixerBusState bus; bus.busId = 1; bus.channelCount = 2; bus.name = "Drums";
         bus.kind = MixerBusKind::Bus;
@@ -957,7 +957,7 @@ TEST_CASE ("InputMixerGraphState round-trips through JSON", "[sessionformat]")
 
 TEST_CASE ("OutputMixerGraphState round-trips through JSON", "[sessionformat]")
 {
-    using namespace sirius;
+    using namespace ida;
     OutputMixerGraphState s;
     MixerBusState master; master.busId = 0; master.name = "Master";
     master.mainOut.kind = MixerMainOut::Kind::Terminal; master.mainOut.terminal = MixerTerminalKind::HardwareOutput;
@@ -1323,7 +1323,7 @@ Create `tests/MixerGraphPersistenceTests.cpp`:
 #include <catch2/catch_test_macros.hpp>
 #include <memory>
 
-using namespace sirius;
+using namespace ida;
 
 TEST_CASE ("InputMixer survives export -> serialize -> deserialize -> import", "[sessionformat][mixer]")
 {

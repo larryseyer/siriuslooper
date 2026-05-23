@@ -4,7 +4,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 /// The in-memory window of recent tape data (white paper Part 6.4).
@@ -63,4 +63,4 @@ private:
     std::size_t count_ { 0 }; // number of valid events held
 };
 
-} // namespace sirius
+} // namespace ida

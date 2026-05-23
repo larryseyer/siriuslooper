@@ -23,7 +23,7 @@ namespace
     constexpr std::size_t kMaxScratchSamples = 8192;
 }
 
-namespace sirius
+namespace ida
 {
 
 InputMixer::InputMixer()
@@ -788,8 +788,8 @@ void InputMixer::finalizeChannel (ChannelId id)
 
     (void) tapeStore_->store (bytes);  // content-addressed hash returned;
                                        // structure-layer mapping (TapeId → hash)
-                                       // lands in M11 SAF
+                                       // lands in M11 IAF
     partialFile.deleteFile();
 }
 
-} // namespace sirius
+} // namespace ida

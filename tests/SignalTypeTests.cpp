@@ -4,7 +4,7 @@
 // case descriptor enum InputDescriptor already carries. Per V7 alignment
 // plan M2 "Risks & open decisions": Audio/Midi/Video pass through;
 // Control, ParameterAutomation, Transport, and System all collapse to File
-// until the M11 SAF format design forces a finer split.
+// until the M11 IAF format design forces a finer split.
 //
 // signalTypeOf is constexpr, so the exhaustive mapping is also pinned at
 // compile time via static_assert.
@@ -37,8 +37,8 @@ TEST_CASE ("signalTypeOf collapses Control / ParameterAutomation / Transport / S
            "[signal-type]")
 {
     // V7 alignment plan M2 Risks note line 256: parameter tapes are JSONL
-    // files in SAF, so the four non-modality kinds collapse to File for
-    // now. If this assertion ever needs to relax, the M11 SAF design is
+    // files in IAF, so the four non-modality kinds collapse to File for
+    // now. If this assertion ever needs to relax, the M11 IAF design is
     // the milestone that earns the change.
     CHECK (signalTypeOf (InputKind::Control)             == SignalType::File);
     CHECK (signalTypeOf (InputKind::ParameterAutomation) == SignalType::File);

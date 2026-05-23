@@ -43,7 +43,7 @@ TEST_CASE ("ClapScanner::defaultSearchPaths returns macOS CLAP paths",
 TEST_CASE ("ClapScanner::scan on empty directory returns empty result",
            "[clap-scanner]")
 {
-    const auto tmp = juce::File::createTempFile ("sirius_clap_empty");
+    const auto tmp = juce::File::createTempFile ("ida_clap_empty");
     REQUIRE (tmp.createDirectory().wasOk());
 
     ClapScanner scanner;
@@ -77,7 +77,7 @@ TEST_CASE ("ClapScanner::scan records malformed bundles in failedFiles",
            "[clap-scanner]")
 {
     // Make a fake .clap directory that is not a valid bundle.
-    const auto tmp = juce::File::createTempFile ("sirius_clap_bad");
+    const auto tmp = juce::File::createTempFile ("ida_clap_bad");
     REQUIRE (tmp.createDirectory().wasOk());
     const auto fake = tmp.getChildFile ("NotACLAP.clap");
     REQUIRE (fake.createDirectory().wasOk());

@@ -6,7 +6,7 @@
 #include <memory>
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 /// A minimal, plugin-format-agnostic parameter view (white paper Parts XIV /
@@ -43,4 +43,4 @@ private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GenericParameterView)
 };
 
-} // namespace sirius
+} // namespace ida

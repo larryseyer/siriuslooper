@@ -1,6 +1,6 @@
 // Tests for ida::DlyAdapter — the third internal-FX adapter (T3c of
 // the P7 umbrella). We do NOT test delay-line DSP correctness
-// (PlayerDelay owns that); we test the Sirius-side wrapper:
+// (PlayerDelay owns that); we test the IDA-side wrapper:
 // prepare/process/reset state, the miss contract on an un-prepared
 // adapter, finite output on a known sine, in-place vs out-of-place
 // equivalence, and a unit-impulse case that asserts a non-zero sample

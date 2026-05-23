@@ -905,7 +905,7 @@ git commit -m "feat: renderInputGraph bus/FX-return processing into bus/tape/har
 ## Honest scope notes (record in todo.md at close-out)
 
 - **`renderInputGraph` is not yet wired into production.** `AudioCallback`/`MainComponent` still call `processBuffer` (per-device-channel tape) + `processDeviceInputs` (metering). The new traversal is exercised only by tests until the Input Mixer UI (P6/P7) provides the bus/route creation gestures and migrates the audio callback. This matches the repo's established "tested seam, production wiring follows" pattern (e.g., the M8 S4 WetCapture sink).
-- **Bus→tape delivery enqueues under a `ChannelId` derived from the bus's `BusId`.** The `TapeId`/channel-vs-bus tape-identity mapping is an M11 SAF concern; this is a reasonable interim key (parallel to the existing `TapeId → content` deferral).
+- **Bus→tape delivery enqueues under a `ChannelId` derived from the bus's `BusId`.** The `TapeId`/channel-vs-bus tape-identity mapping is an M11 IAF concern; this is a reasonable interim key (parallel to the existing `TapeId → content` deferral).
 - **FX returns have no DSP.** RVB/DLY are empty `EffectChain`s (pass-through) until the internal-FX follow-on spec. Sends therefore deliver dry signal through the return for now — the wiring is what Phase 3 proves.
 - **Send pre/post-fader:** post-fader only (sends read the post-strip scratch). The pre/post toggle remains an Open Item.
 

@@ -4,7 +4,7 @@
 #include <initializer_list>
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 /// Graph-layer node kind (distinct from BusConfig::BusKind, which is the DSP
@@ -138,4 +138,4 @@ private:
     std::int64_t              nextId_ { 1 };
 };
 
-} // namespace sirius
+} // namespace ida

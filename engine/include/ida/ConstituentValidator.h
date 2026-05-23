@@ -26,7 +26,7 @@ struct hash<ida::ConstituentId>
 };
 } // namespace std
 
-namespace sirius
+namespace ida
 {
 
 /// "Does this tape reference resolve to real content?" Injected so the validator
@@ -70,4 +70,4 @@ void postConstituentStateNotifications (const Constituent&           root,
                                         const ConstituentValidation& validation,
                                         INotificationSink&           sink);
 
-} // namespace sirius
+} // namespace ida

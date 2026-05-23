@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <stdexcept>
 
-namespace sirius
+namespace ida
 {
 
 LatencyBand bandOf (double latencyMs)
@@ -67,4 +67,4 @@ double LatencyBudget::fractionWithinBudget() const noexcept
     return static_cast<double> (within) / static_cast<double> (samples_.size());
 }
 
-} // namespace sirius
+} // namespace ida

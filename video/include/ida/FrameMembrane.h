@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 /// The video membrane (white paper Part 5.3): the boundary at which a video
@@ -69,4 +69,4 @@ std::vector<std::int64_t> convertFrameRate (
     Rational sourceStartLmcSeconds = Rational(),
     Rational targetStartLmcSeconds = Rational());
 
-} // namespace sirius
+} // namespace ida

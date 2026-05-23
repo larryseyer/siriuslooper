@@ -6,7 +6,7 @@
 
 #include <variant>
 
-namespace sirius
+namespace ida
 {
 
 /// The five orthogonal dimensions that describe how a loop plays back (white
@@ -131,4 +131,4 @@ struct RepetitionRules
     static RepetitionRules defaultOneShot();
 };
 
-} // namespace sirius
+} // namespace ida

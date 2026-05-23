@@ -11,7 +11,7 @@
 #include <string>
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 namespace
@@ -929,4 +929,4 @@ OutOfProcessEffectChainHost::stateBlobForSlot (
     return out;
 }
 
-} // namespace sirius
+} // namespace ida

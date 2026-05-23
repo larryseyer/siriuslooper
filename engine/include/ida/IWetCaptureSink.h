@@ -3,7 +3,7 @@
 #include "ida/Channel.h"
 #include "ida/Rational.h"
 
-namespace sirius
+namespace ida
 {
 
 /// Audio-thread interface a `Bus` calls to hand off its post-effects (wet)
@@ -29,4 +29,4 @@ public:
                                               int                 numSamples) noexcept = 0;
 };
 
-} // namespace sirius
+} // namespace ida

@@ -5,10 +5,10 @@
 #include <otto/effects/PlayerEffects.h>
 #include <otto/effects/PlayerDelay.h>
 
-namespace sirius
+namespace ida
 {
 
-/// Sirius-side adapter wrapping OTTO's header-only `PlayerDelay`. T3c of
+/// IDA-side adapter wrapping OTTO's header-only `PlayerDelay`. T3c of
 /// the P7 internal-FX umbrella — the third of four (EQ → CMP → DLY → RVB)
 /// adapter implementations that make the `Internal` `EffectChainEntry`
 /// case actually do DSP.
@@ -65,4 +65,4 @@ private:
     bool                               prepared_ = false;
 };
 
-} // namespace sirius
+} // namespace ida

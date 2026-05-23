@@ -6,7 +6,7 @@
 #include <cstring>
 #include <utility>
 
-namespace sirius
+namespace ida
 {
 
 namespace
@@ -40,7 +40,7 @@ namespace
                                              const std::vector<ida::MixerNodeId>& busNodeIds,
                                              const std::vector<ida::Bus>& buses)
     {
-        using namespace sirius;
+        using namespace ida;
         const auto dest = graph.mainOutOf (node);
         MixerMainOut out;
         if (dest == graph.terminalNode (MixerTerminal::HardwareOutput))
@@ -488,4 +488,4 @@ void OutputMixer::importGraphState (const OutputMixerGraphState& state)
     nextOutputChannelId_ = std::max (nextOutputChannelId_, state.nextChannelId);
 }
 
-} // namespace sirius
+} // namespace ida

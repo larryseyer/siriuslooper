@@ -1,6 +1,6 @@
 #pragma once
 
-namespace sirius
+namespace ida
 {
 
 /// The categories of work the system does, in descending priority order (white
@@ -53,4 +53,4 @@ private:
     double lastLoad_   { 0.0 };
 };
 
-} // namespace sirius
+} // namespace ida

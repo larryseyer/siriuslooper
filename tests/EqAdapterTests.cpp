@@ -1,6 +1,6 @@
 // Tests for ida::EqAdapter — the first internal-FX adapter (T3a of the
 // P7 umbrella). We do NOT test DSP correctness (PlayerEQ owns that); we
-// test the Sirius-side wrapper: prepare/process/reset state, the miss
+// test the IDA-side wrapper: prepare/process/reset state, the miss
 // contract on an un-prepared adapter, finite output on a known sine, and
 // in-place vs out-of-place equivalence.
 //

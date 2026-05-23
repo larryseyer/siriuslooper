@@ -2,7 +2,7 @@
 
 #include <stdexcept>
 
-namespace sirius
+namespace ida
 {
 
 LoopRenderer::LoopRenderer (Rational tapeIn, Rational tapeOut, Rational loopStartLmc)
@@ -32,4 +32,4 @@ LoopRenderer::ReadPosition LoopRenderer::at (Rational lmcPresentTime) const
     return ReadPosition { true, tapeIn_ + offsetInCycle, cycle };
 }
 
-} // namespace sirius
+} // namespace ida

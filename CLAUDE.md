@@ -56,14 +56,14 @@ IDA's session has full edit autonomy on OTTO, with mandatory awareness
 propagation:
 
 1. Make the OTTO change with a focused commit in `external/OTTO/`. Trailer:
-   `Ida-Origin: <sirius-sha>` (or `bootstrap` for the first protocol
+   `Ida-Origin: <ida-sha>` (or `bootstrap` for the first protocol
    commit). For protocol commits where the SHA chicken-and-eggs, reference
    the most-recently-landed IDA commit.
 2. Append a new entry under `[FROM IDA → OTTO]` in
    `CROSS_PROJECT_INBOX.md` describing the change, files touched, why,
    and what OTTO's Claude must do/avoid.
 3. Push OTTO (`origin/main`).
-4. Back in Sirius: bump the submodule SHA, commit, push Sirius.
+4. Back in IDA: bump the submodule SHA, commit, push IDA.
 
 ### When OTTO needs IDA to act
 
@@ -75,8 +75,8 @@ the entry's `For IDA's Claude:` line. Acknowledge by updating the entry.
 
 ```
 ## YYYY-MM-DD — <one-line subject>
-Direction: SIRIUS → OTTO        (or OTTO → SIRIUS)
-Sirius commit: <sha>            OTTO commit: <sha>
+Direction: IDA → OTTO        (or OTTO → IDA)
+IDA commit: <sha>            OTTO commit: <sha>
 Files touched: <paths>
 Why: <one-paragraph rationale>
 For <recipient>'s Claude: <specific guidance — do not revert, here's the migration, etc.>
@@ -86,8 +86,9 @@ Resolution: <added by recipient when ack'd>
 
 ### Audit trail
 
-`git log --grep='Sirius-Origin' --all` in `external/OTTO/` surfaces every
-IDA-originated OTTO commit forever, even after inbox entries are pruned.
+`git log --grep='Sirius-Origin\|Ida-Origin' --all` in `external/OTTO/` surfaces
+every IDA-originated OTTO commit forever, even after inbox entries are pruned.
+(Pre-rename commits use the legacy `Sirius-Origin:` trailer.)
 
 ## Architecture (non-negotiable)
 

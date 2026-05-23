@@ -4,10 +4,10 @@
 #include "ida/Tape.h"
 #include "ida/VideoFrame.h"
 
-namespace sirius
+namespace ida
 {
 
-/// A tape of video frames. Just `Tape<VideoFrame>` — every tape in Sirius
+/// A tape of video frames. Just `Tape<VideoFrame>` — every tape in IDA
 /// shares the same Tape<> template (white paper Part 6.2); only the payload
 /// type changes. The alias exists so call sites read "VideoTape" instead of
 /// repeating the template.
@@ -33,4 +33,4 @@ inline const VideoFrame* findFrameAt (const VideoTape& tape, Rational lmcTime)
     return current;
 }
 
-} // namespace sirius
+} // namespace ida

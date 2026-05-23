@@ -3,7 +3,7 @@
 #include <stdexcept>
 #include <utility>
 
-namespace sirius
+namespace ida
 {
 
 RoleSlot::RoleSlot (std::string role, Position conceptualIn, Position conceptualOut)
@@ -131,4 +131,4 @@ Constituent sequenceShared (const Constituent&             parent,
 
 } // namespace arrangement
 
-} // namespace sirius
+} // namespace ida

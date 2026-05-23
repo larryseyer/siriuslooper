@@ -127,12 +127,12 @@ Create `core/include/ida/InternalFxId.h`:
 #include <stdexcept>
 #include <string>
 
-namespace sirius
+namespace ida
 {
 
 /// The four built-in FX shipped by IDA (white paper §6.6 + the contract in
 /// `docs/design/ida-internal-fx.md`). Each id resolves at T3 to one of OTTO's
-/// header-only Player FX via a Sirius-side adapter. The underlying type is
+/// header-only Player FX via a IDA-side adapter. The underlying type is
 /// `uint8_t` with a reserved range up to 16 so a future built-in (e.g. saturator,
 /// transient shaper) can land without growing the discriminant.
 ///
@@ -174,7 +174,7 @@ inline InternalFxId internalFxIdFromString (const std::string& s)
     throw std::invalid_argument ("ida::internalFxIdFromString: unknown id \"" + s + "\"");
 }
 
-} // namespace sirius
+} // namespace ida
 ```
 
 - [ ] **Step 5: Run test to verify it passes**
@@ -336,7 +336,7 @@ Edit `core/include/ida/EffectChain.h`. Add the includes + new enum + factory dec
 #include <string>
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 /// Discriminant for `EffectChainEntry`'s tagged union (the "union slot type"
@@ -418,7 +418,7 @@ The `EffectChain` class itself does not change in this task. Leave lines 46-96 (
 
 - [ ] **Step 4: Implement the factories**
 
-Edit `core/src/EffectChain.cpp`. Append the two factory implementations at the bottom of the file, inside the `namespace sirius` block, after `EffectChain::withMoved`:
+Edit `core/src/EffectChain.cpp`. Append the two factory implementations at the bottom of the file, inside the `namespace ida` block, after `EffectChain::withMoved`:
 
 ```cpp
 EffectChainEntry EffectChainEntry::makeInternal (InternalFxId id)

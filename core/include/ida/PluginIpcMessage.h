@@ -5,7 +5,7 @@
 #include <string>
 #include <type_traits>
 
-namespace sirius
+namespace ida
 {
 
 /// Fixed-size IPC message exchanged between the engine and a hosted
@@ -79,16 +79,16 @@ constexpr std::size_t kPluginIpcRingCapacity = 64;
 
 /// Builds the shm name used for the engine→host ring of a given instance.
 /// macOS shm_open names are capped at 31 chars including the leading
-/// slash; the prefix `/sirius.` (8 chars) + suffix `.e2h` (4 chars) leaves
+/// slash; the prefix `/ida.` (8 chars) + suffix `.e2h` (4 chars) leaves
 /// 19 chars for the instance id. Long ids must be hashed by the caller.
 inline std::string makeEngineToHostRingName (const std::string& instanceId)
 {
-    return "/sirius." + instanceId + ".e2h";
+    return "/ida." + instanceId + ".e2h";
 }
 
 inline std::string makeHostToEngineRingName (const std::string& instanceId)
 {
-    return "/sirius." + instanceId + ".h2e";
+    return "/ida." + instanceId + ".h2e";
 }
 
-} // namespace sirius
+} // namespace ida

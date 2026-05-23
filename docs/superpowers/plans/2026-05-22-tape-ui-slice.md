@@ -220,7 +220,7 @@ Expected: FAIL — `TapePoolMirror.h` not found.
 #include "ida/TapePool.h"
 #include "ida/InputMixer.h"
 
-namespace sirius
+namespace ida
 {
 
 /// Registers every pool tape that is not already a mixer tape terminal. The pool
@@ -234,7 +234,7 @@ inline void mirrorTapePool (const TapePool& pool, InputMixer& mixer)
             mixer.addTape (tape.id);
 }
 
-} // namespace sirius
+} // namespace ida
 ```
 
 - [ ] **Step 4: Register the test** — in `tests/CMakeLists.txt`, add `TapePoolMirrorTests.cpp` to the test sources list (mirror the existing entries, e.g. next to `TapePoolTests.cpp`).

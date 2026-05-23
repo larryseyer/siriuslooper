@@ -101,10 +101,10 @@ namespace
     using IpcQueue = ida::SharedMemorySpscQueue<ida::PluginIpcMessage>;
 
    #ifdef __APPLE__
-    extern "C" std::uint32_t sirius_gui_show   (const clap_plugin_t*,
+    extern "C" std::uint32_t ida_gui_show   (const clap_plugin_t*,
                                                 std::uint32_t, std::uint32_t);
-    extern "C" bool          sirius_gui_hide   (const clap_plugin_t*);
-    extern "C" std::uint32_t sirius_gui_resize (const clap_plugin_t*,
+    extern "C" bool          ida_gui_hide   (const clap_plugin_t*);
+    extern "C" std::uint32_t ida_gui_resize (const clap_plugin_t*,
                                                 std::uint32_t, std::uint32_t);
     /// M7 S9 — wired in gui_cocoa.mm. `init` brings AppKit online
     /// (accessory activation policy, finishLaunching); `drain_events`
@@ -112,13 +112,13 @@ namespace
     /// hands the PluginGuiState shm pointer to the NSWindowDelegate so
     /// user-driven close can publish responseContextId=0 back to the
     /// engine without going through the request/response IPC path.
-    extern "C" void sirius_appkit_init         (void);
-    extern "C" void sirius_appkit_drain_events (void);
-    extern "C" void sirius_gui_set_state       (ida::PluginGuiState* state);
+    extern "C" void ida_appkit_init         (void);
+    extern "C" void ida_appkit_drain_events (void);
+    extern "C" void ida_gui_set_state       (ida::PluginGuiState* state);
    #endif
 
     /// State the CLAP-mode pump carries for the M7 S5 GUI-control region.
-    /// The engine creates `/sirius.<id>.gui` before fork; the child
+    /// The engine creates `/ida.<id>.gui` before fork; the child
     /// attaches in main() and threads this struct through the pump loop.
     /// `lastServicedSeq` lives here (not in PluginGuiState) so it's a
     /// child-private cursor, not shared state.
@@ -152,16 +152,16 @@ namespace
         switch (kind)
         {
             case ida::PluginGuiState::Show:
-                contextId = sirius_gui_show (plugin, width, height);
+                contextId = ida_gui_show (plugin, width, height);
                 break;
             case ida::PluginGuiState::Hide:
-                sirius_gui_hide (plugin);
+                ida_gui_hide (plugin);
                 contextId = 0;
                 outWidth  = 0;
                 outHeight = 0;
                 break;
             case ida::PluginGuiState::Resize:
-                contextId = sirius_gui_resize (plugin, width, height);
+                contextId = ida_gui_resize (plugin, width, height);
                 break;
             case ida::PluginGuiState::None:
             default:
@@ -182,7 +182,7 @@ namespace
     }
 
     /// State the CLAP-mode pump carries for the M8 S2 plug-in-state
-    /// region. The engine creates `/sirius.<id>.state` before fork (once
+    /// region. The engine creates `/ida.<id>.state` before fork (once
     /// Task 7 lands); the child attaches in main() and threads this struct
     /// through the pump loop. `lastServicedSeq` is a child-private cursor,
     /// not shared state — mirrors GuiServicingState.
@@ -484,7 +484,7 @@ namespace
         host.host_data       = nullptr;
         host.name            = "ida_plugin_host";
         host.vendor          = "IDA";
-        host.url             = "https://example.invalid/sirius";
+        host.url             = "https://example.invalid/ida";
         host.version         = "0.1.0";
         host.get_extension   = hostGetExtension;
         host.request_restart = hostRequestRestart;
@@ -572,14 +572,14 @@ namespace
         // responseContextId=0 directly (user clicking the X on the
         // plug-in window isn't a request/response IPC event — the
         // engine learns about it via the next response-field poll).
-        sirius_gui_set_state (guiState);
+        ida_gui_set_state (guiState);
        #endif
         const auto serviceGui = [&] {
            #ifdef __APPLE__
             // Drain AppKit events FIRST so a pending close from the
             // previous tick gets picked up before we service any
             // engine-initiated request. Non-blocking; sub-µs when idle.
-            sirius_appkit_drain_events();
+            ida_appkit_drain_events();
            #endif
             serviceGuiRequests (gui, plugin);
         };
@@ -594,7 +594,7 @@ namespace
             // Bounds GUI latency to one audio buffer when audio is
             // flowing; the in-pop onIdle hook covers the idle case.
            #ifdef __APPLE__
-            sirius_appkit_drain_events();
+            ida_appkit_drain_events();
            #endif
             serviceGuiRequests (gui, plugin);
             serviceStateRequests (stateSrv, plugin);
@@ -709,7 +709,7 @@ int main (int argc, char** argv)
     // AppKit but the init is cheap enough to run unconditionally; keeps
     // both modes on a single code path.
     if (mode == "clap")
-        sirius_appkit_init();
+        ida_appkit_init();
    #endif
 
     // SIGTERM / SIGINT → request shutdown. SIGPIPE → ignore (legacy from

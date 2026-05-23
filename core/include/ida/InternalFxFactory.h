@@ -5,7 +5,7 @@
 
 #include <memory>
 
-namespace sirius
+namespace ida
 {
 
 /// Resolve an `InternalFxId` to a freshly-constructed adapter wrapping
@@ -22,4 +22,4 @@ namespace sirius
 /// slot.
 std::unique_ptr<IInternalFxAdapter> makeInternalFxAdapter (InternalFxId id);
 
-} // namespace sirius
+} // namespace ida

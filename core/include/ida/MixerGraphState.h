@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 /// Routing-graph Phase 5 — a JUCE-free, engine-free plain-data snapshot of one
@@ -167,4 +167,4 @@ struct OutputMixerGraphState
     bool operator!= (const OutputMixerGraphState& o) const noexcept { return ! (*this == o); }
 };
 
-} // namespace sirius
+} // namespace ida

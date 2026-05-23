@@ -14,11 +14,11 @@ duplicating.
 
 ## The four built-in FX
 
-The four effects ship with every copy of Sirius. They are not staging for a
+The four effects ship with every copy of IDA. They are not staging for a
 future tier and they are not a "preset bundle" — they are core product, and
 their DSP comes from OTTO's header-only Player FX (single source of truth in
 `external/OTTO/src/otto-core/include/otto/effects/`, dependency-only on
-`juce_dsp`). Each is wrapped by a Sirius-side adapter that lives in the
+`juce_dsp`). Each is wrapped by a IDA-side adapter that lives in the
 insert-chain host.
 
 | Built-in FX | Purpose | DSP source |

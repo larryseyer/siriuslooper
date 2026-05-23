@@ -115,7 +115,7 @@ to record per-node tape-terminal assignments by `TapeId`.
 Wire the production capture path so routing a node to tape X **actually records**
 into tape X. Construct and own a per-tape capture path in `MainComponent` (absent
 today) implementing `ITapeSink`: one append-only **FLAC** stream per pooled tape,
-written to `<Sirius>/tapes/<tapeId>.flac` and **flushed continuously** (whitepaper
+written to `<IDA>/tapes/<tapeId>.flac` and **flushed continuously** (whitepaper
 §8.5 "lossless on disk during the live session", §17.8 continuous flush). This is
 the slice that turns the routing model from apparatus into behavior. Sequenced
 **immediately** behind slices 1–2 (operator constraint: the plan must put real
@@ -171,7 +171,7 @@ to `InputDescriptor`. JUCE-free.
 
 #include <string>
 
-namespace sirius
+namespace ida
 {
 
 /// One entry in the project tape pool: light metadata naming a tape that exists
@@ -189,7 +189,7 @@ struct TapeDescriptor
     }
 };
 
-} // namespace sirius
+} // namespace ida
 ```
 
 ### Component: `TapePool` (core, header + cpp)
@@ -221,7 +221,7 @@ API:
 #include <string>
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 /// The project's pool of tapes — an ordered list, minimum one, unbounded
@@ -263,7 +263,7 @@ private:
     std::int64_t                nextId_ { 1 };
 };
 
-} // namespace sirius
+} // namespace ida
 ```
 
 ### Component: persistence serializer (persistence)

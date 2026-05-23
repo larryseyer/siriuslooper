@@ -149,7 +149,7 @@ Expected: compile error on `#include "ida/IGuiBridge.h"` (no such file).
 
 #include <cstdint>
 
-namespace sirius
+namespace ida
 {
 
 /// Engine-side port for the cross-process GUI Mach-port bridge (M7 S6).
@@ -184,7 +184,7 @@ struct IGuiBridge
     virtual void registerServerPort (std::uint32_t portName) noexcept = 0;
 };
 
-} // namespace sirius
+} // namespace ida
 ```
 
 - [ ] **Step 4: Create `host/include/ida/PluginGuiBridge.h`**
@@ -194,7 +194,7 @@ struct IGuiBridge
 
 #include "ida/IGuiBridge.h"
 
-namespace sirius
+namespace ida
 {
 
 /// Process-singleton accessor for the engine-side GUI bridge port.
@@ -227,7 +227,7 @@ public:
     static void resetForTesting() noexcept;
 };
 
-} // namespace sirius
+} // namespace ida
 ```
 
 - [ ] **Step 5: Create `host/src/PluginGuiBridge.cpp` — null-impl skeleton (no XPC yet)**
@@ -244,7 +244,7 @@ public:
 
 #include <atomic>
 
-namespace sirius
+namespace ida
 {
 namespace
 {
@@ -275,7 +275,7 @@ void PluginGuiBridge::resetForTesting() noexcept
     g_injected.store (nullptr, std::memory_order_release);
 }
 
-} // namespace sirius
+} // namespace ida
 ```
 
 - [ ] **Step 6: Wire into `host/CMakeLists.txt`**
@@ -641,7 +641,7 @@ Read the current `host/src/PluginGuiBridge.cpp` from Task 1, then replace it ent
   extern "C" std::uint32_t sirius_bridge_engine_server_port();
 #endif
 
-namespace sirius
+namespace ida
 {
 namespace
 {
@@ -779,7 +779,7 @@ void PluginGuiBridge::resetForTesting() noexcept
     teardownRealBridgeForTesting();
 }
 
-} // namespace sirius
+} // namespace ida
 ```
 
 - [ ] **Step 3: Wire `.mm` into `host/CMakeLists.txt`**
@@ -1135,7 +1135,7 @@ Declare the extern from `main.cpp`:
 extern "C" std::uint32_t sirius_engine_server_port();
 ```
 
-- [ ] **Step 2: Construct the client + override contextId in `sirius_gui_show`**
+- [ ] **Step 2: Construct the client + override contextId in `ida_gui_show`**
 
 After the existing `gui->set_parent(...)` + `gui->show(plugin)` block (lines 138-152 in the S5 file), but BEFORE the final `g_editor.contextId = g_nextContextId.fetch_add(...)` line, insert:
 

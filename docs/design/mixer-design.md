@@ -7,7 +7,7 @@ read-only reference).
 
 ## Hard invariant: stereo only
 
-**Sirius and OTTO work exclusively in STEREO. There is no mono anywhere** — every
+**IDA and OTTO work exclusively in STEREO. There is no mono anywhere** — every
 channel, bus, send, output, and master is a stereo pair. The mixer never presents
 a mono channel or a mono bus. Engine code, routing, and metering all assume
 stereo pairs.
@@ -187,4 +187,4 @@ bank of mono mics and stereo line sources share one console.
    — confirm no interim minimal render path is wanted.
 3. Tape-capture wiring: routing inputs→tapes requires wiring `TapeWriter`/
    `TapeStore` into the app (currently unwired), with the store rooted at
-   `<Sirius>/tapes` (operator request). This is pulled into B's first slice.
+   `<IDA>/tapes` (operator request). This is pulled into B's first slice.

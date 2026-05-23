@@ -9,7 +9,7 @@
 #include <cstdio>
 #include <stdexcept>
 
-namespace sirius
+namespace ida
 {
 
 struct WetOpenFile { std::unique_ptr<juce::FileOutputStream> stream; };
@@ -226,4 +226,4 @@ void WetCaptureWriter::writePendingMessages()
     }
 }
 
-} // namespace sirius
+} // namespace ida

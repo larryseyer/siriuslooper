@@ -2,7 +2,7 @@
 
 #include "ida/Rational.h"
 
-namespace sirius
+namespace ida
 {
 
 /// A time signature — e.g. 7/8.
@@ -36,4 +36,4 @@ private:
     int beatUnit_;
 };
 
-} // namespace sirius
+} // namespace ida

@@ -1,6 +1,6 @@
 #pragma once
 
-namespace sirius
+namespace ida
 {
 
 /// Severity of a `Notification`. The four levels are the V5 §8.6 contract.
@@ -70,4 +70,4 @@ public:
                        const char*       message) noexcept = 0;
 };
 
-} // namespace sirius
+} // namespace ida

@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace sirius
+namespace ida
 {
 
 /// A monotonic, never-decreasing time source, in nanoseconds.
@@ -31,4 +31,4 @@ public:
     std::int64_t nowNanos() const override;
 };
 
-} // namespace sirius
+} // namespace ida

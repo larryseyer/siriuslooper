@@ -6,7 +6,7 @@
 
 #include <string>
 
-namespace sirius
+namespace ida
 {
 
 /// What the Performance view shows at a given moment — glanceable, not
@@ -49,4 +49,4 @@ PerformanceViewState selectPerformanceView (const Constituent& root,
                                             const TempoMap&    sessionToLmc,
                                             Rational           playheadLmcSeconds);
 
-} // namespace sirius
+} // namespace ida

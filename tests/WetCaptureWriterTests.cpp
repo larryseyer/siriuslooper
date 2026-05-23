@@ -17,7 +17,7 @@
 #include <filesystem>
 #include <vector>
 
-using namespace sirius;
+using namespace ida;
 using namespace std::chrono_literals;
 
 namespace
@@ -25,7 +25,7 @@ namespace
 std::filesystem::path makeTempDir (const char* tag)
 {
     auto dir = std::filesystem::temp_directory_path()
-             / ("sirius-wet-" + std::string (tag) + "-"
+             / ("ida-wet-" + std::string (tag) + "-"
                 + std::to_string (juce::Random::getSystemRandom().nextInt64()));
     std::filesystem::create_directories (dir);
     return dir;

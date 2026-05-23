@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <stdexcept>
 
-namespace sirius
+namespace ida
 {
 
 namespace
@@ -164,4 +164,4 @@ ElectionResult electLmc (const std::vector<NodeClockEstimate>& nodes)
     return out;
 }
 
-} // namespace sirius
+} // namespace ida

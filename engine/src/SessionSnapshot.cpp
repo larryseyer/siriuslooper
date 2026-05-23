@@ -10,7 +10,7 @@
 #include <string>
 #include <utility>
 
-namespace sirius
+namespace ida
 {
 namespace
 {
@@ -221,4 +221,4 @@ void verifyVersionPinningOnLoad (
     walkAndVerify (loadedRoot, host, lookup, sink);
 }
 
-} // namespace sirius
+} // namespace ida

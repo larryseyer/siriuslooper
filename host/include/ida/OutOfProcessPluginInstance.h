@@ -17,7 +17,7 @@
 
 namespace juce { class File; }
 
-namespace sirius
+namespace ida
 {
 
 /// Engine-side handle for one `ida_plugin_host` child process (V7 §9.1,
@@ -258,4 +258,4 @@ private:
     void createStateRegion();
 };
 
-} // namespace sirius
+} // namespace ida

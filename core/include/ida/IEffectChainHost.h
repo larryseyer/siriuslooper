@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <optional>
 
-namespace sirius
+namespace ida
 {
 
 /// Audio-thread interface a `Bus` calls into to dispatch one slot of its
@@ -131,4 +131,4 @@ public:
     virtual void prepareInternalFx (double /*sampleRate*/, int /*maxBlockSize*/) {}
 };
 
-} // namespace sirius
+} // namespace ida

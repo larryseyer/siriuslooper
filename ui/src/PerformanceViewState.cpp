@@ -6,7 +6,7 @@
 #include <functional>
 #include <variant>
 
-namespace sirius
+namespace ida
 {
 
 namespace
@@ -117,4 +117,4 @@ PerformanceViewState selectPerformanceView (const Constituent& root,
     return state;
 }
 
-} // namespace sirius
+} // namespace ida

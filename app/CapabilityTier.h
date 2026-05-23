@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace sirius
+namespace ida
 {
 
 /// One of the four operating profiles the system selects at session startup
@@ -83,4 +83,4 @@ TierPolicy policyFor (CapabilityTier tier);
 /// (white paper Part 13.4 — the system tells the performer which tier it chose).
 const char* toString (CapabilityTier tier);
 
-} // namespace sirius
+} // namespace ida

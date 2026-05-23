@@ -481,7 +481,7 @@ git commit -m "feat: InputMixer multi-tape terminal registry + per-tape routing 
 
 #include "ida/TapeId.h"
 
-namespace sirius
+namespace ida
 {
 
 /// Per-tape capture-sink seam (tape subsystem slice 2). The input mixer sums
@@ -503,7 +503,7 @@ public:
                                    int numSamples) noexcept = 0;
 };
 
-} // namespace sirius
+} // namespace ida
 ```
 
 - [ ] **Step 2: Write the failing tests**
@@ -960,7 +960,7 @@ git push origin master
 
 - [ ] **Step 5: Update `continue.md`**
 
-Refresh the RESUME HERE block: slice 2 SHIPPED (list the 3 commits + ctest count + clean-rebuild green), next = **slice 3 (capture-to-disk wiring — "real recording")** with its first moves: implement `ITapeSink` over real per-tape `TapeWriter`s owned by `MainComponent`, one sink per pooled `TapePool` tape, writing per-tape partials and finalizing into `TapeStore` under `<Sirius>/tapes`, establishing the `TapeId → content` manifest seam. Note the slice-5 carry-forward (persisting which tape a node targets) recorded in `todo.md`.
+Refresh the RESUME HERE block: slice 2 SHIPPED (list the 3 commits + ctest count + clean-rebuild green), next = **slice 3 (capture-to-disk wiring — "real recording")** with its first moves: implement `ITapeSink` over real per-tape `TapeWriter`s owned by `MainComponent`, one sink per pooled `TapePool` tape, writing per-tape partials and finalizing into `TapeStore` under `<IDA>/tapes`, establishing the `TapeId → content` manifest seam. Note the slice-5 carry-forward (persisting which tape a node targets) recorded in `todo.md`.
 
 ---
 

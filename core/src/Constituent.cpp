@@ -3,7 +3,7 @@
 #include <stdexcept>
 #include <utility>
 
-namespace sirius
+namespace ida
 {
 
 Constituent::Constituent (ConstituentId id, Position conceptualIn, Position conceptualOut)
@@ -155,4 +155,4 @@ Constituent Constituent::withChildRemoved (std::size_t index) const
     return next;
 }
 
-} // namespace sirius
+} // namespace ida

@@ -4,7 +4,7 @@
 
 #include <cstdint>
 
-namespace sirius
+namespace ida
 {
 
 /// Renders a single repeating loop — the outbound membrane's job at M2 (white
@@ -47,4 +47,4 @@ private:
     Rational loopStartLmc_;
 };
 
-} // namespace sirius
+} // namespace ida

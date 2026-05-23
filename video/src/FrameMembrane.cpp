@@ -2,7 +2,7 @@
 
 #include <stdexcept>
 
-namespace sirius
+namespace ida
 {
 
 namespace
@@ -66,4 +66,4 @@ std::vector<std::int64_t> convertFrameRate (
     return result;
 }
 
-} // namespace sirius
+} // namespace ida

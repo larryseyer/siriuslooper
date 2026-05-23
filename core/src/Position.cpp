@@ -2,7 +2,7 @@
 
 #include <stdexcept>
 
-namespace sirius
+namespace ida
 {
 
 Position::Position (Rational wholeNotes)
@@ -50,4 +50,4 @@ bool Position::operator<= (const Position& other) const { return wholeNotes_ <= 
 bool Position::operator>  (const Position& other) const { return wholeNotes_ >  other.wholeNotes_; }
 bool Position::operator>= (const Position& other) const { return wholeNotes_ >= other.wholeNotes_; }
 
-} // namespace sirius
+} // namespace ida

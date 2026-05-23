@@ -7,7 +7,7 @@
 
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 /// The result of a scan pass: the descriptors that were successfully read, and
@@ -64,4 +64,4 @@ private:
     INotificationSink* notificationSink_ { nullptr };
 };
 
-} // namespace sirius
+} // namespace ida

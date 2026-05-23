@@ -2,7 +2,7 @@
 
 #include "ida/TapeId.h"
 
-namespace sirius
+namespace ida
 {
 
 /// Per-tape capture-sink seam (tape subsystem slice 2). The input mixer sums
@@ -24,4 +24,4 @@ public:
                                    int numSamples) noexcept = 0;
 };
 
-} // namespace sirius
+} // namespace ida

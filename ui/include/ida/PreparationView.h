@@ -4,7 +4,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-namespace sirius
+namespace ida
 {
 
 /// The Preparation view: a dense readout of every Constituent in the tree.
@@ -33,4 +33,4 @@ private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PreparationView)
 };
 
-} // namespace sirius
+} // namespace ida

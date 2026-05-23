@@ -92,6 +92,87 @@ SUBS = [
     ("com.sirius.synthetic.test", "com.ida.synthetic.test"),
     ("com.sirius.synthetic.identity", "com.ida.synthetic.identity"),
     ("com.sirius.synthetic.statefulsynth", "com.ida.synthetic.statefulsynth"),
+    # BUILD-CRITICAL: C++ namespace declarations the §1a table missed (table only
+    # caught `sirius::` usages). Without this the 188 files with `namespace sirius
+    # { ... }` would not compile against the substituted `ida::` references.
+    ("namespace sirius", "namespace ida"),
+    ("} // namespace sirius", "} // namespace ida"),
+    # XPC bridge / GUI extern-C symbols (host_process). Defined in gui_cocoa.mm,
+    # declared and called in main.cpp — must flip together as one group.
+    ("sirius_appkit_init", "ida_appkit_init"),
+    ("sirius_appkit_drain_events", "ida_appkit_drain_events"),
+    ("sirius_gui_set_state", "ida_gui_set_state"),
+    ("sirius_gui_show", "ida_gui_show"),
+    ("sirius_gui_hide", "ida_gui_hide"),
+    ("sirius_gui_resize", "ida_gui_resize"),
+    # POSIX shared-memory channel name prefix the parent + child agree on.
+    ("/sirius.", "/ida."),
+    # Session-file envelope format key (writer + reader must agree). Pre-launch
+    # dev iteration, no committed session JSON files with this key, so rename is
+    # clean — operator's local sessions would need a re-save (writes the new key).
+    ("sirius_version", "ida_version"),
+    # Test scratch-file prefixes — internal-only.
+    ("sirius-inputmixer-", "ida-inputmixer-"),
+    ("sirius-finalize-", "ida-finalize-"),
+    ("sirius-nondestructive-", "ida-nondestructive-"),
+    ("sirius-defaults-", "ida-defaults-"),
+    ("sirius-audio-dsp-", "ida-audio-dsp-"),
+    # CLAUDE.md placeholder text for commit SHA references.
+    ("<sirius-sha>", "<ida-sha>"),
+    # Placeholder URL in plugin host descriptor.
+    ("example.invalid/sirius", "example.invalid/ida"),
+    # Obj-C class name in the host_process GUI bridge (4 refs in gui_cocoa.mm).
+    ("SiriusPluginWindowDelegate", "IdaPluginWindowDelegate"),
+    # Test-fixture plugin display names (visible in scanner output).
+    ("Sirius Synthetic Identity", "IDA Synthetic Identity"),
+    ("Sirius Stateful Synth Fixture", "IDA Stateful Synth Fixture"),
+    # Hyphenated compound the spec row 3 missed (`Sirius Looper` with hyphens).
+    ("Sirius-Looper-compatible", "IDA-compatible"),
+    # Sirius Archive Format → IDA Archive Format; the SAF acronym therefore retires
+    # in favor of IAF (matches the new expansion). Used in whitepaper, plan docs,
+    # continue.md, and one comment in core/include/ida/InputKind.h.
+    ("Sirius Archive Format (SAF)", "IDA Archive Format (IAF)"),
+    ("IDA Archive Format (SAF)", "IDA Archive Format (IAF)"),
+    # SAF → IAF (Sirius/IDA Archive Format acronym). DANGER: this substring
+    # match damaged 40 files of `RT_SAFETY_CONTRACT` → `RT_IAFETY_CONTRACT` on
+    # first run; that damage was reverted post-hoc. If re-running this script,
+    # ALSO grep for `IAFETY` after the pass and revert any new instances. The
+    # row is left in for record but commented out — any future SAF residue
+    # should be hand-fixed.
+    # ("SAF", "IAF"),  # DANGER — see comment above
+    # URL-encoded link targets in README (legacy archive whitepaper links pointing
+    # at deleted-then-renamed files).
+    ("Sirius%20Looper%20Whitepaper%20V7.md", "IDA_Whitepaper_V8.md"),
+    ("Sirius%20Looper%20Whitepaper%20V6.md", "archive/IDA_Whitepaper_V6_archive.md"),
+    ("Sirius%20Looper%20Whitepaper%20V2.md", "archive/IDA_Whitepaper_V2_archive.md"),
+    ("Sirius%20Looper%20Whitepaper%20V1.md", "archive/IDA_Whitepaper_V1_archive.md"),
+    ("Sirius%20Looper%20User%20Guide.md", "IDA_User_Guide.md"),
+    # CLAUDE.md cross-project inbox spec — directional and column-header text.
+    ("Direction: SIRIUS → OTTO", "Direction: IDA → OTTO"),
+    ("(or OTTO → SIRIUS)", "(or OTTO → IDA)"),
+    ("Sirius commit:", "IDA commit:"),
+    # CLAUDE.md prose lines that use bare "Sirius" as a synonym for the product.
+    ("Back in Sirius:", "Back in IDA:"),
+    ("push Sirius", "push IDA"),
+    # Other bare-Sirius prose hits we know about (website docs + a VideoTape comment).
+    ("Sirius, like its sister app OTTO", "IDA, like its sister app OTTO"),
+    ("tape in Sirius", "tape in IDA"),
+    ("do with Sirius", "do with IDA"),
+    # Test scratch file prefixes beyond the InputMixer set already in earlier rows.
+    ("sirius-shm-", "ida-shm-"),
+    ("sirius-tapewriter-", "ida-tapewriter-"),
+    ("sirius-flush-latency-", "ida-flush-latency-"),
+    ("sirius-flac-test-", "ida-flac-test-"),
+    ("sirius-tapestore-test-", "ida-tapestore-test-"),
+    ("sirius-wet-", "ida-wet-"),
+    ("sirius_clap_empty", "ida_clap_empty"),
+    ("sirius_clap_bad", "ida_clap_bad"),
+    # Idiomatic phrases throughout adapter headers + tests + design docs.
+    ("Sirius-side", "IDA-side"),
+    ("every copy of Sirius", "every copy of IDA"),
+    ("transport bpm Sirius", "transport bpm IDA"),
+    ("Sirius and OTTO", "IDA and OTTO"),
+    ("<Sirius>/", "<IDA>/"),
 ]
 
 EXCLUDE_PATH_PREFIXES = (

@@ -34,7 +34,7 @@ namespace
     std::filesystem::path freshTempDir (const juce::String& tag)
     {
         auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                       .getChildFile ("sirius-tapewriter-" + tag
+                       .getChildFile ("ida-tapewriter-" + tag
                                       + "-" + juce::String (juce::Time::getMillisecondCounterHiRes()));
         dir.createDirectory();
         return std::filesystem::path (dir.getFullPathName().toStdString());
@@ -151,7 +151,7 @@ TEST_CASE ("flushChannel returns promptly even on Survival-tier flush intervals"
            "[tape-writer][latency]")
 {
     auto tempDir = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                       .getChildFile ("sirius-flush-latency-"
+                       .getChildFile ("ida-flush-latency-"
                                       + juce::String (juce::Time::getMillisecondCounterHiRes()));
     tempDir.createDirectory();
 

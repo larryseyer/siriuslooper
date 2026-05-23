@@ -4,7 +4,7 @@
 
 #include <stdexcept>
 
-namespace sirius
+namespace ida
 {
 
 /// A single sample of a hosted plugin's parameter value, in the format that
@@ -42,4 +42,4 @@ struct ParameterEvent
 /// Constituent with a `tapeReference` into an audio tape is a loop.
 using ParameterTape = Tape<ParameterEvent>;
 
-} // namespace sirius
+} // namespace ida

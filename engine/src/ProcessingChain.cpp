@@ -4,7 +4,7 @@
 
 #include <cassert>
 
-namespace sirius
+namespace ida
 {
 
 std::unique_ptr<ProcessingChain> makeProcessingChain (SignalType type)
@@ -22,4 +22,4 @@ std::unique_ptr<ProcessingChain> makeProcessingChain (SignalType type)
     return nullptr;
 }
 
-} // namespace sirius
+} // namespace ida

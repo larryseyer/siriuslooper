@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <cstring>
 
-namespace sirius
+namespace ida
 {
 
 EqAdapter::EqAdapter()
@@ -92,4 +92,4 @@ bool EqAdapter::process (const float* const* inChannels,
     return true;
 }
 
-} // namespace sirius
+} // namespace ida

@@ -4,7 +4,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-namespace sirius
+namespace ida
 {
 
 /// The Performance view: a glanceable, eyes-free surface (white paper 14.5,
@@ -30,4 +30,4 @@ private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PerformanceView)
 };
 
-} // namespace sirius
+} // namespace ida

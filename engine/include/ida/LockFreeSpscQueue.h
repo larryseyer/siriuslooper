@@ -6,7 +6,7 @@
 #include <utility>
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 /// A bounded, wait-free, single-producer / single-consumer queue.
@@ -99,4 +99,4 @@ private:
     std::atomic<std::size_t> tail_ { 0 }; // producer owns; next write slot
 };
 
-} // namespace sirius
+} // namespace ida

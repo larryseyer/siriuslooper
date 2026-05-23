@@ -5,7 +5,7 @@
 #include <unordered_set>
 #include <utility>
 
-namespace sirius
+namespace ida
 {
 
 TapePool::TapePool()
@@ -86,4 +86,4 @@ const TapeDescriptor& TapePool::at (int index) const
     return tapes_.at (static_cast<std::size_t> (index));
 }
 
-} // namespace sirius
+} // namespace ida

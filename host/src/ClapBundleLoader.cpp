@@ -4,7 +4,7 @@
 #include <dlfcn.h>
 #include <utility>
 
-namespace sirius
+namespace ida
 {
 
 std::string ClapBundleLoader::resolveBinaryPath (std::string bundlePath)
@@ -163,4 +163,4 @@ const clap_plugin_t* ClapBundleLoader::createPlugin (
     return factory_->create_plugin (factory_, &host, pluginId);
 }
 
-} // namespace sirius
+} // namespace ida

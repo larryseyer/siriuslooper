@@ -7,7 +7,7 @@ V7 milestone roadmap (`docs/superpowers/plans/2026-05-17-v7-alignment.md`).
 
 ## The intent
 
-Sirius records everything, continuously — but recording everything is not the
+IDA records everything, continuously — but recording everything is not the
 same as keeping everything. The capture tapes are the raw, always-on substrate.
 The creative act is selecting from that substrate and committing to it.
 

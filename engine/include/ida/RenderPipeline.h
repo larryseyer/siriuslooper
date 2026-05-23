@@ -10,7 +10,7 @@
 #include <memory>
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 /// One loop sounding at a queried moment: which loop, which tape, where to read,
@@ -67,4 +67,4 @@ private:
     ConstituentValidation validation_;
 };
 
-} // namespace sirius
+} // namespace ida

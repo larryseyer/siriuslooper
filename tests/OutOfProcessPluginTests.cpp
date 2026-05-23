@@ -10,7 +10,7 @@
 //
 // Skips cleanly if the binary isn't present — the test executable can in
 // principle be invoked before host_process has finished building, and a
-// missing binary is not a Sirius-side regression worth a hard failure.
+// missing binary is not a IDA-side regression worth a hard failure.
 
 #include "ida/OutOfProcessPluginInstance.h"
 

@@ -3,7 +3,7 @@
 #include <stdexcept>
 #include <utility>
 
-namespace sirius
+namespace ida
 {
 
 TimeDomain::TimeDomain (std::shared_ptr<const TimeDomain> parent,
@@ -54,4 +54,4 @@ Rational TimeDomain::toAbsoluteSeconds (Position localPosition) const
     return parent_->toAbsoluteSeconds (Position (mapped));
 }
 
-} // namespace sirius
+} // namespace ida

@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 /// How a phrase begins (white paper Part 8.7). The entrance character is part
@@ -67,4 +67,4 @@ struct PhraseMetadata
     bool isRoleFillable { false };
 };
 
-} // namespace sirius
+} // namespace ida

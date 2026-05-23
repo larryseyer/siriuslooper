@@ -5,7 +5,7 @@
 #include "fx/EqAdapter.h"
 #include "fx/RvbAdapter.h"
 
-namespace sirius
+namespace ida
 {
 
 std::unique_ptr<IInternalFxAdapter> makeInternalFxAdapter (InternalFxId id)
@@ -37,7 +37,7 @@ std::unique_ptr<IInternalFxAdapter> makeInternalFxAdapter (InternalFxId id)
         // T3c — DLY adapter wraps otto::effects::PlayerDelay. The ctor
         // flips delayEnabled=true AND delaySyncEnabled=false so a
         // freshly-inserted DLY slot tap-echoes the input at the default
-        // free-running 250 ms — the sync path needs a transport bpm Sirius
+        // free-running 250 ms — the sync path needs a transport bpm IDA
         // doesn't plumb yet.
         case InternalFxId::kDly:
             return std::make_unique<DlyAdapter>();
@@ -51,4 +51,4 @@ std::unique_ptr<IInternalFxAdapter> makeInternalFxAdapter (InternalFxId id)
     return nullptr;
 }
 
-} // namespace sirius
+} // namespace ida

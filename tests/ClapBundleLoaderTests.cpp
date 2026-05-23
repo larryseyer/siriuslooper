@@ -33,7 +33,7 @@ TEST_CASE ("ClapBundleLoader loads the synthetic CLAP and reports descriptors",
     REQUIRE (descriptors.size() == 1);
     CHECK (descriptors[0].uniqueId == "com.ida.synthetic.identity");
     CHECK (descriptors[0].version  == "1.0.0");
-    CHECK (descriptors[0].name     == "Sirius Synthetic Identity");
+    CHECK (descriptors[0].name     == "IDA Synthetic Identity");
 }
 
 TEST_CASE ("ClapBundleLoader returns invalid loader for nonexistent path",

@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 /// RAII loader for one .clap bundle (M8 S2). Construct via `load(...)`
@@ -86,4 +86,4 @@ private:
     const clap_plugin_factory_t* factory_  { nullptr };
 };
 
-} // namespace sirius
+} // namespace ida

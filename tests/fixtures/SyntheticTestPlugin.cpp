@@ -39,11 +39,11 @@ constexpr const char* kFeatures[] = {
 const clap_plugin_descriptor_t kDescriptor = {
     CLAP_VERSION_INIT,
     "com.ida.synthetic.identity",
-    "Sirius Synthetic Identity",
+    "IDA Synthetic Identity",
     "IDA Tests",
-    "https://example.invalid/sirius",
-    "https://example.invalid/sirius",
-    "https://example.invalid/sirius",
+    "https://example.invalid/ida",
+    "https://example.invalid/ida",
+    "https://example.invalid/ida",
     "1.0.0",
     "Identity audio effect used by IDA round-trip tests.",
     kFeatures

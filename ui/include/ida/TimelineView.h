@@ -9,7 +9,7 @@
 #include <functional>
 #include <optional>
 
-namespace sirius
+namespace ida
 {
 
 /// The Preparation tab's timeline: a strip per input, Pills laid across.
@@ -72,4 +72,4 @@ private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TimelineView)
 };
 
-} // namespace sirius
+} // namespace ida

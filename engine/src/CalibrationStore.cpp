@@ -10,7 +10,7 @@
 #include <string_view>
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 namespace
 {
@@ -177,4 +177,4 @@ void postCalibrationRecoveryNotification (CalibrationLoadStatus status,
     sink.post (NotificationLevel::Warning, Category::StateRepair, message);
 }
 
-} // namespace sirius
+} // namespace ida

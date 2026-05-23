@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace sirius
+namespace ida
 {
 
 /// Identifies a single input source — which tape an event belongs to, and which
@@ -24,4 +24,4 @@ private:
     std::int64_t value_;
 };
 
-} // namespace sirius
+} // namespace ida

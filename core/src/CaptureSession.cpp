@@ -1,6 +1,6 @@
 #include "ida/CaptureSession.h"
 
-namespace sirius
+namespace ida
 {
 
 void CaptureSession::arm()
@@ -56,4 +56,4 @@ void CaptureSession::cancel()
     }
 }
 
-} // namespace sirius
+} // namespace ida

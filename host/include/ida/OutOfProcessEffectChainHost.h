@@ -24,7 +24,7 @@
 #include <utility>
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 /// Out-of-process concrete implementation of `IEffectChainHost` (M7 S3 + S4).
@@ -490,4 +490,4 @@ private:
     void postNotification (NotificationLevel level, const char* message) noexcept;
 };
 
-} // namespace sirius
+} // namespace ida

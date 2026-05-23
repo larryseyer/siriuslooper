@@ -3,7 +3,7 @@
 #include <stdexcept>
 #include <utility>
 
-namespace sirius
+namespace ida
 {
 
 TempoMap::TempoMap (std::vector<Breakpoint> breakpoints)
@@ -74,4 +74,4 @@ Rational TempoMap::apply (Rational input) const
     return a.output + (input - a.input) * slope;
 }
 
-} // namespace sirius
+} // namespace ida

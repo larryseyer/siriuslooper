@@ -2,10 +2,10 @@
 
 #include <cstddef>
 
-namespace sirius
+namespace ida
 {
 
-/// The Sirius-side contract for one built-in (internal) effect — the
+/// The IDA-side contract for one built-in (internal) effect — the
 /// adapter shape wrapping an OTTO header-only Player FX. One adapter
 /// instance per occupied `Internal` slot of an `EffectChain`; the host
 /// (today `OutOfProcessEffectChainHost`) owns the adapters keyed by
@@ -71,4 +71,4 @@ public:
                           int                 numSamples) noexcept = 0;
 };
 
-} // namespace sirius
+} // namespace ida

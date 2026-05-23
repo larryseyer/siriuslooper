@@ -4,7 +4,7 @@
 
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 /// A conceptual transformation between two time domains (white paper Part 5.4):
@@ -50,4 +50,4 @@ private:
     std::vector<Breakpoint> breakpoints_;
 };
 
-} // namespace sirius
+} // namespace ida

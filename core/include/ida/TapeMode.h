@@ -1,6 +1,6 @@
 #pragma once
 
-namespace sirius
+namespace ida
 {
 
 /// The tape-routing decision a `Channel` makes for itself (V3 transition
@@ -25,4 +25,4 @@ enum class TapeMode
     NoTape
 };
 
-} // namespace sirius
+} // namespace ida

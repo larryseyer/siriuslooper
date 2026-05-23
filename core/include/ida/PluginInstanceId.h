@@ -4,12 +4,12 @@
 #include <cstdint>
 #include <string>
 
-namespace sirius
+namespace ida
 {
 
 /// Maximum bytes available for an `OutOfProcessPluginInstance` instance id
 /// before the macOS shm name budget is exceeded. The shm prefix is
-/// `/sirius.` (8 chars) and the longest suffix is `.e2h` / `.h2e` (4 chars);
+/// `/ida.` (8 chars) and the longest suffix is `.e2h` / `.h2e` (4 chars);
 /// macOS caps shm names at 31 chars total → 19 chars for the id itself.
 /// We leave one char headroom for any future suffix growth → 18.
 inline constexpr std::size_t kMaxPluginInstanceIdLength = 18;
@@ -54,4 +54,4 @@ inline std::string hashInstanceId (const std::string& input)
     return std::string (buffer, 16);
 }
 
-} // namespace sirius
+} // namespace ida

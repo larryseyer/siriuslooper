@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 /// One Pill on the timeline — the UI rendering of a Phrase Constituent
@@ -109,4 +109,4 @@ TimelineViewState selectTimelineView (const Constituent&                  root,
                                       const std::vector<TapeId>&          armedTapes,
                                       TapeId                              focusedTape);
 
-} // namespace sirius
+} // namespace ida

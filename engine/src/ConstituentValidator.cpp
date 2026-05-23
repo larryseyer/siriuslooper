@@ -5,7 +5,7 @@
 #include <functional>
 #include <optional>
 
-namespace sirius
+namespace ida
 {
 
 bool alwaysResolves (const TapeReference&) noexcept { return true; }
@@ -99,4 +99,4 @@ void postConstituentStateNotifications (const Constituent&           root,
     visit (root);
 }
 
-} // namespace sirius
+} // namespace ida

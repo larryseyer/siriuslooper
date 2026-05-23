@@ -16,7 +16,7 @@
 #include <thread>
 #include <unordered_map>
 
-namespace sirius
+namespace ida
 {
 
 /// Per-message ceiling on the inline stereo payload. 4096 stereo float32 frames
@@ -125,4 +125,4 @@ private:
     std::unordered_map<std::int64_t, OpenTape> writers_;
 };
 
-} // namespace sirius
+} // namespace ida

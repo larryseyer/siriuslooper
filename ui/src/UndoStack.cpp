@@ -3,7 +3,7 @@
 #include <stdexcept>
 #include <utility>
 
-namespace sirius
+namespace ida
 {
 
 namespace
@@ -96,4 +96,4 @@ const std::string& UndoStack::nextRedoLabel() const noexcept
     return canRedo() ? entries_[currentIndex_ + 1].label : emptyLabel;
 }
 
-} // namespace sirius
+} // namespace ida

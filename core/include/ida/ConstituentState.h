@@ -1,6 +1,6 @@
 #pragma once
 
-namespace sirius
+namespace ida
 {
 
 /// The validity of a Constituent, derived from the graph at load and on edits
@@ -15,4 +15,4 @@ enum class ConstituentState
     Invalid  ///< anchor/bounds place the Constituent outside its parent's span
 };
 
-} // namespace sirius
+} // namespace ida

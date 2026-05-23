@@ -9,7 +9,7 @@
 #include <stdexcept>
 #include <variant>
 
-using namespace sirius;
+using namespace ida;
 
 TEST_CASE ("the default rules are the system's best guess for a loop", "[repetition]")
 {

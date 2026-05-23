@@ -1633,9 +1633,9 @@ T6  P4/P5 persistence wiring into MainComponent save/load
    `docs/superpowers/specs/2026-05-22-otto-integration-design.md` covers all
    the architecture decisions T2 → T6 depend on.
 4. ⚠ If you need to edit OTTO source for any reason: follow the cross-project
-   inbox protocol — make the OTTO commit with `Ida-Origin: <sirius-sha>`
+   inbox protocol — make the OTTO commit with `Ida-Origin: <ida-sha>`
    trailer, append a `[FROM IDA → OTTO]` entry to the inbox, push OTTO,
-   then bump submodule SHA + commit + push Sirius. No operator approval
+   then bump submodule SHA + commit + push IDA. No operator approval
    needed.
 
 ---
@@ -2011,7 +2011,7 @@ need to discuss OTTO further before you continue on your current path."
 > What landed: `MixerMainOut` carries `TapeId` (non-primary routes export — T1); `MainComponent` owns
 > `TapePool` + `mirrorTapePool` (`engine/include/ida/TapePoolMirror.h` — T2); `addTape`/`renameTape`/
 > `removeTape` keep pool↔mixer↔sink consistent with audio-callback bracketing + `closeTape` inside it
-> (T3); session persists the pool in a `{"sirius_version":1,"session":...,"pool":...}` envelope, old
+> (T3); session persists the pool in a `{"ida_version":1,"session":...,"pool":...}` envelope, old
 > files default-load (T4); a **Tapes tab** (create/rename/remove, ≥1 floor + primary protected,
 > dropped-block diagnostics — T5); a **per-strip tape destination picker** (tapes-only popup — T6);
 > a **blank-area right-click/long-press "Add tape" gesture** (T7). Tape auto-naming centralized in
@@ -2095,7 +2095,7 @@ need to discuss OTTO further before you continue on your current path."
 > ## ▶ STEP 1 (do this FIRST): resolve the slice-3 capture-LEVEL investigation
 > Slice 3 (**append-only FLAC capture-to-disk — "real recording"**) is code-complete on origin/master
 > (15 commits `fe310c8..cee1c44`, subagent-driven dev, per-task spec+code-quality review, final
-> holistic **opus** review = "SAFE TO PUSH"; clean rebuild green, **ctest 559/560**). It WORKS
+> holistic **opus** review = "IAFE TO PUSH"; clean rebuild green, **ctest 559/560**). It WORKS
 > mechanically: a routed input strip creates a growing, valid `tape-1.flac` at
 > **`~/Library/IDA/tapes/`** (⚠ JUCE `userApplicationDataDirectory` on macOS = `~/Library`,
 > NOT `~/Library/Application Support` — earlier doc gave the wrong path). **BUT** the operator opened
@@ -2238,7 +2238,7 @@ need to discuss OTTO further before you continue on your current path."
 > — so this slice added the missing engine surface BEFORE the UI. Executed end-to-end
 > via `superpowers:writing-plans` → `superpowers:subagent-driven-development` (5 impl
 > tasks, each spec-review + code-quality-review with fixes looped back; final holistic
-> opus review = **"SAFE TO CONSIDER COMPLETE"**). On **origin/master**, 10 commits
+> opus review = **"IAFE TO CONSIDER COMPLETE"**). On **origin/master**, 10 commits
 > `9cf0921..4c2fcdc`. **Clean `rm -rf build` rebuild green; full ctest 531/532** (the 1
 > Not-Run = the documented `MainComponentPluginEditorTests_NOT_BUILT` sentinel, run
 > separately by `bash/test-s7.sh`; +10 cases over the Phase-5 521/522 baseline). **Do
@@ -2332,7 +2332,7 @@ need to discuss OTTO further before you continue on your current path."
 > Phase 5 executed end-to-end via `superpowers:writing-plans` →
 > `superpowers:subagent-driven-development` (6 tasks, engine+core+persistence TDD;
 > each task controller-verified — spec-compliance review + code-quality review +
-> a final holistic opus review = "SAFE TO CONSIDER COMPLETE"; fixes looped back to
+> a final holistic opus review = "IAFE TO CONSIDER COMPLETE"; fixes looped back to
 > the implementer). On **origin/master** (11 commits `8ea30f1..b66ee08`). **Clean
 > `rm -rf build` rebuild green; full ctest 521/522** (test #522 = the documented
 > `MainComponentPluginEditorTests_NOT_BUILT` placeholder, run separately by
@@ -2804,7 +2804,7 @@ need to discuss OTTO further before you continue on your current path."
 >   absorbed: the remaining WetCapture work is production wiring that depends on
 >   M9+ machinery, so the next *buildable* V7 session is S6.
 > - Per-Constituent effect-chain routing → M9+; structure-layer `TapeId → wet-hash`
->   mapping → M11 SAF (same deferral as the dry tape's `TapeId → hash`).
+>   mapping → M11 IAF (same deferral as the dry tape's `TapeId → hash`).
 > - `TapeWriteMessage` has the identical `reinterpret_cast` pattern WITHOUT
 >   `alignas` — bring it in line when next touching `TapeWriter` (todo item 4).
 >
@@ -2889,7 +2889,7 @@ need to discuss OTTO further before you continue on your current path."
 > **The single most important next move:** start M8 S4 (V7 plan line 603:
 > WetCapture writer, Sessions 4–5). Spec not written — run
 > `superpowers:brainstorming` against V7 plan line 565 (WetCapture acceptance:
-> tape writer adds `<channelId>.wet.tape` in SAF's `tapes/` subdir) + line 581
+> tape writer adds `<channelId>.wet.tape` in IAF's `tapes/` subdir) + line 581
 > (`engine/WetCaptureWriter.h/.cpp` new) + line 603, then `writing-plans`, then
 > orchestrator+subagents.
 
@@ -3411,8 +3411,8 @@ Other queued items (independent of M8 progression):
 
 | File | Change |
 |---|---|
-| `host_process/gui_cocoa.mm` | **Rewritten.** Creates a top-level NSWindow per `sirius_gui_show`, attaches `SiriusPluginWindowDelegate` for close detection, makeKeyAndOrderFront. windowWillClose: publishes `responseContextId=0` back via shm. New C-linkage entry points: `sirius_appkit_init`, `sirius_appkit_drain_events`, `sirius_gui_set_state`. Manual retain/release (`-fno-objc-arc`). |
-| `host_process/main.cpp` | Deleted `bootstrapXpcBridge()` (~130 LOC, the XPC client side). Added Apple-only `sirius_appkit_init()` call after parseArgs. Added per-iteration + onIdle calls to `sirius_appkit_drain_events()` so NSWindow events get dispatched. Wired `sirius_gui_set_state(guiState)` so the delegate can publish closes. |
+| `host_process/gui_cocoa.mm` | **Rewritten.** Creates a top-level NSWindow per `ida_gui_show`, attaches `IdaPluginWindowDelegate` for close detection, makeKeyAndOrderFront. windowWillClose: publishes `responseContextId=0` back via shm. New C-linkage entry points: `ida_appkit_init`, `ida_appkit_drain_events`, `ida_gui_set_state`. Manual retain/release (`-fno-objc-arc`). |
+| `host_process/main.cpp` | Deleted `bootstrapXpcBridge()` (~130 LOC, the XPC client side). Added Apple-only `ida_appkit_init()` call after parseArgs. Added per-iteration + onIdle calls to `ida_appkit_drain_events()` so NSWindow events get dispatched. Wired `ida_gui_set_state(guiState)` so the delegate can publish closes. |
 | `host/src/OutOfProcessEffectChainHost.cpp` | Removed the lazy `PluginGuiBridge::instance()` touch in `configureBus`. The chain host no longer cares about the engine-side bridge. |
 | `app/MainComponent.cpp` + `.h` | **Deleted `PluginEditorWindow`** (the engine-side `juce::DocumentWindow` per plug-in from S7). Replaced `std::vector<std::unique_ptr<PluginEditorWindow>>` with `std::vector<std::int64_t> openEditorBusIds_`. `openPluginEditor` now just calls `configureBus` + `requestEditorShow` — no engine-side window. `closePluginEditor` just `configureBus(empty)`. |
 | `app/CMakeLists.txt` | Dropped the `sirius_gui_bridge` dependency + the `Contents/XPCServices/` copy POST_BUILD. The `ida_plugin_host` Developer-ID re-sign + final outer-app re-sign survive. The 2026-05-19 follow-up added `--entitlements` to the child re-sign. |
@@ -4156,7 +4156,7 @@ isn't trivial without launchd/XPC). Concretely:
   `requestSeq` (release); host services and bumps `responseSeq` with
   `responseContextId` + size. Naturally MPMC-safe — sidesteps the
   pre-existing SPSC-violation of audio + message thread sharing the
-  audio rings as producers. shm name `/sirius.<id>.gui` (30 chars,
+  audio rings as producers. shm name `/ida.<id>.gui` (30 chars,
   fits the macOS cap).
 - **`clap_gui_cocoa` on the synthetic plug-in** (new
   `tests/fixtures/SyntheticTestPluginGui.mm`). Minimal 200×100 pt
@@ -4171,7 +4171,7 @@ isn't trivial without launchd/XPC). Concretely:
   via an `OnIdle` callback. Bounds GUI latency to one audio buffer
   (~few ms) when busy and ~50µs when idle. Cocoa specifics live in
   the new `host_process/gui_cocoa.mm` (`-fno-objc-arc`) exposing
-  `sirius_gui_show / hide / resize` C-linkage shims. The child binary
+  `ida_gui_show / hide / resize` C-linkage shims. The child binary
   stays JUCE-free; only adds `-framework AppKit -framework QuartzCore`
   on Apple.
 - **Message-thread editor API on `OutOfProcessPluginInstance`**:
@@ -4335,7 +4335,7 @@ becomes `+[CALayer layerWithRemoteClientId:]`.
    re-show case implicitly).
 7. **Drop-NEW overflow policy** for SPSC rings. Unchanged.
 8. **macOS shm_open name cap = 18 chars** for instance ids. S5's
-   new `/sirius.<id>.gui` suffix (4 chars) fits.
+   new `/ida.<id>.gui` suffix (4 chars) fits.
 9. **`IEffectChainHost` is the audio-thread port.** Unchanged.
 10. **`PluginGuiState` is the editor publish/poll channel.** NEW in
     S5. Atomic seq-based; MPMC-safe. S6 keeps it unchanged — only
@@ -4728,7 +4728,7 @@ thread wrappers around them are 3-line forwards).
 4. **Per-instance ID budget is 18 chars** (encoded as
    `kMaxPluginInstanceIdLength` in `core/PluginInstanceId.h`),
    derived from macOS shm_open's 31-char total cap minus the
-   `/sirius.<id>.<suffix>` framing. `OutOfProcessEffectChainHost::
+   `/ida.<id>.<suffix>` framing. `OutOfProcessEffectChainHost::
    makeInstanceId(busId, slotIdx)` builds compact `bN_sM` ids and
    hashes via FNV-1a only if the raw form would exceed the budget
    (defensive — typical small ids pass through).
@@ -5052,7 +5052,7 @@ puts the IPC layer on the audio call chain** — design care required.
    and the caller surfaces it. Watchdog work in S4 handles the back-
    pressure semantics.
 8. **macOS shm_open name length cap (31 chars including leading slash).**
-   Current name layout is `/sirius.<instanceId>.<suffix>` with `suffix`
+   Current name layout is `/ida.<instanceId>.<suffix>` with `suffix`
    ∈ {`e2h`, `h2e`}. `<instanceId>` budget is ~18 chars. Long ids must
    be hashed by the caller; S3 should add a `hashInstanceId(std::string)
    -> std::string` helper if any Constituent path generates ids > 18.
@@ -5189,7 +5189,7 @@ M4-era constraints further down (still all load-bearing).
    `engine/include/ida/NotificationBus.h:139-151`).
 6. **`TapeWriter` has `setNotificationBus` wired but is NOT currently
    owned by `MainComponent`.** When TapeWriter joins the owned app
-   graph (M11 SAF wiring is the likely trigger), inject the bus per
+   graph (M11 IAF wiring is the likely trigger), inject the bus per
    the comment at `app/MainComponent.cpp:537-541`. M7 doesn't touch
    TapeWriter.
 7. **AudioCallback posts `DeviceEvent` only from
@@ -5665,7 +5665,7 @@ brainstorm questions:
    no silent drops. The diagnostics pane already shows shed-count from
    OverloadProtection, so the operator-visible signal is in place.
 2. **`NonDestructive` parameter-tape format:** JSONL, same shape as the
-   existing `ParameterAutomation` tape. Keeps SAF consistent and lets
+   existing `ParameterAutomation` tape. Keeps IAF consistent and lets
    the same parameter-merge/diff utilities work across both tape kinds.
    Defer any "binary format would be smaller" optimization to a future
    milestone — premature today.

@@ -4,7 +4,7 @@
 
 #include <cstring>
 
-namespace sirius
+namespace ida
 {
 
 CmpAdapter::CmpAdapter()
@@ -95,4 +95,4 @@ bool CmpAdapter::process (const float* const* inChannels,
     return true;
 }
 
-} // namespace sirius
+} // namespace ida

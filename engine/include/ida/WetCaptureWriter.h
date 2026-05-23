@@ -20,7 +20,7 @@
 namespace juce { class String; }
 namespace ida::persistence { class TapeStore; }
 
-namespace sirius
+namespace ida
 {
 
 class NotificationBus;
@@ -112,4 +112,4 @@ private:
     NotificationBus* notificationBus_ { nullptr };
 };
 
-} // namespace sirius
+} // namespace ida

@@ -7,7 +7,7 @@
 #include <span>
 #include <string>
 
-namespace sirius
+namespace ida
 {
 
 /// The portable, persistable identity of one hosted plug-in instance at
@@ -49,4 +49,4 @@ VersionPinningRecord makeVersionPinningRecord (
     const PluginDescriptor& descriptor,
     std::span<const std::byte> stateBlob = {});
 
-} // namespace sirius
+} // namespace ida

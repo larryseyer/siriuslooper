@@ -6,7 +6,7 @@
 
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 /// Non-JUCE CLAP plug-in scanner (M8 S2). Walks the platform's default
@@ -47,4 +47,4 @@ public:
     PluginScanResult scanDefaultLocations();
 };
 
-} // namespace sirius
+} // namespace ida

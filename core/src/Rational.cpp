@@ -4,7 +4,7 @@
 #include <numeric>
 #include <stdexcept>
 
-namespace sirius
+namespace ida
 {
 
 namespace
@@ -178,4 +178,4 @@ std::string Rational::toString() const
     return std::to_string (num) + '/' + std::to_string (den);
 }
 
-} // namespace sirius
+} // namespace ida

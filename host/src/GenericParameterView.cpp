@@ -1,6 +1,6 @@
 #include "ida/GenericParameterView.h"
 
-namespace sirius
+namespace ida
 {
 
 /// One row in the parameter view: name label on the left, slider on the right.
@@ -102,4 +102,4 @@ void GenericParameterView::resized()
         row->setBounds (area.removeFromTop (rowHeight));
 }
 
-} // namespace sirius
+} // namespace ida

@@ -2,7 +2,7 @@
 
 #include <stdexcept>
 
-namespace sirius
+namespace ida
 {
 
 Meter::Meter (int beatsPerBar, int beatUnit)
@@ -34,4 +34,4 @@ bool Meter::operator!= (const Meter& other) const noexcept
     return ! (*this == other);
 }
 
-} // namespace sirius
+} // namespace ida

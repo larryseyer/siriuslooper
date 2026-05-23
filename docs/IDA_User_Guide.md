@@ -1,7 +1,7 @@
 # IDA — User Guide
 
 The operator's manual. Workflow-first: each chapter walks through
-something you can actually do with Sirius. Read in order if you're new;
+something you can actually do with IDA. Read in order if you're new;
 jump to the chapter you need otherwise.
 
 For the conceptual model, design philosophy, and architectural rationale,

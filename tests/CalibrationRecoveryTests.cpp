@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-using namespace sirius;
+using namespace ida;
 
 namespace
 {

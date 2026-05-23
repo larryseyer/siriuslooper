@@ -9,7 +9,7 @@
 #include <memory>
 #include <optional>
 
-namespace sirius
+namespace ida
 {
 
 class OutOfProcessEffectChainHost;
@@ -71,4 +71,4 @@ void verifyVersionPinningOnLoad (
     SlotLookup                         lookup,
     INotificationSink&                 sink);
 
-} // namespace sirius
+} // namespace ida

@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 /// One historical version of a Constituent, tagged with the wall-clock
@@ -61,4 +61,4 @@ MergeableSession merge (const MergeableSession& a, const MergeableSession& b);
 /// — irrelevant for content, present only so the function is total.
 std::map<std::int64_t, ConstituentVersion> activeVersions (const MergeableSession& session);
 
-} // namespace sirius
+} // namespace ida

@@ -5,7 +5,7 @@
 #include <cstring>
 #include <string>
 
-namespace sirius
+namespace ida
 {
 namespace
 {
@@ -137,4 +137,4 @@ bool RvbAdapter::process (const float* const* inChannels,
     return true;
 }
 
-} // namespace sirius
+} // namespace ida

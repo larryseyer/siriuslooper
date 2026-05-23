@@ -6,7 +6,7 @@
 #include <stdexcept>
 #include <type_traits>
 
-namespace sirius
+namespace ida
 {
 
 /// A bounded, wait-free, single-producer / single-consumer queue whose
@@ -169,4 +169,4 @@ private:
     Layout* layout_ { nullptr };
 };
 
-} // namespace sirius
+} // namespace ida

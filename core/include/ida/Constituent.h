@@ -15,7 +15,7 @@
 #include <string>
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 /// How a Constituent aligns to its parent (white paper Appendix A, "Anchor to
@@ -136,4 +136,4 @@ inline bool isPlacementWrapper (const Constituent& c) noexcept
         && c.children()[0]->isPhrase();
 }
 
-} // namespace sirius
+} // namespace ida

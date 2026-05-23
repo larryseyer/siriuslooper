@@ -24,7 +24,7 @@ namespace
     public:
         ScratchDir()
             : dir_ (juce::File::getSpecialLocation (juce::File::tempDirectory)
-                        .getChildFile ("sirius-tapestore-test-"
+                        .getChildFile ("ida-tapestore-test-"
                                        + juce::String (juce::Uuid().toString())))
         {
             dir_.deleteRecursively();

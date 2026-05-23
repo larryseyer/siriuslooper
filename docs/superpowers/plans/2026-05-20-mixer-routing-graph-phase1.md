@@ -137,7 +137,7 @@ git commit -m "feat: BusKind discriminator on BusConfig"
 #include <cstdint>
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 /// Graph-layer node kind (distinct from BusConfig::BusKind, which is the DSP
@@ -233,7 +233,7 @@ private:
     std::int64_t             nextId_ { 1 };
 };
 
-} // namespace sirius
+} // namespace ida
 ```
 
 - [ ] **Step 2: Create the implementation** `engine/src/MixerGraph.cpp` (full body — every method, no stubs)
@@ -243,7 +243,7 @@ private:
 
 #include <algorithm>
 
-namespace sirius
+namespace ida
 {
 
 MixerGraph::MixerGraph (MixerTerminal terminal)
@@ -466,7 +466,7 @@ void MixerGraph::recomputeOrder()
     // order_ contains every id. The terminal, having no outgoing edge, sorts last.
 }
 
-} // namespace sirius
+} // namespace ida
 ```
 
 - [ ] **Step 3: Register in CMake**

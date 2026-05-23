@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 /// The project's pool of tapes — an ordered list, minimum one, unbounded
@@ -50,4 +50,4 @@ private:
     std::int64_t                nextId_ { 1 };
 };
 
-} // namespace sirius
+} // namespace ida

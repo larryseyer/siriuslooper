@@ -372,7 +372,7 @@ namespace
 {
     ida::InputMixerGraphState sampleInputState()
     {
-        using namespace sirius;
+        using namespace ida;
         InputMixerGraphState s;
         MixerBusState bus; bus.busId = 1; bus.channelCount = 2; bus.name = "Drums";
         bus.kind = MixerBusKind::Bus;
@@ -408,7 +408,7 @@ TEST_CASE ("InputMixerGraphState round-trips through JSON", "[sessionformat]")
 
 TEST_CASE ("OutputMixerGraphState round-trips through JSON", "[sessionformat]")
 {
-    using namespace sirius;
+    using namespace ida;
     OutputMixerGraphState s;
     MixerBusState master; master.busId = 0; master.name = "Master";
     master.mainOut.kind = MixerMainOut::Kind::Terminal; master.mainOut.terminal = MixerTerminalKind::HardwareOutput;

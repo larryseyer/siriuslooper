@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <string>
 
-namespace sirius
+namespace ida
 {
 
 /// Shared-memory state for plug-in `clap_plugin_state` save/load IPC
@@ -137,10 +137,10 @@ static_assert (sizeof (PluginStateState) <= 256u * 1024u,
 
 /// Builds the shm name used for the per-instance state region.
 /// Mirrors `makeEngineToHostRingName` / `makeGuiStateRegionName` —
-/// `/sirius.<instanceId>.state`.
+/// `/ida.<instanceId>.state`.
 inline std::string makeStateRegionName (const std::string& instanceId)
 {
-    return "/sirius." + instanceId + ".state";
+    return "/ida." + instanceId + ".state";
 }
 
-} // namespace sirius
+} // namespace ida

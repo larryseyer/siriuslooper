@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <string>
 
-namespace sirius
+namespace ida
 {
 
 /// RAII wrapper over a POSIX shared-memory region (`shm_open` + `mmap` +
@@ -70,4 +70,4 @@ private:
     bool        owns_    { false }; ///< true → shm_unlink on destruction
 };
 
-} // namespace sirius
+} // namespace ida

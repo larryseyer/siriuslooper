@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <cstring>
 
-namespace sirius
+namespace ida
 {
 namespace
 {
@@ -137,4 +137,4 @@ std::string sha256Hex (std::span<const std::byte> data)
     return out;
 }
 
-} // namespace sirius
+} // namespace ida

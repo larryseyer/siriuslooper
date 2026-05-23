@@ -100,7 +100,7 @@ layers of awareness propagation:
    `[FROM OTTO → IDA]` sections. Entries have a structured format
    (subject, direction, sirius-sha + otto-sha, files, why, recipient
    guidance, status, resolution).
-2. **Git commit trailers** — `Ida-Origin: <sirius-sha>` on
+2. **Git commit trailers** — `Ida-Origin: <ida-sha>` on
    IDA-originated OTTO commits; `OTTO-Origin: <otto-sha>` on
    IDA commits that consume OTTO changes (e.g., submodule bumps).
    Forever-durable audit trail in git log.

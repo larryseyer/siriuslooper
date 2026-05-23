@@ -7,7 +7,7 @@
 #include <unordered_map>
 #include <variant>
 
-namespace sirius
+namespace ida
 {
 
 namespace
@@ -249,4 +249,4 @@ TimelineViewState selectTimelineView (const Constituent&                  root,
     return state;
 }
 
-} // namespace sirius
+} // namespace ida

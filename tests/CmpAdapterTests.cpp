@@ -1,6 +1,6 @@
 // Tests for ida::CmpAdapter — the second internal-FX adapter (T3b of
 // the P7 umbrella). We do NOT test compressor DSP correctness
-// (PlayerCompressor owns that); we test the Sirius-side wrapper:
+// (PlayerCompressor owns that); we test the IDA-side wrapper:
 // prepare/process/reset state, the miss contract on an un-prepared
 // adapter, finite output on a known sine, in-place vs out-of-place
 // equivalence, and a DC-pulse case that asserts peak reduction once the

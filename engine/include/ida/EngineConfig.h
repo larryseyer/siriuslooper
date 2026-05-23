@@ -4,7 +4,7 @@
 
 #include <cstddef>
 
-namespace sirius
+namespace ida
 {
 
 /// Engine configuration — the tunable knobs the audio I/O layer reads when it
@@ -43,4 +43,4 @@ struct EngineConfig
     std::size_t minPreferredBufferSize { 128 };
 };
 
-} // namespace sirius
+} // namespace ida

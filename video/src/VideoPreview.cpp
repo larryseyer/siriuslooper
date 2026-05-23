@@ -1,6 +1,6 @@
 #include "ida/VideoPreview.h"
 
-namespace sirius
+namespace ida
 {
 
 void VideoPreview::setFrame (juce::Image frame)
@@ -37,4 +37,4 @@ void VideoPreview::paint (juce::Graphics& g)
     g.drawImage (current_, target);
 }
 
-} // namespace sirius
+} // namespace ida

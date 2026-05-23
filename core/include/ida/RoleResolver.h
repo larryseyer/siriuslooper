@@ -6,7 +6,7 @@
 
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 /// Find every Constituent in `pool` that can fill `slot`. A candidate matches
@@ -33,4 +33,4 @@ findCandidatesFor (const RoleSlot& slot,
 RoleSlot resolveFirst (const RoleSlot& slot,
                        const std::vector<Constituent::ChildPtr>& pool);
 
-} // namespace sirius
+} // namespace ida

@@ -2,7 +2,7 @@
 
 #include "ida/SignalType.h"
 
-namespace sirius
+namespace ida
 {
 
 /// The kind of signal a tape carries. One value per category in the
@@ -28,8 +28,8 @@ enum class InputKind
 ///
 /// `Audio`, `Midi`, and `Video` map one-to-one. The remaining cases —
 /// `Control`, `ParameterAutomation`, `Transport`, `System` — collapse to
-/// `SignalType::File`: their tapes are JSONL streams in the Sirius
-/// Archive Format until M11's SAF design forces a split.
+/// `SignalType::File`: their tapes are JSONL streams in the IDA
+/// Archive Format (IAF) until M11's IAF design forces a split.
 constexpr SignalType signalTypeOf (InputKind kind) noexcept
 {
     switch (kind)
@@ -46,4 +46,4 @@ constexpr SignalType signalTypeOf (InputKind kind) noexcept
     return SignalType::File;
 }
 
-} // namespace sirius
+} // namespace ida

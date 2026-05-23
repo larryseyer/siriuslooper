@@ -19,11 +19,11 @@ namespace
     std::string uniqueName (const char* suffix)
     {
         // 5-digit hex randomness — fits comfortably inside the 30-char
-        // remaining budget after "/sirius-shm-" (12 chars) and the suffix.
+        // remaining budget after "/ida-shm-" (12 chars) and the suffix.
         std::random_device rd;
         char rnd[6];
         std::snprintf (rnd, sizeof (rnd), "%05x", rd() & 0xFFFFF);
-        return std::string ("/sirius-shm-") + rnd + "-" + suffix;
+        return std::string ("/ida-shm-") + rnd + "-" + suffix;
     }
 }
 
@@ -45,7 +45,7 @@ TEST_CASE ("create and open round-trip writes", "[shm-region]")
         REQUIRE (reader.size() == writer.size()); // both must see the same size
 
         // Writer puts a marker; reader sees it.
-        const char marker[] = "sirius-shm-round-trip";
+        const char marker[] = "ida-shm-round-trip";
         std::memcpy (writer.data(), marker, sizeof (marker));
         CHECK (std::memcmp (reader.data(), marker, sizeof (marker)) == 0);
     }
@@ -57,7 +57,7 @@ TEST_CASE ("create and open round-trip writes", "[shm-region]")
 
 TEST_CASE ("OpenExisting against a missing name fails loud", "[shm-region]")
 {
-    CHECK_THROWS_AS (SharedMemoryRegion ("/sirius-shm-does-not-exist", 0,
+    CHECK_THROWS_AS (SharedMemoryRegion ("/ida-shm-does-not-exist", 0,
                                          SharedMemoryRegion::Mode::OpenExisting),
                      std::runtime_error);
 }

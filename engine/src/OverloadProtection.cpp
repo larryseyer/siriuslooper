@@ -2,7 +2,7 @@
 
 #include <cassert>
 
-namespace sirius
+namespace ida
 {
 
 namespace
@@ -63,4 +63,4 @@ int OverloadProtection::shedCount() const
     return (shedVideo_ ? 1 : 0) + (shedUi_ ? 1 : 0) + (shedAnalyzer_ ? 1 : 0);
 }
 
-} // namespace sirius
+} // namespace ida

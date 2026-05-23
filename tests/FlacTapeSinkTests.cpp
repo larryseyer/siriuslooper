@@ -13,7 +13,7 @@ namespace
 juce::File makeTempTapesDir()
 {
     auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                   .getChildFile ("sirius-flac-test-" + juce::String (juce::Time::getHighResolutionTicks()));
+                   .getChildFile ("ida-flac-test-" + juce::String (juce::Time::getHighResolutionTicks()));
     dir.createDirectory();
     return dir;
 }

@@ -38,8 +38,8 @@ TEST_CASE ("makeStateRegionName follows the .state suffix convention",
            "[plugin-state-region]")
 {
     // Mirrors makeEngineToHostRingName / makeGuiStateRegionName —
-    // /sirius.<instanceId>.<suffix>. The host child's
+    // /ida.<instanceId>.<suffix>. The host child's
     // SharedMemoryRegion::OpenExisting consumer must match this exactly.
-    CHECK (makeStateRegionName ("abc") == "/sirius.abc.state");
-    CHECK (makeStateRegionName ("")    == "/sirius..state");
+    CHECK (makeStateRegionName ("abc") == "/ida.abc.state");
+    CHECK (makeStateRegionName ("")    == "/ida..state");
 }

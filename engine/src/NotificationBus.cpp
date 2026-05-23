@@ -4,7 +4,7 @@
 
 #include <cstring>
 
-namespace sirius
+namespace ida
 {
 
 NotificationBus::NotificationBus()
@@ -89,4 +89,4 @@ std::uint64_t NotificationBus::overflowCount (Category category) const noexcept
     return overflowCounters_[index (category)].load (std::memory_order_relaxed);
 }
 
-} // namespace sirius
+} // namespace ida

@@ -4,7 +4,7 @@
 
 #include <utility>
 
-namespace sirius
+namespace ida
 {
 
 std::vector<juce::File> ClapScanner::defaultSearchPaths()
@@ -91,4 +91,4 @@ PluginScanResult ClapScanner::scanDefaultLocations()
     return merged;
 }
 
-} // namespace sirius
+} // namespace ida

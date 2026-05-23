@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <string>
 
-namespace sirius
+namespace ida
 {
 
 /// Shared-memory state for plug-in editor control (M7 S5 — macOS GUI
@@ -121,7 +121,7 @@ static_assert (sizeof (PluginGuiState) <= 256,
 /// id budget the audio rings use.
 inline std::string makeGuiStateRegionName (const std::string& instanceId)
 {
-    return "/sirius." + instanceId + ".gui";
+    return "/ida." + instanceId + ".gui";
 }
 
-} // namespace sirius
+} // namespace ida

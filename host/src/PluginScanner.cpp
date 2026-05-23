@@ -3,7 +3,7 @@
 
 #include <cstdio>
 
-namespace sirius
+namespace ida
 {
 
 namespace
@@ -159,4 +159,4 @@ std::vector<std::string> PluginScanner::registeredFormatNames() const
     return names;
 }
 
-} // namespace sirius
+} // namespace ida

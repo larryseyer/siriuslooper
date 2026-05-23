@@ -1,6 +1,6 @@
 #include "ida/FlacTapeSink.h"
 
-namespace sirius
+namespace ida
 {
 
 FlacTapeSink::FlacTapeSink (juce::File tapesDir, double sampleRate, std::size_t queueCapacity)
@@ -204,4 +204,4 @@ void FlacTapeSink::finalizeTape (std::int64_t tapeId)
     writers_.erase (it); // unique_ptr<AudioFormatWriter> dtor flushes + finalizes
 }
 
-} // namespace sirius
+} // namespace ida

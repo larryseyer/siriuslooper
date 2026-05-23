@@ -4,7 +4,7 @@
 #include <span>
 #include <string>
 
-namespace sirius
+namespace ida
 {
 
 /// SHA-256 of the given byte span, returned as a 64-character lowercase
@@ -20,4 +20,4 @@ namespace sirius
 /// invocation owns its own stack-resident hashing state.
 std::string sha256Hex (std::span<const std::byte> data);
 
-} // namespace sirius
+} // namespace ida

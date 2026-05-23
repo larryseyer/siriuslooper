@@ -11,7 +11,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-namespace sirius
+namespace ida
 {
 
 namespace
@@ -144,4 +144,4 @@ void SharedMemoryRegion::teardown() noexcept
     bytes_ = 0;
 }
 
-} // namespace sirius
+} // namespace ida

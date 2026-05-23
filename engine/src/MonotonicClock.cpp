@@ -2,7 +2,7 @@
 
 #include <chrono>
 
-namespace sirius
+namespace ida
 {
 
 std::int64_t SteadyMonotonicClock::nowNanos() const
@@ -11,4 +11,4 @@ std::int64_t SteadyMonotonicClock::nowNanos() const
     return std::chrono::duration_cast<std::chrono::nanoseconds> (since).count();
 }
 
-} // namespace sirius
+} // namespace ida

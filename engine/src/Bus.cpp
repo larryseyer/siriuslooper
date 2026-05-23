@@ -11,7 +11,7 @@
 #include <optional>
 #include <utility>
 
-namespace sirius
+namespace ida
 {
 
 Bus::Bus (BusId id, BusConfig config)
@@ -261,4 +261,4 @@ float* Bus::mixBufferChannel (int c) const noexcept
          + static_cast<std::size_t> (c) * kMaxBusMixSamples;
 }
 
-} // namespace sirius
+} // namespace ida

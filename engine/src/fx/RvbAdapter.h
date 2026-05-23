@@ -5,10 +5,10 @@
 #include <otto/effects/PlayerEffects.h>
 #include <otto/effects/PlayerIRConvolution.h>
 
-namespace sirius
+namespace ida
 {
 
-/// Sirius-side adapter wrapping OTTO's header-only `PlayerIRConvolution`.
+/// IDA-side adapter wrapping OTTO's header-only `PlayerIRConvolution`.
 /// T3d of the P7 internal-FX umbrella — the last of four
 /// (EQ → CMP → DLY → RVB) adapter implementations that make the `Internal`
 /// `EffectChainEntry` case actually do DSP.
@@ -86,4 +86,4 @@ private:
     bool                               prepared_ = false;
 };
 
-} // namespace sirius
+} // namespace ida

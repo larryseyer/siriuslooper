@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cassert>
 
-namespace sirius
+namespace ida
 {
 
 namespace
@@ -161,4 +161,4 @@ std::size_t DirectLayer::processedRouteCount() const noexcept
     return processedRoutes_.size();
 }
 
-} // namespace sirius
+} // namespace ida

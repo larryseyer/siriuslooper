@@ -2,7 +2,7 @@
 
 #include "ida/Sha256.h"
 
-namespace sirius
+namespace ida
 {
 
 bool VersionPinningRecord::matches (const VersionPinningRecord& other) const noexcept
@@ -32,4 +32,4 @@ VersionPinningRecord makeVersionPinningRecord (const PluginDescriptor& descripto
     return r;
 }
 
-} // namespace sirius
+} // namespace ida

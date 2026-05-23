@@ -100,7 +100,7 @@ Create `core/include/ida/TapeDescriptor.h`:
 
 #include <string>
 
-namespace sirius
+namespace ida
 {
 
 /// One entry in the project tape pool: light metadata naming a tape that exists
@@ -119,7 +119,7 @@ struct TapeDescriptor
     }
 };
 
-} // namespace sirius
+} // namespace ida
 ```
 
 - [ ] **Step 5: Create `TapePool.h`**
@@ -136,7 +136,7 @@ Create `core/include/ida/TapePool.h`:
 #include <string>
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 /// The project's pool of tapes — an ordered list, minimum one, unbounded
@@ -179,7 +179,7 @@ private:
     std::int64_t                nextId_ { 1 };
 };
 
-} // namespace sirius
+} // namespace ida
 ```
 
 - [ ] **Step 6: Create `TapePool.cpp` (default ctor + accessors only for now)**
@@ -194,7 +194,7 @@ Create `core/src/TapePool.cpp`:
 #include <unordered_set>
 #include <utility>
 
-namespace sirius
+namespace ida
 {
 
 TapePool::TapePool()
@@ -222,7 +222,7 @@ const TapeDescriptor& TapePool::at (int index) const
     return tapes_.at (static_cast<std::size_t> (index));
 }
 
-} // namespace sirius
+} // namespace ida
 ```
 
 - [ ] **Step 7: Add `TapePool.cpp` to `core/CMakeLists.txt`**
@@ -283,7 +283,7 @@ Expected: FAIL — link error, `TapePool::add` undefined.
 
 - [ ] **Step 3: Implement `add`**
 
-Add to `core/src/TapePool.cpp` (inside `namespace sirius`, after `at`):
+Add to `core/src/TapePool.cpp` (inside `namespace ida`, after `at`):
 
 ```cpp
 TapeId TapePool::add (std::string name)

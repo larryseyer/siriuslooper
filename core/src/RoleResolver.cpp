@@ -1,6 +1,6 @@
 #include "ida/RoleResolver.h"
 
-namespace sirius
+namespace ida
 {
 
 std::vector<ConstituentId>
@@ -41,4 +41,4 @@ RoleSlot resolveFirst (const RoleSlot& slot,
     return slot.withFilledBy (candidates.front());
 }
 
-} // namespace sirius
+} // namespace ida

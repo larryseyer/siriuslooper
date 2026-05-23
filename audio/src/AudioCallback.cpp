@@ -20,7 +20,7 @@ namespace
     constexpr int kMaxScratchChannels = 32;
 }
 
-namespace sirius
+namespace ida
 {
 
 AudioCallback::AudioCallback (EngineConfig config) noexcept
@@ -252,4 +252,4 @@ void AudioCallback::audioDeviceStopped()
     lastCallbackElapsedSec_.store (0.0, std::memory_order_release);
 }
 
-} // namespace sirius
+} // namespace ida

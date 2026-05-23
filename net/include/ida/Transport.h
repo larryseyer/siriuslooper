@@ -6,7 +6,7 @@
 
 #include <variant>
 
-namespace sirius
+namespace ida
 {
 
 /// The three kinds of message that cross the ensemble network (white paper
@@ -54,4 +54,4 @@ using EnsembleMessage = std::variant<LmcTimeAnnouncement,
                                      MarkerEvent,
                                      TransportStateChange>;
 
-} // namespace sirius
+} // namespace ida

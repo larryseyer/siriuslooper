@@ -62,14 +62,14 @@ These apply across every milestone unless that milestone explicitly opts out.
 1. **Foundation first, skeletons second.** Audio I/O wiring and the realtime-safety contract (M1) land before any mixer / direct-layer / channel-strip class. Building shape without substance locks in bad assumptions about buffer flow.
 2. **Out-of-process plug-in hosting from the first plug-in instance.** V7 §5.6 / §15.6 / §17.4 mandate no in-process fallback. The IPC framework (M7) lands before any plug-in code executes on the audio thread, so no in-process debt accumulates.
 3. **Solo-first, ensemble last.** Single-machine path solid before vector clocks, partition recovery, peer transport, or crypto. The white paper already commits to "graceful degradation to solo recording" — solo is the foundation, not a degraded mode.
-4. **Clean break to SAF (M11).** No parallel-format era. The existing SessionFormat v2 JSON is demo-state-only with no real users (memory rule "no shipping language" confirms). The v1-rejection precedent at `persistence/src/SessionFormat.cpp:671` is the team's established posture on format churn. SAF replaces SessionFormat in one milestone.
-5. **TDD per milestone.** Each milestone enumerates the tests that land *with* its code, not after. CLAUDE.md rule #9 ("tests verify intent, not just behavior") applies. Five subsystems with zero current tests — Mixer, MIDI, Direct Layer, Permissions, on-disk SAF — get tests built alongside the production code in their respective milestones.
+4. **Clean break to IAF (M11).** No parallel-format era. The existing SessionFormat v2 JSON is demo-state-only with no real users (memory rule "no shipping language" confirms). The v1-rejection precedent at `persistence/src/SessionFormat.cpp:671` is the team's established posture on format churn. IAF replaces SessionFormat in one milestone.
+5. **TDD per milestone.** Each milestone enumerates the tests that land *with* its code, not after. CLAUDE.md rule #9 ("tests verify intent, not just behavior") applies. Five subsystems with zero current tests — Mixer, MIDI, Direct Layer, Permissions, on-disk IAF — get tests built alongside the production code in their respective milestones.
 6. **macOS standalone → iOS AUv3 → Windows → Linux**, strict completion order per memory `feedback_mac_first_linux_windows_last`. iOS is its own milestone (M23) after macOS V7 is otherwise complete. Windows + Linux are not in this plan's scope; they follow in a separate plan after M24.
 7. **`feedback-hide-internals-from-musician` UI cleanup lands late (M22).** The operator-facing vocabulary refactor is scheduled after the engine model has stopped moving. Refactoring UI strings while the underlying data model is also moving doubles the work and risks losing operator-facing meaning twice.
 8. **UMP-shaped MIDI from day one (M9).** Tape MIDI event payload is a UMP discriminated union from the first MIDI commit, per V4's explicit warning and V7 §6.12's full specification. No 3-byte (status, data1, data2) intermediate shape; no later widening.
 9. **Plug-in IPC carries LMC timestamps in the header.** Every shared-memory message between engine and plug-in host process is LMC-stamped. The LMC is the single time discipline across processes; no per-process time domains.
 10. **NotificationBus is the engine→UI truthfulness channel (M6).** Built once; used by failure semantics (V5 §17.9), inclusive design surfaces (V4 §16.10), capacity warnings, partition events. Engine writes via lock-free SPSC; UI drains on its own thread.
-11. **Atomic save via tmp+rename** wherever durability matters: SAF container save (M11), manifest update, plug-in state migration. POSIX `rename`; Windows `MoveFileEx` with `MOVEFILE_REPLACE_EXISTING`. Same primitive everywhere.
+11. **Atomic save via tmp+rename** wherever durability matters: IAF container save (M11), manifest update, plug-in state migration. POSIX `rename`; Windows `MoveFileEx` with `MOVEFILE_REPLACE_EXISTING`. Same primitive everywhere.
 12. **Capability tier governs per-milestone tunables.** Flush intervals (M11), video render strategy (M12), tape format selection (M11/M13), plug-in archival mode default (M8). `app/CapabilityTier.cpp` is the single source of truth for tier choice; each milestone wires its tier-dependent defaults through it.
 
 ---
@@ -90,7 +90,7 @@ Source: the three Explore-agent inventories run 2026-05-17 against engine/core/h
 - `engine/include/ida/LockFreeSpscQueue.h` — pre-built lock-free queue (used by M6, M7)
 - `engine/include/ida/Asrc.h` — libsoxr variable-rate, allocation-free `process` (used by M1)
 - `engine/include/ida/RetroactiveRing.h`, `OverloadProtection.h`, `AudioDeviceCalibration.h` — supporting infrastructure
-- `persistence/include/ida/TapeStore.h` + impl — content-addressed `<sha256>.tape` blob store (carried into SAF as the `tapes/` subdirectory contents)
+- `persistence/include/ida/TapeStore.h` + impl — content-addressed `<sha256>.tape` blob store (carried into IAF as the `tapes/` subdirectory contents)
 - `net/include/ida/LmcElection.h` + impl — Marzullo interval-intersection + tier dominance + anchor override (extended in M16)
 - `net/include/ida/SessionMerge.h` + impl — union-merge CRDT (refactored in M16 to use vector clocks instead of single `editTimestamp`)
 - `host/src/PluginScanner.cpp` — `juce::KnownPluginList` scanner (carried into M7 as the plug-in discovery source for the out-of-process loader)
@@ -109,7 +109,7 @@ Source: the three Explore-agent inventories run 2026-05-17 against engine/core/h
 - No tape allocation call site (`Tape<T>` template instantiated only in tests) — built in M3
 - No in-process plug-in hosting (scanner only; V7 mandates out-of-process anyway) — out-of-process built in M7
 - No `MixSnapshot` Constituent subtype — built in M10
-- No SAF directory format (current is single JSON via `SessionFormat.cpp`) — built in M11
+- No IAF directory format (current is single JSON via `SessionFormat.cpp`) — built in M11
 - No video tier-aware rendering pipeline — built in M12
 - No file I/O readers/writers beyond JSON session (no WAV/FLAC/SMF/UMP-JSONL/ProRes encoders) — built in M13
 - No automatic direct-routing inference — built in M14
@@ -121,7 +121,7 @@ Source: the three Explore-agent inventories run 2026-05-17 against engine/core/h
 - No iOS AUv3 target — built in M23
 - Operator-facing UI exposes "tape" vocabulary heavily (48 hits in `MainComponent.cpp` alone), violating `feedback-hide-internals-from-musician` — cleaned in M22
 
-**Zero-test subsystems** (test files land in the milestone that builds the subsystem): Mixer (M2-M5), MIDI (M9), Direct Layer (M4), Permissions (M16), on-disk SAF format (M11).
+**Zero-test subsystems** (test files land in the milestone that builds the subsystem): Mixer (M2-M5), MIDI (M9), Direct Layer (M4), Permissions (M16), on-disk IAF format (M11).
 
 ---
 
@@ -253,7 +253,7 @@ bash bash/autotest.sh                                                           
 
 **Risks & open decisions.**
 
-- `Control` SignalType: V3 lists Audio/MIDI/Video/File explicitly but the InputKind enum has `Control`, `ParameterAutomation`, `Transport`, `System`. Decision: those map to `SignalType::File` for now (parameter tapes are JSONL files in SAF). Revisit during M11 if SAF format design forces a split.
+- `Control` SignalType: V3 lists Audio/MIDI/Video/File explicitly but the InputKind enum has `Control`, `ParameterAutomation`, `Transport`, `System`. Decision: those map to `SignalType::File` for now (parameter tapes are JSONL files in IAF). Revisit during M11 if IAF format design forces a split.
 - The skeleton `InputMixer::process_buffer` body should assert-false rather than return silently, so a buggy call site in M1's audio thread is loud, not silent.
 
 **Execution mode.** `orchestrator+subagents` (one Backend Architect pass over the type declarations before commit, since the InputMixer/OutputMixer/Channel shapes constrain M3-M14).
@@ -295,7 +295,7 @@ bash bash/autotest.sh                                                           
 **Tests landing in this milestone.**
 
 - `InputMixerTests`: channel-driven allocation per TapeMode; per-input `enabled` flag suppresses channel processing; `rawDirectMonitor` flag triggers Direct Layer route (Direct Layer arrives in M4; until then assert the route is *requested*, not satisfied).
-- `TapeWriterTests`: SPSC queue from audio thread to writer thread; writer thread flushes to `TapeStore` at tier-appropriate interval (interval values are tier-stubbed; final values land in M11 with SAF).
+- `TapeWriterTests`: SPSC queue from audio thread to writer thread; writer thread flushes to `TapeStore` at tier-appropriate interval (interval values are tier-stubbed; final values land in M11 with IAF).
 
 **Sessions 1-3 broken out.**
 
@@ -562,7 +562,7 @@ bash bash/autotest.sh
 
 - `host/include/ida/PluginDeterminismFlag.h` defines `enum class ArchivalMode { DeterminismContract, WetCapture, VersionPinning }`. Default for new sessions: `VersionPinning` (per V5 §8.3 default disposition).
 - CLAP host extension in `ida_plugin_host`: loads `.clap` bundles via the CLAP API; queries `clap_plugin->is_deterministic` (or equivalent host extension if CLAP exposes one; otherwise treat as non-deterministic by default).
-- `WetCapture` mode: tape writer adds a `<channelId>.wet.tape` alongside the dry tape; stored in SAF's `tapes/` subdir (interop with M11).
+- `WetCapture` mode: tape writer adds a `<channelId>.wet.tape` alongside the dry tape; stored in IAF's `tapes/` subdir (interop with M11).
 - `VersionPinning` mode: plug-in version, settings hash (SHA-256 of state blob), oversampling rate, declared internal state hash stored in the session manifest; on reopen, mismatch warns operator via NotificationBus.
 - Constituent state machine extended: `Valid | Broken | Invalid`. `Broken` = references missing tape segment; `Invalid` = anchor/bounds contradict parent. Rendering treats both as silence; identity preserved.
 - LMC calibration corruption: on session load, validate calibration table checksum; on failure, trigger fresh loopback calibration via existing `AudioDeviceCalibration`; emit NotificationBus event during recalibration.
@@ -704,7 +704,7 @@ bash bash/autotest.sh
 - `RenderPipeline::activeReadsAt` recognizes MixSnapshot Constituents and emits a "snapshot active" marker that `AudioCallback` consumes to call `OutputMixer::recall_snapshot(snapshotId, transition, duration)`.
 - `OutputMixer::capture_snapshot(name)` returns a `SnapshotId` capturing current state; `OutputMixer::recall_snapshot(snapshotId, transition, duration)` applies a snapshot with the requested transition.
 - Cut transition is instantaneous; LinearFade interpolates parameter values linearly over duration; Curve is a stub returning Cut behavior with a `TODO: M10.b` log line (curve representation is a separate sub-design — flagged for a future session).
-- Tests assert: capture-then-recall yields byte-identical state; LinearFade midpoint = arithmetic mean of endpoints; MixSnapshot Constituents serialize through SAF (M11 dependency — M10's serialization lands as a SAF format addition).
+- Tests assert: capture-then-recall yields byte-identical state; LinearFade midpoint = arithmetic mean of endpoints; MixSnapshot Constituents serialize through IAF (M11 dependency — M10's serialization lands as a IAF format addition).
 
 **Dependencies.** M5 (OutputMixer state to capture), M9 (MIDI strip state included in snapshots).
 
@@ -747,7 +747,7 @@ bash bash/autotest.sh
 
 ### M11 — IDA Archive Format (clean break from JSON SessionFormat)
 
-**Goal.** Implement V7 §15.7 in full: `.saf` ZIP container; `manifest.json` with SemVer; reader version-check policy; `tapes/` subdir with tier-appropriate codecs; `constituents.json` flat-array-keyed-by-ID (refactor from current nested tree); `plugins.json` with state migration; `permissions.json`; atomic save via tmp+rename. Delete the existing JSON SessionFormat after SAF round-trip is proven.
+**Goal.** Implement V7 §15.7 in full: `.saf` ZIP container; `manifest.json` with SemVer; reader version-check policy; `tapes/` subdir with tier-appropriate codecs; `constituents.json` flat-array-keyed-by-ID (refactor from current nested tree); `plugins.json` with state migration; `permissions.json`; atomic save via tmp+rename. Delete the existing JSON SessionFormat after IAF round-trip is proven.
 
 **Acceptance criteria.**
 
@@ -779,11 +779,11 @@ bash bash/autotest.sh
 - `tests/SessionFormatTests.cpp` (DELETED)
 - `tests/SafContainerTests.cpp`, `SafManifestTests.cpp`, `SafConstituentSerializerTests.cpp`, `SafPluginSerializerTests.cpp`, `SafRoundTripTests.cpp` (new)
 - `app/CapabilityTier.cpp` (modified: expose flush-interval tunables per tier)
-- `app/MainComponent.cpp` (modified: Save/Load buttons wire to SAF, not SessionFormat)
-- `bash/smoke-persistence.sh` (modified: round-trip a SAF file instead of JSON)
+- `app/MainComponent.cpp` (modified: Save/Load buttons wire to IAF, not SessionFormat)
+- `bash/smoke-persistence.sh` (modified: round-trip a IAF file instead of JSON)
 - `external/miniz/` or use `juce::ZipFile` (decide first session — `juce::ZipFile` keeps deps minimal)
 
-**Existing utilities to reuse.** `TapeStore` (contents live in SAF's `tapes/` subdir), `CapabilityTier` (drives format selection), `juce::ZipFile` (container), `juce::JSON` (manifest + index files), `Constituent` (serialized), Constituent's existing structural-sharing logic (preserved by flat-array-with-IDs serialization).
+**Existing utilities to reuse.** `TapeStore` (contents live in IAF's `tapes/` subdir), `CapabilityTier` (drives format selection), `juce::ZipFile` (container), `juce::JSON` (manifest + index files), `Constituent` (serialized), Constituent's existing structural-sharing logic (preserved by flat-array-with-IDs serialization).
 
 **Tests landing in this milestone.**
 
@@ -807,7 +807,7 @@ Sessions 4-N: tape format selection per tier (Session 4); plug-in serializer + m
 ctest --test-dir build -R Saf
 bash bash/autotest.sh
 APP_BUNDLE="build-xcode/app/IDA_artefacts/Release/IDA.app" \
-  bash bash/smoke-persistence.sh                # SAF round-trip
+  bash bash/smoke-persistence.sh                # IAF round-trip
 grep -r "SessionFormat\|sessionformat" .         # expect zero hits after milestone close
 ```
 
@@ -839,7 +839,7 @@ grep -r "SessionFormat\|sessionformat" .         # expect zero hits after milest
 - Tests cover each strategy; FrameBlending midpoint = arithmetic mean; MotionCompensated produces non-trivial intermediate frame (not just nearest).
 - Tier override surfaces in NotificationBus when GPU budget exceeded (Lavish strategy falls back to FrameBlending automatically).
 
-**Dependencies.** M5 (OutputMixer routes video out), M11 (SAF stores video tapes; format selection per tier).
+**Dependencies.** M5 (OutputMixer routes video out), M11 (IAF stores video tapes; format selection per tier).
 
 **Files touched.**
 
@@ -896,7 +896,7 @@ bash bash/autotest.sh
 - Export runs on a non-realtime thread; progress surfaces via NotificationBus.
 - Tests cover round-trip for each format.
 
-**Dependencies.** M9 (UMP shape exists), M11 (SAF stores files in `tapes/` subdir), M12 (video read/write codec selection aligned).
+**Dependencies.** M9 (UMP shape exists), M11 (IAF stores files in `tapes/` subdir), M12 (video read/write codec selection aligned).
 
 **Files touched.**
 
@@ -1055,7 +1055,7 @@ bash bash/autotest.sh
 - `net/include/ida/VectorClock.h` + impl: `std::array<uint64_t, MAX_PEERS>` with happens-before / concurrent comparison operators.
 - `net/include/ida/CausalHoldingQueue.h` + impl: incoming messages buffered until causal predecessors arrive; graduation when predecessors present; configurable timeout (default 5s → escalate to performer via NotificationBus).
 - `net/include/ida/PartitionForkResolver.h` + impl: rejoin → vector-clock summary exchange → causal-order replay → unambiguous-merge vs semantic-conflict outcome → conflict-slot marked forked, both candidates surfaced.
-- `net/include/ida/AnchorAuthority.h` + impl: anchor flag in `permissions.json` (M11 SAF integration); anchor designation changeable mid-session by anchor consent; without anchor, causal-time last-writer-wins.
+- `net/include/ida/AnchorAuthority.h` + impl: anchor flag in `permissions.json` (M11 IAF integration); anchor designation changeable mid-session by anchor consent; without anchor, causal-time last-writer-wins.
 - `net/include/ida/SplitReplication.h` + impl: metadata channel (full Constituent graph; always carried) and media channel (tape data; pulled on first playback); cache per session.
 - `net/include/ida/PermissionsModel.h` + impl: owner-writable, ensemble-readable, explicit grant for write-sharing; revocations immediate + symmetric (revoked peer's local replica invalidated); observer-node and ensemble-writable-namespace as opt-in modes.
 - Refactor `net/src/SessionMerge.cpp` to use vector clocks instead of `editTimestamp`.
@@ -1063,7 +1063,7 @@ bash bash/autotest.sh
 - Fork-resolution UI surfaces in Preparation tab.
 - Tests for vector-clock semantics, holding queue, partition + rejoin scenarios, anchor designation, split replication, permission enforcement.
 
-**Dependencies.** M11 (SAF stores permissions.json), M6 (NotificationBus for partition / fork events).
+**Dependencies.** M11 (IAF stores permissions.json), M6 (NotificationBus for partition / fork events).
 
 **Files touched.**
 
@@ -1240,7 +1240,7 @@ bash bash/autotest.sh
 - `tests/validation/BlindListeningFidelityTest.cpp`: programmatic blind A/B between original and captured-then-rendered (uses null test — subtraction yields silence within noise floor)
 - `tests/validation/ArchivalFidelityTest.cpp`: save → reopen → render → byte-compare against pre-save render; assert exact match for deterministic plug-in chains, within wet-capture tolerance for non-deterministic
 
-**Dependencies.** M11 (SAF for archival test), M16 (ensemble for latency-compensation test), most other milestones (each test exercises an end-to-end path).
+**Dependencies.** M11 (IAF for archival test), M16 (ensemble for latency-compensation test), most other milestones (each test exercises an end-to-end path).
 
 **Files touched.**
 

@@ -1,6 +1,6 @@
 #pragma once
 
-namespace sirius
+namespace ida
 {
 
 /// Per-instance archival strategy for handling plug-in non-determinism
@@ -16,4 +16,4 @@ enum class ArchivalMode
     VersionPinning,
 };
 
-} // namespace sirius
+} // namespace ida

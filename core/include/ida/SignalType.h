@@ -1,6 +1,6 @@
 #pragma once
 
-namespace sirius
+namespace ida
 {
 
 /// Signal modality tracked alongside every channel, tape, and Constituent
@@ -21,4 +21,4 @@ enum class SignalType
     File
 };
 
-} // namespace sirius
+} // namespace ida

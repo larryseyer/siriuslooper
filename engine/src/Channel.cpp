@@ -2,7 +2,7 @@
 
 #include "ida/ProcessingChain.h"
 
-namespace sirius
+namespace ida
 {
 
 Channel::Channel (ChannelId id_,
@@ -17,4 +17,4 @@ Channel::Channel (ChannelId id_,
 {
 }
 
-} // namespace sirius
+} // namespace ida

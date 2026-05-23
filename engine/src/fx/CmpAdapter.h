@@ -5,10 +5,10 @@
 #include <otto/effects/PlayerEffects.h>
 #include <otto/effects/PlayerCompressor.h>
 
-namespace sirius
+namespace ida
 {
 
-/// Sirius-side adapter wrapping OTTO's header-only `PlayerCompressor`. T3b
+/// IDA-side adapter wrapping OTTO's header-only `PlayerCompressor`. T3b
 /// of the P7 internal-FX umbrella — the second of four (EQ → CMP → DLY →
 /// RVB) adapter implementations that make the `Internal` `EffectChainEntry`
 /// case actually do DSP.
@@ -59,4 +59,4 @@ private:
     bool                               prepared_ = false;
 };
 
-} // namespace sirius
+} // namespace ida

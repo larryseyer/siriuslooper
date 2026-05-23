@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace sirius
+namespace ida
 {
 
 namespace
@@ -60,4 +60,4 @@ std::map<std::int64_t, ConstituentVersion> activeVersions (const MergeableSessio
     return active;
 }
 
-} // namespace sirius
+} // namespace ida

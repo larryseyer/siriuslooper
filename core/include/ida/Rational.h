@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <string>
 
-namespace sirius
+namespace ida
 {
 
 /// Exact rational number — the arithmetic primitive of the conceptual-time
@@ -77,4 +77,4 @@ private:
     std::int64_t den { 1 };
 };
 
-} // namespace sirius
+} // namespace ida

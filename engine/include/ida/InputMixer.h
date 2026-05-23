@@ -17,9 +17,9 @@
 #include <unordered_map>
 #include <vector>
 
-namespace sirius { namespace persistence { class TapeStore; } }
+namespace ida { namespace persistence { class TapeStore; } }
 
-namespace sirius
+namespace ida
 {
 
 class NotificationBus;
@@ -326,4 +326,4 @@ private:
     std::vector<char>               tapeTouched_;
 };
 
-} // namespace sirius
+} // namespace ida

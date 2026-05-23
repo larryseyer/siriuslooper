@@ -9,7 +9,7 @@
 #include <cstddef>
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 class Lmc;
@@ -219,4 +219,4 @@ private:
     std::atomic<double> lastCallbackElapsedSec_  { 0.0 };
 };
 
-} // namespace sirius
+} // namespace ida

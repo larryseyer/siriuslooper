@@ -20,7 +20,7 @@ Mixing, EQ, dynamics, and mastering live downstream in a DAW. The looper
 handles arrangement — and arrangement is a creative act, not a processing one.
 
 For the full design rationale, conceptual time model, and architectural
-constraints, read the [**Whitepaper**](docs/Sirius%20Looper%20Whitepaper%20V2.md).
+constraints, read the [**Whitepaper**](docs/archive/IDA_Whitepaper_V2_archive.md).
 The Whitepaper is the canonical "why"; this README is the operator-facing
 "what."
 
@@ -49,7 +49,7 @@ context and the UI follows.
 | **Timeline view** | Horizontal ruler with an amber playhead chevron; one row per input tape; Pills laid out left-to-right. |
 
 For the full glossary and step-by-step workflows, read the
-[**User Guide**](docs/Sirius%20Looper%20User%20Guide.md).
+[**User Guide**](docs/IDA_User_Guide.md).
 
 ---
 
@@ -73,8 +73,8 @@ Requires CMake 3.22+, a C++20 toolchain, and Ninja. Vendored dependencies
 
 | File | Purpose |
 | --- | --- |
-| [`docs/IDA Whitepaper V7.md`](docs/Sirius%20Looper%20Whitepaper%20V7.md) | Canonical "why": architecture, conceptual time, design philosophy. **Start here.** |
-| [`docs/IDA User Guide.md`](docs/Sirius%20Looper%20User%20Guide.md) | Operator-facing "how": gestures, workflows, glossary. |
+| [`docs/IDA Whitepaper V7.md`](docs/IDA_Whitepaper_V8.md) | Canonical "why": architecture, conceptual time, design philosophy. **Start here.** |
+| [`docs/IDA User Guide.md`](docs/IDA_User_Guide.md) | Operator-facing "how": gestures, workflows, glossary. |
 | [`docs/archive/`](docs/archive/) | Superseded whitepaper drafts (V1–V6), kept for history; not maintained. |
 | [`continue.md`](continue.md) | Rolling session handoff: what's working, what's next. |
 | [`todo.md`](todo.md) | Permanent design backlog and deferred work. |

@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <memory>
 
-namespace sirius
+namespace ida
 {
 
 class MonotonicClock;
@@ -100,4 +100,4 @@ private:
     std::atomic<std::int64_t> sampleRateHz_ { 0 };
 };
 
-} // namespace sirius
+} // namespace ida

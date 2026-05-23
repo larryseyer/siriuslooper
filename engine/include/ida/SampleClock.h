@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <stdexcept>
 
-namespace sirius
+namespace ida
 {
 
 /// Converts between a count of audio samples and elapsed time.
@@ -38,4 +38,4 @@ private:
     Rational samplesPerSecond_;
 };
 
-} // namespace sirius
+} // namespace ida

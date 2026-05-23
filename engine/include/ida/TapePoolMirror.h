@@ -3,7 +3,7 @@
 #include "ida/TapePool.h"
 #include "ida/InputMixer.h"
 
-namespace sirius
+namespace ida
 {
 
 /// Registers every pool tape that is not already a mixer tape terminal. The pool
@@ -23,4 +23,4 @@ inline void mirrorTapePool (const TapePool& pool, InputMixer& mixer)
         }
 }
 
-} // namespace sirius
+} // namespace ida

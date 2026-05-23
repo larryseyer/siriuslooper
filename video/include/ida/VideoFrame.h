@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 /// The pixel layouts the video tape format supports. The list is deliberately
@@ -51,4 +51,4 @@ struct VideoFrame
     std::vector<std::uint8_t> pixels;
 };
 
-} // namespace sirius
+} // namespace ida

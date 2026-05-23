@@ -27,7 +27,7 @@ namespace
         entry.descriptor.format   = ida::PluginFormat::Clap;
         entry.descriptor.uniqueId = uniqueId;
         entry.descriptor.version  = "1.0.0";
-        entry.descriptor.name     = "Sirius Synthetic Identity";
+        entry.descriptor.name     = "IDA Synthetic Identity";
         entry.descriptor.filePath = IDA_SYNTHETIC_CLAP_PATH;
         entry.displayName         = "Synthetic";
         entry.bypassed            = false;

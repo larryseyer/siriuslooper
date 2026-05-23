@@ -9,7 +9,7 @@
 #include <fstream>
 #include <stdexcept>
 
-namespace sirius
+namespace ida
 {
 
 struct OpenFile { std::unique_ptr<juce::FileOutputStream> stream; };
@@ -209,4 +209,4 @@ void TapeWriter::writePendingMessages()
     }
 }
 
-} // namespace sirius
+} // namespace ida

@@ -1,6 +1,6 @@
 #include "ida/PerformanceView.h"
 
-namespace sirius
+namespace ida
 {
 
 void PerformanceView::setState (PerformanceViewState newState)
@@ -33,4 +33,4 @@ void PerformanceView::paint (juce::Graphics& g)
     g.drawText (state_.cycleStatus, area, juce::Justification::centred, false);
 }
 
-} // namespace sirius
+} // namespace ida

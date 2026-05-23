@@ -95,7 +95,7 @@ Create `audio/include/ida/FlacTapeSink.h`:
 #include <thread>
 #include <unordered_map>
 
-namespace sirius
+namespace ida
 {
 
 /// Per-message ceiling on the inline stereo payload. 4096 stereo float32 frames
@@ -187,7 +187,7 @@ private:
     std::unordered_map<std::int64_t, OpenTape> writers_;
 };
 
-} // namespace sirius
+} // namespace ida
 ```
 
 - [ ] **Step 2: Add the test source to CMake**
@@ -215,7 +215,7 @@ namespace
 juce::File makeTempTapesDir()
 {
     auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                   .getChildFile ("sirius-flac-test-" + juce::String (juce::Time::getHighResolutionTicks()));
+                   .getChildFile ("ida-flac-test-" + juce::String (juce::Time::getHighResolutionTicks()));
     dir.createDirectory();
     return dir;
 }
@@ -302,7 +302,7 @@ Create `audio/src/FlacTapeSink.cpp`:
 
 #include <algorithm>
 
-namespace sirius
+namespace ida
 {
 
 FlacTapeSink::FlacTapeSink (juce::File tapesDir, double sampleRate, std::size_t queueCapacity)
@@ -454,7 +454,7 @@ void FlacTapeSink::finalizeTape (std::int64_t tapeId)
     writers_.erase (it); // unique_ptr<AudioFormatWriter> dtor flushes + finalizes
 }
 
-} // namespace sirius
+} // namespace ida
 ```
 
 - [ ] **Step 6: Build and run the test to verify it passes**
@@ -754,7 +754,7 @@ git push origin master
 
 ## Self-Review
 
-- **Spec coverage:** Slice-3 spec requires (a) route→tape actually records [Tasks 2,4,5], (b) per-tape append-only FLAC under `<Sirius>/tapes` [Task 2 + Task 5 tapes dir], (c) RT-safe `ITapeSink` over a worker [Task 2], (d) SHA-256/manifest deferred [documented Task 6]. Covered.
+- **Spec coverage:** Slice-3 spec requires (a) route→tape actually records [Tasks 2,4,5], (b) per-tape append-only FLAC under `<IDA>/tapes` [Task 2 + Task 5 tapes dir], (c) RT-safe `ITapeSink` over a worker [Task 2], (d) SHA-256/manifest deferred [documented Task 6]. Covered.
 - **Type consistency:** `FlacTapeSink` ctor `(juce::File, double, std::size_t)`, `setSampleRate(double)`, `closeTape(TapeId)`, `deliverTapeBlock(TapeId,const float*,const float*,int)` — identical across header (Task 2), tests (Tasks 2,3), and MainComponent (Task 5). `TapeId::value()` used for all int64 keys (matches `core/include/ida/TapeId.h`).
 - **Placeholder scan:** every code step shows full code; no TBD/TODO in code (the deferrals live in `todo.md`, per project rule).
 - **RT-safety:** `deliverTapeBlock` does only stack-POD construction + one wait-free `queue_.push` + a relaxed atomic increment; no alloc/lock/I/O/notify on the audio thread. Worker owns all FLAC state; no shared-state lock. Matches `docs/RT_SAFETY_CONTRACT.md`.

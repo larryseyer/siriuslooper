@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 /// Captured-state snapshot recorded with a promotion entry so that undoing
@@ -113,4 +113,4 @@ private:
     std::size_t maxDepth_;
 };
 
-} // namespace sirius
+} // namespace ida

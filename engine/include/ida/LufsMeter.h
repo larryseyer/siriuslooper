@@ -21,7 +21,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 class LufsMeter
@@ -286,4 +286,4 @@ private:
     std::atomic<float> integrated_ { kSilenceLufs };
 };
 
-} // namespace sirius
+} // namespace ida

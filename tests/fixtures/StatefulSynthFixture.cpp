@@ -40,11 +40,11 @@ constexpr const char* kFeatures[] = {
 const clap_plugin_descriptor_t kDescriptor = {
     CLAP_VERSION_INIT,
     "com.ida.synthetic.statefulsynth",
-    "Sirius Stateful Synth Fixture",
+    "IDA Stateful Synth Fixture",
     "IDA Tests",
-    "https://example.invalid/sirius",
-    "https://example.invalid/sirius",
-    "https://example.invalid/sirius",
+    "https://example.invalid/ida",
+    "https://example.invalid/ida",
+    "https://example.invalid/ida",
     "1.0.0",
     "Stateful synth fixture for M8 S2 state-IPC round-trip tests.",
     kFeatures

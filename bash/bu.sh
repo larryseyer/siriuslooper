@@ -16,7 +16,7 @@ SOURCE="/Users/larryseyer/IDA"
 DEST_DIR="/Users/larryseyer/Dropbox/Automagic Art/Source Backup/IDA Backup"
 TIMESTAMP=$(date +"%Y_%m_%d")
 MESSAGE=$(echo "$1" | sed 's/ /_/g')
-ZIP_FILE="$DEST_DIR/Sirius_${TIMESTAMP}_${MESSAGE}.zip"
+ZIP_FILE="$DEST_DIR/IDA_${TIMESTAMP}_${MESSAGE}.zip"
 cd "$SOURCE" || exit 1
 zip -r "$ZIP_FILE" . \
     -x "build/*" -x "build/" \

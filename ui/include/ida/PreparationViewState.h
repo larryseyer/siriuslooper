@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 /// One row in the Preparation view's tree readout — the dense, "fine and
@@ -40,4 +40,4 @@ struct PreparationViewState
 /// Computes the Preparation-view state from a Constituent tree.
 PreparationViewState selectPreparationView (const Constituent& root);
 
-} // namespace sirius
+} // namespace ida

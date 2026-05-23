@@ -91,7 +91,7 @@ Expected: build failure, `'sirius/ChannelDefaults.h' file not found`.
 
 #include "ida/TapeMode.h"
 
-namespace sirius
+namespace ida
 {
 
 /// Initial-value bundle for channels created from a given input. Carried on
@@ -110,7 +110,7 @@ struct ChannelDefaults
     bool defaultEnabled { true };
 };
 
-} // namespace sirius
+} // namespace ida
 ```
 
 Note: `TapeMode` lives in `engine/include/ida/TapeMode.h`, but `ChannelDefaults` is in `core/`. The `#include "ida/TapeMode.h"` resolves because the `IdaEngine` target's `target_include_directories` exposes `engine/include` publicly. This is acceptable for M3 — if the include direction ever needs to reverse (engine depending on core only), `TapeMode` moves to `core/`. Note this in continue.md handoff if it surfaces.
@@ -195,7 +195,7 @@ Replace the `InputDescriptor` struct body in `core/include/ida/InputDescriptor.h
 #include <optional>
 #include <string>
 
-namespace sirius
+namespace ida
 {
 
 /// Light, free-standing metadata about a single input source. Pairs a
@@ -223,7 +223,7 @@ struct InputDescriptor
     ChannelDefaults defaults {};
 };
 
-} // namespace sirius
+} // namespace ida
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -341,7 +341,7 @@ Expected: `'sirius/ProcessingChain.h' file not found`.
 
 #include <memory>
 
-namespace sirius
+namespace ida
 {
 
 /// Per-channel processing applied during `InputMixer::processBuffer`. M3 ships
@@ -400,7 +400,7 @@ public:
 /// SignalType.
 std::unique_ptr<ProcessingChain> makeProcessingChain (SignalType type);
 
-} // namespace sirius
+} // namespace ida
 ```
 
 - [ ] **Step 4: Create the source file** `engine/src/ProcessingChain.cpp`
@@ -410,7 +410,7 @@ std::unique_ptr<ProcessingChain> makeProcessingChain (SignalType type);
 
 #include <cassert>
 
-namespace sirius
+namespace ida
 {
 
 std::unique_ptr<ProcessingChain> makeProcessingChain (SignalType type)
@@ -428,7 +428,7 @@ std::unique_ptr<ProcessingChain> makeProcessingChain (SignalType type)
     return nullptr;
 }
 
-} // namespace sirius
+} // namespace ida
 ```
 
 - [ ] **Step 5: Wire ProcessingChain.cpp into engine CMakeLists**
@@ -577,7 +577,7 @@ struct Channel
 
 #include "ida/ProcessingChain.h"
 
-namespace sirius
+namespace ida
 {
 
 Channel::Channel (ChannelId id_,
@@ -592,7 +592,7 @@ Channel::Channel (ChannelId id_,
 {
 }
 
-} // namespace sirius
+} // namespace ida
 ```
 
 - [ ] **Step 5: Run channel tests to verify pass**
@@ -683,7 +683,7 @@ Do NOT push (Session 3 pushes per spec).
 
 namespace ida::persistence { class TapeStore; }
 
-namespace sirius
+namespace ida
 {
 
 class CapabilityTier;
@@ -779,7 +779,7 @@ private:
     std::condition_variable flushCompleteCv_;
 };
 
-} // namespace sirius
+} // namespace ida
 ```
 
 ### Task 2.2 — TapeWriter implementation
@@ -797,7 +797,7 @@ private:
 
 #include <chrono>
 
-namespace sirius
+namespace ida
 {
 
 namespace
@@ -959,7 +959,7 @@ void TapeWriter::writePendingMessages()
     }
 }
 
-} // namespace sirius
+} // namespace ida
 ```
 
 - [ ] **Step 2: Wire TapeWriter.cpp into engine CMakeLists**
@@ -1021,7 +1021,7 @@ namespace
     juce::File freshTempDir (const juce::String& tag)
     {
         auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                       .getChildFile ("sirius-tapewriter-" + tag
+                       .getChildFile ("ida-tapewriter-" + tag
                                       + "-" + juce::String (juce::Time::getMillisecondCounterHiRes()));
         dir.createDirectory();
         return dir;
@@ -1185,7 +1185,7 @@ TEST_CASE ("InputMixer::processBuffer enqueues one message per tape-bearing chan
     using ida::TapeWriter;
 
     auto tempDir = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                       .getChildFile ("sirius-inputmixer-process-"
+                       .getChildFile ("ida-inputmixer-process-"
                                       + juce::String (juce::Time::getMillisecondCounterHiRes()));
     tempDir.createDirectory();
 
@@ -1233,7 +1233,7 @@ TEST_CASE ("InputMixer::processBuffer reports overload when the writer queue is 
     using ida::TapeWriter;
 
     auto tempDir = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                       .getChildFile ("sirius-inputmixer-overload-"
+                       .getChildFile ("ida-inputmixer-overload-"
                                       + juce::String (juce::Time::getMillisecondCounterHiRes()));
     tempDir.createDirectory();
 
@@ -1273,7 +1273,7 @@ TEST_CASE ("InputMixer::processBuffer reports overload when the writer queue is 
 #include <cstdint>
 #include <unordered_map>
 
-namespace sirius
+namespace ida
 {
 
 class OverloadProtection;
@@ -1328,7 +1328,7 @@ private:
     OverloadProtection* overload_ { nullptr };
 };
 
-} // namespace sirius
+} // namespace ida
 ```
 
 - [ ] **Step 3: Replace InputMixer.cpp with real bodies**
@@ -1342,7 +1342,7 @@ private:
 #include <cassert>
 #include <cstring>
 
-namespace sirius
+namespace ida
 {
 
 InputMixer::InputMixer() = default;
@@ -1437,7 +1437,7 @@ void InputMixer::finalizeChannel (ChannelId id)
     (void) id;
 }
 
-} // namespace sirius
+} // namespace ida
 ```
 
 - [ ] **Step 4: Build and run**
@@ -1488,11 +1488,11 @@ Do NOT push (Session 3 pushes).
 TEST_CASE ("InputMixer::finalizeChannel produces a content-addressed tape and clears the partial",
            "[input-mixer][finalize]")
 {
-    using namespace sirius;
+    using namespace ida;
     using ida::persistence::TapeStore;
 
     auto root = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                    .getChildFile ("sirius-finalize-"
+                    .getChildFile ("ida-finalize-"
                                    + juce::String (juce::Time::getMillisecondCounterHiRes()));
     root.createDirectory();
     auto partials = root.getChildFile ("partials"); partials.createDirectory();
@@ -1585,7 +1585,7 @@ void InputMixer::finalizeChannel (ChannelId id)
 
     (void) tapeStore_->store (bytes);  // content-addressed; hash returned but
                                        // structure-layer mapping (TapeId → hash)
-                                       // is wired in M11 SAF
+                                       // is wired in M11 IAF
     partial.deleteFile();
 }
 ```
@@ -1612,11 +1612,11 @@ Expected: 1 new test pass.
 TEST_CASE ("NonDestructive channel writes both audio partial and JSONL params partial",
            "[input-mixer][non-destructive]")
 {
-    using namespace sirius;
+    using namespace ida;
     using ida::persistence::TapeStore;
 
     auto root = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                    .getChildFile ("sirius-nondestructive-"
+                    .getChildFile ("ida-nondestructive-"
                                    + juce::String (juce::Time::getMillisecondCounterHiRes()));
     root.createDirectory();
     auto partials = root.getChildFile ("partials"); partials.createDirectory();
@@ -1732,7 +1732,7 @@ Expected: new `[non-destructive]` test passes.
 TEST_CASE ("addChannel honors the per-input default TapeMode set via setInputDefaults",
            "[input-mixer][defaults]")
 {
-    using namespace sirius;
+    using namespace ida;
 
     InputMixer mixer;
 
@@ -1750,7 +1750,7 @@ TEST_CASE ("addChannel honors the per-input default TapeMode set via setInputDef
     // TapeWriter to observe the effect since channel state isn't directly
     // queryable.
     auto tempDir = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                       .getChildFile ("sirius-defaults-"
+                       .getChildFile ("ida-defaults-"
                                       + juce::String (juce::Time::getMillisecondCounterHiRes()));
     tempDir.createDirectory();
 

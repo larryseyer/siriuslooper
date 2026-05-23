@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace sirius
+namespace ida
 {
 
 /// A Constituent's persistent identity. It survives every content revision: a
@@ -27,4 +27,4 @@ private:
     std::int64_t value_;
 };
 
-} // namespace sirius
+} // namespace ida

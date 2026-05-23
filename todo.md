@@ -205,7 +205,7 @@
   per touched `TapeId` via `ITapeSink`. Slice 3 routes that to `FlacTapeSink`, keyed by `TapeId`
   (filename tape-<id>.flac) — so tape identity is the `TapeId`, with no channel-vs-bus key clash and
   no dual mono/stereo payload (the legacy `processBuffer` tape path is retired from the live callback).
-  The SAF `TapeId→contentHash` manifest remains a session-close archival concern (see the slice-3
+  The IAF `TapeId→contentHash` manifest remains a session-close archival concern (see the slice-3
   deferrals entry at the top).
 
 ### 2026-05-21 — Routing Phase 3: FX returns + per/post-fader sends
@@ -328,7 +328,7 @@
   only by tests. Wire it when the capture flow that decides "this
   EffectChainEntry is ArchivalMode::WetCapture, capture its bus output" lands.
   (2) Per-Constituent effect-chain routing (whitepaper §6.6) is M9+; the
-  structure-layer TapeId -> wet-tape-hash mapping is M11 SAF — same deferral as
+  structure-layer TapeId -> wet-tape-hash mapping is M11 IAF — same deferral as
   the dry tape's TapeId->hash mapping. Until then a finalized wet tape lives in
   TapeStore content-addressed but is not referenced by any Constituent.
   (3) WetCaptureWriter duplicates TapeWriter's worker-drain loop (the shared
@@ -1813,7 +1813,7 @@ assets before public launch:
 - What was deferred:
   1. ~~**RME-style mono/stereo split/collapse toggle.**~~ DONE (commits `cae0593` + `8c58a35`): **right-click (desktop) and long-press (touch, 500 ms, drag-cancels)** → "Split to two mono channels" / "Collapse to stereo". `rebuildInputStrips()` re-registers engine channels from `inputPairs_`, bracketed by removeAudioCallback/addAudioCallback for RT-safety. Default stereo strips. **Gesture-only by operator decision** — NOT a visible toggle and NOT moving into a detail panel (the strip is already too crowded, especially on iPhone).
   2. ~~**Pan + width detail panel.**~~ DONE (commit `3e951ef`): `ChannelStrip<Audio>` gained `setWidth`/`width` ([0,2], mid/side DSP after pan, TDD'd, +9 `[width]` cases); vendored OTTO `ChannelDetailPanWidTab` into `ui/lookandfeel/components/`; `InputMixerPane` shows it in a band above the strips, **selected-strip OTTO model** (single body-click reveals it). Pan knob `[-1,+1]`→engine `[0,1]` at the MainComponent boundary; width passes through. Selection cleared + panel hidden on rebuild. Operator-verified GOOD.
-  3. **Tape-output routing (strip bottom region).** The strip's output combo is hidden (`setOutputComboVisible(false)`). Routing inputs→tapes pulls in TapeWriter/TapeStore wiring (store rooted at `<Sirius>/tapes`) — not built. This is also where the two input dispatch paths unify (see #4).
+  3. **Tape-output routing (strip bottom region).** The strip's output combo is hidden (`setOutputComboVisible(false)`). Routing inputs→tapes pulls in TapeWriter/TapeStore wiring (store rooted at `<IDA>/tapes`) — not built. This is also where the two input dispatch paths unify (see #4).
   4. **Unify processBuffer (legacy per-device-channel tape path) with processDeviceInputs (strip metering).** Today both run: dispatchInputMixer touches the strip ChannelIds harmlessly (NoTape → runs strip, early-returns) and processDeviceInputs runs after, so meters are correct but the strip is processed redundantly. When tape-output routing lands, processDeviceInputs should own both metering AND the tape write (from the processed stereo buffer), and the legacy per-device-channel path retires for strip channels.
   5. **Horizontal Viewport for wide input counts.** InputMixerPane lays strips in a plain left-to-right row; many inputs would clip. Wrap in a juce::Viewport when strip counts grow.
 - Why deferred: the operator-approved decomposition is "engine source-model + live view first," then these as separate commits. Each is independently buildable on the landed foundation.

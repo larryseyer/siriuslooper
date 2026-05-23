@@ -2,7 +2,7 @@
 
 #include <stdexcept>
 
-namespace sirius
+namespace ida
 {
 
 namespace trigger
@@ -67,4 +67,4 @@ RepetitionRules RepetitionRules::defaultOneShot()
     return rules;
 }
 
-} // namespace sirius
+} // namespace ida

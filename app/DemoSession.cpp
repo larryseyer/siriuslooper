@@ -8,7 +8,7 @@
 #include "ida/TapeId.h"
 #include "ida/TapeReference.h"
 
-namespace sirius
+namespace ida
 {
 
 namespace
@@ -114,4 +114,4 @@ DemoSession buildDemoSession()
                          std::move (inputs) };
 }
 
-} // namespace sirius
+} // namespace ida

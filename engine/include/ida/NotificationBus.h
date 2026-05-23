@@ -11,7 +11,7 @@
 #include <type_traits>
 #include <vector>
 
-namespace sirius
+namespace ida
 {
 
 // `NotificationLevel` and `Category` live in
@@ -151,4 +151,4 @@ private:
     std::array<std::atomic<std::uint64_t>, kCategoryCount> overflowCounters_ {};
 };
 
-} // namespace sirius
+} // namespace ida

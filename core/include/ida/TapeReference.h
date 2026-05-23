@@ -5,7 +5,7 @@
 
 #include <stdexcept>
 
-namespace sirius
+namespace ida
 {
 
 /// A leaf loop Constituent's reference into its source tape — which tape, and
@@ -36,4 +36,4 @@ struct TapeReference
     Rational tapeOut;
 };
 
-} // namespace sirius
+} // namespace ida

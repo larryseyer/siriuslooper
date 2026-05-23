@@ -1,6 +1,6 @@
 #include "ida/PreparationViewState.h"
 
-namespace sirius
+namespace ida
 {
 
 namespace
@@ -40,4 +40,4 @@ PreparationViewState selectPreparationView (const Constituent& root)
     return state;
 }
 
-} // namespace sirius
+} // namespace ida
