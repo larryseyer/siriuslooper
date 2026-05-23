@@ -127,6 +127,17 @@ private:
     /// split/collapse) and rebuilds. Message-thread only.
     void toggleInputPairStereo (int stripIndex);
 
+    // --- P7 T5 slice 5: per-strip insert chain popup ---
+    /// Opens the InsertChainPopup anchored to input strip `stripIdx`'s INS
+    /// button. The popup mirrors the strip's current EffectChain (Internal
+    /// slots only); each popup callback recomputes the chain and pushes it
+    /// back via the strip's setEffectChain inside a detach/re-attach bracket.
+    /// No-op if the index is out of range or no audio device is present.
+    void openInsertChainPopupForChannel (int stripIdx);
+    /// Bus-side mirror of openInsertChainPopupForChannel. Same shape; the
+    /// strip lookup uses inputMixer_->busForId(busStripIds_[busIdx]).
+    void openInsertChainPopupForBus     (int busIdx);
+
     // --- per-tape arm + focus (refined Mockup A, this session's UX) ---
     void toggleArm    (TapeId tape);
     void setFocused   (TapeId tape);

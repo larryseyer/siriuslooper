@@ -1,4 +1,4 @@
-# Session Continuation — NEXT: P7 T5 slice 5
+# Session Continuation — NEXT: operator audible gate on T5 + then T4/T6
 
 > **For a fresh chat picking this up cold:** memory + project +
 > user CLAUDE.md load automatically. This file is the **forward-looking
@@ -9,92 +9,94 @@
 1. Read `external/OTTO/CROSS_PROJECT_INBOX.md`. Ack any
    `[FROM OTTO → IDA]` entries (set `Status: acked YYYY-MM-DD`, add a
    `Resolution:` line, then act on the guidance). Last check: section
-   was empty.
-2. Read the full T5 plan at
-   `/Users/larryseyer/.claude/plans/t5-insert-ui.md` — slice 5 section.
+   was empty; the one needs-ack entry is `[FROM IDA → OTTO]` (rename
+   announcement), addressed to OTTO's Claude — not ours to ack.
 
-## ▶ NEXT — T5 slice 5 (operator-eyes-on)
+## ▶ STATUS — T5 slices 1-5 all landed; audible operator gate pending
 
-The audible gate: drop an RVB slot on a routed strip and hear plate
-reverb. All engine + popup pieces (slices 1–4) are landed on
-origin/master; slice 5 wires them together via `MainComponent`.
+Slice 5 wired the INS button → `InsertChainPopup` → engine through
+`MainComponent`. Build clean, full ctest 639/640 pass (the 1 not-run is
+the operator-only `MainComponentPluginEditorTests_NOT_BUILT` sentinel —
+unchanged from baseline). No headless test surface added in slice 5 by
+design — JUCE drag gestures + live IR-loading audio aren't unit-testable
+in this repo.
 
-**Files to touch:**
+What landed (slice 5, single commit):
 
-- **`app/MainComponent.cpp`** — extend `InputMixerPane::setStrips()`
-  and `setBusStrips()` to add an "INS" button next to the existing
-  destination picker. Mirror the `destButton` plumbing (LookAndFeel +
-  lambda). Add parallel arrays `inputStripInsButtons_` /
-  `busStripInsButtons_`. The destination picker (`showDestinationMenu`
-  at `MainComponent.cpp:852-867`, button at ~line 556) is the anchor /
-  popup pattern to mirror.
-- **Lambda relay** (parallel to `onDestinationChosen`):
-  `std::function<void (int stripIdx)> onInsertChainClicked`. On click:
-  1. Read `nodeKey` from `inputStripChannelIds_[idx]` or
-     `busStripIds_[idx]`.
-  2. Pull the current `EffectChain` for that node (check whether
-     `getChainForBus(nodeKey)` exists on the host — if not, add it
-     in this slice; pure read, no synchronization risk).
-  3. Construct an `ida::InsertChainPopup` seeded via `setInitialChain`
-     with the Internal-only subset.
-  4. Wire the four callbacks (detach audio → engine API call →
-     re-attach):
-     - `onSlotChanged`        → `host.setInternalFxAtSlot(nodeKey, slot, id)`
-     - `onSlotBypassToggled`  → `host.setInternalFxBypassAtSlot(nodeKey, slot, bypassed)`
-     - `onSlotsReordered`     → `host.moveInternalFxSlot(nodeKey, from, to)`
-     - `onClose`              → tear down popup
-     Note: the popup also mutates the persisted `EffectChain` and
-     calls `setEffectChain(chain)` — slice 3's chain-set sweep then
-     re-propagates bypass via `setInternalFxBypassAtSlot`. This keeps
-     persistence honest without a parallel state-update path.
-  5. Show anchored to the clicked INS button.
-- **`app/MainComponent.h`** — declarations for the relay lambdas +
-  the popup `std::unique_ptr<ida::InsertChainPopup>`.
+- `InputMixerPane` gets per-strip **INS** buttons next to the
+  destination picker on both the channel row and the bus row.
+  `setStrips()` / `setBusStrips()` build them; `resized()` lays them
+  out as a second 26 px band above the existing destination band so
+  narrow iPhone strips stay legible (T5-plan risk #2 mitigation).
+- Two new relay lambdas on `InputMixerPane`:
+  `onInputInsertChainClicked(int idx)` and
+  `onBusInsertChainClicked(int busIdx)`. MainComponent owns them.
+- New `MainComponent::openInsertChainPopupForChannel(int stripIdx)`
+  / `openInsertChainPopupForBus(int busIdx)`: read the live
+  `EffectChain` off the strip (`strip->effectChain()`) or bus
+  (`bus->effectChain()`), seed the popup, wire the four callbacks
+  through a single `apply()` closure that does
+  `removeAudioCallback` → `setEffectChain(updated)` →
+  `addAudioCallback`. Slice 3's `setEffectChain` sweep re-binds every
+  Internal slot AND re-asserts each bypass flag, so one uniform engine
+  call covers add/remove/reorder/bypass — no parallel per-slot path.
+- Popup launched as `juce::CallOutBox::launchAsynchronously` anchored
+  to the INS button's screen rect via two new accessors
+  (`inputInsButtonScreenArea` / `busInsButtonScreenArea`); CallOutBox
+  takes ownership and tears the popup down on outside-click.
 
-**Engine surface (already exists, do not re-implement):**
+## ▶ NEXT — operator audible gate (the actual ship test)
 
-- `ida::InsertChainPopup` — public surface at
-  `ui/include/ida/InsertChainPopup.h` (`setInitialChain`,
-  `setOnSlotChanged`, `setOnSlotBypassToggled`, `setOnSlotsReordered`,
-  `setOnClose`).
-- `ida::IEffectChainHost::setInternalFxAtSlot` /
-  `setInternalFxBypassAtSlot` / `moveInternalFxSlot` —
-  `core/include/ida/IEffectChainHost.h`. Message-thread, audio-detached.
-- Persisted `EffectChainEntry::bypassed` is wired through to the host
-  on every `setEffectChain` sweep — see `engine/src/Bus.cpp` +
-  `engine/include/ida/ChannelStrip.h`.
+Per T5 plan §"Verification (end-to-end, operator gate after slice 5)":
 
-**Headless test surface:** none new. Slice 5 is operator-eyes-on by
-design — JUCE drag gestures and live audio routing aren't unit-testable
-in this repo. Build clean is the agent gate; the operator drives the
-GUI smoke below.
+1. **Clean rebuild before eyes-on** — `feedback_clean_builds`:
+   ```bash
+   rm -rf build && cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release \
+     && cmake --build build --target IdaTests IDA -j
+   ```
+2. Launch the **IDA** alias on the Desktop (points at
+   `build/app/IDA_artefacts/Release/IDA.app`).
+3. Drop an **RVB** slot on the first input strip with signal routed
+   through it. Expect ~4-6 s of dry pass-through (OTTO worker IR
+   load), then audible plate reverb tail.
+4. Toggle bypass mid-signal: instant dry. Toggle off: audible wet
+   again, no re-load (adapter stays prepared).
+5. Add an EQ slot above the RVB; drag the EQ down past the RVB: chain
+   re-orders, EQ now post-RVB.
+6. Save the session; close; reopen; load: insert chain restored with
+   bypass state intact (slice 3 wired the persistence path).
 
-**Operator gate (the audible test):**
+If any of the above misbehaves, the most-likely suspects are:
 
-- Drop an RVB slot on the first input strip with signal routed
-  through it. Expect ~4–6 s of dry pass-through (OTTO worker IR
-  load), then audible plate reverb tail.
-- Toggle bypass mid-signal: instant dry. Toggle off: audible wet
-  again, no re-load (adapter stays prepared).
-- Add an EQ slot above the RVB; drag the EQ down past the RVB:
-  chain re-orders, EQ now post-RVB.
-- Save the session; close; reopen; load: insert chain restored with
-  bypass state intact.
+- **Strip width clip** — INS row may push DEST row off the bottom on
+  some window heights. The two 26 px bands + a 6 px gap eat ~58 px;
+  shrink `kInsHeight` if needed.
+- **Popup positioning** — CallOutBox uses the INS button's screen
+  rect; if the button is off-screen (very narrow window) the popup
+  may anchor to the upper-left.
+- **EffectChain grow path** — `growChainToSlot` caps at
+  `kMaxSlots-1 = 7`; picking slot 8+ would no-op. Popup shouldn't
+  expose slots past 7, but worth verifying.
 
-## ▶ AFTER SLICE 5
+## ▶ AFTER THE OPERATOR GATE
 
-Slice 6 of the T5 plan is "refresh continue.md" — fold into the slice
-5 commit. Then resume the operator's mixer→transport roadmap
-(`project_mixer_then_transport_roadmap`): T4 Sends tab UI (needs an
-Output Mixer tab first), or T6 P4/P5 persistence wiring into
-MainComponent save/load.
+Resume the operator's mixer→transport roadmap
+(`project_mixer_then_transport_roadmap`):
+
+- **T4 Sends tab UI** — needs an Output Mixer tab first
+  (`project_two_mixers_totally_separate`).
+- **T6 P4/P5 persistence wiring** into MainComponent save/load — the
+  EffectChain already round-trips through `SessionFormat`, but the
+  insert UI itself doesn't yet drive save/load wiring beyond what
+  Bus/ChannelStrip already do via `setEffectChain`. Verify after the
+  audible gate confirms slice 5's round-trip works in practice.
 
 ## ▶ BASELINE (snapshot, may shift)
 
 - `ctest --test-dir build`: **639 pass / 1 not-run / 640 total**. The
   not-run is the operator-only `MainComponentPluginEditorTests_NOT_BUILT`
   sentinel.
-- `master` HEAD on origin: `f77c6f8` (P7 T5 slice 4 — InsertChainPopup).
+- `master` HEAD on origin: about to land slice 5 commit.
 - OTTO submodule SHA: `6b37609e` on `origin/main`.
 
 ## ▶ HOUSEKEEPING
@@ -102,12 +104,9 @@ MainComponent save/load.
 - **Whitepaper:** `docs/IDA_Whitepaper_V8.md` (underscores —
   `project_whitepaper_path`).
 - **Operator actions still pending** (between sessions, agent cannot
-  perform; tracked in `todo.md`): local working-directory rename
-  `SiriusLooper → IDA` is already done (you're in `/Users/larryseyer/IDA`);
-  notarytool keychain `ida-notary` setup still pending; `automagicart.com/ida`
-  product page + `larryseyer.com` rename still pending.
-- **Clean build before any GUI smoke:** `rm -rf build && cmake -B build
-  -S . -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build
-  --target IdaTests IDA -j` (CMake caches stale configs;
-  `feedback_clean_builds`).
-
+  perform; tracked in `todo.md`): notarytool keychain `ida-notary`
+  setup; `automagicart.com/ida` product page + `larryseyer.com`
+  rename.
+- **Clean build before any GUI smoke** (`feedback_clean_builds`):
+  `rm -rf build && cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release
+   && cmake --build build --target IdaTests IDA -j`.

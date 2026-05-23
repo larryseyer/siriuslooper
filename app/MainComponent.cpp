@@ -4,6 +4,7 @@
 #include "components/CompactFaderStrip.h"
 #include "ida/CalibrationStore.h"
 #include "ida/ConstituentValidator.h"
+#include "ida/InsertChainPopup.h"
 #include "ida/PerformanceViewState.h"
 #include "ida/PreparationView.h"
 #include "ida/PreparationViewState.h"
@@ -508,6 +509,12 @@ public:
     /// A destination was chosen from bus strip `busIdx`'s picker. MainComponent
     /// applies the matching bus main-out edit (tape / plain bus / hardware out).
     std::function<void (int busIdx, DestChoice dest)>  onBusDestinationChosen;
+    /// The INS (insert chain) button on input strip `idx` was clicked. MainComponent
+    /// opens the per-strip InsertChainPopup anchored to the button (P7 T5 slice 5).
+    std::function<void (int idx)>                      onInputInsertChainClicked;
+    /// The INS button on bus strip `busIdx` was clicked. Same shape as the channel
+    /// callback; MainComponent reads the bus's EffectChain instead of a channel's.
+    std::function<void (int busIdx)>                   onBusInsertChainClicked;
 
     /// Populates the detail panel with `idx`'s current values and reveals it.
     /// `panMinus1to1` is the knob-domain pan ([-1, +1]); `width` is [0, 2].
@@ -529,6 +536,7 @@ public:
         strips_.clear();
         stripStereo_.clear();
         destButtons_.clear();
+        inputStripInsButtons_.clear();
         stripDests_.clear();
         // Channel identities change on a rebuild, so the prior selection no
         // longer maps to a strip — drop it and hide the detail panel.
@@ -557,6 +565,17 @@ public:
             addAndMakeVisible (*button);
             destButtons_.push_back (std::move (button));
             stripDests_.push_back ({});
+
+            // INS button — opens the per-strip InsertChainPopup (P7 T5 slice 5).
+            // Sits above the destination picker so both fit a narrow strip.
+            auto ins = std::make_unique<juce::TextButton>();
+            ins->setButtonText ("INS");
+            ins->onClick = [this, idx]
+            {
+                if (onInputInsertChainClicked) onInputInsertChainClicked (idx);
+            };
+            addAndMakeVisible (*ins);
+            inputStripInsButtons_.push_back (std::move (ins));
         }
         resized();
     }
@@ -605,6 +624,7 @@ public:
     {
         busStrips_.clear();
         busDestButtons_.clear();
+        busStripInsButtons_.clear();
         busStripDests_.clear();
         busChoices_.clear();
         // No selection/detail state to reset — bus strips have no detail panel in P6.
@@ -627,6 +647,16 @@ public:
             addAndMakeVisible (*button);
             busDestButtons_.push_back (std::move (button));
             busStripDests_.push_back ({});
+
+            // INS button — same pattern as channel strips (P7 T5 slice 5).
+            auto ins = std::make_unique<juce::TextButton>();
+            ins->setButtonText ("INS");
+            ins->onClick = [this, idx]
+            {
+                if (onBusInsertChainClicked) onBusInsertChainClicked (idx);
+            };
+            addAndMakeVisible (*ins);
+            busStripInsButtons_.push_back (std::move (ins));
         }
         resized();
     }
@@ -726,9 +756,13 @@ public:
             area.removeFromTop (kGap);
         }
 
-        // The destination picker sits in a fixed band below each strip, one
-        // compact button per strip column (touch-friendly; no extra chrome).
+        // Two fixed bands at the bottom: destination picker (lowest) + INS
+        // button (just above). Stacking vertically keeps each per-strip control
+        // the full strip width — narrow iPhone strips can't fit two buttons
+        // side-by-side (risk #2 in the T5 plan).
         auto pickerRow = area.removeFromBottom (kDestHeight);
+        area.removeFromBottom (kGap);
+        auto insRow    = area.removeFromBottom (kInsHeight);
         area.removeFromBottom (kGap);
 
         // Left-to-right row of fixed-width strips. A few strips fit a typical
@@ -737,8 +771,10 @@ public:
         for (int i = 0; i < stripCount(); ++i)
         {
             strips_[static_cast<std::size_t> (i)]->setBounds (area.removeFromLeft (kStripW));
+            inputStripInsButtons_[static_cast<std::size_t> (i)]->setBounds (insRow.removeFromLeft (kStripW));
             destButtons_[static_cast<std::size_t> (i)]->setBounds (pickerRow.removeFromLeft (kStripW));
             area.removeFromLeft (kGap);
+            insRow.removeFromLeft (kGap);
             pickerRow.removeFromLeft (kGap);
         }
 
@@ -748,15 +784,35 @@ public:
         if (busStripCount() > 0)
         {
             area.removeFromLeft (kGroupDividerW);       // visual divider between the two groups
+            insRow.removeFromLeft (kGroupDividerW);     // keep the INS band column-aligned
             pickerRow.removeFromLeft (kGroupDividerW);  // keep the picker band column-aligned
         }
         for (int i = 0; i < busStripCount(); ++i)
         {
             busStrips_[static_cast<std::size_t> (i)]->setBounds (area.removeFromLeft (kStripW));
+            busStripInsButtons_[static_cast<std::size_t> (i)]->setBounds (insRow.removeFromLeft (kStripW));
             busDestButtons_[static_cast<std::size_t> (i)]->setBounds (pickerRow.removeFromLeft (kStripW));
             area.removeFromLeft (kGap);
+            insRow.removeFromLeft (kGap);
             pickerRow.removeFromLeft (kGap);
         }
+    }
+
+    /// Screen bounds of the INS button on input strip `idx`, used by
+    /// MainComponent to anchor the InsertChainPopup CallOutBox. Returns an
+    /// empty rect if `idx` is out of range.
+    juce::Rectangle<int> inputInsButtonScreenArea (int idx) const
+    {
+        if (idx < 0 || idx >= static_cast<int> (inputStripInsButtons_.size())) return {};
+        return inputStripInsButtons_[static_cast<std::size_t> (idx)]->getScreenBounds();
+    }
+
+    /// Screen bounds of the INS button on bus strip `busIdx`. Empty rect if
+    /// out of range.
+    juce::Rectangle<int> busInsButtonScreenArea (int busIdx) const
+    {
+        if (busIdx < 0 || busIdx >= static_cast<int> (busStripInsButtons_.size())) return {};
+        return busStripInsButtons_[static_cast<std::size_t> (busIdx)]->getScreenBounds();
     }
 
     void paint (juce::Graphics& g) override { g.fillAll (otto::Colours::bg2); }
@@ -805,6 +861,7 @@ private:
     static constexpr int kLongPressMoveTolerancePx = 8;
     static constexpr int kDetailHeight             = 180;
     static constexpr int kDestHeight               = 26;
+    static constexpr int kInsHeight                = 26;
 
     void timerCallback() override
     {
@@ -902,6 +959,8 @@ private:
 
     std::vector<std::unique_ptr<otto::ui::CompactFaderStrip>> strips_;
     std::vector<std::unique_ptr<juce::TextButton>>            destButtons_;
+    /// Per-input-strip INS buttons (P7 T5 slice 5). Parallel to strips_.
+    std::vector<std::unique_ptr<juce::TextButton>>            inputStripInsButtons_;
     std::vector<StripDest>                                    stripDests_;
     std::vector<DestChoice>                                   choices_;   // shared, stored once
     std::vector<bool>                                         stripStereo_;
@@ -917,6 +976,8 @@ private:
     /// panel); their index space is independent of the channel strips.
     std::vector<std::unique_ptr<otto::ui::CompactFaderStrip>> busStrips_;
     std::vector<std::unique_ptr<juce::TextButton>>            busDestButtons_;
+    /// Per-bus-strip INS buttons (P7 T5 slice 5). Parallel to busStrips_.
+    std::vector<std::unique_ptr<juce::TextButton>>            busStripInsButtons_;
     std::vector<StripDest>                                    busStripDests_;
     /// Per-bus choice lists (cycle-excluded targets differ per bus, so unlike the
     /// channel picker this is NOT one shared list).
@@ -1839,6 +1900,19 @@ MainComponent::MainComponent()
             rebuildBusStrips();
             refreshInputDestinations();
         };
+        // P7 T5 slice 5 — INS button → InsertChainPopup. The helpers translate
+        // each popup callback into a detach/setEffectChain/re-attach cycle on
+        // the strip or bus; slice 3 made setEffectChain re-propagate both the
+        // adapter binding and the bypass flag through every Internal slot, so a
+        // single uniform call covers add / remove / reorder / bypass.
+        inputMixerPane_->onInputInsertChainClicked = [this] (int idx)
+        {
+            openInsertChainPopupForChannel (idx);
+        };
+        inputMixerPane_->onBusInsertChainClicked = [this] (int busIdx)
+        {
+            openInsertChainPopupForBus (busIdx);
+        };
         tabs_.addTab ("Input Mixer", juce::Colours::black, inputMixerPane_.get(), false);
 
         rebuildInputStrips();
@@ -2115,6 +2189,155 @@ ChannelStrip<SignalType::Audio>* MainComponent::inputStripAt (int index) noexcep
     auto* chain = inputMixer_->processingChainFor (
         inputStripChannelIds_[static_cast<std::size_t> (index)]);
     return dynamic_cast<ChannelStrip<SignalType::Audio>*> (chain);
+}
+
+namespace
+{
+    /// Grow `chain` (immutably, via withAppended) with default-Empty entries
+    /// until `slot` is in range — the precondition `withReplaced` / `withMoved`
+    /// require. Caller-supplied `slot` is clamped to kMaxSlots-1 internally; an
+    /// over-range slot becomes a no-op.
+    ida::EffectChain growChainToSlot (ida::EffectChain chain, std::size_t slot)
+    {
+        const auto cap = ida::EffectChain::kMaxSlots;
+        const auto target = std::min (slot, cap - 1);
+        while (chain.size() <= target && chain.size() < cap)
+            chain = chain.withAppended (ida::EffectChainEntry{});
+        return chain;
+    }
+}
+
+void MainComponent::openInsertChainPopupForChannel (int stripIdx)
+{
+    auto* strip = inputStripAt (stripIdx);
+    if (strip == nullptr || inputMixerPane_ == nullptr) return;
+    if (stripIdx < 0 || stripIdx >= static_cast<int> (inputStripChannelIds_.size())) return;
+    const auto chId = inputStripChannelIds_[static_cast<std::size_t> (stripIdx)];
+
+    auto popup = std::make_unique<ida::InsertChainPopup>();
+    popup->setInitialChain (strip->effectChain());
+
+    // The popup mutates its own internal SlotState[]; we maintain a parallel
+    // EffectChain copy that is the actual engine truth (round-trips through
+    // save/load via Bus / ChannelStrip persistence). Each callback applies the
+    // delta then pushes the chain back through the engine API inside an audio
+    // detach/re-attach bracket — slice 3's setEffectChain sweep re-binds every
+    // Internal slot AND re-asserts bypass per slot.
+    auto chainRef = std::make_shared<ida::EffectChain> (strip->effectChain());
+
+    auto apply = [this, chId, chainRef]
+    {
+        // The strip lookup must succeed at apply-time (the channel is still
+        // present); it can disappear if the operator rebuilds inputs mid-popup.
+        // Bail without touching the audio thread if so.
+        ida::ChannelStrip<ida::SignalType::Audio>* s = nullptr;
+        for (int i = 0; i < static_cast<int> (inputStripChannelIds_.size()); ++i)
+            if (inputStripChannelIds_[static_cast<std::size_t> (i)] == chId)
+                s = inputStripAt (i);
+        if (s == nullptr) return;
+        audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+        s->setEffectChain (*chainRef);
+        audioDeviceManager_.addAudioCallback (audioCallback_.get());
+    };
+
+    popup->setOnSlotChanged ([chainRef, apply] (std::size_t slot,
+                                                std::optional<ida::InternalFxId> id)
+    {
+        auto updated = growChainToSlot (*chainRef, slot);
+        if (slot >= updated.size()) return;   // chain full or out of range
+        ida::EffectChainEntry entry;
+        if (id.has_value()) entry = ida::EffectChainEntry::makeInternal (*id);
+        *chainRef = updated.withReplaced (slot, entry);
+        apply();
+    });
+
+    popup->setOnSlotBypassToggled ([chainRef, apply] (std::size_t slot, bool bypassed)
+    {
+        if (slot >= chainRef->size()) return;   // bypass on never-populated slot
+        auto entry = chainRef->at (slot);
+        entry.bypassed = bypassed;
+        *chainRef = chainRef->withReplaced (slot, entry);
+        apply();
+    });
+
+    popup->setOnSlotsReordered ([chainRef, apply] (std::size_t from, std::size_t to)
+    {
+        const auto maxSlot = std::max (from, to);
+        auto updated = growChainToSlot (*chainRef, maxSlot);
+        if (from >= updated.size() || to >= updated.size()) return;
+        *chainRef = updated.withMoved (from, to);
+        apply();
+    });
+
+    popup->setOnClose ([]{});   // CallOutBox manages its own teardown
+
+    popup->setSize (static_cast<int> (otto::Sizing::kMenuMinWidth),
+                    static_cast<int> (ida::EffectChain::kMaxSlots)
+                    * static_cast<int> (otto::Sizing::kMenuRowHeight));
+
+    const auto target = inputMixerPane_->inputInsButtonScreenArea (stripIdx);
+    juce::CallOutBox::launchAsynchronously (std::move (popup), target, nullptr);
+}
+
+void MainComponent::openInsertChainPopupForBus (int busIdx)
+{
+    if (inputMixerPane_ == nullptr) return;
+    if (busIdx < 0 || busIdx >= static_cast<int> (busStripIds_.size())) return;
+    const auto busId = busStripIds_[static_cast<std::size_t> (busIdx)];
+    auto* bus = inputMixer_->busForId (busId);
+    if (bus == nullptr) return;
+
+    auto popup = std::make_unique<ida::InsertChainPopup>();
+    popup->setInitialChain (bus->effectChain());
+
+    auto chainRef = std::make_shared<ida::EffectChain> (bus->effectChain());
+
+    auto apply = [this, busId, chainRef]
+    {
+        auto* b = inputMixer_->busForId (busId);
+        if (b == nullptr) return;
+        audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+        b->setEffectChain (*chainRef);
+        audioDeviceManager_.addAudioCallback (audioCallback_.get());
+    };
+
+    popup->setOnSlotChanged ([chainRef, apply] (std::size_t slot,
+                                                std::optional<ida::InternalFxId> id)
+    {
+        auto updated = growChainToSlot (*chainRef, slot);
+        if (slot >= updated.size()) return;
+        ida::EffectChainEntry entry;
+        if (id.has_value()) entry = ida::EffectChainEntry::makeInternal (*id);
+        *chainRef = updated.withReplaced (slot, entry);
+        apply();
+    });
+
+    popup->setOnSlotBypassToggled ([chainRef, apply] (std::size_t slot, bool bypassed)
+    {
+        if (slot >= chainRef->size()) return;
+        auto entry = chainRef->at (slot);
+        entry.bypassed = bypassed;
+        *chainRef = chainRef->withReplaced (slot, entry);
+        apply();
+    });
+
+    popup->setOnSlotsReordered ([chainRef, apply] (std::size_t from, std::size_t to)
+    {
+        const auto maxSlot = std::max (from, to);
+        auto updated = growChainToSlot (*chainRef, maxSlot);
+        if (from >= updated.size() || to >= updated.size()) return;
+        *chainRef = updated.withMoved (from, to);
+        apply();
+    });
+
+    popup->setOnClose ([]{});
+
+    popup->setSize (static_cast<int> (otto::Sizing::kMenuMinWidth),
+                    static_cast<int> (ida::EffectChain::kMaxSlots)
+                    * static_cast<int> (otto::Sizing::kMenuRowHeight));
+
+    const auto target = inputMixerPane_->busInsButtonScreenArea (busIdx);
+    juce::CallOutBox::launchAsynchronously (std::move (popup), target, nullptr);
 }
 
 void MainComponent::recomputeInputStripMutes()
