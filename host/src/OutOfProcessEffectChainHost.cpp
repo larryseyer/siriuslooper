@@ -137,6 +137,70 @@ void OutOfProcessEffectChainHost::configureBus (std::int64_t       busId,
     }
 }
 
+void OutOfProcessEffectChainHost::setInternalFxAtSlot (
+    std::int64_t                nodeKey,
+    std::size_t                 slotIdx,
+    std::optional<InternalFxId> id)
+{
+    // Message-thread only — precondition documented in the header. Caller
+    // MUST have detached the audio callback before invoking, so we can
+    // mutate `internalAdapters_` without contending with the audio-thread
+    // `find()` in pumpSlot.
+    //
+    // Allocation is allowed here (adapter construction, unordered_map
+    // bucket emplace, optional adapter->prepare).
+    const SlotKey key { nodeKey, slotIdx };
+
+    // No id → erase any existing adapter and we're done.
+    if (! id.has_value())
+    {
+        internalAdapters_.erase (key);
+        return;
+    }
+
+    // Factory returns nullptr for ids whose adapter sub-task hasn't shipped
+    // yet (T3a: only kEq is implemented; kCmp/kRvb/kDly return nullptr).
+    // Treat that as "no adapter for this slot" — erase any existing entry
+    // so a previous (different-id) adapter doesn't linger, and bail without
+    // storing a null.
+    auto adapter = makeInternalFxAdapter (*id);
+    if (adapter == nullptr)
+    {
+        internalAdapters_.erase (key);
+        return;
+    }
+
+    // If the host has already been prepared with a (sampleRate, maxBlock)
+    // pair, prepare the fresh adapter immediately so its first audio-thread
+    // `process` call returns true rather than the unprepared-miss `false`.
+    // If `prepare(...)` hasn't been called yet, the adapter is stored
+    // unprepared; the next `prepare(...)` call will sweep it.
+    if (prepared_)
+        adapter->prepare (currentSampleRate_, currentMaxBlock_);
+
+    // emplace_or_replace: assigning into the unique_ptr destroys any
+    // pre-existing adapter at this key (the old one's destructor runs
+    // on the message thread, never touching the audio path).
+    internalAdapters_[key] = std::move (adapter);
+}
+
+void OutOfProcessEffectChainHost::prepare (double sampleRate, int maxBlockSize)
+{
+    // Message-thread only — see the header. Forwards to every currently-
+    // bound adapter and stashes the values so subsequent
+    // `setInternalFxAtSlot(...)` calls can auto-prepare new adapters
+    // against the same configuration.
+    currentSampleRate_ = sampleRate;
+    currentMaxBlock_   = maxBlockSize;
+    prepared_          = true;
+
+    for (auto& [key, adapter] : internalAdapters_)
+    {
+        if (adapter != nullptr)
+            adapter->prepare (sampleRate, maxBlockSize);
+    }
+}
+
 bool OutOfProcessEffectChainHost::pumpSlot (std::int64_t        busId,
                                             std::size_t         slotIndex,
                                             const float* const* inChannels,
@@ -152,6 +216,29 @@ bool OutOfProcessEffectChainHost::pumpSlot (std::int64_t        busId,
     const int channels = std::min (numChannels, kPumpChannels);
     if (inChannels[0] == nullptr) return false;
     if (channels >= 2 && inChannels[1] == nullptr) return false;
+
+    // P7 T3a-B — dispatch order: internal-FX table FIRST, OOP plugin path
+    // on miss. The internal table is mutated only on the message thread
+    // with the audio callback detached (see the storage docblock in
+    // OutOfProcessEffectChainHost.h), so this `find()` is race-free and
+    // alloc-free (`std::unordered_map::find` never rehashes). See the
+    // architecture decision in
+    // ~/.claude/plans/read-continue-and-proceed-structured-acorn.md for
+    // why the internal adapter lives inside this host rather than in a
+    // composite wrapper above it.
+    {
+        const SlotKey internalKey { busId, slotIndex };
+        const auto adapterIt = internalAdapters_.find (internalKey);
+        if (adapterIt != internalAdapters_.end() && adapterIt->second != nullptr)
+        {
+            // Internal adapter handles the slot. Its `process` returns
+            // false on the unprepared-or-malformed-input miss path, which
+            // matches `IEffectChainHost::pumpSlot`'s contract (leave
+            // outChannels unmodified, caller treats as dry passthrough).
+            return adapterIt->second->process (inChannels, outChannels,
+                                               numChannels, numSamples);
+        }
+    }
 
     // Lookup the slot's state. The map's key set is mutated by
     // `configureBus` (message thread) under `instancesMutex_`; the audio

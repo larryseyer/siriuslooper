@@ -2,7 +2,10 @@
 
 #include "sirius/EffectChain.h"
 #include "sirius/IEffectChainHost.h"
+#include "sirius/IInternalFxAdapter.h"
 #include "sirius/INotificationSink.h"
+#include "sirius/InternalFxFactory.h"
+#include "sirius/InternalFxId.h"
 #include "sirius/OutOfProcessPluginInstance.h"
 #include "sirius/PluginDescriptor.h"
 
@@ -161,6 +164,53 @@ public:
                    int                 numChannels,
                    int                 numSamples) noexcept override;
 
+    // ---- Internal-FX dispatch (P7 T3a-B) — message-thread only ----------
+    //
+    // Binds (or unbinds) one of Sirius's built-in FX adapters at a
+    // `(nodeKey, slotIdx)` pair. The audio thread's `pumpSlot` checks the
+    // internal-FX table BEFORE the OOP plugin path on every call; a hit
+    // routes through the adapter and short-circuits the OOP child entirely.
+    //
+    // Precondition (same shape as `setEffectChainHost` and `configureBus`):
+    // the caller MUST detach the audio callback before invoking. The
+    // internal-FX table is read by the audio thread without a lock — see
+    // the ordering notes in the SlotState / `pumpSlot` docblocks. Mutations
+    // only happen on the message thread with the audio callback detached,
+    // so the RT-side `find()` is race-free.
+    //
+    // `id == std::nullopt`: erase any existing adapter at `(nodeKey,
+    // slotIdx)`.
+    // `id == value`:        construct a fresh adapter via
+    //                       `makeInternalFxAdapter(*id)` and emplace-or-
+    //                       replace at `(nodeKey, slotIdx)`. If the factory
+    //                       returns `nullptr` (an `InternalFxId` whose
+    //                       T3 sub-task hasn't shipped yet — e.g. `kCmp`
+    //                       before T3b), the existing entry is erased and
+    //                       no new adapter is stored (effective no-op
+    //                       rebind that leaves the slot un-adapted; the
+    //                       audio thread's `pumpSlot` will then fall
+    //                       through to the OOP path on miss as it always
+    //                       has).
+    //
+    // If `prepare(...)` has already been called on the host with a
+    // (sampleRate, maxBlockSize) pair, the newly-constructed adapter is
+    // immediately prepared with those values so its first `process` call
+    // returns true rather than the unprepared-miss `false`.
+    void setInternalFxAtSlot (std::int64_t                nodeKey,
+                              std::size_t                 slotIdx,
+                              std::optional<InternalFxId> id);
+
+    // Message-thread only. Forwards `prepare(sampleRate, maxBlockSize)` to
+    // every currently-bound internal-FX adapter and remembers the values
+    // so adapters bound later by `setInternalFxAtSlot` are auto-prepared
+    // against the same configuration.
+    //
+    // Call once after the audio device is configured and again whenever
+    // sample-rate / max-block changes (the engine already has the hooks
+    // for this — wiring those hooks into the live audio device is
+    // Subagent C's scope, not T3a-B).
+    void prepare (double sampleRate, int maxBlockSize);
+
     // ---- Editor wire-through (M7 S5) — message-thread only --------------
     //
     // Thin slot-keyed forwarders onto `OutOfProcessPluginInstance`'s editor
@@ -306,6 +356,35 @@ private:
     std::unordered_map<SlotKey,
                        std::shared_ptr<SlotState>,
                        SlotKeyHash> instances_;
+
+    /// P7 T3a-B — internal-FX adapter table, keyed by `(nodeKey, slotIdx)`.
+    /// Mutations happen ONLY on the message thread with the audio callback
+    /// detached (the same set-once-before-audio-attaches contract used by
+    /// `configureBus` for the OOP `instances_` map). Therefore the audio
+    /// thread's `pumpSlot` can `find()` into this map without taking a lock
+    /// AND without facing a concurrent rehash — no reader/writer race.
+    /// The audio thread reads `it->second.get()` as a raw pointer and never
+    /// touches the `unique_ptr` itself.
+    ///
+    /// This map is INDEPENDENT of `instances_`: a `(nodeKey, slotIdx)` pair
+    /// may have an internal adapter, an OOP plugin instance, both, or
+    /// neither. `pumpSlot` checks `internalAdapters_` FIRST and falls
+    /// through to `instances_` on miss — see the dispatch ordering comment
+    /// at the top of `pumpSlot`.
+    std::unordered_map<SlotKey,
+                       std::unique_ptr<IInternalFxAdapter>,
+                       SlotKeyHash> internalAdapters_;
+
+    /// P7 T3a-B — last-known `prepare(sampleRate, maxBlockSize)` values.
+    /// `prepared_` flips to true on the first call to `prepare(...)`. Used
+    /// by `setInternalFxAtSlot` to auto-prepare freshly-constructed
+    /// adapters against the live device configuration so their first
+    /// `process` call returns true rather than the unprepared-miss false.
+    /// Message-thread only — written by `prepare(...)`, read by
+    /// `setInternalFxAtSlot(...)`.
+    double currentSampleRate_ { 0.0 };
+    int    currentMaxBlock_   { 0 };
+    bool   prepared_          { false };
 
     /// Pre-allocated scratch bytes for the wire-format packaging in
     /// pumpSlot. Sized to one PluginIpcMessage payload. Pre-allocated in

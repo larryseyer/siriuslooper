@@ -33,6 +33,16 @@ add_library(SiriusEngine STATIC
     # Internal-FX adapters — T3a of the P7 internal-FX umbrella. EqAdapter
     # wraps OTTO's header-only PlayerEQ; the factory resolves an InternalFxId
     # to a freshly-constructed adapter. CMP/DLY/RVB land in T3b/c/d.
+    #
+    # T3a-B: the factory's declaration lives in core/include/sirius/
+    # (InternalFxFactory.h) so the host can call into it without taking a
+    # host→engine link dependency (engine already PRIVATE-links host via
+    # SessionSnapshot — adding host→engine would cycle). The impl stays
+    # here because it needs the engine-private EqAdapter (and CMP/DLY/RVB
+    # adapters once they ship). The factory symbol is provided by Sirius::
+    # Engine and resolved at final-link by every binary that already pulls
+    # both libraries (app, SiriusTests) — see comment in host/CMakeLists.txt
+    # for the symmetric note.
     src/InternalFxFactory.cpp
     src/fx/EqAdapter.cpp)
 

@@ -18,6 +18,17 @@ add_library(SiriusHost STATIC
     src/OutOfProcessPluginInstance.cpp
     src/OutOfProcessEffectChainHost.cpp)
 
+# P7 T3a-B: OutOfProcessEffectChainHost.cpp calls
+# `sirius::makeInternalFxAdapter` (declared in core/include/sirius/
+# InternalFxFactory.h, defined in engine/src/InternalFxFactory.cpp). We
+# deliberately DO NOT add Sirius::Engine to SiriusHost's link line — that
+# would cycle (engine already PRIVATE-links Sirius::Host via
+# SessionSnapshot). The unresolved symbol is fine in a static library;
+# it resolves at final link in every binary that already pulls both
+# Sirius::Host and Sirius::Engine (the SiriusLooper app + SiriusTests).
+# The factory header lives in core/ specifically so the host can include
+# it without taking the link edge.
+
 # M7 S9 (Reaper-style separate plug-in windows): the engine no longer
 # embeds the child's editor pixels via CARemoteLayer; each
 # sirius_plugin_host child opens its own top-level NSWindow. No

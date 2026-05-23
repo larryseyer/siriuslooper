@@ -66,6 +66,7 @@ add_executable(SiriusTests
     OutOfProcessEffectChainHostSlotStateTests.cpp
     OutOfProcessEffectChainHostSupervisorTests.cpp
     OutOfProcessEffectChainHostStateTests.cpp
+    OutOfProcessEffectChainHostInternalDispatchTests.cpp
     OutOfProcessEditorTests.cpp
     OutputMixerPluginHostIntegrationTests.cpp
     SharedMemorySpscQueueTests.cpp
