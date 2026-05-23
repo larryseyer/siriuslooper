@@ -1,3 +1,141 @@
+# Session Continuation — 2026-05-23 (IDA rename — Phases 1-5 SHIPPED)
+
+> **TL;DR for a fresh chat picking this up cold:** the product formerly called
+> **Sirius Looper** is now **IDA — Idea Development Arranger** (the looping
+> environment counterpart to OTTO under the AutomagicArt brand). The rename
+> spanned 13 commits across `master` and 3 commits in the OTTO submodule, all
+> pushed. Read this whole section before doing anything; the rest of this file
+> is the prior T5 handoff which is still the next dev work to resume.
+>
+> **Rollback tag:** `pre-ida-rename` on master (pre-rename snapshot pushed to
+> origin). Recovery is `git reset --hard pre-ida-rename` if anything fails to
+> survive the next operator-side step.
+>
+> **GitHub repo:** renamed `larryseyer/siriuslooper` → `larryseyer/IDA`
+> (uppercase, matches OTTO's `larryseyer/OTTO` convention). Local `git remote`
+> already updated to `https://github.com/larryseyer/IDA.git`.
+>
+> **MANDATORY at session start:** read `external/OTTO/CROSS_PROJECT_INBOX.md`
+> — the new `[FROM IDA → OTTO]` rename-announcement entry at the top must be
+> ack'd by OTTO's Claude next time it runs (set Status → `acked YYYY-MM-DD` +
+> Resolution line). Inbox header is now `OTTO ⇄ IDA`; directional labels are
+> `[FROM IDA → OTTO]` / `[FROM OTTO → IDA]`; commit trailer is `Ida-Origin:`.
+>
+> **Whitepaper:** `docs/IDA_Whitepaper_V8.md` (was `Sirius_Looper_Whitepaper_V7.md`;
+> bumped to V8 with title-page + abstract identity edits; §18.4 closing manifesto
+> untouched). V1–V6 archives live in `docs/archive/` with `_archive.md` suffix
+> and a historical preamble.
+
+## ⚠️ OPERATOR ACTIONS STILL PENDING (between sessions)
+
+Three one-time actions the agent cannot perform — all tracked in `todo.md`:
+
+**1. Local working-directory rename** (do this before the next Claude session
+   so MEMORY.md follows; this session's CWD is still the old path):
+
+```bash
+mv /Users/larryseyer/SiriusLooper /Users/larryseyer/IDA
+mv ~/.claude/projects/-Users-larryseyer-SiriusLooper \
+   ~/.claude/projects/-Users-larryseyer-IDA
+```
+
+Then update Desktop alias (delete `Sirius Looper`, recreate pointing at
+`/Users/larryseyer/IDA/build/app/IDA_artefacts/Release/IDA.app`), VS Code /
+Xcode workspace open paths, any `cd` shell aliases, and `run_ralph.sh` if it
+hard-codes the path.
+
+**2. Notarytool keychain credential** (blocks notarization until done — CMake
+   now references `ida-notary` as `IDA_NOTARY_PROFILE`):
+
+```bash
+xcrun notarytool store-credentials ida-notary \
+  --apple-id itunes@larryseyer.com --team-id RR5DY39W4Q
+```
+
+**3. `automagicart.com/ida` product page + `larryseyer.com` rename** —
+   separate-repo work, tracked in `todo.md`. Both lapse-domains
+   (`siriuslooper.com`, `ottodrums.com`) reminder: auto-renew off at the
+   registrars when you get a moment; nothing in-repo depends on it.
+
+## ✅ DONE THIS SESSION (2026-05-23 — IDA rename)
+
+**13 commits on master**, **3 commits on OTTO/main**, **`pre-ida-rename` tag**
+pushed as rollback point.
+
+Phase 1 — repo-internal rename (7 commits, `rename/ida` → ff-merged to master):
+
+- `69548ce` mechanical pass (538 file-edits, 26 substitution rows from IDA_Rename_Plan.md §1a)
+- `dad74c1` addendum: possessives, directional labels, filename refs (44 edits)
+- `32702e8` 13 git-mv operations: 8 `include/sirius/` dirs → `include/ida/`,
+  entitlements (2), docs (4); plus 244 `#include "sirius/...` → `"ida/...` the
+  table missed (no leading slash on includes)
+- `b4814d1` CMake target rename (`SiriusAppCore`/`SiriusAudio`/`SiriusHost`/`SiriusPersistence`
+  → `Ida*`), `sirius-notary` → `ida-notary` keychain, synthetic CLAP bundle IDs
+- `284474b` `docs/archive/` V1-V6 + transition doc renamed to `IDA_*_archive.md`
+  with historical preamble; internal prose preserved as contemporaneous record
+- `4d406e1` whitepaper V8 title-page + abstract identity acknowledgment
+- `54abff8` second-pass: `namespace sirius { ... }` → `namespace ida` (192 files —
+  build-critical), XPC bridge C symbols (`sirius_appkit_*`, `sirius_gui_*` → `ida_*`),
+  `/sirius.` POSIX shmem prefix → `/ida.`, `sirius_version` session-envelope key
+  → `ida_version`, Sirius Archive Format (SAF) → IDA Archive Format (IAF)
+  [⚠️ substring-match damaged 40 files of `RT_SAFETY_CONTRACT` → `RT_IAFETY_CONTRACT`
+  on first run; reverted in same commit, the dangerous row commented out in the script]
+
+Phase 2 — website (commit `e1b9682`): retired standalone GH Pages deployment per
+plan §2 Option A1. Deleted `website/src/CNAME` + `.github/workflows/pages.yml`;
+brand-mark `<S>IRIUS LOOPER` → `<I>DA` in `base.njk`. Website source stays as
+draft/reference for the future AutomagicArt port.
+
+Phase 3 — `todo.md` cross-repo deferrals (commit `2c8bcd2`): ida-notary keychain
+operator action, automagicart.com/ida page, larryseyer.com references.
+
+Phase 4 — GitHub repo renamed `siriuslooper` → `IDA` via operator's web UI;
+agent updated local remote to `https://github.com/larryseyer/IDA.git`. Local
+dir rename deferred to between-sessions (see operator action #1 above).
+
+Phase 5 — OTTO submodule (2 commits in `external/OTTO/main`, 1 SHA-bump in IDA):
+- OTTO `55607973` — `docs: rename Sirius Looper → IDA throughout whitepaper`
+  (every Glossary entry + Mental Model + Decision Rationale + MIDI surface +
+  Source-decisions slug refs incl. `project_otto_sirius_external_contract` →
+  `project_otto_ida_external_contract`)
+- OTTO `6b37609e` — `docs: update CROSS_PROJECT_INBOX + CLAUDE.md for IDA
+  rename, announce to OTTO` (inbox header + directional labels + entry format
+  + protocol section + audit-trail grep; new `[FROM IDA → OTTO]` rename-
+  announcement entry prepended for OTTO's Claude to ack)
+- IDA `9c3f32e` — submodule SHA bump (abf8e4d4 → 6b37609e)
+
+Plus the rename script `bash/rename-sirius-to-ida.py` deleted in commit `<TBD>`
+(end-of-phase cleanup per the plan).
+
+## ✅ BUILD / TEST baseline (post-rename)
+
+`rm -rf build && cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release` →
+configure clean. `cmake --build build --target IdaTests IDA -j` → both link
+clean. `ctest --test-dir build` → **631 pass / 1 not-run / 632 total** (matches
+prior 634/2 baseline within Catch2 ctest-registration jitter; no regressions,
+the not-run is the operator-only `MainComponentPluginEditorTests_NOT_BUILT`
+sentinel — same pattern as before). Operator launched `IDA.app` and visually
+confirmed window title / About / file dialogs read "IDA".
+
+## ▶ NEXT (resume dev work)
+
+The rename is feature-orthogonal. The actual dev work was paused mid-T5; resume
+at **P7 T5 slice 4 (`InsertChainPopup` ui/ component)**. The full 6-slice T5
+plan lives at `/Users/larryseyer/.claude/plans/t5-insert-ui.md`; slices 1-3
+shipped in the prior session (`f95602b` → `2f3a1cb` → `87da6bb`); slice 4 is
+partially headless via callback-driven tests with operator eyes-on for the
+visual half. Slice 5 (INS button + MainComponent wiring) is operator-eyes-on.
+Slice 6 (handoff doc) was folded into the prior session.
+
+The pre-rename T5 session handoff is preserved verbatim below for reference;
+file paths in it now point at the renamed locations (e.g. references to
+`engine/include/sirius/ChannelStrip.h` are now `engine/include/ida/ChannelStrip.h`;
+the mechanical pass updated them in-place).
+
+---
+
+# (archived header — 2026-05-23 IDA rename) — prior session: T5 slices 1-3 SHIPPED
+
 # Session Continuation — 2026-05-25 (T5 slices 1-3) (**P7 T5 slices 1-3 SHIPPED across three focused commits (`f95602b` → `2f3a1cb` → `87da6bb`). The engine half of the Insert UI now exists — bypass, reorder, and persistence-load wiring for the internal-FX dispatch path. Slice 1 (`f95602b`) added `IEffectChainHost::setInternalFxBypassAtSlot` + a parallel `internalBypass_` atomic-bool map in `OutOfProcessEffectChainHost`; `pumpSlot`'s internal-FX branch now acquire-loads the flag after the adapter lookup and returns false (dry pass-through) when bypassed. `setInternalFxAtSlot` erase + fresh-id paths both clear the bypass entry so a re-added slot starts active. Three new TEST_CASEs (bypass-true→miss, bypass-flip-restores, fresh-id-resets-bypass) using the existing `[internal-fx-host]` pattern. Slice 2 (`2f3a1cb`) added `IEffectChainHost::moveInternalFxSlot` — atomic swap-or-move of `(nodeKey, fromSlot)` ↔ `(nodeKey, toSlot)` across BOTH `internalAdapters_` and `internalBypass_` maps; bypass flag travels with its adapter. Three new TEST_CASEs (swap-two-occupied, move-to-empty, bypass-preservation-through-move). Slice 3 (`87da6bb`) wired the persisted `EffectChainEntry::bypassed` flag through to the host: `Bus::setEffectChain` (`engine/src/Bus.cpp:73-79`) and `ChannelStrip::setEffectChain` (`engine/include/ida/ChannelStrip.h:140-152`) now call `setInternalFxBypassAtSlot(.., entries[slotIdx].bypassed)` immediately after `setInternalFxAtSlot` in the Internal branch — closes the JSON-round-trip → host-state load path. Three new TEST_CASEs in `BusInternalFxEndToEndTests.cpp` (bypass=true→host pumpSlot returns false, bypass=false→host dispatches, replace-bypassed-with-fresh→bypass cleared). ctest baseline **625 → 634 across the session** (+9 new tests, 100% pass, 2 expected skips — the same operator-only OOP editor lifecycle cases #632/#633). Both `IdaTests` and `IDA` rebuild clean. RT-safety preserved throughout: `pumpSlot` adds one `unordered_map::find` + one atomic-acquire load per call on the internal-FX branch — no allocation, no locking, `noexcept`-compatible. The full 6-slice T5 plan lives at `/Users/larryseyer/.claude/plans/t5-insert-ui.md`; the per-session plan was `/Users/larryseyer/.claude/plans/read-continue-and-proceed-radiant-cat.md`. Slices 4-6 remain — slice 4 (`InsertChainPopup` ui/ component, partially headless), slice 5 (INS button + MainComponent wiring, operator-eyes-on), slice 6 (this handoff doc — already done early).**)
 
 > **For a fresh chat picking this up cold:** read this whole file before
