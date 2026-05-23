@@ -33,6 +33,7 @@ add_executable(SiriusTests
     TapeStoreTests.cpp
     WetCaptureWriterTests.cpp
     EffectChainTests.cpp
+    InternalFxIdTests.cpp
     MixerGraphStateTests.cpp
     MixerGraphPersistenceTests.cpp
     ParameterAutomationTests.cpp

@@ -1,0 +1,47 @@
+// Pins the four built-in FX ids + the round-trip string discriminant used by
+// SessionFormat. The enum is the wire-stable identity of an Internal slot —
+// renaming a value would break every saved session that contains an Internal
+// effect, so these tests serve as the contract for both readers and writers.
+#include "sirius/InternalFxId.h"
+
+#include <catch2/catch_test_macros.hpp>
+
+#include <cstdint>
+#include <stdexcept>
+
+using sirius::InternalFxId;
+
+TEST_CASE ("InternalFxId enum values are stable", "[internal-fx-id]")
+{
+    // The underlying type is uint8_t with a reserved range for future FX.
+    // Values are pinned because they appear (as strings) in saved sessions.
+    CHECK (static_cast<std::uint8_t> (InternalFxId::kEq)  == 0);
+    CHECK (static_cast<std::uint8_t> (InternalFxId::kCmp) == 1);
+    CHECK (static_cast<std::uint8_t> (InternalFxId::kRvb) == 2);
+    CHECK (static_cast<std::uint8_t> (InternalFxId::kDly) == 3);
+}
+
+TEST_CASE ("InternalFxId round-trips through toString / fromString", "[internal-fx-id]")
+{
+    for (auto id : { InternalFxId::kEq, InternalFxId::kCmp,
+                     InternalFxId::kRvb, InternalFxId::kDly })
+    {
+        CHECK (sirius::internalFxIdFromString (sirius::internalFxIdToString (id)) == id);
+    }
+}
+
+TEST_CASE ("internalFxIdToString produces the documented strings", "[internal-fx-id]")
+{
+    // These strings are the wire format. Do not rename them without a
+    // forward-compat plan in SessionFormat.
+    CHECK (sirius::internalFxIdToString (InternalFxId::kEq)  == std::string ("EQ"));
+    CHECK (sirius::internalFxIdToString (InternalFxId::kCmp) == std::string ("CMP"));
+    CHECK (sirius::internalFxIdToString (InternalFxId::kRvb) == std::string ("RVB"));
+    CHECK (sirius::internalFxIdToString (InternalFxId::kDly) == std::string ("DLY"));
+}
+
+TEST_CASE ("internalFxIdFromString throws on unknown id", "[internal-fx-id]")
+{
+    CHECK_THROWS_AS (sirius::internalFxIdFromString ("Synth"),  std::invalid_argument);
+    CHECK_THROWS_AS (sirius::internalFxIdFromString (""),       std::invalid_argument);
+}
