@@ -1,10 +1,10 @@
-# Session Continuation — 2026-05-23 (T06) (**P7 T06 SHIPPED via ralph loop iteration #6 — `Promotion::promote`'s Shared-path pointer-identity splice (the inline `std::function`+recursive-lambda block formerly at ~lines 230-289 of `core/src/Promotion.cpp`) extracted into a private anonymous-namespace helper `spliceLoopIntoSharedHost(root, hostPath, loopPtr)`. Capture-by-parameter, no closure over caller locals; the inner recursive lambda renamed `rebuildSubtreeReplacingHost`. `promote()` body dropped from ~218 → **172 lines**. Cross-reference comments added at BOTH splice sites: the Overlay branch comments "one wrapper instance → one path-based splice is sufficient; see `spliceLoopIntoSharedHost` for the Shared analogue"; the Shared branch's helper-call site comments back to the Overlay analogue, explaining "Shared can have N wrappers referencing the same host `ChildPtr` (the verse-×-3 shape), so the splice must rewrite every occurrence to preserve pointer identity across placements". Pointer-equality comment strengthened: `.get()` is deliberate vs `==` on `shared_ptr` ("same semantics, but `.get()` reads as the contract `same allocation, not equal value`"). Load-bearing pointer-equality assertion in `tests/PromotionTests.cpp::"promote with Shared and a wrapper covering Mark In adds the Loop to the shared Phrase"` still passes — pointer identity across the three wrapper-first-children survives the extraction. Pure refactor, no new tests, no behavior change. ctest baseline preserved **621 pass / 2 skipped** (the 2 skipped remain the operator-only OOP editor cases). NEXT = T07 (extract `MainComponent::refreshAll`).**)
+# Session Continuation — 2026-05-24 (T07) (**P7 T07 SHIPPED via ralph loop iteration #7 — `MainComponent::refreshAll()` extracted as a private composition of `refreshPerformance(); refreshPreparation(); refreshCaptureControls(); refreshDiagnostics();`. Three full-sequence call sites collapsed to a single `refreshAll();` each: `onUndo()` post-restore refresh, `onRedo()` post-redo refresh, and `forkPlacement()` end-of-gesture refresh. Historical line numbers from the deferral (`:525-528 / :938-941 / :966-969 / :1013-1016` plus a fifth at Task-8 site `38667d0`) have drifted heavily since T3a-C landed on `869318f` — re-locating by symbol via multiline-regex grep surfaced exactly THREE current full-sequence sites, not five (the prior duplications were folded or split during intervening edits). Two partial sites cited in the deferral (`:821-826`, `:1085-1086`) deliberately stay partial: `playhead_.onValueChange = [this] { refreshPerformance(); refreshPreparation(); };` is a 2-of-4 scope-limited to playhead drag (collapsing would fire `refreshCaptureControls()` + `refreshDiagnostics()` on every drag, wasteful), and the ctor's startup refresh interleaves `refreshTimeline()` which `refreshAll()` does NOT include (timeline isn't a per-capture / per-edit concern). The `onMarkOut()` 2+2 split across the `if (region)` brace at `:2720-2725` is also deliberately left as-is (Performance/Preparation fires inside the region-promoted branch, CaptureControls/Diagnostics fires unconditionally outside — collapsing would change semantics on the no-region-found path). Pure refactor, no new tests, no behavior change. ctest baseline preserved **621 pass / 2 skipped** (the 2 skipped remain the operator-only OOP editor cases). NEXT = T08 (`announceCapture` Overlay `value_or` → `jassert`).**)
 
 > **For a fresh chat picking this up cold:** read this whole file before
 > doing anything. Memory + project + user CLAUDE.md load automatically;
 > this file is the *state* (what just shipped + what's queued next).
-> Newest commit on Sirius origin/master: **`df89949`** (this session's T06
-> commit landed on top of `4100dd3`); OTTO origin/main:
+> Newest commit on Sirius origin/master: **`<TBD>`** (this session's T07
+> commit landed on top of `df89949`); OTTO origin/main:
 > **`abf8e4d4`** (unchanged this session); ctest baseline **621 pass / 2
 > skipped** (unchanged — refactor only, no new tests).
 > **MANDATORY at session start:** read
@@ -13,7 +13,170 @@
 > The whitepaper lives at `docs/Sirius_Looper_Whitepaper_V7.md`
 > (underscores — `project_whitepaper_path`).
 
-## ✅ DONE THIS SESSION (2026-05-23 — T06 P7 hoist Shared-path splice out of Promotion::promote, ralph iteration #6)
+## ✅ DONE THIS SESSION (2026-05-24 — T07 extract MainComponent::refreshAll, ralph iteration #7)
+
+Single-commit ralph iteration. Pure refactor — no new tests, no behavior
+change. Closes the third of the three 2026-05-16 code-review follow-ups
+queued for the loop (prd.json T06 / T07 / T08); T08 is the final
+loop-eligible task before GUI work (T4 / T5) takes over.
+
+- **`app/MainComponent.h`** — adds a private `void refreshAll();`
+  declaration in the per-tick view refresh block (immediately after
+  `refreshDiagnostics()`), with a four-line docstring spelling out the
+  composition contract: "Composes the four post-capture / post-edit
+  refreshes (performance → preparation → captureControls →
+  diagnostics) into one call so undo / redo / fork / similar gestures
+  need a single line, not four. Pure composition; no behaviour beyond
+  the four constituent refreshes." The placement next to the other
+  per-tick `refresh*` declarations is deliberate even though
+  `refreshCaptureControls()` is declared further down in the
+  `arm / disarm` section — `refreshAll` is the orchestrator, so it
+  sits with the rest of the per-tick refreshes.
+
+- **`app/MainComponent.cpp`** — adds the four-call body of
+  `refreshAll()` immediately after `refreshCaptureControls()`'s closing
+  brace. Composer-after-parts order keeps the file's existing
+  convention (constituent `refresh*` methods defined first, composer
+  last). Three full-sequence call sites collapsed to single-line
+  `refreshAll();` calls: `onUndo()` (post-restore refresh inside the
+  `if (canUndo())` block, formerly four lines at ~`:2837-2840`),
+  `onRedo()` (post-redo refresh inside `if (canRedo())`, formerly
+  ~`:2865-2868`), and `forkPlacement()` (end-of-gesture refresh at
+  top-level inside the function body, formerly ~`:2912-2915`).
+
+- **Deferral-cited sites that DO NOT collapse, deliberately.** The
+  2026-05-16 todo.md entry listed historical line numbers
+  (`:525-528 / :938-941 / :966-969 / :1013-1016` plus a fifth at
+  Task 8's `38667d0`). Those numbers have drifted heavily since
+  T3a-C landed on `869318f`; the prd.json task body explicitly
+  instructs to RE-LOCATE BY SYMBOL via grep, which surfaced exactly
+  THREE current full-sequence sites — the prior five duplications
+  have since been folded together or otherwise displaced by
+  intervening edits. The two partial sites cited in the deferral
+  (`:821-826 / :1085-1086`) deliberately stay partial:
+  `playhead_.onValueChange = [this] { refreshPerformance();
+  refreshPreparation(); };` (line 1893 currently) is a 2-of-4 partial
+  scope-limited to playhead drag — collapsing it to `refreshAll()`
+  would fire `refreshCaptureControls()` + `refreshDiagnostics()` on
+  every playhead value change, wasteful and beyond the drag's
+  intent. The ctor's startup refresh (line 1930ish:
+  `refreshPerformance(); refreshPreparation(); refreshTimeline();
+  refreshDiagnostics();`) interleaves `refreshTimeline()` —
+  `refreshAll()` does NOT include `refreshTimeline` because
+  timeline-pane state is not a per-capture / per-edit concern, so
+  collapsing this site would either omit the timeline refresh or
+  require widening `refreshAll`'s contract. The `onMarkOut()` 2+2
+  split across the `if (region)` brace at `:2720-2725` (currently)
+  is also deliberately left as-is — the Performance/Preparation pair
+  fires INSIDE the region-promoted branch while the
+  CaptureControls/Diagnostics pair fires UNCONDITIONALLY at the end
+  of the method; collapsing them would start firing the full
+  four-tuple even on a Mark-Out that fails to find a region,
+  changing semantics.
+
+- **`todo.md`** — the 2026-05-16 'Extract `MainComponent::refreshAll()`
+  and use it everywhere' entry marked RESOLVED with a paragraph
+  describing what landed, the drift in historical line numbers, the
+  fact that exactly three (not five) full-sequence sites exist now,
+  and the rationale for leaving the two cited partials + the
+  brace-split `onMarkOut` site as-is.
+
+- **`progress.txt`** — `[ ] T07` flipped to `[x] T07`; header fields
+  (`state` stays `in_progress`, `current_task` → T08, `last_commit`,
+  `last_updated`) bumped.
+
+**RT-safety:** none of these functions are reached from the audio
+callback. `refreshAll()` is a message-thread orchestrator; all four
+constituent `refresh*` methods touch JUCE Components on the message
+thread only. No RT contract to preserve.
+
+**Operator gate scenarios still apply.** The deferral's exit criteria
+included "the operator gate scenarios still verify (capture →
+tie-bar, fork → prime mark, undo → restore)" — those operator gates
+are not loop-verifiable; ralph leaves them to the operator after the
+loop exits. Confidence is high because this is a pure rename/extract:
+the four refresh calls at each site fire in identical order via the
+helper, and a green ctest baseline is the headless half of the
+verification.
+
+**ctest baseline:** **621 pass / 2 skipped** (the 2 skipped remain the
+operator-only OOP editor cases #619 / #620 from
+`MainComponentPluginEditorTests`). Build clean.
+`cmake --build build --target SiriusTests && ctest --test-dir build
+--output-on-failure` was the gate this iteration passed. `SiriusLooper`
++ `MainComponentPluginEditorTests` targets were also rebuilt
+(compile-only, no launch) to verify the MainComponent edits compile —
+both clean.
+
+## ▶ NEXT — announceCapture Overlay value_or → jassert (T08 in `prd.json`)
+
+Active prd.json: `T08` — the final loop-eligible task before GUI work.
+In `app/MainComponent.cpp`'s `announceCapture` Overlay branch (deferral
+cited ~line 780; re-locate by grep because the line MAY have drifted),
+replace `result.hostPhraseName.value_or("the phrase here")` and
+`result.overlayPlacementIndex.value_or(0u)` with direct dereference
+(`*result.hostPhraseName` / `*result.overlayPlacementIndex` or
+`.value()` if the file prefers that style), guarded immediately above
+by `jassert(result.hostPhraseName.has_value() &&
+result.overlayPlacementIndex.has_value());`. The branch is
+contractually unreachable when the invariant holds — converts
+silent-wrong-copy failure to loud-debug-trap failure per CLAUDE.md
+philosophy rule 8 (`fail loud`). Operator gate re-verification (the
+four banner scenarios) is OUT OF LOOP SCOPE — left to operator after
+the loop exits.
+
+```
+T0  OTTO submodule          ✅ DONE
+T1  docs                    ✅ DONE
+T2  engine union slot       ✅ DONE
+T3  internal-FX adapters    NEAR DONE
+    T3a-EQ                  ✅ DONE
+    T3b-CMP                 ✅ DONE
+    T3c-DLY                 ✅ DONE
+    T3d-RVB                 last (background-thread IR loading)
+T3a follow-up debt          ✅ ALL DONE via prd.json T03-T05
+    T03 I-1 idempotency     ✅ DONE
+    T04 I-2 InputMixer wire ✅ DONE
+    T05 M-2 Bus split       ✅ DONE
+2026-05-16 code-review      NEAR DONE via prd.json T06-T08
+    T06 Promotion splice    ✅ DONE
+    T07 MainComponent refresh ✅ DONE (this iteration)
+    T08 announceCapture jassert next (this entry)
+T4  Sends tab UI            (after T3d + GUI handoff)
+T5  Insert UI               (internal-FX-only picker until "P7-scanner")
+T6  P4/P5 persistence wiring into MainComponent save/load
+```
+
+**First moves for T08:**
+
+1. Read `app/MainComponent.cpp`. Use Grep to find the
+   `announceCapture` Overlay branch — search for `value_or` near
+   `hostPhraseName` / `overlayPlacementIndex`. Confirm the line drift
+   from the deferral's cited ~line 780.
+2. Replace `result.hostPhraseName.value_or("the phrase here")` with
+   `*result.hostPhraseName` (or `result.hostPhraseName.value()`, to
+   match the surrounding style if it already uses `.value()`). Same
+   for `result.overlayPlacementIndex.value_or(0u)`.
+3. Immediately above both dereferences, add the guard:
+   `jassert(result.hostPhraseName.has_value() &&
+   result.overlayPlacementIndex.has_value());` (combine into one
+   `jassert` if the dereferences are adjacent).
+4. Verify with `cmake --build build --target SiriusTests &&
+   ctest --test-dir build --output-on-failure` — EXACTLY the same
+   case count as before T08 (currently **621 pass / 2 skipped**;
+   refactor only, no new tests).
+5. Mark the 2026-05-16 'announceCapture Overlay branch: replace
+   value_or fallbacks with jassert' entry in `todo.md` resolved.
+
+After T08 → the loop exits. Remaining work (T4 Sends tab UI,
+T5 Insert UI, T6 persistence wiring) is GUI-heavy and ralph cannot
+verify it headlessly — operator picks up.
+
+---
+
+# (archived header — 2026-05-23) — P7 T06 SHIPPED via ralph loop iteration #6 — `Promotion::promote`'s Shared-path pointer-identity splice extracted into a private anonymous-namespace helper `spliceLoopIntoSharedHost(root, hostPath, loopPtr)`; capture-by-parameter; `promote()` body dropped from ~218 → 172 lines; cross-reference comments added at both Overlay and Shared splice sites; load-bearing pointer-equality test still passes. Pure refactor; ctest **621 pass / 2 skipped**.
+
+## (archived body — T06 P7 hoist Shared-path splice out of Promotion::promote, ralph iteration #6)
 
 Single-commit ralph iteration. Pure refactor — no new tests, no behavior
 change. Closes the second of the three 2026-05-16 code-review follow-ups
@@ -81,65 +244,6 @@ operator-only OOP editor cases #620 / #621 from
 `MainComponentPluginEditorTests`). Build clean.
 `cmake --build build --target SiriusTests && ctest --test-dir build
 --output-on-failure` was the gate this iteration passed.
-
-## ▶ NEXT — Extract MainComponent::refreshAll (T07 in `prd.json`)
-
-Active prd.json: `T07` — declare a private `void refreshAll()` in
-`app/MainComponent.h` that calls
-`refreshPerformance(); refreshPreparation(); refreshCaptureControls();
-refreshDiagnostics();` in order, and replace each full-sequence call
-site with `refreshAll()`. todo.md cites lines :525-528, :938-941,
-:966-969, :1013-1016 plus a fifth — line numbers MAY have drifted since
-T3a-C landed on `869318f`, so RE-LOCATE BY GREP for the four-call
-sequence. Inspect the two partial-sequence sites (:821-826, :1085-1086)
-— default to leaving them partial unless they are obviously full
-sequences mis-cited. No behavior change.
-
-```
-T0  OTTO submodule          ✅ DONE
-T1  docs                    ✅ DONE
-T2  engine union slot       ✅ DONE
-T3  internal-FX adapters    NEAR DONE
-    T3a-EQ                  ✅ DONE
-    T3b-CMP                 ✅ DONE
-    T3c-DLY                 ✅ DONE
-    T3d-RVB                 last (background-thread IR loading)
-T3a follow-up debt          ✅ ALL DONE via prd.json T03-T05
-    T03 I-1 idempotency     ✅ DONE
-    T04 I-2 InputMixer wire ✅ DONE
-    T05 M-2 Bus split       ✅ DONE
-2026-05-16 code-review      IN PROGRESS via prd.json T06-T08
-    T06 Promotion splice    ✅ DONE (this iteration)
-    T07 MainComponent refresh next (this entry)
-    T08 announceCapture jassert
-T4  Sends tab UI            (after T3d + GUI handoff)
-T5  Insert UI               (internal-FX-only picker until "P7-scanner")
-T6  P4/P5 persistence wiring into MainComponent save/load
-```
-
-**First moves for T07:**
-
-1. Read `app/MainComponent.cpp`. Use Grep (multiline mode or `-A 3`) to
-   find the four-call sequence
-   `refreshPerformance(); refreshPreparation(); refreshCaptureControls();
-   refreshDiagnostics();`. Confirm at least four full-sequence sites;
-   note the two partial sites.
-2. Declare `void refreshAll();` private in `app/MainComponent.h` with a
-   one-line docstring (e.g., "Refresh every UI surface in tree order:
-   performance, preparation, capture controls, diagnostics.").
-3. Define `void MainComponent::refreshAll()` in `app/MainComponent.cpp`
-   to call the four `refresh*` methods in order.
-4. Replace each full-sequence call site with `refreshAll();`.
-5. Verify with `cmake --build build --target SiriusTests &&
-   ctest --test-dir build --output-on-failure` — EXACTLY the same case
-   count as before T07 (currently **621 pass / 2 skipped**; refactor only,
-   no new tests).
-6. Mark the 2026-05-16 'Extract MainComponent::refreshAll' entry in
-   `todo.md` resolved.
-
-After T07 → T08 (announceCapture Overlay `value_or` → `jassert`). T08
-is the final loop-eligible task before GUI work (T4 / T5 in the umbrella
-plan), which ralph cannot verify — that's where the operator picks up.
 
 ---
 

@@ -2810,6 +2810,14 @@ void MainComponent::refreshCaptureControls()
     markOutButton_.setColour (juce::TextButton::textColourOnId,  juce::Colours::white);
 }
 
+void MainComponent::refreshAll()
+{
+    refreshPerformance();
+    refreshPreparation();
+    refreshCaptureControls();
+    refreshDiagnostics();
+}
+
 void MainComponent::onUndo()
 {
     if (undoStack_.canUndo())
@@ -2834,10 +2842,7 @@ void MainComponent::onUndo()
                                     restoreOnLeave->pendingTape);
         }
 
-        refreshPerformance();
-        refreshPreparation();
-        refreshCaptureControls();
-        refreshDiagnostics();
+        refreshAll();
     }
 }
 
@@ -2862,10 +2867,7 @@ void MainComponent::onRedo()
         if (undoStack_.currentEntryRestorePoint().has_value())
             captureSession_.cancel();
 
-        refreshPerformance();
-        refreshPreparation();
-        refreshCaptureControls();
-        refreshDiagnostics();
+        refreshAll();
     }
 }
 
@@ -2909,10 +2911,7 @@ void MainComponent::forkPlacement (ConstituentId wrapperId)
         std::make_shared<const sirius::Constituent> (std::move (newRoot)),
         "vary this placement");
 
-    refreshPerformance();
-    refreshPreparation();
-    refreshCaptureControls();
-    refreshDiagnostics();
+    refreshAll();
 }
 
 void MainComponent::chooseFileAndSave()

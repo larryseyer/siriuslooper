@@ -913,38 +913,32 @@
   in practice; tests + operator gate pass cleanly.
 - **Surfaced by:** code-quality review of commit `dd1c28c` (Task 7).
 
-### 2026-05-16 — Extract `MainComponent::refreshAll()` and use it everywhere
+### 2026-05-16 — Extract `MainComponent::refreshAll()` and use it everywhere — RESOLVED 2026-05-23 by P7 T07
 
-- **Files:** `app/MainComponent.h`, `app/MainComponent.cpp`.
-- **What was deferred:** the four-line refresh sequence
-  ```
-  refreshPerformance();
-  refreshPreparation();
-  refreshCaptureControls();
-  refreshDiagnostics();
-  ```
-  is duplicated at five call sites (`MainComponent.cpp:525-528`,
-  `:938-941`, `:966-969`, `:1013-1016`, and partials at `:821-826`
-  / `:1085-1086`). Task 8 (`38667d0`) was the fifth duplication.
-- **What's needed to finish:**
-  1. Add `void refreshAll();` to the private section of
-     `MainComponent.h` with a one-line docstring.
-  2. Define it in `MainComponent.cpp` as the four-call sequence.
-  3. Replace each existing call site with a single `refreshAll();`
-     invocation. Inspect partial-sequence sites (`:821-826` etc.) to
-     decide whether they should also collapse to `refreshAll()` or
-     stay partial.
-  4. Verify the full suite still green (250 cases) and the operator
-     gate scenarios still verify (capture → tie-bar, fork → prime
-     mark, undo → restore).
-- **Why deferred:** Task 8 was an "add the fifth copy" moment, not a
-  "refactor four prior copies" moment. Code-quality reviewer flagged
-  it as Important but Approved-with-follow-ups; the surgical-changes
-  rule said to ship the plan-delta now and extract in a focused
-  refactor commit.
-- **Operational consequence today:** none. Every refresh fires
-  correctly; the only cost is the file's growing repetition.
-- **Surfaced by:** code-quality review of commit `38667d0` (Task 8).
+- **Status:** Resolved end-to-end via ralph loop iteration #7 on
+  2026-05-23. `void refreshAll();` lives in the private section of
+  `app/MainComponent.h` with a four-line docstring spelling out the
+  composition contract (performance → preparation → captureControls →
+  diagnostics). Definition in `app/MainComponent.cpp` is the four-call
+  sequence verbatim. Three full-sequence call sites collapsed to a
+  single `refreshAll();` each: `onUndo()`'s post-restore refresh,
+  `onRedo()`'s post-redo refresh, and `forkPlacement()`'s end-of-gesture
+  refresh. The historical line numbers from the deferral (`:525-528`,
+  `:938-941`, `:966-969`, `:1013-1016`, plus a fifth at `38667d0`'s
+  Task-8 site) have drifted heavily since T3a-C landed on `869318f`;
+  re-locating by symbol via multiline grep on the four-call regex
+  surfaced exactly THREE current full-sequence sites — the prior
+  duplications have since been folded or split during intervening
+  edits. The two partial sites cited in the deferral (`:821-826`,
+  `:1085-1086`) remain partial per the deferral's explicit guidance —
+  one is `playhead_.onValueChange = [this] { refreshPerformance();
+  refreshPreparation(); };` (2 of 4, deliberately scope-limited to
+  playhead drag), the other is the constructor's startup refresh
+  which interleaves `refreshTimeline()` (5 calls including the timeline
+  one — refreshAll() does NOT include refreshTimeline because timeline
+  isn't a per-capture / per-edit concern). The `onMarkOut()` block at
+  `:2720-2725` is a split 2+2 across a brace boundary — also left
+  partial. ctest baseline preserved **621 pass / 2 skipped**.
 
 ### 2026-05-15 — OTTO Look-and-Feel integration (cross-app)
 

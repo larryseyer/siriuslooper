@@ -93,6 +93,11 @@ private:
     void refreshPreparation();
     void refreshTimeline();
     void refreshDiagnostics();
+    /// Composes the four post-capture / post-edit refreshes (performance →
+    /// preparation → captureControls → diagnostics) into one call so undo /
+    /// redo / fork / similar gestures need a single line, not four. Pure
+    /// composition; no behaviour beyond the four constituent refreshes.
+    void refreshAll();
     void refreshInputMixer();
     /// Resolves each input strip's current tape destination + the pooled-tape
     /// choice list and pushes both into the pane's per-strip picker buttons.
