@@ -1,17 +1,138 @@
-# Session Continuation — 2026-05-23 (T3c-DLY) (**P7 umbrella T3c-DLY SHIPPED via ralph loop iteration #2 — `engine/src/fx/DlyAdapter.{h,cpp}` wraps `otto::effects::PlayerDelay` (default config, `delayEnabled=true` AND `delaySyncEnabled=false` in ctor so a freshly-inserted slot does DSP at the default free-running 250 ms — the sync path silently no-ops without a transport bpm > 0, which the internal-FX adapter surface doesn't plumb yet). `InternalFxFactory` `kDly` case flipped from `nullptr` to `std::make_unique<DlyAdapter>()`. 5 new `[internal-fx][dly-adapter]` cases (unprepared miss, prepared finite, reset, in-place aliasing, unit-impulse-at-250-ms-tap) + 1 new positive `[internal-fx][factory]` case for kDly. RT-safety grep clean on `DlyAdapter::process()` (pre-flight confirmed `PlayerDelay::process` does only `popSample`/`pushSample` on pre-prepared delay lines + filter `processSample` + atomic `fetch_add` — no allocation under modulation). ctest **614 pass / 1 documented Not-Run** (up from 608 — +6 cases). NEXT = T3a follow-up debt T03 (`prepareInternalFx` idempotency on unchanged sr/block).**)
+# Session Continuation — 2026-05-23 (T03 I-1) (**P7 T3a follow-up debt T03 SHIPPED via ralph loop iteration #3 — `OutOfProcessEffectChainHost::prepareInternalFx(sr, maxBlock)` now early-returns when `(sr, maxBlock)` matches the stored `(currentSampleRate_, currentMaxBlock_)` AND `prepared_` is true. Closes the latent bug where `rebuildInputStrips()` (MainComponent.cpp:2378-2386) fires on every stereo-toggle / device-config rebuild, walks every bound adapter, and re-invokes `adapter->prepare(...)` — which (for PlayerEQ's ProcessorDuplicator IIR cascade) clears filter state mid-buffer. Adds a narrow `setInternalFxAdapterForTesting` injection seam to the host so tests can bind a counting mock without going through the factory. 2 new `[internal-fx-host][prepare-idempotency]` cases verify the early-return contract: one asserts a mock's `prepare()` count stays at 1 across redundant calls and bumps on real sr/block changes; one asserts the first-ever call still proceeds when stored defaults match the incoming values. ctest **619 pass / 2 skipped** (up from 614; +2 new idempotency cases plus 3 prior `ParseAndAddCatchTests` discovery delta). NEXT = T04 (`InputMixer::setEffectChainHost` wiring + end-to-end test).**)
 
 > **For a fresh chat picking this up cold:** read this whole file before
 > doing anything. Memory + project + user CLAUDE.md load automatically;
 > this file is the *state* (what just shipped + what's queued next).
-> Newest commit on Sirius origin/master: **`2660ad7`** (this session's
-> T3c-DLY commit landed on top of `48a0e4d`); OTTO origin/main:
-> **`abf8e4d4`** (unchanged this session); ctest baseline **614 pass / 1
-> documented Not-Run** (up from 608 — +6 cases this session).
+> Newest commit on Sirius origin/master: **`e892787`** (this session's
+> T03 I-1 commit landed on top of `2660ad7`); OTTO origin/main:
+> **`abf8e4d4`** (unchanged this session); ctest baseline **619 pass / 2
+> skipped** (up from 614 — +5 ctest entries this session).
 > **MANDATORY at session start:** read
 > `external/OTTO/CROSS_PROJECT_INBOX.md` and acknowledge any
 > `[FROM OTTO → SIRIUS]` entries (per `project_cross_project_inbox_protocol`).
 > The whitepaper lives at `docs/Sirius_Looper_Whitepaper_V7.md`
 > (underscores — `project_whitepaper_path`).
+
+## ✅ DONE THIS SESSION (2026-05-23 — T03 P7 T3a I-1 prepareInternalFx idempotency, ralph iteration #3)
+
+Single-commit ralph iteration. Pure host-layer surgical edit.
+
+- **`host/src/OutOfProcessEffectChainHost.cpp`** — `prepareInternalFx`
+  gets a four-line early-return at the top:
+  `if (prepared_ && sampleRate == currentSampleRate_ && maxBlockSize == currentMaxBlock_) return;`.
+  Eight-line comment block above documents the gotcha: `rebuildInputStrips()`
+  fires on every stereo-toggle and device-config rebuild, funneling all
+  through `prepareInternalFx`. Without the guard, every redundant call
+  walks `internalAdapters_` and re-invokes `adapter->prepare(...)`,
+  which (for PlayerEQ's `ProcessorDuplicator<IIR>`) resets coefficients
+  AND clears filter state mid-buffer. The `prepared_ == false` clause
+  on the first conjunct keeps the very first call proceeding even when
+  the incoming values happen to match the zero-init defaults
+  (`currentSampleRate_ = 0.0`, `currentMaxBlock_ = 0`).
+
+- **`host/include/sirius/OutOfProcessEffectChainHost.h`** — new
+  test-only seam `setInternalFxAdapterForTesting (nodeKey, slotIdx,
+  std::unique_ptr<IInternalFxAdapter>)` declared alongside the existing
+  `restartCountForTesting` / `permanentlyBypassedForTesting` /
+  `childPidForTestingAtSlot` accessors. Same message-thread +
+  detached-callback contract as the production `setInternalFxAtSlot`.
+  Auto-prepares the bound adapter against the stored values if
+  `prepared_` is already true (mirrors the production setter's behavior
+  so the mock's invocation counts line up with what a real adapter
+  would observe).
+
+- **`host/src/OutOfProcessEffectChainHost.cpp`** — implementation of
+  `setInternalFxAdapterForTesting` placed immediately above `pumpSlot`,
+  matching the file's "message-thread API first, audio-thread API
+  second" ordering convention.
+
+- **`tests/OutOfProcessEffectChainHostInternalDispatchTests.cpp`** —
+  2 new `[internal-fx-host][prepare-idempotency]` cases plus a
+  minimal `CountingMockAdapter` (an anonymous-namespace
+  `IInternalFxAdapter` implementation whose `prepare()` increments a
+  counter and whose `reset()` / `process()` are no-ops):
+    1. *prepareInternalFx is idempotent — same sr+block calls
+       adapter->prepare() exactly once* — bind via the testing seam
+       AFTER one `prepareInternalFx(48000, 512)` (count goes 0 → 1
+       via the seam's auto-prepare); two redundant calls with the
+       same args leave the count at 1; sr-only change to 44100 bumps
+       to 2; maxBlock-only change to 1024 bumps to 3; redundant
+       (44100, 1024) leaves it at 3. Locks in the exact early-return
+       conditions.
+    2. *prepareInternalFx — first call always proceeds even if
+       sr/block defaults match* — bind BEFORE any `prepareInternalFx`
+       call (count stays 0 — the seam does NOT auto-prepare while
+       `prepared_` is false); then `prepareInternalFx(0.0, 0)` — even
+       though `(sr, maxBlock)` matches the zero-init defaults, the
+       `prepared_ == false` gate forces the walk and bumps the count
+       to 1. Pins the regression boundary so a future refactor can't
+       short-circuit the first-ever call.
+
+- **`todo.md`** — entry (a) for 2026-05-23 (late) marked RESOLVED with
+  a one-paragraph summary of what landed and which test cases cover
+  the contract. Entries (b) and (c) remain open and are queued as
+  T04 and T05 in prd.json.
+
+- **`progress.txt`** — `[ ] T03` flipped to `[x] T03`; header fields
+  (`state`, `current_task`, `last_commit`, `last_updated`) bumped.
+
+**RT-safety:** the early-return path is allocation-free, lock-free,
+log-free (it touches three POD members and bails). The walking path
+is unchanged. No `noexcept` regression — `prepareInternalFx` is
+message-thread API and not marked noexcept either before or after.
+
+**ctest baseline:** 614 → **619 pass / 2 skipped** (the 2 skipped are
+the operator-only OOP editor cases #618 / #619 from
+`MainComponentPluginEditorTests` — unchanged from prior). Build clean;
+`cmake --build build --target SiriusTests &&
+ctest --test-dir build --output-on-failure` is the loop's allowed
+verification command and was the gate this iteration passed.
+
+## ▶ NEXT — P7 T3a follow-up debt T04 (T04 in `prd.json`)
+
+Active prd.json: `T04` — `InputMixer::setEffectChainHost` wiring +
+end-to-end test. The umbrella status:
+
+```
+T0  OTTO submodule          ✅ DONE
+T1  docs                    ✅ DONE
+T2  engine union slot       ✅ DONE
+T3  internal-FX adapters    NEAR DONE
+    T3a-EQ                  ✅ DONE
+    T3b-CMP                 ✅ DONE
+    T3c-DLY                 ✅ DONE
+    T3d-RVB                 last (background-thread IR loading)
+T3a follow-up debt          IN PROGRESS via prd.json T03-T05
+    T03 I-1 idempotency     ✅ DONE (this iteration)
+    T04 I-2 InputMixer wire next
+    T05 M-2 Bus split       after T04
+T4  Sends tab UI            (after T3 fully)
+T5  Insert UI               (internal-FX-only picker until "P7-scanner")
+T6  P4/P5 persistence wiring into MainComponent save/load
+```
+
+**First moves for T04:**
+
+1. Open `engine/include/sirius/InputMixer.h` and add
+   `void setEffectChainHost (IEffectChainHost* host);` near the
+   `OutputMixer`-shaped methods. Define in `engine/src/InputMixer.cpp`
+   by storing the pointer in a new `effectChainHost_` member and
+   walking every existing internal bus to call
+   `bus.setEffectChainHost(host)`. Propagate to any NEW bus on
+   creation in the same code path as the other per-bus setters.
+2. In `app/MainComponent.cpp`, locate the existing
+   `outputMixer_->setEffectChainHost(pluginHost_.get())` call and add
+   the matching `inputMixer_->setEffectChainHost(pluginHost_.get())`
+   line alongside it.
+3. Create `tests/InputMixerInternalFxEndToEndTests.cpp` mirroring
+   `tests/BusInternalFxEndToEndTests.cpp` — at least one
+   `[input-mixer][internal-fx][end-to-end]` case that drops a
+   `makeInternal(kEq)` onto an Input-side bus, prepares the host,
+   verifies a finite non-zero stereo output through the host's
+   dispatch.
+4. Add the new test file to `tests/CMakeLists.txt`.
+5. Remove or mark resolved the `todo.md` entry (b) for 2026-05-23
+   (late).
 
 ## ✅ DONE THIS SESSION (2026-05-23 — T3c-DLY DlyAdapter, ralph iteration #2)
 
@@ -114,18 +235,7 @@ T5  Insert UI               (internal-FX-only picker until "P7-scanner")
 T6  P4/P5 persistence wiring into MainComponent save/load
 ```
 
-**First moves for T03:**
-
-1. Open `host/src/OutOfProcessEffectChainHost.cpp` and locate
-   `prepareInternalFx(sr, maxBlock)`. Add a four-line early-return at
-   the top: `if (prepared_ && currentSampleRate_ == sr && currentMaxBlock_ == maxBlock) return;`.
-2. Verify the state fields `currentSampleRate_`, `currentMaxBlock_`,
-   `prepared_` already exist (per `todo.md` (a) — they do).
-3. Extend `tests/OutOfProcessEffectChainHostTests.cpp` with a
-   counting-mock-adapter idempotency case: "prepareInternalFx is
-   idempotent — same sr+block calls adapter->prepare() exactly once."
-4. Remove or mark resolved the `todo.md` entry (a) for 2026-05-23
-   (late).
+# (archived header — 2026-05-23) — P7 umbrella T3c-DLY SHIPPED via ralph iteration #2 — `DlyAdapter` wrapping `otto::effects::PlayerDelay` (default config, `delayEnabled=true` + `delaySyncEnabled=false` in ctor so a freshly-inserted slot does DSP at the default free-running 250 ms); 5 `[internal-fx][dly-adapter]` cases (incl. unit-impulse-at-250-ms-tap) + 1 factory split. ctest 608 → 614 (+6). NEXT was T03 — this iteration shipped it.
 
 # (archived header — 2026-05-23) — P7 umbrella T3b-CMP SHIPPED via ralph iteration #1 — `CmpAdapter` wrapping `otto::effects::PlayerCompressor` (default config, `compEnabled=true` in ctor; sidechain derived internally from input — no external sidechain bus required); 5 `[internal-fx][cmp-adapter]` cases (incl. sustained-sine-above-threshold peak reduction) + 1 factory split. ctest 602 → 608 (+6). NEXT was T3c-DLY — this iteration shipped it.
 

@@ -198,6 +198,21 @@ void OutOfProcessEffectChainHost::prepareInternalFx (double sampleRate, int maxB
     // bound adapter and stashes the values so subsequent
     // `setInternalFxAtSlot(...)` calls can auto-prepare new adapters
     // against the same configuration.
+    //
+    // P7 T3a I-1 — idempotency early-return. `rebuildInputStrips()` fires
+    // on every stereo-toggle and device-config rebuild, not just on
+    // sample-rate change; each call funnels through here. Re-walking the
+    // adapter table and re-invoking `adapter->prepare(...)` re-runs each
+    // adapter's coefficient computation AND clears IIR state mid-buffer
+    // (PlayerEQ::ProcessorDuplicator semantics). Short-circuit when
+    // nothing has actually changed so a bound EQ keeps its filter history
+    // across stereo-toggles. The first call (`prepared_ == false`) always
+    // proceeds.
+    if (prepared_
+        && sampleRate   == currentSampleRate_
+        && maxBlockSize == currentMaxBlock_)
+        return;
+
     currentSampleRate_ = sampleRate;
     currentMaxBlock_   = maxBlockSize;
     prepared_          = true;
@@ -207,6 +222,28 @@ void OutOfProcessEffectChainHost::prepareInternalFx (double sampleRate, int maxB
         if (adapter != nullptr)
             adapter->prepare (sampleRate, maxBlockSize);
     }
+}
+
+void OutOfProcessEffectChainHost::setInternalFxAdapterForTesting (
+    std::int64_t                          nodeKey,
+    std::size_t                           slotIdx,
+    std::unique_ptr<IInternalFxAdapter>   adapter)
+{
+    // Test-only seam — same message-thread + detached-callback contract as
+    // `setInternalFxAtSlot`. Bypasses the factory so tests can inject a
+    // mock that records invocations (e.g. T3a I-1 idempotency counter).
+    const SlotKey key { nodeKey, slotIdx };
+
+    if (adapter == nullptr)
+    {
+        internalAdapters_.erase (key);
+        return;
+    }
+
+    if (prepared_)
+        adapter->prepare (currentSampleRate_, currentMaxBlock_);
+
+    internalAdapters_[key] = std::move (adapter);
 }
 
 bool OutOfProcessEffectChainHost::pumpSlot (std::int64_t        busId,

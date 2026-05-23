@@ -283,6 +283,20 @@ public:
     long childPidForTestingAtSlot (std::int64_t busId,
                                    std::size_t  slotIndex) const noexcept;
 
+    /// Test-only seam — binds a caller-constructed adapter at
+    /// `(nodeKey, slotIdx)`, bypassing the `InternalFxFactory`. The host
+    /// takes ownership and (if `prepareInternalFx` has already run) calls
+    /// `adapter->prepare(...)` against the stored sample-rate / max-block.
+    /// Used by tests that need a counting / observing mock adapter — e.g.
+    /// the T3a I-1 idempotency test that verifies a redundant
+    /// `prepareInternalFx(sr, maxBlock)` call does NOT re-invoke
+    /// `adapter->prepare()`. Message-thread only with the audio callback
+    /// detached, same precondition as the production `setInternalFxAtSlot`.
+    void setInternalFxAdapterForTesting (
+        std::int64_t                          nodeKey,
+        std::size_t                           slotIdx,
+        std::unique_ptr<IInternalFxAdapter>   adapter);
+
 private:
     /// `(busId, slotIndex)` lookup key. Composed of trivially copyable
     /// integers so the `unordered_map` hashing stays allocation-free.

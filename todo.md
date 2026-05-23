@@ -1,31 +1,19 @@
 # Sirius Looper — Deferred Items
 
-### 2026-05-23 (late) — T3a-EQ Code Reviewer follow-ups (3 entries below)
+### 2026-05-23 (late) — T3a-EQ Code Reviewer follow-ups (2 remaining entries below; entry (a) resolved 2026-05-23)
 
-#### (a) T5 prerequisite — `rebuildInputStrips()` over-triggers `prepareInternalFx` (will zap adapter IIR state on stereo-toggle once UI binds an adapter)
-- Files: `app/MainComponent.cpp:2378-2386` (the `rebuildInputStrips` call site
-  added in T3a-C `869318f`); `host/src/OutOfProcessEffectChainHost.cpp`
-  (`prepareInternalFx` definition); `host/include/sirius/OutOfProcessEffectChainHost.h`
-  (already stores `currentSampleRate_` / `currentMaxBlock_` / `prepared_`).
-- What was deferred: `rebuildInputStrips` is invoked on channel-pair stereo
-  toggles AND device-config changes, not just sample-rate changes. Each call
-  re-runs `pluginHost_->prepareInternalFx(sr, blockSize)`, which walks every
-  bound adapter and calls `adapter->prepare(sr, maxBlock)`. `EqAdapter::prepare`
-  in turn calls `eq_.prepare(...)` + `eq_.updateCoefficients(cfg_)` — JUCE
-  `ProcessorDuplicator<IIR>` resets coefficients AND clears state. Effectively
-  every stereo-toggle gesture zeros an EQ's filter history mid-buffer.
-- Why latent today: no operator-facing path binds an internal-FX adapter yet —
-  T5 (insert UI) is where the operator can drop an EQ into a chain. Until T5,
-  `internalAdapters_` is empty and the prepare-walk is a no-op.
-- Why deferred: surgical-changes rule kept T3a-C narrow. The fix is small but
-  belongs paired with the T5 slice that makes the bug observable.
-- What's needed to finish: cheapest fix is host-side early-return — in
-  `OutOfProcessEffectChainHost::prepareInternalFx`, before walking adapters,
-  check `if (sampleRate == currentSampleRate_ && maxBlockSize == currentMaxBlock_
-  && prepared_) return;`. Four lines. Alternative: introduce
-  `IEffectChainHost::handleDeviceConfigChanged(oldSr, newSr, oldBlock, newBlock)`
-  and only forward when values actually changed (heavier — needs MainComponent
-  tracking + interface widening). Land BEFORE T5 ships its insert UI.
+#### (a) — RESOLVED 2026-05-23 by P7 T3a I-1 (prd T03)
+- `OutOfProcessEffectChainHost::prepareInternalFx` now early-returns when
+  `(sr, maxBlock)` matches the stored `(currentSampleRate_, currentMaxBlock_)`
+  AND `prepared_` is true. Bound adapters keep their IIR state across
+  stereo-toggle / device-config rebuilds that don't actually change sr or
+  block size. Verified by two new `[internal-fx-host][prepare-idempotency]`
+  cases in `OutOfProcessEffectChainHostInternalDispatchTests.cpp` (one
+  asserts a counting mock's `prepare()` count stays at 1 across redundant
+  calls and bumps on real changes; one asserts the first-ever call still
+  proceeds even when stored defaults match the incoming values). Adds a
+  narrow `setInternalFxAdapterForTesting` seam to the host so tests can
+  inject a mock without going through the factory.
 
 #### (b) T4 prerequisite — `InputMixer` has no `setEffectChainHost` (internal FX on Input-side bus chains silently no-op)
 - Files: `engine/include/sirius/InputMixer.h`, `engine/src/InputMixer.cpp`

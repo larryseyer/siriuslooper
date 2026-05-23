@@ -10,12 +10,14 @@
 // (~/.claude/plans/read-continue-and-proceed-structured-acorn.md,
 // "Modified" section in the T3a body + "Subagent B" sequence row).
 
+#include "sirius/IInternalFxAdapter.h"
 #include "sirius/OutOfProcessEffectChainHost.h"
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
 #include <cmath>
+#include <memory>
 
 namespace
 {
@@ -269,6 +271,106 @@ TEST_CASE ("setInternalFxAtSlot with an un-shipped id (kRvb) is a no-op rebind",
         CHECK (lout[i] == kSentinel);
         CHECK (rout[i] == kSentinel);
     }
+}
+
+namespace
+{
+    /// P7 T3a I-1 — minimal counting mock adapter used to verify
+    /// `prepareInternalFx` idempotency. `prepare()` increments a counter
+    /// every call; `reset()` and `process()` are no-ops. The test asserts
+    /// the prepare counter stays at 1 across a redundant `prepareInternalFx`
+    /// call with unchanged sr/maxBlock.
+    class CountingMockAdapter : public sirius::IInternalFxAdapter
+    {
+    public:
+        void prepare (double /*sampleRate*/, int /*maxBlockSize*/) override
+        {
+            ++prepareCallCount;
+        }
+
+        void reset() noexcept override {}
+
+        bool process (const float* const* /*inChannels*/,
+                      float* const*       /*outChannels*/,
+                      int                 /*numChannels*/,
+                      int                 /*numSamples*/) noexcept override
+        {
+            return false;
+        }
+
+        int prepareCallCount = 0;
+    };
+}
+
+TEST_CASE ("prepareInternalFx is idempotent — same sr+block calls adapter->prepare() exactly once",
+           "[internal-fx-host][prepare-idempotency]")
+{
+    // T3a I-1 — `rebuildInputStrips()` (MainComponent.cpp:2378-2386) fires
+    // on every stereo-toggle and device-config rebuild, not just on
+    // sample-rate change. Without the early-return guard in
+    // `prepareInternalFx`, each rebuild re-invokes `adapter->prepare(...)`
+    // on every bound adapter, which (for PlayerEQ's ProcessorDuplicator-
+    // backed cascade) clears IIR state mid-buffer. This case pins the
+    // early-return contract: a redundant `prepareInternalFx(sr, maxBlock)`
+    // call with unchanged values does NOT re-prepare adapters.
+    sirius::OutOfProcessEffectChainHost host;
+
+    auto mockOwned = std::make_unique<CountingMockAdapter>();
+    auto* mock     = mockOwned.get(); // raw observer — host owns the unique_ptr
+
+    // Prepare first (sr=48000, block=512), then bind. The bind auto-
+    // prepares the freshly-bound adapter against the stored values, so
+    // prepareCallCount goes from 0 → 1.
+    host.prepareInternalFx (48000.0, 512);
+    host.setInternalFxAdapterForTesting (
+        /* nodeKey */ 42, /* slotIdx */ 0, std::move (mockOwned));
+    REQUIRE (mock->prepareCallCount == 1);
+
+    // Redundant call — IDENTICAL sr + maxBlock + prepared_ already true.
+    // The early-return must skip the adapter walk so prepareCallCount
+    // stays at 1.
+    host.prepareInternalFx (48000.0, 512);
+    CHECK (mock->prepareCallCount == 1);
+
+    // A second redundant call still doesn't bump the counter.
+    host.prepareInternalFx (48000.0, 512);
+    CHECK (mock->prepareCallCount == 1);
+
+    // A REAL change in either sr or maxBlock must walk the table again.
+    host.prepareInternalFx (44100.0, 512);
+    CHECK (mock->prepareCallCount == 2);
+
+    host.prepareInternalFx (44100.0, 1024);
+    CHECK (mock->prepareCallCount == 3);
+
+    // Same-as-most-recent again → no walk.
+    host.prepareInternalFx (44100.0, 1024);
+    CHECK (mock->prepareCallCount == 3);
+}
+
+TEST_CASE ("prepareInternalFx — first call always proceeds even if sr/block defaults match",
+           "[internal-fx-host][prepare-idempotency]")
+{
+    // Defensive: if the early-return ever short-circuited the FIRST call
+    // (because some future refactor compared against zero-init defaults
+    // before flipping `prepared_`), an adapter bound BEFORE the first
+    // prepareInternalFx would never get prepared. Bind-then-prepare must
+    // walk the table on the very first call regardless of stored values.
+    sirius::OutOfProcessEffectChainHost host;
+
+    auto mockOwned = std::make_unique<CountingMockAdapter>();
+    auto* mock     = mockOwned.get();
+
+    // Bind BEFORE prepareInternalFx — host's `prepared_` is false, so the
+    // testing seam does NOT auto-prepare. Counter stays at 0.
+    host.setInternalFxAdapterForTesting (7, 1, std::move (mockOwned));
+    REQUIRE (mock->prepareCallCount == 0);
+
+    // First-ever prepareInternalFx call — sr=0.0, maxBlock=0 match the
+    // zero-init defaults. The `prepared_ == false` gate must make this
+    // call proceed anyway so the bound adapter gets its first prepare.
+    host.prepareInternalFx (0.0, 0);
+    CHECK (mock->prepareCallCount == 1);
 }
 
 TEST_CASE ("in-place aliasing through the host — inChannels == outChannels survives the round trip",
