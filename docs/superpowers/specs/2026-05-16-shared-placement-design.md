@@ -43,7 +43,7 @@ inspection surfaces (the Preparation pane's diagnostics row, a future
 session-inspector) may expose internals for debugging, but they are
 opt-in and never appear in the primary capture/playback flow. Every
 UI string introduced by the implementation plan must pass this check:
-*would a musician understand it without learning Sirius's data
+*would a musician understand it without learning IDA's data
 model?* If not, the string is wrong.
 
 ## Established model (from brainstorm)

@@ -12,7 +12,7 @@
 
 **M3 simplification (carry-over):** Promotion still treats conceptual time as 1:1 with LMC seconds when constructing new Loop / Phrase / wrapper boundaries. The demo's identity-rate tempo map preserves this. Non-trivial tempo maps remain future work; the inverse-mapping TODO survives unchanged.
 
-**§15 operator-vocabulary review (every UI string in this plan):** *Would a musician understand this string without learning Sirius's data model?* If no, the string fails. Reject any banner/menu/tooltip text containing `Wrapper`, `Placement`, `AttachmentMode`, `Fork`, `tape #<n>`, raw `ConstituentId`, or attachment-mode names. The four banner templates and the `"Vary this one"` menu label are frozen from spec §11 + §15 and reproduced inline in every task that uses them.
+**§15 operator-vocabulary review (every UI string in this plan):** *Would a musician understand this string without learning IDA's data model?* If no, the string fails. Reject any banner/menu/tooltip text containing `Wrapper`, `Placement`, `AttachmentMode`, `Fork`, `tape #<n>`, raw `ConstituentId`, or attachment-mode names. The four banner templates and the `"Vary this one"` menu label are frozen from spec §11 + §15 and reproduced inline in every task that uses them.
 
 **Hidden-string scrub:** the legacy banner from the capture-promotion milestone shows `"Phrase captured  ·  3.42 s  ·  tape #200"` — that string is plumbing and must be replaced by the §11 templates in Task 7. Audit checks for `tape #` and `s  ·` patterns inside `MainComponent::announceCapture`.
 

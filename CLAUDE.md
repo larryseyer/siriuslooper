@@ -24,26 +24,26 @@ built-in FX) is the established sister-app product intent. Engine milestones
   → SHA bump in IDA → done. (The older byte-faithful vendored copy under
   `ui/lookandfeel/` was deleted in T0b on 2026-05-22.)
 - IDA and OTTO ship together but are sold separately and must each build
-  independently. Sirius's installer bundles a FULL copy of OTTO; OTTO's
+  independently. IDA's installer bundles a FULL copy of OTTO; OTTO's
   paywalled features are runtime-gated. Licensing is **identical** between
   the two products.
 - OTTO's assets (IRs, samples, fonts, GUI, models — ~3.7 GB total) are
-  gitignored (copyright). Dev time: Sirius's build references the operator's
+  gitignored (copyright). Dev time: IDA's build references the operator's
   OTTO checkout at `/Users/larryseyer/AudioDevelopment/OTTO/assets/` via the
   `OTTO_ASSETS_DIR` CMake variable. Customer install time: the bundling
   pipeline copies OTTO's assets into the install bundle once; bundled-OTTO
   and IDA both read from the same path at runtime.
 
-## Cross-Project Inbox Protocol (Sirius ⇄ OTTO)
+## Cross-Project Inbox Protocol (IDA ⇄ OTTO)
 
-Sirius's Claude has **full edit autonomy** on OTTO source. IDA and OTTO
+IDA's Claude has **full edit autonomy** on OTTO source. IDA and OTTO
 communicate **AI-to-AI** via `external/OTTO/CROSS_PROJECT_INBOX.md`. The
 operator is **NOT** a required reviewer of the back-and-forth.
 
 ### At session start (mandatory)
 
 Read `external/OTTO/CROSS_PROJECT_INBOX.md`. For each unacknowledged entry
-addressed to you (look under `[FROM OTTO → SIRIUS]`):
+addressed to you (look under `[FROM OTTO → IDA]`):
 
 1. Change `Status:` to `acked YYYY-MM-DD`.
 2. Add a `Resolution:` line describing what action you took (bumped
@@ -52,14 +52,14 @@ addressed to you (look under `[FROM OTTO → SIRIUS]`):
 
 ### When you edit OTTO source
 
-Sirius's session has full edit autonomy on OTTO, with mandatory awareness
+IDA's session has full edit autonomy on OTTO, with mandatory awareness
 propagation:
 
 1. Make the OTTO change with a focused commit in `external/OTTO/`. Trailer:
    `Ida-Origin: <sirius-sha>` (or `bootstrap` for the first protocol
    commit). For protocol commits where the SHA chicken-and-eggs, reference
    the most-recently-landed IDA commit.
-2. Append a new entry under `[FROM SIRIUS → OTTO]` in
+2. Append a new entry under `[FROM IDA → OTTO]` in
    `CROSS_PROJECT_INBOX.md` describing the change, files touched, why,
    and what OTTO's Claude must do/avoid.
 3. Push OTTO (`origin/main`).
@@ -67,9 +67,9 @@ propagation:
 
 ### When OTTO needs IDA to act
 
-OTTO's Claude can append entries under `[FROM OTTO → SIRIUS]`. You'll see
+OTTO's Claude can append entries under `[FROM OTTO → IDA]`. You'll see
 them at session start and act (bump submodule, adapt callers, etc.) per
-the entry's `For Sirius's Claude:` line. Acknowledge by updating the entry.
+the entry's `For IDA's Claude:` line. Acknowledge by updating the entry.
 
 ### Entry format
 
@@ -87,7 +87,7 @@ Resolution: <added by recipient when ack'd>
 ### Audit trail
 
 `git log --grep='Sirius-Origin' --all` in `external/OTTO/` surfaces every
-Sirius-originated OTTO commit forever, even after inbox entries are pruned.
+IDA-originated OTTO commit forever, even after inbox entries are pruned.
 
 ## Architecture (non-negotiable)
 
@@ -152,9 +152,9 @@ bash bash/test-s7.sh                           # plugin-editor lifecycle (operat
 
 - Vendored OTTO code (`ui/lookandfeel/`) is kept **byte-faithful** to OTTO
   (identical names, `OTTOBinaryData` namespace) so re-syncing is a file copy;
-  it compiles without Sirius's strict `-Werror` flags for that reason.
+  it compiles without IDA's strict `-Werror` flags for that reason.
 - Colour method (tapes/phrases/loops/pills) is documented in
-  `docs/design/sirius-colour-method.md` — one source of truth in
+  `docs/design/ida-colour-method.md` — one source of truth in
   `ui/include/ida/IdaPalette.h`.
 - Deferrals live in `todo.md`; the session handoff lives in `continue.md`
   (refresh it every session).

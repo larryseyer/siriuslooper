@@ -8,7 +8,7 @@
 
 **Tech Stack:** C++17, Catch2 v3, JUCE (`juce::var` for persistence), CMake + Ninja, `ctest`.
 
-**Contract reference:** `docs/design/sirius-internal-fx.md` "Union slot type contract" — that doc is normative; this plan implements it.
+**Contract reference:** `docs/design/ida-internal-fx.md` "Union slot type contract" — that doc is normative; this plan implements it.
 
 ---
 
@@ -131,7 +131,7 @@ namespace sirius
 {
 
 /// The four built-in FX shipped by IDA (white paper §6.6 + the contract in
-/// `docs/design/sirius-internal-fx.md`). Each id resolves at T3 to one of OTTO's
+/// `docs/design/ida-internal-fx.md`). Each id resolves at T3 to one of OTTO's
 /// header-only Player FX via a Sirius-side adapter. The underlying type is
 /// `uint8_t` with a reserved range up to 16 so a future built-in (e.g. saturator,
 /// transient shaper) can land without growing the discriminant.
@@ -340,9 +340,9 @@ namespace sirius
 {
 
 /// Discriminant for `EffectChainEntry`'s tagged union (the "union slot type"
-/// contract in `docs/design/sirius-internal-fx.md`). Each slot is one of:
+/// contract in `docs/design/ida-internal-fx.md`). Each slot is one of:
 ///   - `Empty`    — slot is unallocated; host skips it at render time.
-///   - `Internal` — slot identifies one of Sirius's four built-in FX by
+///   - `Internal` — slot identifies one of IDA's four built-in FX by
 ///                  `InternalFxId`; the host wraps the matching OTTO Player FX.
 ///   - `Plugin`   — slot carries a `PluginDescriptor` for an externally
 ///                  hosted VST/CLAP/AU(v3). Unchanged from the pre-union shape.

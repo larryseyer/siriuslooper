@@ -22,7 +22,7 @@ real architectural implications worth pinning before resuming T1:
    strategy, or supersede it?
 2. **Edit-policy / governance** — when (and how) may a IDA session
    edit OTTO source without operator friction?
-3. **Internal-FX adapter shape (T3)** — how do Sirius's internal EQ /
+3. **Internal-FX adapter shape (T3)** — how do IDA's internal EQ /
    CMP / RVB / DLY adapters wrap OTTO's header-only Player FX?
 4. **Assets** — where do IRs (and other OTTO assets) come from for
    Sirius, given OTTO's gitignored `/assets`?
@@ -33,15 +33,15 @@ the first commit of this session's execution (`75c6866`).
 
 ---
 
-## Decision 1: OTTO is a 32-stereo-input source to Sirius's Output Mixer
+## Decision 1: OTTO is a 32-stereo-input source to IDA's Output Mixer
 
 **Bundled OTTO presents 32 stereo outputs** (matches OTTO's PerDrum
 fanout: 24 instruments + 4 FX returns + 4 player buses = 32 stereo
 pairs). Each of those 32 outputs becomes an **additional channel strip
-in Sirius's Output Mixer**, placed to the right of the existing input
+in IDA's Output Mixer**, placed to the right of the existing input
 channels (phrases), after buses / FX returns.
 
-**Sirius's Output Mixer alone decides which physical outputs each OTTO
+**IDA's Output Mixer alone decides which physical outputs each OTTO
 channel reaches**, via the same per-channel main-out destination picker
 every other Output Mixer strip already uses. OTTO does not own
 physical-output routing inside IDA — its
@@ -88,7 +88,7 @@ already supports it.
 
 ## Decision 2: Cross-project inbox protocol (already live)
 
-**Goal: zero friction between Sirius's Claude and OTTO's Claude.**
+**Goal: zero friction between IDA's Claude and OTTO's Claude.**
 Operator is **NOT** in the back-and-forth loop; AI-to-AI handoff is
 the entire mechanism.
 
@@ -96,12 +96,12 @@ the entire mechanism.
 layers of awareness propagation:
 
 1. **`external/OTTO/CROSS_PROJECT_INBOX.md`** (file, in OTTO repo) —
-   single async message channel with `[FROM SIRIUS → OTTO]` and
-   `[FROM OTTO → SIRIUS]` sections. Entries have a structured format
+   single async message channel with `[FROM IDA → OTTO]` and
+   `[FROM OTTO → IDA]` sections. Entries have a structured format
    (subject, direction, sirius-sha + otto-sha, files, why, recipient
    guidance, status, resolution).
 2. **Git commit trailers** — `Ida-Origin: <sirius-sha>` on
-   Sirius-originated OTTO commits; `OTTO-Origin: <otto-sha>` on
+   IDA-originated OTTO commits; `OTTO-Origin: <otto-sha>` on
    IDA commits that consume OTTO changes (e.g., submodule bumps).
    Forever-durable audit trail in git log.
 3. **Standing rule in both `CLAUDE.md` files** — identical clause:
@@ -110,7 +110,7 @@ layers of awareness propagation:
    edits, append a new entry + use the appropriate `Origin:` trailer.
    The operator is NOT a required reviewer."
 
-**Push authority:** Sirius's session commits AND pushes the OTTO
+**Push authority:** IDA's session commits AND pushes the OTTO
 change to `origin/main` as part of the same workflow that bumps the
 submodule SHA on the IDA side. Extends
 `feedback_claude_commits_and_pushes_master` to OTTO via this protocol.
@@ -132,7 +132,7 @@ submodule SHA on the IDA side. Extends
   `Status: acked 2026-05-22`.
 - IDA commit `42cb1a9` (`docs: bootstrap cross-project inbox
   protocol + bump OTTO submodule 6b066db2→abf8e4d4 (OTTO-Origin:
-  abf8e4d4)`) — added the standing rule to Sirius's `CLAUDE.md` +
+  abf8e4d4)`) — added the standing rule to IDA's `CLAUDE.md` +
   rewrote the stale "Sister app: OTTO" section + bumped submodule.
 
 ---
@@ -205,7 +205,7 @@ scanner is fixed (provisional slice "P7-scanner").
 
 **Sirius has access to EVERYTHING OTTO has** — IRs, Samples, patterns,
 fonts, GUI, models, all of it. Nothing excluded, nothing curated.
-This realizes `project_sirius_branding_and_otto`: Sirius's installer
+This realizes `project_sirius_branding_and_otto`: IDA's installer
 bundles full OTTO with paywall enforcement at the feature level
 (runtime gate), not at the asset/binary level. All bits are present
 on the customer machine.
@@ -226,28 +226,28 @@ Total **~3.7 GB**. None of it rides the submodule.
 
 ### Implementation
 
-- **Dev time:** Sirius's CMake takes an `OTTO_ASSETS_DIR` variable
+- **Dev time:** IDA's CMake takes an `OTTO_ASSETS_DIR` variable
   defaulting to `/Users/larryseyer/AudioDevelopment/OTTO/assets/`.
-  Sirius's code reads OTTO assets from there directly — no duplication
-  into Sirius's repo. CI / other dev machines override as needed.
+  IDA's code reads OTTO assets from there directly — no duplication
+  into IDA's repo. CI / other dev machines override as needed.
 - **Customer install time:** The installer / .app-bundling pipeline
   copies the OTTO asset tree into one shared location inside the
   install bundle (e.g.
   `IDA.app/Contents/Resources/Assets/`). Both bundled-OTTO
   and IDA read from the same path at runtime. Customer machine
   carries **one** copy.
-- **Sirius's repo `assets/` directory:** stays empty (or only carries
+- **IDA's repo `assets/` directory:** stays empty (or only carries
   Sirius-specific assets that aren't part of OTTO's tree). No 3.7 GB
   duplication in source control.
 
 ### License-model parity
 
 `project_sirius_branding_and_otto` records "Licensing IDENTICAL."
-Reinforced this session: Sirius's license model — both the legal
+Reinforced this session: IDA's license model — both the legal
 documents AND the runtime paywall infrastructure — should match
 OTTO's exactly.
 
-- **Legal docs:** Sirius's `LICENSE`, `LICENSE-THIRD-PARTY.md`,
+- **Legal docs:** IDA's `LICENSE`, `LICENSE-THIRD-PARTY.md`,
   `SAMPLE-LICENSE.md`, `licenses/` should mirror OTTO's structure
   and content, with product-name substitution where needed.
 - **Runtime paywall:** mirror OTTO's entitlement-check code shape,
@@ -256,7 +256,7 @@ OTTO's exactly.
   IDA itself both use the same infrastructure.
 - **Asset redistribution:** identical license = identical
   redistribution rights → no licensing risk in bundling OTTO's full
-  asset set inside Sirius's installer.
+  asset set inside IDA's installer.
 
 ### T3-RVB unblocked
 

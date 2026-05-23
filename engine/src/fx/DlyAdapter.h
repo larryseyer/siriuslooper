@@ -27,7 +27,7 @@ namespace sirius
 ///      delay-time floor `PlayerEffectsConfig::resetToDefaults` ships.
 ///
 /// PlayerDelay outputs **100 % wet** (mixing is the caller's job at the
-/// send level — Sirius's chain dispatch already handles dry/wet through
+/// send level — IDA's chain dispatch already handles dry/wet through
 /// `IInternalFxAdapter::process`'s in/out contract). Feedback defaults to
 /// 0.4 with a 80 Hz–8 kHz filtered feedback path, ping-pong off, so a
 /// freshly-inserted DLY slot tap-echoes the input every 250 ms with a

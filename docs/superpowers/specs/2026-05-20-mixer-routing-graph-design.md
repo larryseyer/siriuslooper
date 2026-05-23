@@ -6,7 +6,7 @@ and runs in a fresh chat via `superpowers:writing-plans`. This spec is the
 
 ## Context
 
-Sirius's mixers are meant to be **full creative consoles** on each side of the
+IDA's mixers are meant to be **full creative consoles** on each side of the
 tape (white paper Part VI, §5.2/§6) with OTTO visual parity. Today the Input
 Mixer has live channel strips (fader/mute/solo, dual peak+LUFS meter, pan/width
 detail panel, RME mono/stereo toggle) but **no routing beyond per-strip
@@ -58,7 +58,7 @@ the terminal is implicit.
 **Per-node insert chains.** EVERY node — input/output channel, bus, and FX/RVB/DLY
 return — carries an insert chain of **up to 8 inserts**. This is NOT bus-only:
 every channel hosts inserts too. Each slot holds **either** a third-party
-**VST/CLAP plugin** (the existing M7 out-of-process host) **or** one of Sirius's
+**VST/CLAP plugin** (the existing M7 out-of-process host) **or** one of IDA's
 **own built-in FX** (EQ, Compressor, Reverb, Delay, …). The insert-slot model is
 therefore a union — external hosted plugin OR internal IDA effect — so an
 `EffectChainEntry` must be able to name an internal effect, not only a
@@ -66,7 +66,7 @@ therefore a union — external hosted plugin OR internal IDA effect — so an
 channels gain the same. The 8-slot cap is a deliberate, reasonable ceiling
 (`EffectChain` currently has no cap).
 
-The internal-FX **DSP** (the actual EQ/Comp/Rvb/Dly engines — Sirius's own,
+The internal-FX **DSP** (the actual EQ/Comp/Rvb/Dly engines — IDA's own,
 seeded by OTTO's reverb + delay) remains the follow-on effort; this spec
 establishes the unified insert-slot model and the 8-slot chain on every node so
 both external plugins and internal FX drop into the same slots.
@@ -216,7 +216,7 @@ already covers.
   internal IDA effect). Any reverb/delay plugin — internal-or-3rd-party — can
   be loaded immediately via the M7 host.
 - **Out of scope (own spec, "right behind"):** integrating **OTTO's reverb +
-  delay** (`effects::PlayerIRConvolution`, `effects::PlayerDelay`) as Sirius's
+  delay** (`effects::PlayerIRConvolution`, `effects::PlayerDelay`) as IDA's
   **internal** RVB/DLY available to drop into an FX return. The operator's
   decision: "use OTTO's rvb and dly which already works and sounds great… wiring,
   then follow right behind with wiring up the OTTO rvb and dly." A separate

@@ -1,8 +1,8 @@
 # IDA — V7 Alignment Roadmap
 
 **Created:** 2026-05-17
-**Triggered by:** White paper rewrite (V2 → V7) at `docs/Sirius_Looper.md`, accompanied by `docs/sirius-looper-v2-to-v7-transition.md`.
-**Source-of-truth white paper file:** `/Users/larryseyer/IDA/docs/Sirius_Looper.md` (the V7 successor file; was previously `Sirius_Looper_Whitepaper_V6.md`).
+**Triggered by:** White paper rewrite (V2 → V7) at `docs/IDA_Whitepaper_V8.md`, accompanied by `docs/sirius-looper-v2-to-v7-transition.md`.
+**Source-of-truth white paper file:** `/Users/larryseyer/IDA/docs/IDA_Whitepaper_V8.md` (the V7 successor file; was previously `Sirius_Looper_Whitepaper_V6.md`).
 **Companion transition doc:** `/Users/larryseyer/IDA/docs/sirius-looper-v2-to-v7-transition.md`.
 **Replaces (in role, not on disk):** `continue.md §6` "white-paper alignment pass" was the deferred milestone — this plan **is** that milestone.
 
@@ -1429,7 +1429,7 @@ xcodebuild -project build-ios/IDA.xcodeproj -configuration Release -sdk iphoneos
 
 **Acceptance criteria.**
 
-- `docs/Sirius_Looper.md` (V7) reviewed for any behavior that drifted during implementation; sections updated to match reality (rare — V7 is the spec; implementation aligns to it, not vice versa).
+- `docs/IDA_Whitepaper_V8.md` (V7) reviewed for any behavior that drifted during implementation; sections updated to match reality (rare — V7 is the spec; implementation aligns to it, not vice versa).
 - `docs/IDA User Guide.md` rewritten / extended to cover every feature shipped through M23.
 - Marketing site (`website/`) content audited against V7; updates per `408f63c` precedent.
 - Every public header in `core/include`, `engine/include`, `host/include`, `persistence/include`, `net/include`, `ui/include`, `app/` has up-to-date one-line doc comments on each class and one-paragraph block comments on each non-trivial method.
@@ -1440,7 +1440,7 @@ xcodebuild -project build-ios/IDA.xcodeproj -configuration Release -sdk iphoneos
 
 **Files touched.**
 
-- `docs/Sirius_Looper.md` (audit; minimal edits if any)
+- `docs/IDA_Whitepaper_V8.md` (audit; minimal edits if any)
 - `docs/IDA User Guide.md` (extensive)
 - `website/` (audit)
 - Every public header (one-line + one-paragraph doc comments)
@@ -1581,7 +1581,7 @@ Each parked decision will get a `todo.md` entry as it's defrosted for an operato
 > Before touching any code, this chat must:
 >
 > 1. Read `/Users/larryseyer/IDA/continue.md` (the prior session's handoff).
-> 2. Read `/Users/larryseyer/IDA/docs/Sirius_Looper.md` (V7 white paper).
+> 2. Read `/Users/larryseyer/IDA/docs/IDA_Whitepaper_V8.md` (V7 white paper).
 > 3. Read `/Users/larryseyer/IDA/docs/sirius-looper-v2-to-v7-transition.md` (V2→V7 bridge).
 > 4. Read this plan end-to-end.
 > 5. Copy this plan's Parts 0-3 + coverage matrix to `docs/superpowers/specs/2026-05-17-v7-alignment-design.md` and Parts 4+ to `docs/superpowers/plans/2026-05-17-v7-alignment-plan.md`. Single commit: `docs: V7 alignment design + plan (M0 setup)`. Push.

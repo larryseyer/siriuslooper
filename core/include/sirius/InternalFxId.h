@@ -9,7 +9,7 @@ namespace sirius
 {
 
 /// The four built-in FX shipped by IDA (white paper §6.6 + the contract in
-/// `docs/design/sirius-internal-fx.md`). Each id resolves at T3 to one of OTTO's
+/// `docs/design/ida-internal-fx.md`). Each id resolves at T3 to one of OTTO's
 /// header-only Player FX via a Sirius-side adapter. The underlying type is
 /// `uint8_t` with a reserved range up to 16 so a future built-in (e.g. saturator,
 /// transient shaper) can land without growing the discriminant.

@@ -23,7 +23,7 @@ void PreparationView::paint (juce::Graphics& g)
     auto area = getLocalBounds();
     g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, 0));
 
-    // Colour method (see docs/design/sirius-colour-method.md): a phrase takes its
+    // Colour method (see docs/design/ida-colour-method.md): a phrase takes its
     // own OTTO hue (keyed by ConstituentId, matching its Pill on the timeline);
     // loops nested under it take a shade of that hue, stepped by loop order;
     // groups stay neutral. We track the current phrase as we walk the tree in

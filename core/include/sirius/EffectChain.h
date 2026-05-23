@@ -15,9 +15,9 @@ namespace sirius
 {
 
 /// Discriminant for `EffectChainEntry`'s tagged union (the "union slot type"
-/// contract in `docs/design/sirius-internal-fx.md`). Each slot is one of:
+/// contract in `docs/design/ida-internal-fx.md`). Each slot is one of:
 ///   - `Empty`    — slot is unallocated; host skips it at render time.
-///   - `Internal` — slot identifies one of Sirius's four built-in FX by
+///   - `Internal` — slot identifies one of IDA's four built-in FX by
 ///                  `InternalFxId`; the host wraps the matching OTTO Player FX.
 ///   - `Plugin`   — slot carries a `PluginDescriptor` for an externally
 ///                  hosted VST/CLAP/AU(v3). Unchanged from the pre-union shape.

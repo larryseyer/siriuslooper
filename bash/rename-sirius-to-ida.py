@@ -51,6 +51,23 @@ SUBS = [
     ("/sirius/", "/ida/"),
     ('"Sirius"', '"IDA"'),
     (" Sirius ", " IDA "),
+    # Addendum: filename references the original §1a table missed (live files only;
+    # archive filenames handled by Task 4 after enumeration). These point at the
+    # new whitepaper V8 file + renamed design docs that Task 2 git-mv's into place.
+    ("Sirius_Looper_Whitepaper_V7.md", "IDA_Whitepaper_V8.md"),
+    ("Sirius_Looper_User_Guide.md", "IDA_User_Guide.md"),
+    ("sirius-internal-fx.md", "ida-internal-fx.md"),
+    ("sirius-colour-method.md", "ida-colour-method.md"),
+    # Stale references to a long-deleted file `Sirius_Looper.md` (consolidated into V7
+    # per project_whitepaper_path memory). Point them at the new V8 for consistency.
+    ("Sirius_Looper.md", "IDA_Whitepaper_V8.md"),
+    # Possessive form the spec's row 26 (whitespace-bounded) missed.
+    ("Sirius's", "IDA's"),
+    # Directional labels in the cross-project inbox protocol referenced in CLAUDE.md.
+    ("[FROM SIRIUS → OTTO]", "[FROM IDA → OTTO]"),
+    ("[FROM OTTO → SIRIUS]", "[FROM OTTO → IDA]"),
+    ("Sirius ⇄ OTTO", "IDA ⇄ OTTO"),
+    ("Sirius-originated", "IDA-originated"),
 ]
 
 EXCLUDE_PATH_PREFIXES = (

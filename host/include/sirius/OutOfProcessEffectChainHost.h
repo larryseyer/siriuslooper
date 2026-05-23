@@ -166,7 +166,7 @@ public:
 
     // ---- Internal-FX dispatch (P7 T3a-B) — message-thread only ----------
     //
-    // Binds (or unbinds) one of Sirius's built-in FX adapters at a
+    // Binds (or unbinds) one of IDA's built-in FX adapters at a
     // `(nodeKey, slotIdx)` pair. The audio thread's `pumpSlot` checks the
     // internal-FX table BEFORE the OOP plugin path on every call; a hit
     // routes through the adapter and short-circuits the OOP child entirely.

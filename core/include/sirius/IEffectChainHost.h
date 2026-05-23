@@ -65,7 +65,7 @@ public:
                            int                 numChannels,
                            int                 numSamples) noexcept = 0;
 
-    /// P7 T3a-C — message-thread binder for Sirius's built-in FX adapters.
+    /// P7 T3a-C — message-thread binder for IDA's built-in FX adapters.
     /// Engine call sites (`Bus::setEffectChain`, `ChannelStrip::setEffectChain`,
     /// `OutputMixer::setBusEffectChain`) invoke this from inside the same
     /// audio-callback-bracketed region that already configures plug-in slots,

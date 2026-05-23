@@ -1,7 +1,7 @@
 # IDA Internal FX — Design
 
-Single source of truth for Sirius's built-in effects. The whitepaper
-(`docs/Sirius_Looper_Whitepaper_V7.md` §6.6) names the four built-in FX as
+Single source of truth for IDA's built-in effects. The whitepaper
+(`docs/IDA_Whitepaper_V8.md` §6.6) names the four built-in FX as
 core product; this doc enumerates their parameter surfaces and the union
 slot type that lets them share insert chains with third-party VST/CLAP
 plugins. Implementation details (adapter wrapping, audio-thread dispatch,
@@ -43,7 +43,7 @@ All four FX share one canonical configuration struct,
 `otto::effects::PlayerEffectsConfig`, defined at
 `external/OTTO/src/otto-core/include/otto/effects/PlayerEffects.h`. That
 struct is the source of truth for the parameter ranges and defaults below.
-Sirius's adapter for each FX reads the relevant subset of the struct and
+IDA's adapter for each FX reads the relevant subset of the struct and
 exposes it on the strip detail panel.
 
 ### EQ — 5-band

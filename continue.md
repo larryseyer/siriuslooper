@@ -24,8 +24,8 @@
 >
 > **MANDATORY at session start:** read
 > `external/OTTO/CROSS_PROJECT_INBOX.md` and acknowledge any
-> `[FROM OTTO → SIRIUS]` entries (per `project_cross_project_inbox_protocol`).
-> The whitepaper lives at `docs/Sirius_Looper_Whitepaper_V7.md`
+> `[FROM OTTO → IDA]` entries (per `project_cross_project_inbox_protocol`).
+> The whitepaper lives at `docs/IDA_Whitepaper_V8.md`
 > (underscores — `project_whitepaper_path`).
 
 ## ✅ DONE THIS SESSION (2026-05-25 — T5 Insert UI slices 1-3, engine half)
@@ -998,8 +998,8 @@ T6  P4/P5 persistence wiring into MainComponent save/load
 > documented Not-Run** (up from 602 — +6 cases this session).
 > **MANDATORY at session start:** read
 > `external/OTTO/CROSS_PROJECT_INBOX.md` and acknowledge any
-> `[FROM OTTO → SIRIUS]` entries (per `project_cross_project_inbox_protocol`).
-> The whitepaper lives at `docs/Sirius_Looper_Whitepaper_V7.md`
+> `[FROM OTTO → IDA]` entries (per `project_cross_project_inbox_protocol`).
+> The whitepaper lives at `docs/IDA_Whitepaper_V8.md`
 > (underscores — `project_whitepaper_path`).
 
 ## ✅ DONE THIS SESSION (2026-05-23 — T3b-CMP CmpAdapter, ralph iteration #1)
@@ -1103,7 +1103,7 @@ T6  P4/P5 persistence wiring into MainComponent save/load
    end-to-end. **If `process()` allocates** (some delay-line impls
    reallocate the buffer under modulation), emit
    `<promise>HALTED</promise>` per the prd.json pre-flight clause —
-   Sirius's RT contract forbids it.
+   IDA's RT contract forbids it.
 2. Mirror `CmpAdapter.{h,cpp}` shape line-for-line. Default-config +
    `cfg_.delayEnabled = true` in the ctor (matching the EQ/CMP
    precedent of "freshly-inserted slot does DSP from sample 0").
@@ -1168,8 +1168,8 @@ T03/T04/T05 in `prd.json` (next three loop iterations after T3c):
 > `[internal-fx][end-to-end]` tags).
 > **MANDATORY at session start:** read
 > `external/OTTO/CROSS_PROJECT_INBOX.md` and acknowledge any
-> `[FROM OTTO → SIRIUS]` entries (per `project_cross_project_inbox_protocol`).
-> The whitepaper lives at `docs/Sirius_Looper_Whitepaper_V7.md`
+> `[FROM OTTO → IDA]` entries (per `project_cross_project_inbox_protocol`).
+> The whitepaper lives at `docs/IDA_Whitepaper_V8.md`
 > (underscores — `project_whitepaper_path`).
 
 ## ✅ DONE THIS SESSION (2026-05-23 late — T3a-EQ engine adapter, headless TDD)
@@ -1272,7 +1272,7 @@ T6  P4/P5 persistence wiring into MainComponent save/load
 ```
 
 **T3b scope** (per Decision 3 + the parameter surface in
-`docs/design/sirius-internal-fx.md`):
+`docs/design/ida-internal-fx.md`):
 
 - New `engine/src/fx/CmpAdapter.{h,cpp}` — wraps
   `otto::effects::PlayerCompressor` as a member. Same `IInternalFxAdapter`
@@ -1301,7 +1301,7 @@ T6  P4/P5 persistence wiring into MainComponent save/load
 
 **First moves for T3b:**
 1. Read `external/OTTO/CROSS_PROJECT_INBOX.md` — ack any new
-   `[FROM OTTO → SIRIUS]` entries.
+   `[FROM OTTO → IDA]` entries.
 2. `git pull --rebase origin master` (defensive; this session was solo).
 3. Read `external/OTTO/src/otto-core/include/otto/effects/PlayerCompressor.h`
    end-to-end — confirm `process()` signature + sidechain feed
@@ -1379,12 +1379,12 @@ worth surfacing before downstream UI slices:
 
 Single docs-only commit, no code change. All four T1.* items shipped:
 
-- **T1.a — Whitepaper §6.6** (`docs/Sirius_Looper_Whitepaper_V7.md`):
+- **T1.a — Whitepaper §6.6** (`docs/IDA_Whitepaper_V8.md`):
   named the four built-in FX explicitly (EQ / Compressor / Reverb / Delay)
   as **core product**, clarified that 3rd-party VST/CLAP hosting is
   **additional** not a substitute, named the 8-slot cap inline, added an
-  inline reference to the new `docs/design/sirius-internal-fx.md`. Fixed
-  the misleading "When Sirius's bundled OTTO is loaded" wording — OTTO is
+  inline reference to the new `docs/design/ida-internal-fx.md`. Fixed
+  the misleading "When IDA's bundled OTTO is loaded" wording — OTTO is
   always present whenever IDA is running (paywall is feature-level
   runtime gate, not asset-level). §6.7 untouched (it's about local-vs-bus
   placement, orthogonal to the named-FX layer).
@@ -1399,7 +1399,7 @@ Single docs-only commit, no code change. All four T1.* items shipped:
   OTTO's header-only Player FX land separately in T3 (links to
   `docs/superpowers/specs/2026-05-22-otto-integration-design.md`
   Decision 3 for the architecture).
-- **T1.c — NEW `docs/design/sirius-internal-fx.md`** — single source of
+- **T1.c — NEW `docs/design/ida-internal-fx.md`** — single source of
   truth for the internal-FX product surface. Names the four FX with
   purpose + DSP source-of-truth header path; enumerates concrete
   parameter ranges (read from `PlayerEffectsConfig` in
@@ -1412,7 +1412,7 @@ Single docs-only commit, no code change. All four T1.* items shipped:
 - **T1.d — this file** — refreshed.
 
 **Also captured:** a new project memory `project_whitepaper_path` —
-canonical whitepaper path is `docs/Sirius_Looper_Whitepaper_V7.md`
+canonical whitepaper path is `docs/IDA_Whitepaper_V8.md`
 (underscores), not the dead spaced name. Older `continue.md` archive
 headers + old plan files reference the dead path; treat those as
 historical artifacts (NOT in scope to retro-fix).
@@ -1449,11 +1449,11 @@ kinds. Headless TDD — no UI, no operator eyes-on.
 
 **First moves for T2:**
 1. Read `external/OTTO/CROSS_PROJECT_INBOX.md` — ack any new
-   `[FROM OTTO → SIRIUS]` entries. (None as of this session.)
+   `[FROM OTTO → IDA]` entries. (None as of this session.)
 2. `git pull --rebase origin master` (defensive; this session is solo).
 3. Read T2 section of
    `~/.claude/plans/read-continue-and-proceed-ancient-phoenix.md`
-   alongside the contract section of `docs/design/sirius-internal-fx.md`
+   alongside the contract section of `docs/design/ida-internal-fx.md`
    (the doc that T1 just shipped — it IS the contract T2 implements).
 4. `superpowers:writing-plans` → write T2 plan into
    `docs/superpowers/plans/` → `superpowers:subagent-driven-development`.
@@ -1525,7 +1525,7 @@ green.
   (`94a9c054`, `3f535a53`, `6b066db2`), all marked `Status: acked 2026-05-22`.
 - IDA commit `42cb1a9` (`docs: bootstrap cross-project inbox protocol +
   bump OTTO submodule 6b066db2→abf8e4d4 (OTTO-Origin: abf8e4d4)`) — added the
-  standing rule to Sirius's `CLAUDE.md` + rewrote the stale "Sister app: OTTO"
+  standing rule to IDA's `CLAUDE.md` + rewrote the stale "Sister app: OTTO"
   section + bumped submodule SHA.
 
 **Combined design spec:**
@@ -1533,12 +1533,12 @@ green.
 four OTTO decisions + the already-shipped meter fix:
 
 1. **OTTO as Output Mixer source** (32 stereo outputs become Output Mixer
-   strips; Sirius's Output Mixer ALONE owns physical-output routing; OTTO's
+   strips; IDA's Output Mixer ALONE owns physical-output routing; OTTO's
    `OutputRouter::Mode` rejected as a IDA concept). Tape path EXCLUDES
    OTTO; render/export path INCLUDES it automatically. New whitepaper §6.6
    paragraph in `docs/IDA Whitepaper V7.md` captures this.
 2. **Cross-project inbox protocol** (now LIVE) — full edit autonomy on OTTO
-   from Sirius's Claude; OTTO's Claude reads inbox at session start +
+   from IDA's Claude; OTTO's Claude reads inbox at session start +
    acknowledges; operator NOT in the loop. Three layers: inbox file + git
    commit trailers + standing CLAUDE.md rule.
 3. **Internal-FX adapter architecture (T3 blueprint)** — variant
@@ -1585,7 +1585,7 @@ inbox protocol section. **OTTO `CLAUDE.md`** added the same protocol clause.
 ## ⚠ NEW STANDING RULES (memory + MEMORY.md updated this session)
 
 - **`project_otto_as_output_mixer_source`** (NEW) — bundled OTTO presents 32
-  stereo outputs as additional Output Mixer strips; Sirius's Output Mixer
+  stereo outputs as additional Output Mixer strips; IDA's Output Mixer
   alone owns physical-output routing. Tape excludes OTTO; render/export
   includes OTTO automatically.
 - **`project_cross_project_inbox_protocol`** (NEW) — AI-to-AI handoff via
@@ -1626,7 +1626,7 @@ T6  P4/P5 persistence wiring into MainComponent save/load
 1. Read this whole file first (per `feedback_update_continue_md_every_session`).
 2. **MANDATORY:** read `external/OTTO/CROSS_PROJECT_INBOX.md` per the new
    `project_cross_project_inbox_protocol`. Acknowledge any unacknowledged
-   `[FROM OTTO → SIRIUS]` entries (none expected this early in the protocol
+   `[FROM OTTO → IDA]` entries (none expected this early in the protocol
    life, but the discipline starts now).
 3. Resume P7 umbrella at **T1 (docs)** — the work that was paused for this
    brainstorm. The spec at
@@ -1634,7 +1634,7 @@ T6  P4/P5 persistence wiring into MainComponent save/load
    the architecture decisions T2 → T6 depend on.
 4. ⚠ If you need to edit OTTO source for any reason: follow the cross-project
    inbox protocol — make the OTTO commit with `Ida-Origin: <sirius-sha>`
-   trailer, append a `[FROM SIRIUS → OTTO]` entry to the inbox, push OTTO,
+   trailer, append a `[FROM IDA → OTTO]` entry to the inbox, push OTTO,
    then bump submodule SHA + commit + push Sirius. No operator approval
    needed.
 
@@ -1704,7 +1704,7 @@ together on signal-stop; no flutter.
 - **`project_otto_assets_out_of_git`** (NEW) — OTTO's `/assets` (IRs, samples,
   patterns, graphics) is gitignored (copyright). Submodule pulls **CODE ONLY**. Any
   OTTO asset IDA needs (e.g. impulse-response files for T3-RVB later) must be
-  copied by hand into Sirius's own `/assets`. T0/T1/T2/T3-EQ/T3-CMP/T3-DLY unaffected;
+  copied by hand into IDA's own `/assets`. T0/T1/T2/T3-EQ/T3-CMP/T3-DLY unaffected;
   T3-RVB is the only slice that hits this.
 - **`project_internal_fx_first_class`** (NEW) — IDA ships internal EQ/CMP/RVB/DLY
   (header-only — `PlayerEQ.h`/`PlayerCompressor.h`/`PlayerIRConvolution.h`/`PlayerDelay.h`
@@ -1720,7 +1720,7 @@ together on signal-stop; no flutter.
 - **`feedback_avoid_word_vendor`** (NEW) — don't say "vendor X from OTTO" — operator
   reads as outsourcing. Use "consume from the OTTO submodule" / "link OTTO's target".
 - **`project_sirius_branding_and_otto`** (UPDATED) — one-way containment at product
-  level: Sirius's installer bundles full OTTO (paywalled OTTO features runtime-gated);
+  level: IDA's installer bundles full OTTO (paywalled OTTO features runtime-gated);
   OTTO's installer does NOT contain Sirius.
 
 ## ▶ NEXT — operator wants to brainstorm OTTO further before T1
@@ -2527,7 +2527,7 @@ need to discuss OTTO further before you continue on your current path."
 > plugin mechanism for now.
 >
 > **Follow-on spec, right behind:** integrate **OTTO's reverb (`PlayerIRConvolution`)
-> + delay (`PlayerDelay`)** as Sirius's internal RVB/DLY droppable into an FX return
+> + delay (`PlayerDelay`)** as IDA's internal RVB/DLY droppable into an FX return
 > (operator: "use OTTO's rvb and dly… wiring first, then follow right behind").
 > Brainstorm→spec when the wiring phases are landing.
 >
@@ -2585,7 +2585,7 @@ need to discuss OTTO further before you continue on your current path."
 >   Whitepaper V7 §6.1 ("Audio is stereo, always") refined + §6.2 input-layer
 >   gains "input source format (mono/stereo, RME split/collapse)";
 >   `docs/design/mixer-design.md` decision 8. **Consolidated on V7**: the old
->   `docs/Sirius_Looper.md` was deleted (user) and the website whitepaper
+>   `docs/IDA_Whitepaper_V8.md` was deleted (user) and the website whitepaper
 >   (`website/src/docs/whitepaper.md`) was **resynced wholesale from V7** (it
 >   had lagged — missing the stereo invariant entirely) + `sourceFile` fixed
 >   to V7. Website builds clean (`npm run build` in `website/`).
@@ -2658,7 +2658,7 @@ need to discuss OTTO further before you continue on your current path."
 >   GUI is **operator-verified** — open the **Input Mixer** tab and confirm the
 >   meter(s) move with live input, the fader rides level, M mutes, S solos.
 > - **Canonical whitepaper = `docs/IDA Whitepaper V7.md`** (spaces, V7).
->   `docs/Sirius_Looper.md` is GONE (consolidated on V7). The website mirror is
+>   `docs/IDA_Whitepaper_V8.md` is GONE (consolidated on V7). The website mirror is
 >   now synced; it deploys from origin/master.
 > - **OTTO at `/Users/larryseyer/AudioDevelopment/OTTO` is READ-ONLY** — copy
 >   FROM it, never edit it.
@@ -6107,7 +6107,7 @@ The alignment pass that this section queued has been spec'd in full at
 `docs/superpowers/plans/2026-05-17-v7-alignment.md` (24 milestones across
 11 parts; M1 = Audio I/O foundation + RT-safety contract audit; see
 RESUME HERE at the top of this file). The original V2 white paper
-referenced below is superseded by V7 (`docs/Sirius_Looper.md`); the
+referenced below is superseded by V7 (`docs/IDA_Whitepaper_V8.md`); the
 V2→V7 transition guide (`docs/archive/sirius-looper-v2-to-v7-transition.md`)
 is the bridge.
 
@@ -6120,7 +6120,7 @@ read-only:
 > **Reading order before starting alignment work:**
 >
 > 1. `docs/IDA Whitepaper V2.md` — the white paper.
->    *(Superseded — read V7 at `docs/Sirius_Looper.md` instead.)*
+>    *(Superseded — read V7 at `docs/IDA_Whitepaper_V8.md` instead.)*
 > 2. `docs/IDA User Guide.md` — the operator-facing how-to.
 > 3. `docs/superpowers/specs/2026-05-16-shared-placement-design.md` — the
 >    most-recent shipped spec.

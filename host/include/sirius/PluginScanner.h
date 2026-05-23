@@ -24,7 +24,7 @@ struct PluginScanResult
 /// plugins and produces a list of PluginDescriptors that the data model can
 /// reference. The scanner is a thin wrapper over JUCE's
 /// `AudioPluginFormatManager`: registering the formats, walking each format's
-/// search paths, and translating JUCE's `PluginDescription` into Sirius's
+/// search paths, and translating JUCE's `PluginDescription` into IDA's
 /// portable PluginDescriptor.
 ///
 /// CLAP is *not* registered — JUCE does not officially host it, and the only

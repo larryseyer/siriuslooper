@@ -22,7 +22,7 @@
 # fixes in OTTO propagate via `git submodule update --remote external/OTTO`
 # without a byte-faithful copy to keep in sync. IDA never edits OTTO
 # source — see project memory `project_otto_is_a_submodule_now`. Kept in its
-# own target and compiled WITHOUT Sirius's strict warning flags: this is
+# own target and compiled WITHOUT IDA's strict warning flags: this is
 # third-party code held byte-faithful to OTTO rather than reformatted to
 # IDA conventions.
 juce_add_binary_data(IdaBinaryData

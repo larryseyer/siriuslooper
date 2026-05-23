@@ -8,8 +8,8 @@
 namespace ida::palette
 {
 
-/// Sirius's colour method (sister-app parity with OTTO). The full rationale is
-/// in docs/design/sirius-colour-method.md; the short version:
+/// IDA's colour method (sister-app parity with OTTO). The full rationale is
+/// in docs/design/ida-colour-method.md; the short version:
 ///
 ///   * Every coloured entity draws from OTTO's eight player hues
 ///     (`otto::Colours::getPlayerColour`) — the shared sister-app palette.

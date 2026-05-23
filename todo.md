@@ -250,7 +250,7 @@
   Phosphor icon font) so IDA pills match OTTO's pill corner treatment.
 - Why deferred: operator approved the per-entity colour pass and asked to move on
   to the mixer; icons are a polish step on the pills (part of sub-project E).
-- What's needed to finish: bring OTTO's Phosphor icon font into Sirius's binary
+- What's needed to finish: bring OTTO's Phosphor icon font into IDA's binary
   data, identify OTTO's corner glyph codepoints, and render them in the pill
   corners in place of (or alongside) the current text.
 
@@ -695,12 +695,12 @@
   lines 258-272 — copy the structure, swap iOS specifics for macOS.
   The minimal entitlements file at
   `/Users/larryseyer/AudioDevelopment/OTTO/src/otto-ios/OTTO.entitlements`
-  shows the format (Sirius's macOS keys will differ).
+  shows the format (IDA's macOS keys will differ).
 - **What OTTO does NOT have (genuinely new ground for both apps):**
   OTTO's *macOS desktop* targets (Standalone, VST3, AU, CLAP) are
   ad-hoc-signed exactly like IDA today. No hardened runtime, no
   notarization, no `Developer ID Application` identity, no macOS
-  entitlements file. Sirius's signing session is the first time
+  entitlements file. IDA's signing session is the first time
   desktop signing lands in this codebase family — the work is
   worth backporting to OTTO's macOS targets in the same arc.
 - **What's needed to finish (sketch — actual session will tighten this):**
@@ -750,7 +750,7 @@
          `~/Downloads` (the 2026-05-15 entry's original symptom).
        * `IdaTests` still green (headless tests don't touch the
          bundle but the CMake paths share configure logic).
-  6. **Backport to OTTO** — once Sirius's macOS signing block is
+  6. **Backport to OTTO** — once IDA's macOS signing block is
      proven, replicate it in OTTO's `src/otto-standalone/CMakeLists.txt`
      so the sister apps stay in step. Reuse the same entitlements
      file location pattern; team ID and identity string are
@@ -962,7 +962,7 @@
       `Disabled` / `Inverse`).
     - Accent: `accent = #00d4aa` (teal), `accentBright`, `accentDim`.
     - **8 player colours**: coral, rose, gold, mint, orange, lavender,
-      leaf, sky. These map naturally to Sirius's per-tape identity —
+      leaf, sky. These map naturally to IDA's per-tape identity —
       the kind-colour band on TimelineView strip heads becomes a
       player-colour band.
     - Semantic state colors (success/warning/error), meter colors,
@@ -1007,7 +1007,7 @@
      recommendation** — most-aligned with the "shared submodule"
      answer.
   2. **OTTO's `ui/` becomes the canonical home**, IDA adds OTTO as
-     a submodule. Faster bootstrap but couples Sirius's CMake to all
+     a submodule. Faster bootstrap but couples IDA's CMake to all
      of OTTO (HISE assets, sampler code) and OTTO becomes a hard
      dependency for any IDA build.
   3. **Sirius hosts** the shared module, OTTO consumes. Unusual since
@@ -1061,7 +1061,7 @@
     `audiodev::ui::Colours::`? `larryseyer::ui::`? `aui::`? Naming
     affects every call site in OTTO when the rename lands.
   - **Player-colour → tape-id mapping.** OTTO has 8 player colours;
-    Sirius's demo uses tape ids 100/200/300/400. Need a stable
+    IDA's demo uses tape ids 100/200/300/400. Need a stable
     `getPlayerColour(tapeId)` mapping (modulo 8? a registered
     per-tape colour stored in `InputDescriptor`?). The latter is
     nicer for performer agency (operator picks the colour) but
@@ -1830,7 +1830,7 @@ assets before public launch:
 
 ### [2026-05-20] - FX returns (RVB/DLY) + per-channel sends (NEEDS SPEC; see OTTO)
 - Files (anticipated): `engine/` (new SendBus/FxReturn + reverb/delay DSP), `app/MainComponent.cpp` (FXReturn strips + a Sends detail tab beside Pan/Width), `ui/lookandfeel/components/` (vendor OTTO `ChannelDetailSendsTab`), `docs/design/mixer-design.md` + whitepaper §5.2/§6.
-- What was deferred (operator request, this session): IDA wants **FX-return channels — reverb (RVB) and delay (DLY)**, like OTTO. **OTTO model** (`otto-core/include/otto/mixer/GlobalMixer.h`, `SendBus.h`, `MixerChannel.h`; UI `ChannelDetailSendsTab.h`): **4 FIXED FX returns** (3 reverb + 1 delay). Each is a `SendBus`: accumulate per-channel sends → 100% wet effect (`effects::PlayerIRConvolution` reverb / `effects::PlayerDelay` delay) → optional return EQ/comp → gain/pan/width → **sum to master**. Each channel carries `sendLevel[4]` set via a **Sends detail tab** (`ChannelDetailSendsTab` = 4 send knobs + preset buttons), a **sibling of the Pan/Width tab just vendored** (`ChannelDetailPanWidTab`). FX returns render as `CompactFaderStrip(ChannelType::FXReturn)` — that enum value **already exists** in Sirius's vendored strip — with no output combo (returns sum to master).
+- What was deferred (operator request, this session): IDA wants **FX-return channels — reverb (RVB) and delay (DLY)**, like OTTO. **OTTO model** (`otto-core/include/otto/mixer/GlobalMixer.h`, `SendBus.h`, `MixerChannel.h`; UI `ChannelDetailSendsTab.h`): **4 FIXED FX returns** (3 reverb + 1 delay). Each is a `SendBus`: accumulate per-channel sends → 100% wet effect (`effects::PlayerIRConvolution` reverb / `effects::PlayerDelay` delay) → optional return EQ/comp → gain/pan/width → **sum to master**. Each channel carries `sendLevel[4]` set via a **Sends detail tab** (`ChannelDetailSendsTab` = 4 send knobs + preset buttons), a **sibling of the Pan/Width tab just vendored** (`ChannelDetailPanWidTab`). FX returns render as `CompactFaderStrip(ChannelType::FXReturn)` — that enum value **already exists** in IDA's vendored strip — with no output combo (returns sum to master).
 - **Design tension to resolve in spec:** OTTO's FX returns are **fixed (4)**; the operator separately wants **dynamically-added buses** (the blank-area long-press add-bus/tape/output gesture, prior entry). Decide whether IDA FX returns are (a) **fixed RVB/DLY** like OTTO, or (b) a **type of dynamically-added bus** — i.e. an "add a bus" that hosts a built-in reverb or delay. Option (b) unifies the model: a *send* becomes "route some of this strip to a bus," and RVB/DLY are simply buses with an effect on them. This is exactly why sends were earlier noted as depending on the bus model — in OTTO the send destinations ARE the FX returns.
 - Why deferred: net DSP (reverb + delay engines — vendor from OTTO or build new, decide in spec) + send-routing graph + the Sends UI tab; a full sub-feature of the creative mixer. Stereo invariant holds (returns are stereo); RT-safe registry mutation (same removeAudioCallback/addAudioCallback bracket); persistence in the session format. Defer-to-own-session rule.
 - What's needed to finish: brainstorm against whitepaper §5.2/§6 + OTTO's `GlobalMixer`/`SendBus`/`ChannelDetailSendsTab` + the dynamic-bus entry above; **spec the bus + FX-return + send model as ONE routing graph**; then plan + implement.

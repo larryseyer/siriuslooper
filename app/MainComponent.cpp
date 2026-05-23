@@ -37,7 +37,7 @@ namespace
     /// only when the envelope's own layout changes.
     constexpr int kSessionEnvelopeVersion = 1;
 
-    /// Small local Timer subclass — Sirius's vendored JUCE has no
+    /// Small local Timer subclass — IDA's vendored JUCE has no
     /// FunctionTimer. Holds a captured callable and invokes it on each
     /// timerCallback. The long-press detector uses startTimer(ms) once and
     /// stopTimer()s itself in the callback, so the one-shot semantics live

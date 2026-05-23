@@ -22,7 +22,7 @@ namespace sirius
 /// preset selection + parameter UI lands later with the GUI (T4/T5).
 ///
 /// PlayerIRConvolution outputs **100 % wet** convolution (mixing is the
-/// caller's job at the send level — Sirius's chain dispatch already handles
+/// caller's job at the send level — IDA's chain dispatch already handles
 /// dry/wet through `IInternalFxAdapter::process`'s in/out contract). A
 /// freshly-inserted RVB slot reverberates the input through the default
 /// plate IR once OTTO's background worker has finished loading + processing
@@ -45,7 +45,7 @@ namespace sirius
 /// then optional pre-delay (bounded by 200 ms ring). The grandfathered
 /// mutex inside `requestIRLoad` is only contended between OTTO's
 /// message-thread requestor and OTTO's worker — never the audio thread,
-/// so Sirius's RT contract is preserved.
+/// so IDA's RT contract is preserved.
 ///
 /// **Not idempotent at the OTTO level**: each call to
 /// `PlayerIRConvolution::prepare` allocates pre-delay vectors and starts

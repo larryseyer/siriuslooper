@@ -18,7 +18,7 @@ namespace sirius
 /// operator parameter UI** — the constructor flips `cfg_.eqEnabled` to
 /// `true` so the EQ actually runs against the default-flat curve, and a
 /// later UI slice exposes the parameter surface documented in
-/// `docs/design/sirius-internal-fx.md` §EQ. Defaults produce a flat
+/// `docs/design/ida-internal-fx.md` §EQ. Defaults produce a flat
 /// response (HP at the bypass-equivalent 20 Hz, shelves at 0 dB gain,
 /// LP at the bypass-equivalent 20 kHz), so a freshly-inserted EQ slot
 /// passes audio unchanged until the operator dials something in.

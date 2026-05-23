@@ -1,7 +1,7 @@
 # V7 alignment — Design
 
 **Date:** 2026-05-17
-**Scope:** Full alignment of the IDA codebase to the V7 white paper (`docs/Sirius_Looper.md`), the V2→V7 transition guide (`docs/sirius-looper-v2-to-v7-transition.md`), and the V3-V7 architectural commitments those documents carry.
+**Scope:** Full alignment of the IDA codebase to the V7 white paper (`docs/IDA_Whitepaper_V8.md`), the V2→V7 transition guide (`docs/sirius-looper-v2-to-v7-transition.md`), and the V3-V7 architectural commitments those documents carry.
 **Status:** Brainstorm complete; spec + plan integrated into a single artifact at `docs/superpowers/plans/2026-05-17-v7-alignment.md`. **Awaiting M1 execution start in a new chat.**
 
 ## Why this is a single artifact instead of the conventional spec+plan pair

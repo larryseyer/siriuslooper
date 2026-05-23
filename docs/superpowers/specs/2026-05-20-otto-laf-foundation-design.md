@@ -2,7 +2,7 @@
 
 ## Context
 
-Sirius's engine and persistence layers (M1–M8) are deep and tested, but the GUI
+IDA's engine and persistence layers (M1–M8) are deep and tested, but the GUI
 lagged far behind: `MainComponent` surfaced almost none of the engine, and the
 app looked like stock grey JUCE. The operator's directive: IDA and OTTO are
 sister apps and IDA must **look and work like OTTO** — LookAndFeel, fonts,
@@ -22,7 +22,7 @@ That is a multi-session program, decomposed into sub-projects:
 OTTO and IDA ship **separately**, so each must build and ship on its own. A
 cross-repo alias/symlink to OTTO's source would (a) make IDA unbuildable when
 OTTO is absent or when OTTO's L&F grows an OTTO-only dependency, and (b) mean
-changing Sirius's look requires editing OTTO — which the operator forbade.
+changing IDA's look requires editing OTTO — which the operator forbade.
 Copying keeps IDA self-contained and leaves OTTO untouched. To keep drift
 near-zero, the files are copied **verbatim** with identical class names and an
 identical binary-data namespace, so re-syncing is a straight file copy and the
@@ -45,7 +45,7 @@ one-time extraction out of OTTO), tracked as future work.
 - **CMake** (`ui/CMakeLists.txt`): a `IdaBinaryData` target via
   `juce_add_binary_data` with `HEADER_NAME "OTTOBinaryData.h"` / `NAMESPACE
   OTTOBinaryData` (kept identical so the vendored `.cpp` compiles unchanged), and
-  a dedicated `IdaLookAndFeel` static lib compiled **without** Sirius's strict
+  a dedicated `IdaLookAndFeel` static lib compiled **without** IDA's strict
   `-Werror` warning flags (vendored third-party code, held byte-faithful rather
   than reformatted). Exposed as `Ida::LookAndFeel`.
 - **App wiring** (`app/Main.cpp`, `app/CMakeLists.txt`): the application owns an
@@ -65,7 +65,7 @@ extraction.
 ## Verification
 
 - Clean CMake/Ninja configure + `IdaLookAndFeel` and `IDA` build
-  green against Sirius's JUCE.
+  green against IDA's JUCE.
 - Operator eyes-on: launching the app (via a fresh Desktop alias to the canonical
   `build/.../Release/IDA.app`) shows the whole UI in OTTO's dark theme
   with OTTO's fonts — confirmed. (A stale Desktop Finder-alias to a deleted build

@@ -20,7 +20,7 @@ namespace sirius
 /// default parameters (threshold -12 dB, 4:1 ratio, 10 ms attack,
 /// 100 ms release, makeup 0 dB, mix 1.0 fully wet, sidechain HPF on at
 /// 100 Hz Butterworth × 4 stages), and a later UI slice exposes the
-/// parameter surface documented in `docs/design/sirius-internal-fx.md`
+/// parameter surface documented in `docs/design/ida-internal-fx.md`
 /// §CMP. Unlike the EQ's flat-default no-op, a freshly inserted CMP slot
 /// immediately compresses peaks above -12 dB — the operator dials from
 /// there.
