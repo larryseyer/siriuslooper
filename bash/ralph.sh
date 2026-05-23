@@ -117,7 +117,7 @@ echo "Per-iter dollar cap: \$$RALPH_MAX_USD_PER_ITER  (override with RALPH_MAX_U
 # progress = exit 6 to stop the bleed.
 LAST_COMMIT_SEEN=$(git -C "$PROJECT_ROOT" rev-parse HEAD 2>/dev/null || echo "none")
 NO_COMMIT_ITERS=0
-NO_COMMIT_THRESHOLD=1
+NO_COMMIT_THRESHOLD=2
 
 for ((i=1; i<=MAX_ITERATIONS; i++)); do
   echo ""
