@@ -7,8 +7,10 @@
 > slice 1 — bypass on internal-FX dispatch) → `2f3a1cb` (T5 slice 2 —
 > moveInternalFxSlot reorder primitive) → `87da6bb` (T5 slice 3 —
 > propagate persisted bypassed flag from EffectChain to host on
-> chain-set). OTTO origin/main: **`abf8e4d4`** (unchanged this session
-> — no cross-project edits required). ctest baseline **634 pass / 2
+> chain-set) → `e94cec0` (this handoff refresh) → this commit (final
+> handoff polish before fresh chat picks up slice 4). OTTO
+> origin/main: **`abf8e4d4`** (unchanged this session — no
+> cross-project edits required). ctest baseline **634 pass / 2
 > skipped** (was 625/2 → +9 new tests; the 2 skipped are the
 > operator-only OOP editor lifecycle cases #632 / #633 from
 > `MainComponentPluginEditorTests`, unchanged from the prior baseline).
