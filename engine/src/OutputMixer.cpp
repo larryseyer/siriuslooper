@@ -214,6 +214,43 @@ bool OutputMixer::routeBusToBus (BusId from, BusId to)
     return graph_.setMainOut (busNodeIds_[fi], busNodeIds_[ti]);
 }
 
+bool OutputMixer::setBusMainOutToHardwareOutput (BusId bus)
+{
+    // Master is fixed to the terminal — re-pointing it is the same as
+    // leaving it alone, but rejecting here keeps parity with routeBusToBus's
+    // master-protection rule and makes the precondition explicit.
+    if (bus.value() == 0) return false;
+    const auto bi = static_cast<std::size_t> (bus.value());
+    if (bi >= busNodeIds_.size()) return false;
+    return graph_.setMainOut (busNodeIds_[bi],
+                              graph_.terminalNode (MixerTerminal::HardwareOutput));
+}
+
+int OutputMixer::busCount() const noexcept
+{
+    return static_cast<int> (buses_.size());
+}
+
+OutputMixer::MainOutDest OutputMixer::busMainOut (BusId id) const noexcept
+{
+    const auto bi = static_cast<std::size_t> (id.value());
+    if (bi >= busNodeIds_.size()) return MainOutDest::Bus;   // unknown — defensive default
+    const auto dest = graph_.mainOutOf (busNodeIds_[bi]);
+    if (dest == graph_.terminalNode (MixerTerminal::HardwareOutput))
+        return MainOutDest::HardwareOutput;
+    return MainOutDest::Bus;
+}
+
+BusId OutputMixer::busMainOutBus (BusId id) const noexcept
+{
+    const auto bi = static_cast<std::size_t> (id.value());
+    if (bi >= busNodeIds_.size()) return BusId{ 0 };
+    const auto destNode = graph_.mainOutOf (busNodeIds_[bi]);
+    for (std::size_t i = 0; i < busNodeIds_.size(); ++i)
+        if (busNodeIds_[i] == destNode) return buses_[i].id();
+    return BusId{ 0 };
+}
+
 float OutputMixer::sendLevelFor (OutputChannelId channel, BusId bus) const noexcept
 {
     const std::size_t idx = sendMatrixIndex (channel, bus);

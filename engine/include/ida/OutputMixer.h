@@ -134,6 +134,32 @@ public:
     /// for an aux bus is the master.
     bool routeBusToBus (BusId from, BusId to);
 
+    /// Routes a bus's main-out direct to the HardwareOutput terminal,
+    /// bypassing master. Mirrors `InputMixer::setBusMainOutToHardwareOutput`.
+    /// Returns false if the BusId is unknown. The master bus's main-out is
+    /// always the terminal and cannot be redirected.
+    bool setBusMainOutToHardwareOutput (BusId bus);
+
+    /// Total bus count (master + aux). Useful for cap checks at the UI
+    /// layer before calling `addBus`. Mirrors `InputMixer::busCount`.
+    int busCount() const noexcept;
+
+    /// Output-side equivalent of `InputMixer::MainOutDest`. The Output Mixer
+    /// has no Tape terminal (tape is the input side's concern), so the
+    /// possible categories are Bus (the main-out is another bus, possibly
+    /// the master) and HardwareOutput (direct out, bypassing master).
+    enum class MainOutDest { Bus, HardwareOutput };
+
+    /// Reads bus `id`'s current main-out category. Returns Bus when the id
+    /// is unknown — same defensive default as InputMixer (callers must
+    /// treat it as "ask again later" rather than acting on it).
+    MainOutDest busMainOut (BusId id) const noexcept;
+
+    /// When `busMainOut(id) == Bus`, returns the target BusId. Returns
+    /// BusId{0} (master) for unknown ids or for buses whose main-out is
+    /// HardwareOutput (caller should branch on busMainOut first).
+    BusId busMainOutBus (BusId id) const noexcept;
+
     /// Message-thread accessor for the send-level matrix entry. Returns 0
     /// if either id is unknown. Primary use: tests + S3 audio-thread
     /// traversal that reads send levels into the mix.

@@ -100,10 +100,24 @@ private:
     void refreshAll();
     void refreshInputMixer();
     /// Pushes the OutputMixer master bus's post-fader peak + short-term LUFS
-    /// into the OutputMixerPane's master strip. Called from the 30 Hz timer.
-    /// No-op when the pane is absent (lower tier) or the master bus lookup
-    /// fails. Message-thread only.
+    /// into the OutputMixerPane's master strip + every aux bus row. Called
+    /// from the 30 Hz timer. No-op when the pane is absent. Message-thread
+    /// only.
     void refreshOutputMixer();
+    /// Walks `outputMixer_->busCount()` (skipping master at BusId{0}),
+    /// publishes the resulting aux-bus list to the OutputMixerPane and
+    /// rebuilds `outputBusStripIds_` in parallel. Brackets `Bus::prepare`
+    /// in a remove/addAudioCallback so the LufsMeter reallocation can never
+    /// race the audio thread. Message-thread only.
+    void rebuildOutputBusStrips();
+    /// Resolves each aux bus's current main-out destination + builds its
+    /// per-bus picker choice list (every OTHER aux bus + master + "Direct
+    /// out"). Pushed into the pane via setBusDestinations. Message-thread only.
+    void refreshOutputDestinations();
+    /// Opens the InsertChainPopup anchored to aux bus `busIdx`'s INS button.
+    /// Same detach/setEffectChain/re-attach shape as the input variants —
+    /// see openInsertChainPopupForMasterBus.
+    void openInsertChainPopupForOutputBus (int busIdx);
     /// Resolves each input strip's current tape destination + the pooled-tape
     /// choice list and pushes both into the pane's per-strip picker buttons.
     /// Message-thread only.
@@ -317,6 +331,11 @@ private:
     // Bus/FX-return strip IDs, parallel to InputMixerPane bus strips.
     // Kept in sync by rebuildBusStrips().
     std::vector<ida::BusId>      busStripIds_;
+    /// Output Mixer aux-bus strip IDs, parallel to OutputMixerPane::busStrips_.
+    /// Index N here = BusId at OutputMixerPane row N. Master (BusId{0}) is
+    /// NOT in this vector — it's tracked separately by the pane's master_.
+    /// Kept in sync by rebuildOutputBusStrips().
+    std::vector<ida::BusId>      outputBusStripIds_;
 
     // --- Plugins tab ---
     class PluginListBox;

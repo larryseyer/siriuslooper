@@ -1,4 +1,4 @@
-# Session Continuation — NEXT: Output Mixer slice 2 (aux bus row + add-bus) OR T6 persistence
+# Session Continuation — NEXT: Output Mixer slice 3 (phrase channels?) OR persistence (T6) OR cycle-aware destination filtering
 
 > **For a fresh chat picking this up cold:** memory + project +
 > user CLAUDE.md load automatically. This file is the **forward-looking
@@ -11,85 +11,121 @@
    TAPECOLOR entries acked/resolved; nothing new expected until OTTO
    ships Phase 3.
 
-## ▶ DONE THIS SESSION — Output Mixer tab slice 1
+## ▶ DONE THIS SESSION — Output Mixer slice 1 + slice 2
 
-Slice 1 of the operator's mixer→transport roadmap (Option A from the
-prior `continue.md`). The Output Mixer tab now exists with a single
-**Master** bus strip — the smallest complete capability that mirrors
-the proven Input bus-row shape.
+Two consecutive slices of the operator's mixer→transport roadmap
+landed in the same session. Operator confirmed slice 1 visually
+between slices.
 
-- **`OutputMixer::busForId(BusId)` accessor** (`engine/include/ida/OutputMixer.h:117-122`,
-  `engine/src/OutputMixer.cpp:174-180`). Mirrors `InputMixer::busForId`;
-  message-thread setup, atomic-backed reads safe for 30 Hz UI refresh.
-- **`OutputMixerPane` nested class** (`app/MainComponent.cpp` after
-  `InputMixerPane`, ~95 LOC). Single `CompactFaderStrip` typed `Bus`,
-  named "Master", with INS button stacked below mirroring T5's
-  stacking. No destination picker (master is terminal). No solo
-  (no-op on the canonical sink). No detail panel.
-- **`openInsertChainPopupForMasterBus()`** (`app/MainComponent.cpp`
-  after `openInsertChainPopupForBus`). Same shape as the input bus
-  variant — detach/`setEffectChain`/re-attach bracket on
-  `outputMixer_->busForId(BusId{0})`.
-- **Tab registration + 30 Hz refresh** wired inside the existing
-  `tier_ >= Professional` gate; `refreshOutputMixer()` joins
-  `refreshInputMixer()` on the timer.
+### Slice 1 — master bus strip
+- `Bus* OutputMixer::busForId(BusId)` accessor (mirrors InputMixer).
+- `OutputMixerPane` nested class — one Master bus strip with fader,
+  dual peak/LUFS meter, mute, INS button.
+- `openInsertChainPopupForMasterBus()` reusing the T5 detach/`setEffectChain`/re-attach bracket.
+- Tab registered behind the `Professional`-tier gate; `refreshOutputMixer()`
+  joined the 30 Hz timer.
+- Operator eyes-on confirmed: tab visible, single master strip
+  rendered, INS button present, destination picker correctly absent
+  (master is the terminal — there's nowhere "downstream" to pick).
+
+### Slice 2 — aux bus row + add-bus + destination picker
+- **Engine additions** to `OutputMixer` (`engine/include/ida/OutputMixer.h` +
+  `engine/src/OutputMixer.cpp`):
+  - `setBusMainOutToHardwareOutput(BusId)` — bus→hardware-out direct
+    (bypasses master). Mirrors InputMixer's one-liner.
+  - `busCount() const noexcept` for UI cap checks.
+  - `enum class MainOutDest { Bus, HardwareOutput }` +
+    `busMainOut(BusId)` + `busMainOutBus(BusId)` for picker label /
+    tick state. Same shape as InputMixer's introspection minus Tape.
+- **OutputMixerPane** extended with aux-bus row infrastructure:
+  `BusInfo`, `DestKind`, `DestChoice`, `StripDest` types
+  (Output-side: no Tape, no FXReturn — buses only). Per-strip INS +
+  destination-picker buttons. Blank-area right-click / long-press →
+  "Add bus" menu. Master strip moved to RIGHTMOST position via
+  `removeFromRight` (pro mixing-console convention); aux buses lay
+  out left-to-right to its left, with a visual divider.
+  Listener disambiguation: master uses sentinel id `-1`, aux strips
+  use 0..N-1.
+- **MainComponent** wiring (`app/MainComponent.cpp`):
+  - `outputBusStripIds_` parallel-ID vector (mirrors `busStripIds_`).
+  - `rebuildOutputBusStrips()` — walks `busCount()` skipping master,
+    brackets `Bus::prepare` in remove/addAudioCallback.
+  - `refreshOutputDestinations()` — per-bus choice list = `[Master,
+    every-other-aux, Direct out]`; current dest resolved via
+    `busMainOut` + `busMainOutBus`.
+  - `openInsertChainPopupForOutputBus(int)` mirrors the master variant.
+  - Callbacks: `onAddBus`, `onBusGain`, `onBusMute`,
+    `onBusInsertChainClicked`, `onBusDestinationChosen` wired in
+    the tab-init block. Topology mutations bracketed by
+    remove/addAudioCallback.
 - **Build:** `cmake --build build --target IdaTests IDA -j` green.
-- **Tests:** `ctest --test-dir build` → 639/640 pass, 1 not-run
-  (`MainComponentPluginEditorTests_NOT_BUILT` sentinel — baseline
-  unchanged).
+- **Tests:** `ctest --test-dir build` → 639/640 pass / 1 not-run.
+  Test #169 (`permanent bypass: kill every generation`) flaked once
+  on first run, passed on re-run — pre-existing plug-in-host
+  process-kill timing dependency, unrelated to this work.
 
-### Audible verification NOT done this session
+### Audible verification still pending
 
-Operator should eyes-on confirm on next launch:
-- Output Mixer tab visible after Input Mixer.
-- Master strip shows fader + dual peak/LUFS meter + INS button.
-- Fader move audibly changes master output level.
-- Mute toggles output.
-- INS opens InsertChainPopup; drop RVB → hear master-bus reverb tail.
-- Meter responds with signal.
+Slice 2 operator eyes-on next launch:
+- Right-click (or long-press) on blank area in Output Mixer tab →
+  "Add bus" menu appears. Selecting creates a new strip to the LEFT
+  of master (master stays rightmost).
+- New aux strip has fader, mute, INS button, and a destination picker
+  reading "Master" by default.
+- Picker opens with 3 options on the first bus (Master is ticked,
+  Direct out also offered). After adding a second bus, each strip's
+  picker also offers the OTHER aux bus.
+- Routing a bus to Direct out → bus's signal hits hardware outputs
+  bypassing master (master meter goes silent for that bus's
+  contribution).
+- INS on an aux bus opens InsertChainPopup; chain saves per-bus.
 
-If something misbehaves the most likely suspects are:
-- `Bus::setGain` is non-atomic w.r.t. the CompactFaderStrip's default
-  range — `0..1` linear is the engine contract, matches strip default.
-- Master peak/LUFS depend on the master bus running its `process()`
-  path; if no channels exist (slice 1 default), the master mixBuffer is
-  zero and meters correctly read silence — that's the expected state
-  until a channel is added or DirectLayer feeds the path.
+If cycle-creating routes silently no-op, that's the slice 2 known
+limitation (engine rejects, UI just refreshes — see "OPTIONS" below
+for the planned slice 3 fix).
 
-## ▶ NEXT — operator's mixer→transport roadmap continues
+## ▶ NEXT — three options
 
-### Option A — Output Mixer slice 2 (aux bus row + add-bus)
+### Option A — slice 3: cycle-aware destination filtering + bus rename
 
-Add the aux-bus row to the left of the master strip plus a blank-area
-right-click → "Add bus". Mirrors the Input pane's `onAddBus` shape;
-calls `outputMixer_->addBus(BusConfig{2, "Bus N", BusKind::Bus})` inside
-a remove/addAudioCallback bracket. Each aux strip gets the same
-fader/mute/INS treatment + a destination picker (master / another bus
-/ hardware output). Unblocks T4 Sends UI more fully than slice 1 does.
+Add `OutputMixer::busMainOutToBusWouldCycle(BusId from, BusId to)`
+mirroring `InputMixer::busMainOutToBusWouldCycle`. Use it in
+`refreshOutputDestinations` to PRE-EXCLUDE the targets that would
+cycle, so the picker never offers a route that'll be silently
+rejected. Combine with a bus-rename gesture (double-click strip
+name? right-click strip → "Rename…"?) — currently buses ship as
+"Bus 1", "Bus 2", … and operator has no way to change them.
+Smallest, tightest follow-up.
 
-### Option B — Output Mixer slice 3 (phrase channels)
+### Option B — slice 4: phrase channels (depends on M6+)
 
-Channels in the Output Mixer are "one per phrase" per whitepaper §6.6.
-Phrases as a runtime concept land at M6+ (Constituent rendering). This
-slice waits until at least one phrase can be defined. Skip until then.
+Channels in the Output Mixer are "one per phrase" (whitepaper §6.6).
+Phrases as a runtime concept require M6+ Constituent rendering.
+Until at least one phrase can be defined at runtime, the channels
+column has nothing to populate. SKIP until M6+ engine work lands.
 
-### Option C — T6 P4/P5 persistence wiring
+### Option C — T6 persistence verify
 
-The EffectChain already round-trips through `SessionFormat`; with the
-master bus's INS now mutable from the UI, T6 would verify save/load on
-a session that has master inserts configured. Smaller scope than A.
+EffectChain + bus topology already round-trip via `SessionFormat`.
+With slice 2 in place, T6 would: create some aux buses, configure
+their destinations + INS chains, save session, reload, verify the
+Output Mixer tab reconstructs identically. Smallest-scope
+"correctness lap" — no new UX, just an audit.
 
-**Recommendation:** A. T4 (Sends UI) depends on multiple buses
-existing, and aux-bus add/remove on Output mirrors a proven Input
-pattern almost line-for-line.
+**Recommendation:** A. Cycle-aware filtering is a small, tight
+polish that completes the Output Mixer routing UX. B is blocked on
+engine milestones; C is verifiable but less visible than A.
 
 ## ▶ BASELINE
 
 - `ctest --test-dir build`: **639 pass / 1 not-run / 640 total**.
-- `master` HEAD on origin: pending this session's commit.
+  Flaky #169 (process-kill timing) sometimes fails on first run,
+  passes on re-run — pre-existing.
+- `master` HEAD on origin: this session's two commits (slice 1 +
+  slice 2), pushed.
 - OTTO submodule SHA: `41dcae25` on `origin/main` (unchanged).
-- lsfx_tapecolor submodule SHA: `c4a8ec3` on `main` (unchanged; no DSP
-  instantiation on IDA's side until OTTO Phase 13).
+- lsfx_tapecolor submodule SHA: `c4a8ec3` on `main` (unchanged; no
+  DSP instantiation on IDA's side until OTTO Phase 13).
 
 ## ▶ HOUSEKEEPING
 
