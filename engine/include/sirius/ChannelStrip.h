@@ -143,10 +143,14 @@ public:
                 && entries[slotIdx].kind == EffectChainSlotKind::Internal)
             {
                 host_->setInternalFxAtSlot (nodeKey_, slotIdx, entries[slotIdx].internalId);
+                // P7 T5 slice 3 — propagate the entry's persisted bypass flag
+                // (same shape as Bus::setEffectChain).
+                host_->setInternalFxBypassAtSlot (nodeKey_, slotIdx, entries[slotIdx].bypassed);
             }
             else
             {
                 host_->setInternalFxAtSlot (nodeKey_, slotIdx, std::nullopt);
+                // nullopt erase already cleared the bypass entry.
             }
         }
     }

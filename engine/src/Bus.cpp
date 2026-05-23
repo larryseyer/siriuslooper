@@ -71,10 +71,18 @@ void Bus::setEffectChain (EffectChain chain)
             && entries[slotIdx].kind == EffectChainSlotKind::Internal)
         {
             host_->setInternalFxAtSlot (nodeKey, slotIdx, entries[slotIdx].internalId);
+            // P7 T5 slice 3 — propagate the entry's persisted bypass flag.
+            // setInternalFxAtSlot just reset the bypass entry to absent; this
+            // call re-creates it iff bypassed==true (try_emplace short-circuit
+            // path inside the host). The audio thread observes the new flag
+            // on the next pumpSlot acquire-load.
+            host_->setInternalFxBypassAtSlot (nodeKey, slotIdx, entries[slotIdx].bypassed);
         }
         else
         {
             host_->setInternalFxAtSlot (nodeKey, slotIdx, std::nullopt);
+            // nullopt erase inside setInternalFxAtSlot already cleared any
+            // bypass entry — no separate setInternalFxBypassAtSlot call needed.
         }
     }
 }

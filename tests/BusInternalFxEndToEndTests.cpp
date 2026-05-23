@@ -292,3 +292,125 @@ TEST_CASE ("Bus chain shrink — orphan internal adapters on past-end slots are 
         CHECK (rout[i] == kSentinel);
     }
 }
+
+TEST_CASE ("Bus::setEffectChain with a bypassed Internal slot propagates the flag to the host",
+           "[internal-fx][end-to-end][bypass-load]")
+{
+    // P7 T5 slice 3 — session-load wiring. A chain whose Internal slot
+    // carries bypassed=true (as persisted in JSON via SessionFormat) must
+    // surface on the host's bypass map at chain-set time so the host's
+    // pumpSlot returns false even though the adapter is bound. This
+    // pins the load-path contract directly against the host (bypassing
+    // Bus::processChain's own per-entry bypass skip, which would mask
+    // the host-side propagation if we only observed Bus output).
+    sirius::OutOfProcessEffectChainHost host;
+    host.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
+
+    constexpr std::int64_t kBusId = 9001;
+    sirius::Bus bus (sirius::BusId { kBusId }, sirius::BusConfig { 2, "Aux" });
+    bus.setEffectChainHost (&host);
+
+    // Build a chain entry the same way SessionFormat does on load:
+    // makeInternal(kEq), then flip the persisted bypassed flag.
+    auto entry = sirius::EffectChainEntry::makeInternal (sirius::InternalFxId::kEq);
+    entry.bypassed = true;
+    auto chain = sirius::EffectChain{}.withAppended (std::move (entry));
+    bus.setEffectChain (chain);
+
+    // Direct host pumpSlot — adapter IS bound (Bus's chain-set sweep called
+    // setInternalFxAtSlot on slot 0), AND bypass flag IS set on the host
+    // (slice 3 wiring). Expect false return with output buffers unchanged.
+    std::array<float, kBlockSamples> lin {}, rin {};
+    fillSine (lin, rin);
+    std::array<float, kBlockSamples> lout {}, rout {};
+    constexpr float kSentinel = 0.4242f;
+    lout.fill (kSentinel);
+    rout.fill (kSentinel);
+
+    const std::array<const float*, 2> inPtrs  { lin.data(),  rin.data()  };
+    const std::array<float*, 2>       outPtrs { lout.data(), rout.data() };
+    const bool pumped = host.pumpSlot (kBusId, /*slotIdx*/ 0,
+                                       inPtrs.data(),
+                                       const_cast<float* const*> (outPtrs.data()),
+                                       2, kBlockSamples);
+    CHECK_FALSE (pumped);
+    for (std::size_t i = 0; i < kBlockSamples; ++i)
+    {
+        CHECK (lout[i] == kSentinel);
+        CHECK (rout[i] == kSentinel);
+    }
+}
+
+TEST_CASE ("Bus::setEffectChain with bypassed=false leaves the host dispatching the adapter",
+           "[internal-fx][end-to-end][bypass-load]")
+{
+    // P7 T5 slice 3 — symmetric: a chain whose Internal slot has
+    // bypassed=false (the common case) must leave the host's bypass map
+    // absent (or false) for that slot, so pumpSlot dispatches normally.
+    sirius::OutOfProcessEffectChainHost host;
+    host.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
+
+    constexpr std::int64_t kBusId = 9002;
+    sirius::Bus bus (sirius::BusId { kBusId }, sirius::BusConfig { 2, "Aux" });
+    bus.setEffectChainHost (&host);
+
+    auto chain = sirius::EffectChain{}.withAppended (
+        sirius::EffectChainEntry::makeInternal (sirius::InternalFxId::kEq));
+    bus.setEffectChain (chain);
+
+    std::array<float, kBlockSamples> lin {}, rin {};
+    fillSine (lin, rin);
+    std::array<float, kBlockSamples> lout {}, rout {};
+    lout.fill (0.0f);
+    rout.fill (0.0f);
+
+    const std::array<const float*, 2> inPtrs  { lin.data(),  rin.data()  };
+    const std::array<float*, 2>       outPtrs { lout.data(), rout.data() };
+    const bool pumped = host.pumpSlot (kBusId, /*slotIdx*/ 0,
+                                       inPtrs.data(),
+                                       const_cast<float* const*> (outPtrs.data()),
+                                       2, kBlockSamples);
+    REQUIRE (pumped);
+}
+
+TEST_CASE ("Bus::setEffectChain replacing a bypassed Internal slot with a fresh one clears bypass",
+           "[internal-fx][end-to-end][bypass-load]")
+{
+    // P7 T5 slice 3 — re-bind clears the host bypass. Sequence:
+    //   1. Set chain with {Internal=kEq, bypassed=true} → host bypass on.
+    //   2. Set chain with {Internal=kEq, bypassed=false} → host bypass off.
+    // The second setEffectChain re-runs the sweep, which calls
+    // setInternalFxAtSlot (resets bypass to absent in the host) and then
+    // setInternalFxBypassAtSlot(.., false) — both no-ops if absent. Either
+    // way the host must dispatch the second call's adapter.
+    sirius::OutOfProcessEffectChainHost host;
+    host.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
+
+    constexpr std::int64_t kBusId = 9003;
+    sirius::Bus bus (sirius::BusId { kBusId }, sirius::BusConfig { 2, "Aux" });
+    bus.setEffectChainHost (&host);
+
+    // Chain 1 — bypassed.
+    {
+        auto e = sirius::EffectChainEntry::makeInternal (sirius::InternalFxId::kEq);
+        e.bypassed = true;
+        bus.setEffectChain (sirius::EffectChain{}.withAppended (std::move (e)));
+    }
+
+    // Chain 2 — not bypassed.
+    bus.setEffectChain (sirius::EffectChain{}.withAppended (
+        sirius::EffectChainEntry::makeInternal (sirius::InternalFxId::kEq)));
+
+    std::array<float, kBlockSamples> lin {}, rin {};
+    fillSine (lin, rin);
+    std::array<float, kBlockSamples> lout {}, rout {};
+    lout.fill (0.0f);
+    rout.fill (0.0f);
+
+    const std::array<const float*, 2> inPtrs  { lin.data(),  rin.data()  };
+    const std::array<float*, 2>       outPtrs { lout.data(), rout.data() };
+    REQUIRE (host.pumpSlot (kBusId, 0,
+                            inPtrs.data(),
+                            const_cast<float* const*> (outPtrs.data()),
+                            2, kBlockSamples));
+}
