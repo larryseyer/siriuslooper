@@ -21,7 +21,12 @@ namespace sirius
 ///                  `InternalFxId`; the host wraps the matching OTTO Player FX.
 ///   - `Plugin`   — slot carries a `PluginDescriptor` for an externally
 ///                  hosted VST/CLAP/AU(v3). Unchanged from the pre-union shape.
-/// Wire-stable order: do not reorder values without a SessionFormat migration.
+/// Wire-stable NAMES: SessionFormat emits these as strings ("Empty" /
+/// "Internal" / "Plugin"). Renaming a value without updating
+/// effectChainEntryToVar / effectChainEntryFromVar breaks every saved
+/// session that contains entries of that kind. Numeric values are also
+/// pinned (see EffectChainSlotKind tests) — reordering breaks in-memory
+/// switches that rely on the enum order.
 enum class EffectChainSlotKind : std::uint8_t
 {
     Empty    = 0,
@@ -74,14 +79,22 @@ struct EffectChainEntry
 
     bool operator== (const EffectChainEntry& other) const noexcept
     {
-        return kind == other.kind
-            && internalId == other.internalId
-            && descriptor == other.descriptor
-            && displayName == other.displayName
-            && stateBase64 == other.stateBase64
-            && bypassed == other.bypassed
-            && archivalMode == other.archivalMode
-            && persistedSnapshot == other.persistedSnapshot;
+        if (kind        != other.kind)        return false;
+        if (displayName != other.displayName) return false;
+        if (bypassed    != other.bypassed)    return false;
+        switch (kind)
+        {
+            case EffectChainSlotKind::Empty:
+                return true;
+            case EffectChainSlotKind::Internal:
+                return internalId == other.internalId;
+            case EffectChainSlotKind::Plugin:
+                return descriptor        == other.descriptor
+                    && stateBase64       == other.stateBase64
+                    && archivalMode      == other.archivalMode
+                    && persistedSnapshot == other.persistedSnapshot;
+        }
+        return false; // unreachable — quiets some compilers
     }
     bool operator!= (const EffectChainEntry& other) const noexcept { return ! (*this == other); }
 };

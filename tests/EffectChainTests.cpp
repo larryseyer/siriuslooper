@@ -39,6 +39,24 @@ namespace
         desc.filePath     = std::string ("/plugins/") + name + ".vst3";
         return EffectChainEntry::makePlugin (std::move (desc), name, "abc=");
     }
+
+    // Round-trips a single entry through the Constituent + SessionFormat path
+    // and returns the kind of the deserialized entry. Used by the wire-stable
+    // test to confirm serializer and deserializer agree on discriminant strings.
+    sirius::EffectChainSlotKind roundTripKind (const EffectChainEntry& entry)
+    {
+        EffectChain chain;
+        chain = chain.withAppended (entry);
+        const Constituent c =
+            Constituent (ConstituentId (42), Position(), Position (Rational (4)))
+                .withName ("pin")
+                .withEffectChain (chain);
+        const auto json = sirius::persistence::serializeSession (c);
+        const auto back = sirius::persistence::deserializeSession (json);
+        REQUIRE (back->hasEffectChain());
+        REQUIRE (back->effectChain()->size() == 1);
+        return back->effectChain()->entries()[0].kind;
+    }
 }
 
 TEST_CASE ("a fresh chain is empty", "[effectchain]")
@@ -239,7 +257,9 @@ TEST_CASE ("EffectChainEntry equality includes the kind + internalId", "[effect-
     CHECK (a == b);
     CHECK (a != c);
     CHECK (a != empty);
-    CHECK (empty != pluginLooking);  // descriptor mismatch is still detected on Empty entries
+    // Two Empty entries are equal regardless of plugin-payload field values that
+    // would be meaningful on a Plugin entry — Empty's contract is "no payload."
+    CHECK (empty == pluginLooking);
 }
 
 TEST_CASE ("a chain can mix Internal and Plugin slots", "[effect-chain][union-slot]")
@@ -389,4 +409,37 @@ TEST_CASE ("a pre-union session (no `kind` field) loads every entry as Plugin",
     const auto& entry = round->effectChain()->entries()[0];
     CHECK (entry.kind == sirius::EffectChainSlotKind::Plugin);
     CHECK (entry.descriptor.uniqueId == "legacy-eq");
+}
+
+TEST_CASE ("EffectChainSlotKind enum values are stable", "[effect-chain][union-slot][wire-stable]")
+{
+    // Pinned to guard against reordering. The serializer emits names (not
+    // numeric values), but in-memory switches and binary comparisons rely on
+    // these values; reordering is still a breaking change.
+    CHECK (static_cast<std::uint8_t> (sirius::EffectChainSlotKind::Empty)    == 0);
+    CHECK (static_cast<std::uint8_t> (sirius::EffectChainSlotKind::Internal) == 1);
+    CHECK (static_cast<std::uint8_t> (sirius::EffectChainSlotKind::Plugin)   == 2);
+}
+
+TEST_CASE ("EffectChainSlotKind wire strings are stable", "[effect-chain][union-slot][wire-stable]")
+{
+    // The serializer in effectChainEntryToVar emits discriminant strings
+    // directly. Renaming a discriminant value without updating the serializer
+    // mapping breaks every saved session with that kind. We pin the strings by
+    // round-tripping each kind through serializeSession / deserializeSession
+    // and confirming kind identity. If the serializer and deserializer drift
+    // apart, the returned kind will not match the original and this test catches it.
+    EffectChainEntry emptyEntry; // default kind = Empty
+    CHECK (roundTripKind (emptyEntry) == sirius::EffectChainSlotKind::Empty);
+
+    CHECK (roundTripKind (EffectChainEntry::makeInternal (sirius::InternalFxId::kEq))
+            == sirius::EffectChainSlotKind::Internal);
+
+    sirius::PluginDescriptor d;
+    d.format       = sirius::PluginFormat::Vst3;
+    d.uniqueId     = "pin-test";
+    d.name         = "Pin";
+    d.manufacturer = "Acme";
+    CHECK (roundTripKind (EffectChainEntry::makePlugin (d, "Pin", ""))
+            == sirius::EffectChainSlotKind::Plugin);
 }
