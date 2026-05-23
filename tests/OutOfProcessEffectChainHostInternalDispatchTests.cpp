@@ -104,7 +104,7 @@ TEST_CASE ("setInternalFxAtSlot + prepare + pumpSlot — EQ adapter dispatch hit
     // so its first `process` call returns true (not the unprepared-miss
     // false). This is the "prepare-then-bind" leg of Case 5 in the
     // umbrella plan's Subagent B test matrix.
-    host.prepare (static_cast<double> (kSampleRate), kMaxBlock);
+    host.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
     host.setInternalFxAtSlot (42, 0, sirius::InternalFxId::kEq);
 
     std::array<float, kBlockSamples> lin {}, rin {}, lout {}, rout {};
@@ -136,7 +136,7 @@ TEST_CASE ("setInternalFxAtSlot(nullopt) unbinds — subsequent pumpSlot misses 
            "[internal-fx-host]")
 {
     sirius::OutOfProcessEffectChainHost host;
-    host.prepare (static_cast<double> (kSampleRate), kMaxBlock);
+    host.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
 
     // Bind, confirm the bind worked, then unbind.
     host.setInternalFxAtSlot (42, 0, sirius::InternalFxId::kEq);
@@ -174,7 +174,7 @@ TEST_CASE ("two adapters at distinct (nodeKey, slot) keys do not cross-talk",
            "[internal-fx-host]")
 {
     sirius::OutOfProcessEffectChainHost host;
-    host.prepare (static_cast<double> (kSampleRate), kMaxBlock);
+    host.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
 
     // Bind two independent adapters at different keys. Each owns its own
     // PlayerEQ state — pumping (42, 0) must not touch (99, 3)'s adapter
@@ -228,7 +228,7 @@ TEST_CASE ("bind-then-prepare also auto-prepares — adapter is ready on first p
     // the "bind-then-prepare" leg of Case 5 in the umbrella plan's
     // Subagent B test matrix.
     host.setInternalFxAtSlot (7, 1, sirius::InternalFxId::kEq);
-    host.prepare (static_cast<double> (kSampleRate), kMaxBlock);
+    host.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
 
     std::array<float, kBlockSamples> lin {}, rin {}, lout {}, rout {};
     fillSine (lin, rin);
@@ -245,7 +245,7 @@ TEST_CASE ("setInternalFxAtSlot with an un-shipped id (kCmp) is a no-op rebind",
            "[internal-fx-host]")
 {
     sirius::OutOfProcessEffectChainHost host;
-    host.prepare (static_cast<double> (kSampleRate), kMaxBlock);
+    host.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
 
     // T3a ships only kEq. The factory returns nullptr for kCmp/kRvb/kDly
     // until T3b/c/d land. setInternalFxAtSlot(kCmp) should erase any
@@ -268,5 +268,81 @@ TEST_CASE ("setInternalFxAtSlot with an un-shipped id (kCmp) is a no-op rebind",
     {
         CHECK (lout[i] == kSentinel);
         CHECK (rout[i] == kSentinel);
+    }
+}
+
+TEST_CASE ("in-place aliasing through the host — inChannels == outChannels survives the round trip",
+           "[internal-fx-host]")
+{
+    // The PlayerEQ adapter handles aliasing internally; the host forwards
+    // pointers verbatim. This case pins that contract end-to-end: if a
+    // future host-side change sneaks in a scratch copy that breaks
+    // aliasing, this case fails. Compares the aliased run against a
+    // parallel non-aliased run with the same input to confirm the host
+    // doesn't perturb the result either way.
+    sirius::OutOfProcessEffectChainHost host;
+    host.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
+    host.setInternalFxAtSlot (42, 0, sirius::InternalFxId::kEq);
+
+    // Reference (non-aliased) run on a freshly-bound second slot — gives
+    // us an apples-to-apples baseline at the same point in adapter state.
+    sirius::OutOfProcessEffectChainHost refHost;
+    refHost.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
+    refHost.setInternalFxAtSlot (42, 0, sirius::InternalFxId::kEq);
+
+    std::array<float, kBlockSamples> lin {}, rin {};
+    const float inputPeak = fillSine (lin, rin);
+
+    // Reference: separate in/out buffers, no aliasing.
+    std::array<float, kBlockSamples> refLout {}, refRout {};
+    refLout.fill (0.0f);
+    refRout.fill (0.0f);
+    const bool refPumped = pump (refHost, 42, 0,
+                                 lin.data(), rin.data(),
+                                 refLout.data(), refRout.data());
+    REQUIRE (refPumped);
+
+    // Aliased: in/out point at the SAME buffers. Both rows of the pointer
+    // arrays carry identical pointers per channel — true in-place processing.
+    std::array<float, kBlockSamples> aliasL {}, aliasR {};
+    for (std::size_t i = 0; i < kBlockSamples; ++i)
+    {
+        aliasL[i] = lin[i];
+        aliasR[i] = rin[i];
+    }
+    const std::array<const float*, 2> inPtrs  { aliasL.data(), aliasR.data() };
+    const std::array<float*, 2>       outPtrs { aliasL.data(), aliasR.data() };
+    REQUIRE (inPtrs[0] == outPtrs[0]);
+    REQUIRE (inPtrs[1] == outPtrs[1]);
+
+    const bool aliasedPumped = host.pumpSlot (
+        /* nodeKey */ 42, /* slotIdx */ 0,
+        inPtrs.data(),
+        const_cast<float* const*> (outPtrs.data()),
+        /* numChannels */ 2, /* numSamples */ kBlockSamples);
+    REQUIRE (aliasedPumped);
+
+    // The in-place buffers are now the adapter's output. Finite, bounded,
+    // and approximately equal to the non-aliased reference output across
+    // the settled tail. (The first samples include the IIR settling tail;
+    // we compare the back half where the filter has converged.)
+    float aliasPeak = 0.0f;
+    for (std::size_t i = kBlockSamples / 2; i < kBlockSamples; ++i)
+    {
+        CHECK (std::isfinite (aliasL[i]));
+        CHECK (std::isfinite (aliasR[i]));
+        aliasPeak = std::max ({ aliasPeak, std::abs (aliasL[i]), std::abs (aliasR[i]) });
+    }
+    // Flat-default EQ ≈ identity ⇒ output peak tracks input peak.
+    CHECK (aliasPeak > 0.5f * inputPeak);
+    CHECK (aliasPeak < 1.5f * inputPeak);
+
+    // Aliased and non-aliased outputs match sample-for-sample across the
+    // settled tail. A host-side scratch-copy regression that breaks aliasing
+    // would show up as drift between the two buffers.
+    for (std::size_t i = kBlockSamples / 2; i < kBlockSamples; ++i)
+    {
+        CHECK (std::abs (aliasL[i] - refLout[i]) < 1.0e-5f);
+        CHECK (std::abs (aliasR[i] - refRout[i]) < 1.0e-5f);
     }
 }

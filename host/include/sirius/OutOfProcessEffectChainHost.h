@@ -192,7 +192,7 @@ public:
     //                       through to the OOP path on miss as it always
     //                       has).
     //
-    // If `prepare(...)` has already been called on the host with a
+    // If `prepareInternalFx(...)` has already been called on the host with a
     // (sampleRate, maxBlockSize) pair, the newly-constructed adapter is
     // immediately prepared with those values so its first `process` call
     // returns true rather than the unprepared-miss `false`.
@@ -205,11 +205,16 @@ public:
     // so adapters bound later by `setInternalFxAtSlot` are auto-prepared
     // against the same configuration.
     //
+    // Named `prepareInternalFx` (not bare `prepare`) so call sites don't
+    // collide-by-name with `OutOfProcessPluginInstance::prepare(...)` — both
+    // types appear in the same translation units and a plain `prepare` is
+    // ambiguous-by-eye. Mirrors `setInternalFxAtSlot`'s naming.
+    //
     // Call once after the audio device is configured and again whenever
     // sample-rate / max-block changes (the engine already has the hooks
     // for this — wiring those hooks into the live audio device is
     // Subagent C's scope, not T3a-B).
-    void prepare (double sampleRate, int maxBlockSize);
+    void prepareInternalFx (double sampleRate, int maxBlockSize);
 
     // ---- Editor wire-through (M7 S5) — message-thread only --------------
     //
@@ -375,13 +380,13 @@ private:
                        std::unique_ptr<IInternalFxAdapter>,
                        SlotKeyHash> internalAdapters_;
 
-    /// P7 T3a-B — last-known `prepare(sampleRate, maxBlockSize)` values.
-    /// `prepared_` flips to true on the first call to `prepare(...)`. Used
-    /// by `setInternalFxAtSlot` to auto-prepare freshly-constructed
-    /// adapters against the live device configuration so their first
-    /// `process` call returns true rather than the unprepared-miss false.
-    /// Message-thread only — written by `prepare(...)`, read by
-    /// `setInternalFxAtSlot(...)`.
+    /// P7 T3a-B — last-known `prepareInternalFx(sampleRate, maxBlockSize)`
+    /// values. `prepared_` flips to true on the first call to
+    /// `prepareInternalFx(...)`. Used by `setInternalFxAtSlot` to
+    /// auto-prepare freshly-constructed adapters against the live device
+    /// configuration so their first `process` call returns true rather than
+    /// the unprepared-miss false. Message-thread only — written by
+    /// `prepareInternalFx(...)`, read by `setInternalFxAtSlot(...)`.
     double currentSampleRate_ { 0.0 };
     int    currentMaxBlock_   { 0 };
     bool   prepared_          { false };

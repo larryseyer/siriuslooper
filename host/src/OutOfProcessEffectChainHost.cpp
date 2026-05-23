@@ -124,6 +124,10 @@ void OutOfProcessEffectChainHost::configureBus (std::int64_t       busId,
         if (instances_.find (key) != instances_.end())
             continue; // already have one
 
+        // Double-bind would silently shadow the other path's dispatch; Subagent C's
+        // caller is expected to maintain the per-key exclusivity invariant.
+        jassert (internalAdapters_.find (key) == internalAdapters_.end());
+
         const std::string instanceId = makeInstanceId (busId, slotIdx);
         auto state = std::make_shared<SlotState>();
         state->descriptor = entries[slotIdx].descriptor;
@@ -173,10 +177,14 @@ void OutOfProcessEffectChainHost::setInternalFxAtSlot (
     // If the host has already been prepared with a (sampleRate, maxBlock)
     // pair, prepare the fresh adapter immediately so its first audio-thread
     // `process` call returns true rather than the unprepared-miss `false`.
-    // If `prepare(...)` hasn't been called yet, the adapter is stored
-    // unprepared; the next `prepare(...)` call will sweep it.
+    // If `prepareInternalFx(...)` hasn't been called yet, the adapter is
+    // stored unprepared; the next `prepareInternalFx(...)` call will sweep it.
     if (prepared_)
         adapter->prepare (currentSampleRate_, currentMaxBlock_);
+
+    // Double-bind would silently shadow the other path's dispatch; Subagent C's
+    // caller is expected to maintain the per-key exclusivity invariant.
+    jassert (instances_.find (key) == instances_.end());
 
     // emplace_or_replace: assigning into the unique_ptr destroys any
     // pre-existing adapter at this key (the old one's destructor runs
@@ -184,7 +192,7 @@ void OutOfProcessEffectChainHost::setInternalFxAtSlot (
     internalAdapters_[key] = std::move (adapter);
 }
 
-void OutOfProcessEffectChainHost::prepare (double sampleRate, int maxBlockSize)
+void OutOfProcessEffectChainHost::prepareInternalFx (double sampleRate, int maxBlockSize)
 {
     // Message-thread only — see the header. Forwards to every currently-
     // bound adapter and stashes the values so subsequent
