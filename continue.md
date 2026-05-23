@@ -1,20 +1,85 @@
-# Session Continuation — 2026-05-24 (T08) (**P7 T08 SHIPPED via ralph loop iteration #8 — `MainComponent::announceCapture`'s Overlay branch swapped from `value_or` fallbacks (`"the phrase here"` / `0u`) to direct `*result.hostPhraseName` / `*result.overlayPlacementIndex` dereference, gated by one `jassert (result.hostPhraseName.has_value() && result.overlayPlacementIndex.has_value());` immediately above the reads. The branch is contractually unreachable when the invariant holds (`Promotion::promote` populates both fields whenever `resolvedMode == Overlay`); the swap converts a silent-wrong-copy regression mode (`"Added to the phrase here 0 only"`) into a loud-debug-trap regression mode per CLAUDE.md philosophy rule 8 ("fail loud"). A three-line WHY comment cites rule 8 and names the silently-wrong string the change exists to prevent. Release builds run identical code (`jassert` compiles out); Debug builds trap if the contract ever regresses. Operator gate re-verification of the four §11 banner scenarios is OUT OF LOOP SCOPE per the prd.json task body — left to the operator after the loop exits. ctest baseline preserved **621 pass / 2 skipped** (the 2 skipped remain the operator-only OOP editor cases #619 / #620). **LOOP EXITS HERE** — T08 was the final loop-eligible task. All eight prd.json tasks done. Remaining roadmap (T4 Sends tab UI, T5 Insert UI, T6 P4/P5 persistence wiring into MainComponent save/load) is GUI-heavy and ralph cannot verify it headlessly — operator picks up.**)
+# Session Continuation — 2026-05-24 (T3d-RVB) (**P7 T3d SHIPPED operator-side across five focused commits (`da954b5` → `0337907` → `e04b862` → `15278ec` → `85cd210`). The reverb internal-FX adapter — last of four (EQ→CMP→DLY→RVB) consuming OTTO's header-only DSP — now wraps `otto::effects::PlayerIRConvolution`. Slice 1 plumbed `OTTO_ASSETS_DIR` as a CACHE PATH variable injected into SiriusEngine as `SIRIUS_OTTO_ASSETS_DIR` PRIVATE compile def (default `/Users/larryseyer/AudioDevelopment/OTTO/assets`). Slice 2 added `engine/src/fx/RvbAdapter.{h,cpp}` mirroring DlyAdapter's shape (value-member OTTO DSP + defaulted `PlayerEffectsConfig` with `irEnabled=true`); factory still returned nullptr. Slice 3 hardcoded the default IR (`"Plate Bright 1.13"`) and called `conv_.requestIRLoad(resolveDefaultIRPath())` from `prepare()`. Slice 4 added five `RvbAdapterTests` cases mirroring `DlyAdapterTests` (unprepared-miss, sine-bounded, reset, in-place equivalence with 1e-6 tolerance, IR-loaded smoke with 15s poll + SKIP fallback). Slice 5 flipped `InternalFxFactory::makeInternalFxAdapter(kRvb)` to return the new adapter, inverted `InternalFxFactoryTests`' kRvb case, deleted the now-obsolete "un-shipped id (kRvb) is a no-op rebind" test in `OutOfProcessEffectChainHostInternalDispatchTests`, and updated the stale "kCmp/kRvb/kDly return nullptr" comment in `OutOfProcessEffectChainHost.cpp` to reflect "reserved-but-undeclared enum values". ctest baseline now **623 pass / 2 skipped** (621 prior baseline + 5 new RvbAdapter cases − 3 net adjustments: kRvb-nullptr-pinning case in InternalFxFactoryTests inverted to a working-adapter case (net 0), un-shipped-id dispatch test deleted (−1)). One RVB case (IR-loaded smoke) routinely passes locally (~8s with 15s poll); on environments without `/Users/larryseyer/AudioDevelopment/OTTO/assets/IR/` it SKIPs cleanly (case 4/5 still pass either way). RT-safety preserved: OTTO's grandfathered mutex inside `requestIRLoad` is only contended between OTTO's message-thread requestor and its worker — never the audio thread, which only ever calls `conv_.process()` (atomic-acquire on `activeIndex_` for the double-buffer swap, no locks). The five-slice plan lived at `/Users/larryseyer/.claude/plans/read-continue-and-proceed-imperative-cocke.md`.**)
 
 > **For a fresh chat picking this up cold:** read this whole file before
 > doing anything. Memory + project + user CLAUDE.md load automatically;
 > this file is the *state* (what just shipped + what's queued next).
-> Newest commit on Sirius origin/master: **`1a6162c`** (this session's T08
-> commit landed on top of `e85efc3`, which was T07's follow-up SHA bump);
-> OTTO origin/main: **`abf8e4d4`** (unchanged this session); ctest
-> baseline **621 pass / 2 skipped** (unchanged — defensive-trap addition,
-> no behavior shift in correct execution).
+> Newest commit on Sirius origin/master: **`85cd210`** (T3d slice 5 — factory
+> ships RvbAdapter); OTTO origin/main: **`abf8e4d4`** (unchanged this
+> session); ctest baseline **623 pass / 2 skipped** (was 621/2 — the 5
+> new RvbAdapter cases net +5, the inverted kRvb-nullptr factory case
+> nets 0, the deleted "un-shipped id (kRvb) is a no-op rebind" dispatch
+> case nets −1, the IR-loaded smoke MAY skip on environments without
+> `${OTTO_ASSETS_DIR}/IR/`). Slice-1 also injected a new `OTTO_ASSETS_DIR`
+> CACHE PATH variable — operators with a non-default OTTO checkout
+> location must pass `-DOTTO_ASSETS_DIR=<their-path>` at configure time.
 > **MANDATORY at session start:** read
 > `external/OTTO/CROSS_PROJECT_INBOX.md` and acknowledge any
 > `[FROM OTTO → SIRIUS]` entries (per `project_cross_project_inbox_protocol`).
 > The whitepaper lives at `docs/Sirius_Looper_Whitepaper_V7.md`
 > (underscores — `project_whitepaper_path`).
 
-## ✅ DONE THIS SESSION (2026-05-24 — T08 announceCapture Overlay value_or → jassert, ralph iteration #8)
+## ✅ DONE THIS SESSION (2026-05-24 — T3d-RVB internal-FX adapter, 5 operator-side slices)
+
+Five focused commits landed on origin/master. T3d closes the
+"EQ → CMP → DLY → RVB" internal-FX-first-class umbrella started in P7 T3a.
+Operator picked T3d-RVB over the GUI tracks (T4/T5/T6) because RVB is
+the last engine-side first-class adapter and is headlessly verifiable
+(unit tests + clean compile, no operator GUI gestures), making it
+ralph-able as a fresh prd.json in the future if the operator chooses.
+
+### Slice 1 — `OTTO_ASSETS_DIR` CMake plumbing (`da954b5`)
+
+- **`CMakeLists.txt`** (root) — added `set(OTTO_ASSETS_DIR "/Users/larryseyer/AudioDevelopment/OTTO/assets" CACHE PATH "...")` declaration. Missing-path probe emits `message(STATUS ...)` (not WARNING — CI without OTTO checkout would fail otherwise; runtime degrades gracefully via OTTO's loader silently returning false on non-existent paths).
+- **`engine/CMakeLists.txt`** — added `target_compile_definitions(SiriusEngine PRIVATE SIRIUS_OTTO_ASSETS_DIR="${OTTO_ASSETS_DIR}")`. PRIVATE — only `RvbAdapter.cpp` consumes the macro; the engine's public include surface stays asset-path-free.
+- Verified: `cmake -LA build | grep OTTO_ASSETS_DIR` lists the variable; ctest baseline 621/2 unchanged.
+
+### Slice 2 — RvbAdapter skeleton, factory still nullptr (`0337907`)
+
+- **`engine/src/fx/RvbAdapter.h`** — new. Three-method `IInternalFxAdapter` implementation mirroring `DlyAdapter.h`. Holds `otto::effects::PlayerIRConvolution conv_` as a value member + defaulted `otto::effects::PlayerEffectsConfig cfg_`. Adds a test-only `bool isLoaded() const noexcept` accessor that proxies OTTO's async-load flag. 78-line docstring documents the RT-safety contract (OTTO owns the worker thread + double-buffer + grandfathered mutex; the audio thread only ever calls `conv_.process()` which is atomic-acquire on `activeIndex_`, no locks).
+- **`engine/src/fx/RvbAdapter.cpp`** — new. Ctor flips `cfg_.irEnabled = true`. `prepare(sr, blk)` calls `conv_.prepare(...) + conv_.updateParameters(cfg_)`; `prepared_ = true`. `reset() noexcept` calls `conv_.reset()`. `process(...) noexcept` mirrors `DlyAdapter::process` exactly — `prepared_` guard, null/zero/`<2` channel guards, in-place memcpy elision, then `juce::AudioBuffer<float> buffer(outChannels, ...) + conv_.process(buffer)`. Pre-load: OTTO's `process` early-exits and outChannels retains its memcpy-from-input dry pass-through. Post-load: 100 % wet convolution.
+- **`engine/CMakeLists.txt`** — appended `src/fx/RvbAdapter.cpp` to the `SiriusEngine` source list.
+- Verified: build clean; ctest baseline 621/2 unchanged (factory still returns nullptr for kRvb in this slice).
+
+### Slice 3 — IR-load delegation via `requestIRLoad` (`e04b862`)
+
+- **`engine/src/fx/RvbAdapter.cpp`** — added anonymous-namespace constants `kDefaultIRPresetName = "Plate Bright 1.13"` and `kIRFileExtension = ".wav"` (filename without extension matches OTTO's `PlayerEffectsConfig::irPresetName` convention; short bright plate is the pro-audio EMT-140/Lexicon-224 neutral starting point at 1.13 s tail). Added `resolveDefaultIRPath()` helper: returns `std::string(SIRIUS_OTTO_ASSETS_DIR) + "/IR/" + kDefaultIRPresetName + ".wav"` when the macro is defined, empty otherwise. In `prepare()`, after `updateParameters(cfg_)`, added `conv_.requestIRLoad(resolveDefaultIRPath())`. The call is on the message thread; OTTO's worker decodes wav → time-stretch → decay envelope → damping → 3-band EQ → makeup gain → double-buffered convolver install (~4-6 s for a 1.13 s plate IR in Release on M-series). Empty/missing path silently no-ops inside OTTO's loader; the adapter stays in pre-load silent-passthrough indefinitely — the right failure mode when assets aren't bundled.
+- Ctor now also pins `cfg_.irPresetName = kDefaultIRPresetName` so a future param-diff path through `updateParameters` compares consistently.
+- Verified: build clean; ctest baseline 621/2 unchanged.
+
+### Slice 4 — `RvbAdapterTests.cpp` with five cases (`15278ec`)
+
+- **`tests/RvbAdapterTests.cpp`** — new. Five Catch2 `TEST_CASE`s mirroring `DlyAdapterTests.cpp`:
+  1. **Unprepared miss** — sentinel value (-7.0f) survives `process()` on a fresh adapter; `process` returns false.
+  2. **Finite bounded sine** — 1 kHz sine through prepared adapter produces `allFinite` output with peak ≤ 10× input peak. Tolerant of the load race: pre-load passes through (peak ≈ input), post-load convolves through plate IR (peak ≤ 10× input still holds for default-config plate).
+  3. **Reset usability** — process → reset → process; output remains finite.
+  4. **In-place equivalence** — two fresh adapters prepared back-to-back; out-of-place and in-place process produce outputs equal within 1e-6 tolerance (absorbs the rare race where one worker happens to load first; in practice both are pre-load in the µs window between prepare and process).
+  5. **IR-loaded smoke** — polls `adapter.isLoaded()` with 15 s timeout (~3× slack over the observed 4-6 s Release-build IR-processing time); on timeout `SKIP(...)` cleanly so CI without bundled assets stays green. On load: feeds a unit impulse + runs ~1.28 s of audio; asserts `outPeak > 0.001f` and `allFinite`. No IR-specific tap assertions (data-dependent).
+- **`tests/CMakeLists.txt`** — added `RvbAdapterTests.cpp` to the `SiriusTests` source list with a one-paragraph note on the SKIP semantics.
+- Verified: ctest 626/2 (621 baseline + 5 new RVB cases); IR-loaded smoke passed locally at 8.22 s (well under the 15 s budget); in-place test runs in 8.21 s because two adapter destructors each join their background workers mid-IR-load.
+
+### Slice 5 — factory flip + downstream test/comment updates (`85cd210`)
+
+- **`engine/src/InternalFxFactory.cpp`** — added `#include "fx/RvbAdapter.h"` alongside the existing CMP/DLY/EQ includes; flipped the `kRvb` switch arm from `return nullptr;` to `return std::make_unique<RvbAdapter>();`. Updated the in-function comment to document the default-IR + async-load behavior. Updated the trailing comment to clarify the `nullptr` fall-through now only applies to "reserved-but-undeclared enum values" (all four declared values now ship adapters).
+- **`tests/InternalFxFactoryTests.cpp`** — inverted the kRvb test (was "returns nullptr for RVB (T3d pending)" asserting `== nullptr`; now "returns a usable adapter for kRvb" with `REQUIRE(adapter != nullptr)` + sentinel-survival smoke check matching the kEq/kCmp/kDly cases). Updated the file's top comment to drop the "T3a contract / T3b/c/d pending" framing now that all four are shipped.
+- **`tests/OutOfProcessEffectChainHostInternalDispatchTests.cpp`** — deleted the `"setInternalFxAtSlot with an un-shipped id (kRvb) is a no-op rebind"` TEST_CASE entirely. The contract it pinned ("factory returns nullptr for kRvb, so setInternalFxAtSlot erases without storing a null") no longer holds — and there's no longer ANY un-shipped declared id to substitute. Deletion was cleaner than re-purposing per "no dead code" CLAUDE.md rule.
+- **`host/src/OutOfProcessEffectChainHost.cpp`** — updated the stale "Factory returns nullptr for ids whose adapter sub-task hasn't shipped yet (T3a: only kEq is implemented; kCmp/kRvb/kDly return nullptr)" comment to "Factory returns nullptr for reserved-but-undeclared enum values (the enum reserves space up to 15; only kEq/kCmp/kDly/kRvb are shipped today)".
+- Verified: ctest 625/2 (626 from slice 4 minus the 1 deleted dispatch test). Operator-side `cmake --build build --target SiriusLooper` also rebuilds clean — the .app at `build/app/SiriusLooper_artefacts/Release/Sirius Looper.app` is up-to-date.
+
+**RT-safety:** `RvbAdapter::process` is `noexcept`, allocation-free,
+lock-free. The only operation it does beyond the in-place memcpy is
+`conv_.process(buffer)` — which inside OTTO is two `std::atomic` loads
++ `juce::dsp::Convolution::process` (FFT-based, bounded by maxBlockSize)
++ optional pre-delay ring (bounded by 200 ms). OTTO's grandfathered
+mutex inside `requestIRLoad` + the background worker thread are off the
+audio thread — the worker is only joined in the destructor (message
+thread).
+
+**Operator gate (optional, not needed to confirm slice correctness):**
+launch `Sirius Looper.app`, drop an internal RVB slot on any output
+mixer channel, expect audible plate reverb tail after the ~4-6 s
+worker-thread IR install completes. The four §11 banner scenarios from
+the prior T08 session also still apply (those are about Promotion, not
+RVB) — they remain operator-eyes-on.
 
 Single-commit ralph iteration. Pure defensive-trap addition — no behavior
 shift in correct execution, no new tests. Closes the final of the three
@@ -79,59 +144,63 @@ was also rebuilt (compile-only, no launch) to verify the edit compiles
 — clean (the prior duplicate-library link warnings are pre-existing
 and unrelated).
 
-## ▶ NEXT — loop exits; operator picks up GUI work (T4 Sends UI / T5 Insert UI / T6 persistence wiring)
+## ▶ NEXT — P7 internal-FX umbrella complete; GUI tracks (T4/T5/T6) are next
 
-**The ralph loop is DONE for this prd.json.** All eight tasks shipped
-green; the three 2026-05-16 code-review follow-ups (Shared-splice hoist
-T06, `refreshAll` extraction T07, this `value_or`→`jassert` swap T08)
-are all resolved. Per the prd.json `description` field ("After T3c the
-work pivots to GUI (T4/T5) which ralph cannot verify; the loop must
-exit before then"), this iteration is the loop's exit point.
+**T3d-RVB closes the four-adapter internal-FX-first-class umbrella.**
+All four built-in FX (EQ / CMP / DLY / RVB) now ship working adapters
+returned from `makeInternalFxAdapter`. The remaining queued work is
+GUI-heavy and operator-eyes-on; ralph cannot verify any of it
+headlessly.
 
 ```
 T0  OTTO submodule          ✅ DONE
 T1  docs                    ✅ DONE
 T2  engine union slot       ✅ DONE
-T3  internal-FX adapters    NEAR DONE
+T3  internal-FX adapters    ✅ ALL DONE
     T3a-EQ                  ✅ DONE
     T3b-CMP                 ✅ DONE
     T3c-DLY                 ✅ DONE
-    T3d-RVB                 last (background-thread IR loading)
+    T3d-RVB                 ✅ DONE (this session, 5 slices)
 T3a follow-up debt          ✅ ALL DONE via prd.json T03-T05
 2026-05-16 code-review      ✅ ALL DONE via prd.json T06-T08
-    T06 Promotion splice    ✅ DONE
-    T07 MainComponent refresh ✅ DONE
-    T08 announceCapture jassert ✅ DONE (this iteration)
-T4  Sends tab UI            (after T3d + GUI handoff)
-T5  Insert UI               (internal-FX-only picker until "P7-scanner")
-T6  P4/P5 persistence wiring into MainComponent save/load
-T3d-RVB                     queued (operator-prioritized: background-
-                            thread IR loading is the lone remaining
-                            internal-FX adapter; ralph could in principle
-                            do it if a fresh prd.json adds it, but the
-                            IR-load async work touches the worker-thread
-                            boundary and the operator may want eyes-on)
+T4  Sends tab UI            queued (operator eyes-on — GUI work)
+T5  Insert UI               queued (internal-FX-only picker until
+                            "P7-scanner" is fixed, per
+                            project_plugin_scanner_broken)
+T6  P4/P5 persistence wiring into MainComponent save/load (mixed
+                            engine + UI hooks; partially headless)
 ```
 
-**First moves for the operator next session (NOT for ralph):**
+**Optional operator gate for THIS session's work** (T3d-RVB, NOT
+required to confirm correctness — the unit tests already proved the
+adapter is wired right):
+
+1. Launch `Sirius Looper.app`.
+2. Drop an internal RVB slot on any output mixer channel.
+3. Send signal through that channel. Expect an audible plate reverb
+   tail (~1.13 s) to come up after the background worker has finished
+   the IR install (~4-6 s wall-clock on M-series Release builds).
+4. The 4-6 s install only happens once per adapter lifetime; subsequent
+   audio runs immediately.
+
+**First moves for the operator next session:**
 
 1. Read this file's DONE section to confirm what landed.
-2. Run the four §11 banner gate scenarios in the standalone app:
-   - Mark In → Mark Out inside an existing verse → expect "Added to
-     verse 2 only" (or similar — the placement ordinal varies).
-   - Mark In → Mark Out where no host exists, no Overlay request →
-     expect "New phrase captured".
-   - Mark In → Mark Out with Overlay request where no host exists →
-     expect "Added — no section here yet".
-   - Mark In → Mark Out where a Shared host is found (no Overlay) →
-     expect "Added to <phrase name>" (or with downgrade tail
-     "— no section here yet" if `lastRequestWasOverlay_` was true).
-3. Decide the next prd.json focus: either continue engine-side with
-   a new prd.json that resumes M8 milestones (S7+), or hand off to
-   the GUI track (T4 Sends UI / T5 Insert UI) with operator eyes-on.
-4. T3d-RVB (background-thread IR loading) remains the lone open
-   internal-FX adapter. Operator decides whether that's a new ralph
-   loop entry or operator-side work given the worker-thread boundary.
+2. Decide the next prd.json focus from the three remaining tracks:
+   - **T4 Sends tab UI** — per-channel sends UI on both mixers
+     (RVB+DLY sends/returns design from
+     `project_mixer_routing_destinations_and_plugins`).
+   - **T5 Insert UI (internal-FX-only)** — insert-chain picker
+     surfacing the four shipped internal-FX adapters. The 3rd-party
+     plugin picker stays blocked behind the plugin scanner GUI lock
+     (`project_plugin_scanner_broken` / "P7-scanner" slice).
+   - **T6 P4/P5 persistence wiring** — wire P4/P5 state into
+     MainComponent save/load. Partially headless-verifiable; could
+     be a hybrid prd.json with engine slices on ralph and UI slices
+     operator-side.
+3. The §11 Promotion banner gate scenarios from the prior T08 session
+   are still operator-eyes-on if a fresh chat wants to also confirm
+   those (independent of T3d-RVB).
 
 ---
 
