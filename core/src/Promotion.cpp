@@ -95,6 +95,68 @@ namespace
             currentPath.pop_back();
         }
     }
+
+    /// Splice a Loop into the Shared-path host Phrase identified by `hostPath`.
+    /// Preserves pointer identity for shared placements (verse-×-3 shape):
+    /// locate the original host `ChildPtr` at `hostPath`, build the new host
+    /// pointer (host + `loopPtr` appended), then walk the entire tree and
+    /// replace every `ChildPtr` equal (by raw pointer identity) to the
+    /// original with the new one. Untouched subtrees keep their `ChildPtr`s
+    /// intact so unrelated structural sharing is preserved. When the host
+    /// sits directly at `root` (path of length zero), falls back to a
+    /// per-index splice — there is no enclosing `ChildPtr` to share.
+    /// Capture-by-parameter — no closure over caller locals.
+    Constituent spliceLoopIntoSharedHost (
+        const Constituent&              root,
+        const std::vector<std::size_t>& hostPath,
+        const Constituent::ChildPtr&    loopPtr)
+    {
+        if (hostPath.empty())
+            return root.withChildAdded (loopPtr);
+
+        // Descend to the parent of the host, locate the original host
+        // ChildPtr, and build the new host pointer (host + loopPtr appended).
+        const Constituent* parent = &root;
+        for (std::size_t depth = 0; depth + 1 < hostPath.size(); ++depth)
+            parent = parent->children()[hostPath[depth]].get();
+        const auto& originalHostPtr = parent->children()[hostPath.back()];
+        const auto newHostPtr = std::make_shared<const Constituent> (
+            originalHostPtr->withChildAdded (loopPtr));
+
+        // Walk the tree and replace every ChildPtr equal (by raw pointer
+        // identity — `.get()` deliberate vs `==` on `shared_ptr`: same
+        // semantics, but `.get()` reads as the contract "same allocation,
+        // not equal value") to originalHostPtr with newHostPtr. Returns
+        // nullopt when the subtree had no occurrences (caller keeps the
+        // original pointer); returns a rebuilt Constituent when at least
+        // one replacement happened in that subtree.
+        std::function<std::optional<Constituent> (const Constituent&)> rebuildSubtreeReplacingHost;
+        rebuildSubtreeReplacingHost = [&] (const Constituent& c) -> std::optional<Constituent>
+        {
+            std::optional<Constituent> rebuilt;
+            for (std::size_t i = 0; i < c.children().size(); ++i)
+            {
+                const auto& childPtr = c.children()[i];
+                if (childPtr.get() == originalHostPtr.get())
+                {
+                    if (! rebuilt.has_value()) rebuilt = c;
+                    rebuilt = rebuilt->withChildReplaced (i, newHostPtr);
+                    continue;
+                }
+                if (auto rewrittenChild = rebuildSubtreeReplacingHost (*childPtr))
+                {
+                    if (! rebuilt.has_value()) rebuilt = c;
+                    rebuilt = rebuilt->withChildReplaced (i,
+                        std::make_shared<const Constituent> (
+                            std::move (*rewrittenChild)));
+                }
+            }
+            return rebuilt;
+        };
+        if (auto rewrittenRoot = rebuildSubtreeReplacingHost (root))
+            return std::move (*rewrittenRoot);
+        return root;
+    }
 }
 
 void enforceSharedInstancesAreShared (const Constituent& root)
@@ -184,6 +246,9 @@ PromotionResult promote (const Constituent&   root,
             // Splice the overlay Loop into the wrapper. The wrapper itself is
             // the node at `hit->path`; we replace it with a copy that has the
             // Loop appended as a new child (children[>=1] is overlay territory).
+            // One wrapper instance → one path-based splice. See
+            // spliceLoopIntoSharedHost for the Shared analogue, which must
+            // rewrite every occurrence of a shared host ChildPtr.
             std::function<Constituent (const Constituent&, std::size_t)> spliced;
             spliced = [&] (const Constituent& c, std::size_t depth) -> Constituent
             {
@@ -228,65 +293,16 @@ PromotionResult promote (const Constituent&   root,
             TapeReference (region.tape,
                            region.inLmcSeconds, region.outLmcSeconds));
 
-        // Pointer-identity-preserving splice: locate the original host
-        // ChildPtr by walking `hit->path`, build the new host (host + loop
-        // appended), then walk the entire tree and replace every occurrence
-        // of the original ChildPtr with the new one. This keeps shared
-        // placements actually shared after the edit — wrappers that pointed
-        // to the same host before the edit all point to the same new host
-        // after the edit. Falls back to a per-index splice when the host
-        // sits directly at the root (path of length zero), which has no
-        // enclosing ChildPtr to share.
-        Constituent newRoot = root;
-        if (hit->path.empty())
-        {
-            newRoot = root.withChildAdded (
-                std::make_shared<const Constituent> (loop));
-        }
-        else
-        {
-            // Descend to the parent of the host, locate the original host
-            // ChildPtr, and build the new host pointer.
-            const Constituent* parent = &root;
-            for (std::size_t depth = 0; depth + 1 < hit->path.size(); ++depth)
-                parent = parent->children()[hit->path[depth]].get();
-            const auto& originalHostPtr = parent->children()[hit->path.back()];
-            const auto newHostPtr = std::make_shared<const Constituent> (
-                originalHostPtr->withChildAdded (
-                    std::make_shared<const Constituent> (loop)));
-
-            // Walk the tree and replace every ChildPtr equal (by pointer) to
-            // originalHostPtr with newHostPtr. Untouched subtrees keep their
-            // ChildPtrs intact so unrelated structural sharing is preserved.
-            // Returns nullopt when the subtree had no occurrences (caller
-            // keeps the original pointer); returns a rebuilt Constituent
-            // when at least one replacement happened in that subtree.
-            std::function<std::optional<Constituent> (const Constituent&)> replaceShared;
-            replaceShared = [&] (const Constituent& c) -> std::optional<Constituent>
-            {
-                std::optional<Constituent> rebuilt;
-                for (std::size_t i = 0; i < c.children().size(); ++i)
-                {
-                    const auto& childPtr = c.children()[i];
-                    if (childPtr.get() == originalHostPtr.get())
-                    {
-                        if (! rebuilt.has_value()) rebuilt = c;
-                        rebuilt = rebuilt->withChildReplaced (i, newHostPtr);
-                        continue;
-                    }
-                    if (auto rewrittenChild = replaceShared (*childPtr))
-                    {
-                        if (! rebuilt.has_value()) rebuilt = c;
-                        rebuilt = rebuilt->withChildReplaced (i,
-                            std::make_shared<const Constituent> (
-                                std::move (*rewrittenChild)));
-                    }
-                }
-                return rebuilt;
-            };
-            if (auto rewrittenRoot = replaceShared (root))
-                newRoot = std::move (*rewrittenRoot);
-        }
+        // Pointer-identity-preserving splice. See lines ~187-197 above for
+        // the Overlay analogue: one wrapper at `hit->path` → one path-based
+        // splice is enough. Shared can have N wrappers referencing the same
+        // host ChildPtr (the verse-×-3 shape), so the splice must rewrite
+        // every occurrence to preserve pointer identity across placements.
+        // Helper lives in this file's anonymous namespace.
+        Constituent newRoot = spliceLoopIntoSharedHost (
+            root,
+            hit->path,
+            std::make_shared<const Constituent> (loop));
 
         std::string label = hit->hostName.empty()
                             ? std::string ("capture loop")

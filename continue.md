@@ -1,10 +1,10 @@
-# Session Continuation — 2026-05-23 (T05 M-2) (**P7 T3a follow-up debt T05 SHIPPED via ralph loop iteration #5 — `Bus::process` split into `Bus::processInline` (full inline-path DSP: gain/mute → mixBuffer_ in place → output write → per-channel peaks; 27 lines) and `Bus::processChain` (copy `mixBuffer_`→`processedBuffer_` → dispatch each non-bypassed slot through `host_->pumpSlot` in-place → tap `wetSink_` pre-fader per the M8 S4 contract → post-fader gain/mute → output accumulate → per-channel peaks; 71 lines). Outer `Bus::process` dropped from 173 lines → 66 lines, factors out the if/else dispatch + meter writeback (peak left/right publish + LUFS feed) + `mixBuffer_` zero so those apply uniformly to both paths. Wet-capture stays inside `processChain` rather than the outer body because the pre-fader-before-gain ordering of the M8 S4 contract lives next to the pump that produces the signal; moving it to the outer would have either re-ordered the wet feed to post-fader (semantic regression) or required a third helper to split `processChain` again (out of scope for this two-helper task). All three function bodies now satisfy the CLAUDE.md 100-line default; RT-safety preserved (grep for new/malloc/lock_guard/mutex/throw/allocator across the helpers — none found); no behavior change — ctest still **621 pass / 2 skipped**, the identical baseline from before the split. NEXT = T06 (hoist Shared-path splice out of `Promotion::promote` into helper).**)
+# Session Continuation — 2026-05-23 (T06) (**P7 T06 SHIPPED via ralph loop iteration #6 — `Promotion::promote`'s Shared-path pointer-identity splice (the inline `std::function`+recursive-lambda block formerly at ~lines 230-289 of `core/src/Promotion.cpp`) extracted into a private anonymous-namespace helper `spliceLoopIntoSharedHost(root, hostPath, loopPtr)`. Capture-by-parameter, no closure over caller locals; the inner recursive lambda renamed `rebuildSubtreeReplacingHost`. `promote()` body dropped from ~218 → **172 lines**. Cross-reference comments added at BOTH splice sites: the Overlay branch comments "one wrapper instance → one path-based splice is sufficient; see `spliceLoopIntoSharedHost` for the Shared analogue"; the Shared branch's helper-call site comments back to the Overlay analogue, explaining "Shared can have N wrappers referencing the same host `ChildPtr` (the verse-×-3 shape), so the splice must rewrite every occurrence to preserve pointer identity across placements". Pointer-equality comment strengthened: `.get()` is deliberate vs `==` on `shared_ptr` ("same semantics, but `.get()` reads as the contract `same allocation, not equal value`"). Load-bearing pointer-equality assertion in `tests/PromotionTests.cpp::"promote with Shared and a wrapper covering Mark In adds the Loop to the shared Phrase"` still passes — pointer identity across the three wrapper-first-children survives the extraction. Pure refactor, no new tests, no behavior change. ctest baseline preserved **621 pass / 2 skipped** (the 2 skipped remain the operator-only OOP editor cases). NEXT = T07 (extract `MainComponent::refreshAll`).**)
 
 > **For a fresh chat picking this up cold:** read this whole file before
 > doing anything. Memory + project + user CLAUDE.md load automatically;
 > this file is the *state* (what just shipped + what's queued next).
-> Newest commit on Sirius origin/master: **`4100dd3`** (this session's T05
-> M-2 commit landed on top of `e793c5b`); OTTO origin/main:
+> Newest commit on Sirius origin/master: **`<TBD>`** (this session's T06
+> commit landed on top of `4100dd3`); OTTO origin/main:
 > **`abf8e4d4`** (unchanged this session); ctest baseline **621 pass / 2
 > skipped** (unchanged — refactor only, no new tests).
 > **MANDATORY at session start:** read
@@ -13,7 +13,139 @@
 > The whitepaper lives at `docs/Sirius_Looper_Whitepaper_V7.md`
 > (underscores — `project_whitepaper_path`).
 
-## ✅ DONE THIS SESSION (2026-05-23 — T05 P7 T3a M-2 Bus::process split, ralph iteration #5)
+## ✅ DONE THIS SESSION (2026-05-23 — T06 P7 hoist Shared-path splice out of Promotion::promote, ralph iteration #6)
+
+Single-commit ralph iteration. Pure refactor — no new tests, no behavior
+change. Closes the second of the three 2026-05-16 code-review follow-ups
+queued for the loop (prd.json T06 / T07 / T08).
+
+- **`core/src/Promotion.cpp`** — adds a private anonymous-namespace
+  helper `Constituent spliceLoopIntoSharedHost (root, hostPath, loopPtr)`
+  with a docstring spelling out the pointer-identity contract: locate
+  the original host `ChildPtr` at `hostPath`, build the new host pointer
+  (host + `loopPtr` appended), then walk the entire tree and replace
+  every `ChildPtr` equal-by-raw-pointer-identity to the original with
+  the new one. Untouched subtrees keep their `ChildPtr`s intact so
+  unrelated structural sharing is preserved. Falls back to a per-index
+  splice when the host sits directly at `root` (path of length zero,
+  no enclosing `ChildPtr` to share). Capture-by-parameter — no closure
+  over caller locals. The inner recursive lambda that does the
+  pointer-by-pointer rewrite was renamed `rebuildSubtreeReplacingHost`
+  (was `replaceShared`) per the todo.md guidance; the body's comment
+  spells out `.get()` is deliberate vs `==` on `shared_ptr`: same
+  semantics, but `.get()` reads as the contract "same allocation, not
+  equal value". `promote()`'s Shared branch now calls the helper in
+  ~5 lines instead of inlining ~58 lines of pointer-rewrite logic;
+  `promote()` body dropped from ~218 → **172 lines**. The body still
+  exceeds the 100-line default because Overlay / Shared / Mint are
+  three exhaustive, mutually structured dispatch paths the plan inlines
+  together — same justification comment as before, still applies.
+
+- **Cross-reference comments at BOTH splice sites.** Overlay site (the
+  path-based wrapper splice via `std::function<Constituent(const
+  Constituent&, std::size_t)>` lambda) now reads "One wrapper instance
+  → one path-based splice. See `spliceLoopIntoSharedHost` for the
+  Shared analogue, which must rewrite every occurrence of a shared host
+  ChildPtr." Shared call site (the new helper invocation) reads "See
+  lines ~187-197 above for the Overlay analogue: one wrapper at
+  `hit->path` → one path-based splice is enough. Shared can have N
+  wrappers referencing the same host ChildPtr (the verse-×-3 shape),
+  so the splice must rewrite every occurrence to preserve pointer
+  identity across placements." Both comments point at each other.
+
+- **`todo.md`** — the 2026-05-16 'Hoist Shared-path splice out of
+  `promote()` (code-review follow-up)' entry is marked RESOLVED with a
+  paragraph describing what landed, the new body line count, and the
+  fact that the load-bearing pointer-equality test still passes.
+
+- **`progress.txt`** — `[ ] T06` flipped to `[x] T06`; header fields
+  (`state` stays `in_progress`, `current_task` → T07, `last_commit`,
+  `last_updated`) bumped.
+
+**RT-safety:** the helper is reached from `promote()` which is NOT an
+audio-thread API — it's a synchronous structural edit invoked on the
+message thread from `CaptureSession::promote`. No RT contract to
+preserve; `std::make_shared<const Constituent>` and `std::function<...>`
+allocations are unchanged from the prior inline form, just relocated.
+
+**Load-bearing pointer-equality assertion preserved.** The test
+`tests/PromotionTests.cpp::"promote with Shared and a wrapper covering
+Mark In adds the Loop to the shared Phrase"` asserts that all three
+wrappers' first-children remain pointer-equal after the splice — i.e.,
+the verse-×-3 sharing survives. The helper's pointer-by-pointer rewrite
+preserves that invariant by construction (same logic, different
+location). Test passes.
+
+**ctest baseline:** **621 pass / 2 skipped** (the 2 skipped remain the
+operator-only OOP editor cases #620 / #621 from
+`MainComponentPluginEditorTests`). Build clean.
+`cmake --build build --target SiriusTests && ctest --test-dir build
+--output-on-failure` was the gate this iteration passed.
+
+## ▶ NEXT — Extract MainComponent::refreshAll (T07 in `prd.json`)
+
+Active prd.json: `T07` — declare a private `void refreshAll()` in
+`app/MainComponent.h` that calls
+`refreshPerformance(); refreshPreparation(); refreshCaptureControls();
+refreshDiagnostics();` in order, and replace each full-sequence call
+site with `refreshAll()`. todo.md cites lines :525-528, :938-941,
+:966-969, :1013-1016 plus a fifth — line numbers MAY have drifted since
+T3a-C landed on `869318f`, so RE-LOCATE BY GREP for the four-call
+sequence. Inspect the two partial-sequence sites (:821-826, :1085-1086)
+— default to leaving them partial unless they are obviously full
+sequences mis-cited. No behavior change.
+
+```
+T0  OTTO submodule          ✅ DONE
+T1  docs                    ✅ DONE
+T2  engine union slot       ✅ DONE
+T3  internal-FX adapters    NEAR DONE
+    T3a-EQ                  ✅ DONE
+    T3b-CMP                 ✅ DONE
+    T3c-DLY                 ✅ DONE
+    T3d-RVB                 last (background-thread IR loading)
+T3a follow-up debt          ✅ ALL DONE via prd.json T03-T05
+    T03 I-1 idempotency     ✅ DONE
+    T04 I-2 InputMixer wire ✅ DONE
+    T05 M-2 Bus split       ✅ DONE
+2026-05-16 code-review      IN PROGRESS via prd.json T06-T08
+    T06 Promotion splice    ✅ DONE (this iteration)
+    T07 MainComponent refresh next (this entry)
+    T08 announceCapture jassert
+T4  Sends tab UI            (after T3d + GUI handoff)
+T5  Insert UI               (internal-FX-only picker until "P7-scanner")
+T6  P4/P5 persistence wiring into MainComponent save/load
+```
+
+**First moves for T07:**
+
+1. Read `app/MainComponent.cpp`. Use Grep (multiline mode or `-A 3`) to
+   find the four-call sequence
+   `refreshPerformance(); refreshPreparation(); refreshCaptureControls();
+   refreshDiagnostics();`. Confirm at least four full-sequence sites;
+   note the two partial sites.
+2. Declare `void refreshAll();` private in `app/MainComponent.h` with a
+   one-line docstring (e.g., "Refresh every UI surface in tree order:
+   performance, preparation, capture controls, diagnostics.").
+3. Define `void MainComponent::refreshAll()` in `app/MainComponent.cpp`
+   to call the four `refresh*` methods in order.
+4. Replace each full-sequence call site with `refreshAll();`.
+5. Verify with `cmake --build build --target SiriusTests &&
+   ctest --test-dir build --output-on-failure` — EXACTLY the same case
+   count as before T07 (currently **621 pass / 2 skipped**; refactor only,
+   no new tests).
+6. Mark the 2026-05-16 'Extract MainComponent::refreshAll' entry in
+   `todo.md` resolved.
+
+After T07 → T08 (announceCapture Overlay `value_or` → `jassert`). T08
+is the final loop-eligible task before GUI work (T4 / T5 in the umbrella
+plan), which ralph cannot verify — that's where the operator picks up.
+
+---
+
+# (archived header — 2026-05-23) — P7 T3a follow-up debt T05 SHIPPED via ralph iteration #5 — `Bus::process` (was 173 lines) split into `Bus::processInline` (27 lines, inline path) + `Bus::processChain` (71 lines, chain path with pre-fader wet-capture + post-fader gain); outer `process` dropped to 66 lines; all three bodies satisfy the CLAUDE.md 100-line default; RT-safety preserved; ctest **621 pass / 2 skipped**.
+
+## (archived body — T05 P7 T3a M-2 Bus::process split, ralph iteration #5)
 
 Single-commit ralph iteration. Pure refactor — no new tests, no behavior
 change. Closes the last open T3a Code Reviewer follow-up.
