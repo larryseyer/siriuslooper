@@ -1,5 +1,19 @@
 # Sirius Looper — Deferred Items
 
+### 2026-05-22 — Preparation tab "Load .json" — .json files are greyed out in the picker
+- Files: likely app/MainComponent.cpp (the Preparation tab's "Load" button
+  handler + the juce::FileChooser invocation; wildcard pattern probably
+  excludes "*.json").
+- What was deferred: operator opened Preparation tab → Load → file picker
+  appears but .json files are greyed out / not selectable. Load is non-
+  functional from this entry point.
+- Why deferred: surfaced during the 2026-05-22 OTTO brainstorm; no
+  investigation yet.
+- What's needed to finish: locate the FileChooser pattern for the
+  Preparation Load button; verify it includes "*.json"; if it does,
+  investigate whether a parent FileFilter is overriding it. Verify
+  end-to-end by selecting a known-good .json file and confirming load.
+
 ### 2026-05-22 — Input Mixer destination pickers show a stale label after removeTape (P6b holistic-review Minor)
 - Files: app/MainComponent.cpp (`removeTape` ~2503-2536; `refreshInputDestinations`/`refreshInputMixer`).
 - What was deferred: when a tape is removed, the engine (`MixerGraph::removeTerminal`) silently reroutes
@@ -11,15 +25,24 @@
 - What's needed to finish: call `refreshInputMixer()` (which calls `refreshInputDestinations()`) at the
   end of `removeTape`, after the pool/mirror updates. One line.
 
-### 2026-05-22 — GUI lockup when clicking the plugin "Scan" button (observed, NOT investigated)
-- Files: unknown — the host plugin-scan path (host/ out-of-process plugin hosting + the MainComponent
-  Plugins tab "Scan" control). NOT touched by the tape-UI slice.
-- What happened: operator clicked the "Scan" plugins button and the app locked up (had to relaunch).
-- Why deferred: pre-existing, unrelated to the tape-UI work; surfaced incidentally during eyes-on.
-- What's needed to finish: reproduce, then determine whether the scan blocks the message thread
-  (synchronous AudioPluginFormat scan on the UI thread is the usual culprit → move to a worker /
-  progress modal) or the out-of-process host handshake hangs. Confirm before P6 GUI work layers more
-  onto the same tab.
+### 2026-05-22 — Plugin scanning is broken at ALL entry points (broadens prior "GUI lockup on Scan button")
+- Files: host/ (out-of-process plugin host), app/MainComponent.cpp (Plugins
+  tab Scan + any insert-chain plugin-picker entry point).
+- What was deferred: operator confirmed during the 2026-05-22 OTTO brainstorm
+  that plugin scanning STILL does not work anywhere in the app — not just
+  the originally-logged Plugins-tab "Scan" button GUI lockup, but every
+  entry point that would invoke the scanner. The original observation
+  (operator clicked "Scan" → app locked up, had to relaunch) was symptomatic
+  of a deeper failure that affects all scanner invocations. See also memory
+  project_plugin_scanner_broken (the P7-scanner slice that gates the
+  insert-chain VST/CLAP picker per T5 of the OTTO P7 umbrella plan).
+- Why deferred: pre-existing, blocking; surfaced again during this session.
+- What's needed to finish: enumerate every scanner entry point in the UI;
+  reproduce a failure mode at each; determine whether the root cause is
+  (a) the synchronous AudioPluginFormat scan blocking the message thread
+  (synchronous on the UI thread is the usual culprit → move to a worker /
+  progress modal), (b) the out-of-process host handshake hanging, or
+  (c) something else. Fix at the root, not per entry point.
 
 ### 2026-05-22 — per-channel tape ROUTES are not yet written to the session file (tape-UI slice; holistic-review Important finding)
 - Files: app/MainComponent.cpp (chooseFileAndSave/chooseFileAndLoad), persistence (serialize/deserializeMixerGraphState already exist + tested).

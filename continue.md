@@ -1,4 +1,169 @@
-# Session Continuation — 2026-05-22 (**OTTO submodule consolidation LIVE + LUFS fade-to-floor aligned with peak hold. NEXT = brainstorm OTTO further before resuming T1.**)
+# Session Continuation — 2026-05-22 (**OTTO brainstorm shipped end-to-end: meter coupling bug fixed; cross-project inbox protocol LIVE; full design spec landed; memory + whitepaper + todo updated. NEXT = T1 (P7 umbrella docs) — the work that was paused for this brainstorm.**)
+
+> **For a fresh chat picking this up cold:** read this whole file before
+> doing anything. Memory + project + user CLAUDE.md load automatically;
+> this file is the *state* (what just shipped + what's queued next).
+> Newest commit on Sirius origin/master: **`<filled in by final commit>`**;
+> OTTO origin/main: **`abf8e4d4`**; ctest baseline **569 pass / 1 documented
+> Not-Run** (`MainComponentPluginEditorTests_NOT_BUILT` runs separately via
+> `bash/test-s7.sh`). One pre-existing FLAKY supervisor test
+> (`OutOfProcessEffectChainHostSupervisorTests` — "permanent bypass: kill
+> every generation...") fails ~1/4 runs in full ctest but passes 3/3 in
+> isolation; timing-sensitive, not a regression from this session.
+
+## ✅ DONE THIS SESSION (2026-05-22 — late evening) — OTTO brainstorm END-TO-END
+
+The session opened in plan mode with one task: brainstorm OTTO further before
+resuming T1 of the P7 umbrella plan. It converged on all five queued OTTO
+topics + surfaced + fixed one engine bug + bootstrapped a cross-project
+AI-to-AI handoff protocol. Final plan file:
+`~/.claude/plans/read-continue-md-invoke-superpowers-brai-fluttering-rose.md`.
+
+### Phase 1 — Bus meter coupling bug fix (operator demonstrated live)
+
+**Sirius commit `75c6866`** — `fix: bus meter — decouple metering from output
+writeback (direct-out with numDirectOutChannels=0 was silent)`. Operator
+demonstrated mid-brainstorm: channel 1 → bus 1 → direct out showed NO bus
+meter movement; same routing with tape destination showed correct meter
+movement. Root cause: `Bus::process` early-returned on `numChannels <= 0`,
+which is the call shape from `InputMixer::renderInputGraph:738` when
+`numDirectOutChannels == 0` (the P8 input→output bridge slice that supplies a
+real output buffer is parked). The early-return skipped metering along with
+output writeback. Fix decoupled metering width (uses bus's own
+`config_.channelCount` when caller's output is unusable) from output writeback
+(per-channel-guarded, silently skipped when no usable destination). Applied
+to both code paths (inline + host-bound effect-chain). Regression test
+`[regression-2026-05-22]` in `tests/BusTests.cpp` covers all three
+no-output-buffer shapes (null pointer; `dp[]` of nullptrs; sustained LUFS over
+no-output buffer). All [bus]/[input-mixer]/[output-mixer]/[meter] tagged tests
+green.
+
+### Phase 2 — OTTO brainstorm capture (4 decisions + cross-project inbox bootstrap)
+
+**Cross-project inbox protocol bootstrap (LIVE):**
+- OTTO commit `abf8e4d4` (`docs: bootstrap cross-project inbox protocol with
+  Sirius (Sirius-Origin: 75c6866)`) — created
+  `external/OTTO/CROSS_PROJECT_INBOX.md` + added the standing rule to OTTO's
+  `CLAUDE.md` + backfilled 3 entries for this session's prior OTTO commits
+  (`94a9c054`, `3f535a53`, `6b066db2`), all marked `Status: acked 2026-05-22`.
+- Sirius commit `42cb1a9` (`docs: bootstrap cross-project inbox protocol +
+  bump OTTO submodule 6b066db2→abf8e4d4 (OTTO-Origin: abf8e4d4)`) — added the
+  standing rule to Sirius's `CLAUDE.md` + rewrote the stale "Sister app: OTTO"
+  section + bumped submodule SHA.
+
+**Combined design spec:**
+`docs/superpowers/specs/2026-05-22-otto-integration-design.md` — captures all
+four OTTO decisions + the already-shipped meter fix:
+
+1. **OTTO as Output Mixer source** (32 stereo outputs become Output Mixer
+   strips; Sirius's Output Mixer ALONE owns physical-output routing; OTTO's
+   `OutputRouter::Mode` rejected as a Sirius concept). Tape path EXCLUDES
+   OTTO; render/export path INCLUDES it automatically. New whitepaper §6.6
+   paragraph in `docs/Sirius Looper Whitepaper V7.md` captures this.
+2. **Cross-project inbox protocol** (now LIVE) — full edit autonomy on OTTO
+   from Sirius's Claude; OTTO's Claude reads inbox at session start +
+   acknowledges; operator NOT in the loop. Three layers: inbox file + git
+   commit trailers + standing CLAUDE.md rule.
+3. **Internal-FX adapter architecture (T3 blueprint)** — variant
+   `SlotKind = Empty | Internal | Plugin`; `IEffectChainHost::pumpSlot()`
+   stays single dispatch surface; host owns adapter storage keyed by
+   `(busId, slotIdx)`; adapter wraps one OTTO Player FX as a member;
+   parameters via config-swap; sequence **EQ → CMP → DLY → RVB**.
+4. **Asset policy** — Sirius has full access to OTTO's 3.7 GB asset tree
+   (real assets live at `/Users/larryseyer/AudioDevelopment/OTTO/assets/`,
+   NOT in the gitignored submodule view). Dev time: `OTTO_ASSETS_DIR` CMake
+   variable. Customer install time: bundled once in install location, both
+   products read from same path. **T3-RVB unblocked** — IRs come from
+   `${OTTO_ASSETS_DIR}/IR/<subdir>/...`. License model identical, including
+   future runtime paywall infrastructure.
+
+**Memory updates (2 new + 5 updated + MEMORY.md):**
+- NEW: `project_otto_as_output_mixer_source.md`,
+  `project_cross_project_inbox_protocol.md`.
+- UPDATED: `project_io_ownership_direct_layer.md` (extended for bundled
+  software sources), `project_render_to_parts_timeline.md` (notes OTTO in
+  render path + stems-vs-master deferred), `project_otto_is_a_submodule_now.md`
+  (REPLACED "never edit" rule with inbox protocol),
+  `project_otto_assets_out_of_git.md` (REPLACED "hand-copy" model with
+  `OTTO_ASSETS_DIR`), `project_internal_fx_first_class.md` (added adapter
+  architecture).
+- `MEMORY.md` index lines updated for the changed/new entries.
+
+**Sirius `CLAUDE.md`** rewrote the "Sister app: OTTO" section (was wrong:
+referenced `/Users/larryseyer/AudioDevelopment/OTTO` as the OTTO path and a
+"vendored ui/lookandfeel" that was deleted in T0b) + added the cross-project
+inbox protocol section. **OTTO `CLAUDE.md`** added the same protocol clause.
+
+### Two NEW bugs captured in `todo.md`
+
+- **Bug 1 (NEW):** Preparation tab "Load .json" — .json files are greyed out
+  in the file picker. Surfaced this session, no investigation.
+- **Bug 2 (broadens prior single-button entry):** Plugin scanning is broken
+  at ALL entry points, not just the Plugins-tab Scan button. Operator
+  confirmed it "STILL does not work anywhere." Subsumes the prior 2026-05-22
+  "GUI lockup on Scan button" entry. Root cause TBD (likely synchronous
+  AudioPluginFormat scan blocking message thread, or OOP host handshake
+  hanging). Gates the T5 insert-chain VST/CLAP picker.
+
+## ⚠ NEW STANDING RULES (memory + MEMORY.md updated this session)
+
+- **`project_otto_as_output_mixer_source`** (NEW) — bundled OTTO presents 32
+  stereo outputs as additional Output Mixer strips; Sirius's Output Mixer
+  alone owns physical-output routing. Tape excludes OTTO; render/export
+  includes OTTO automatically.
+- **`project_cross_project_inbox_protocol`** (NEW) — AI-to-AI handoff via
+  `external/OTTO/CROSS_PROJECT_INBOX.md` + `Sirius-Origin:`/`OTTO-Origin:`
+  commit trailers + standing CLAUDE.md rule. **Full edit autonomy on OTTO
+  from Sirius; operator NOT in the loop.**
+- **`project_otto_is_a_submodule_now`** (UPDATED) — the "Sirius must NEVER
+  edit OTTO" line is RETIRED; replaced by the cross-project inbox protocol.
+- **`project_otto_assets_out_of_git`** (UPDATED) — the "hand-copy what you
+  need" model is RETIRED; replaced by `OTTO_ASSETS_DIR` (dev) + installer
+  bundling (customer). T3-RVB unblocked.
+- **`project_internal_fx_first_class`** (UPDATED) — adapter architecture
+  added (variant slot, host-owned storage, config-swap params, EQ→CMP→DLY→RVB
+  sequence).
+- **`project_io_ownership_direct_layer`** (UPDATED) — extended to include
+  bundled software instruments as a non-physical-routing source class.
+- **`project_render_to_parts_timeline`** (UPDATED) — renders include OTTO
+  automatically; stems-vs-master question on the parked render-pipeline
+  brainstorm's agenda.
+
+## ▶ NEXT — resume P7 umbrella T1 (docs)
+
+The active plan is `~/.claude/plans/read-continue-and-proceed-ancient-phoenix.md`
+(P7 umbrella):
+
+```
+T0  OTTO submodule          ✅ DONE (T0a + T0b in prior session)
+T1  docs                    ▶ RESUME HERE
+T2  engine union slot       (after T1)
+T3  internal-FX adapters    EQ → CMP → DLY → RVB sequential
+                            (architecture blueprint in this session's spec)
+T4  Sends tab UI            (after T3 at least partially)
+T5  Insert UI               (internal-FX-only picker until "P7-scanner")
+T6  P4/P5 persistence wiring into MainComponent save/load
+```
+
+**Resume next session:**
+1. Read this whole file first (per `feedback_update_continue_md_every_session`).
+2. **MANDATORY:** read `external/OTTO/CROSS_PROJECT_INBOX.md` per the new
+   `project_cross_project_inbox_protocol`. Acknowledge any unacknowledged
+   `[FROM OTTO → SIRIUS]` entries (none expected this early in the protocol
+   life, but the discipline starts now).
+3. Resume P7 umbrella at **T1 (docs)** — the work that was paused for this
+   brainstorm. The spec at
+   `docs/superpowers/specs/2026-05-22-otto-integration-design.md` covers all
+   the architecture decisions T2 → T6 depend on.
+4. ⚠ If you need to edit OTTO source for any reason: follow the cross-project
+   inbox protocol — make the OTTO commit with `Sirius-Origin: <sirius-sha>`
+   trailer, append a `[FROM SIRIUS → OTTO]` entry to the inbox, push OTTO,
+   then bump submodule SHA + commit + push Sirius. No operator approval
+   needed.
+
+---
+
+# (archived header — earlier 2026-05-22) — OTTO submodule consolidation LIVE + LUFS fade-to-floor aligned with peak hold. NEXT = brainstorm OTTO further before resuming T1.
 
 > **For a fresh chat picking this up cold:** read this whole file before doing anything.
 > Memory + project CLAUDE.md load automatically. This file is the *state*: what just
