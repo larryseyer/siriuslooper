@@ -1,5 +1,27 @@
 # Sirius Looper — Deferred Items
 
+### 2026-05-23 — Raw `EffectChainEntry` construction sites in test fixtures (T3-debt, NOT a T2 correctness bug)
+- Files: `tests/ArchivalModeTests.cpp` (10 sites around lines 335–503),
+  `tests/OutOfProcessEditorTests.cpp`, `tests/OutputMixerPluginHostIntegrationTests.cpp`,
+  `tests/OutOfProcessEffectChainHostSupervisorTests.cpp`,
+  `tests/WetCaptureWriterTests.cpp`, `tests/OutputMixerTests.cpp`,
+  `tests/InputMixerTests.cpp`, `tests/ChannelStripTests.cpp`,
+  `tests/MixerGraphStateTests.cpp`, `tests/PreparationViewStateTests.cpp`,
+  `tests/SessionSnapshotLiveStateTests.cpp`.
+- What was deferred: T2 final-review surfaced ~15 raw `EffectChainEntry e; e.descriptor = ...; e.displayName = ...;`
+  sites in test fixtures that leave `kind == Empty` (the new default) while populating Plugin-payload fields.
+  None are T2 correctness bugs — T2 does not yet add `kind`-dispatched runtime behavior — but T3 will
+  start reading `kind` for OTTO-vs-host dispatch and the archival walker may grow a `kind != Plugin`
+  guard. At that point these fixtures silently dispatch to the wrong adapter or silently skip archival
+  assertions.
+- Why deferred: opportunistic cleanup is out of T2 scope per the plan's "stay narrow" rule. The right
+  time to migrate is when T3 (or its archival/host-dispatch task) introduces the kind-guard — the failing
+  tests will direct each migration site themselves.
+- What's needed to finish: migrate each site to `EffectChainEntry::makePlugin(descriptor, displayName, state)`
+  in the same shape as the load-bearing migrations already shipped in T2.2/T2.3 (`tests/MixerGraphPersistenceTests.cpp`,
+  `tests/SessionFormatTests.cpp`, `tests/ArchivalModeTests.cpp` — partial: only the round-trip-exercising 3 of 13).
+  Land as part of the T3 PR(s) that introduce the kind-guard; do NOT pre-emptively migrate.
+
 ### 2026-05-22 — Preparation tab "Load .json" — .json files are greyed out in the picker
 - Files: likely app/MainComponent.cpp (the Preparation tab's "Load" button
   handler + the juce::FileChooser invocation; wildcard pattern probably
