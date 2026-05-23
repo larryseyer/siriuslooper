@@ -46,7 +46,8 @@ add_library(SiriusEngine STATIC
     src/InternalFxFactory.cpp
     src/fx/EqAdapter.cpp
     src/fx/CmpAdapter.cpp
-    src/fx/DlyAdapter.cpp)
+    src/fx/DlyAdapter.cpp
+    src/fx/RvbAdapter.cpp)
 
 target_include_directories(SiriusEngine PUBLIC include)
 
