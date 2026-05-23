@@ -1,5 +1,67 @@
 # Sirius Looper — Deferred Items
 
+### 2026-05-23 (late) — T3a-EQ Code Reviewer follow-ups (3 entries below)
+
+#### (a) T5 prerequisite — `rebuildInputStrips()` over-triggers `prepareInternalFx` (will zap adapter IIR state on stereo-toggle once UI binds an adapter)
+- Files: `app/MainComponent.cpp:2378-2386` (the `rebuildInputStrips` call site
+  added in T3a-C `869318f`); `host/src/OutOfProcessEffectChainHost.cpp`
+  (`prepareInternalFx` definition); `host/include/sirius/OutOfProcessEffectChainHost.h`
+  (already stores `currentSampleRate_` / `currentMaxBlock_` / `prepared_`).
+- What was deferred: `rebuildInputStrips` is invoked on channel-pair stereo
+  toggles AND device-config changes, not just sample-rate changes. Each call
+  re-runs `pluginHost_->prepareInternalFx(sr, blockSize)`, which walks every
+  bound adapter and calls `adapter->prepare(sr, maxBlock)`. `EqAdapter::prepare`
+  in turn calls `eq_.prepare(...)` + `eq_.updateCoefficients(cfg_)` — JUCE
+  `ProcessorDuplicator<IIR>` resets coefficients AND clears state. Effectively
+  every stereo-toggle gesture zeros an EQ's filter history mid-buffer.
+- Why latent today: no operator-facing path binds an internal-FX adapter yet —
+  T5 (insert UI) is where the operator can drop an EQ into a chain. Until T5,
+  `internalAdapters_` is empty and the prepare-walk is a no-op.
+- Why deferred: surgical-changes rule kept T3a-C narrow. The fix is small but
+  belongs paired with the T5 slice that makes the bug observable.
+- What's needed to finish: cheapest fix is host-side early-return — in
+  `OutOfProcessEffectChainHost::prepareInternalFx`, before walking adapters,
+  check `if (sampleRate == currentSampleRate_ && maxBlockSize == currentMaxBlock_
+  && prepared_) return;`. Four lines. Alternative: introduce
+  `IEffectChainHost::handleDeviceConfigChanged(oldSr, newSr, oldBlock, newBlock)`
+  and only forward when values actually changed (heavier — needs MainComponent
+  tracking + interface widening). Land BEFORE T5 ships its insert UI.
+
+#### (b) T4 prerequisite — `InputMixer` has no `setEffectChainHost` (internal FX on Input-side bus chains silently no-op)
+- Files: `engine/include/sirius/InputMixer.h`, `engine/src/InputMixer.cpp`
+  (mirror the `OutputMixer::setEffectChainHost` shape — propagate to internal
+  buses via the same pattern OutputMixer uses).
+- What was deferred: `InputMixer` never received a `setEffectChainHost(host)`
+  method, so its bus chains can never reach the host's `pumpSlot` dispatch.
+  Result: an `EffectChainEntry::makeInternal(kEq)` (or any Plugin entry)
+  inserted into an Input-side bus chain silently does nothing at runtime —
+  the chain is held in the data model but never dispatched.
+- Why pre-existing: never wired during P4 (the prior plugin-host milestone).
+  T3a-C inherited this gap; surgical-changes rule said leave it.
+- Why deferred from T3a-C: out of T3a scope (engine plumbing slice for the
+  paths that EXIST; not new wiring for paths that don't).
+- What's needed to finish: add `InputMixer::setEffectChainHost(IEffectChainHost*
+  host)` that stores the pointer + propagates to every internal bus via
+  `bus.setEffectChainHost(host)` (and to any new bus on creation). Caller in
+  `MainComponent` adds `inputMixer_->setEffectChainHost(pluginHost_.get());`
+  alongside the existing `outputMixer_->setEffectChainHost(...)` call. Verify
+  with an `[input-mixer][internal-fx][end-to-end]` test mirroring
+  `tests/BusInternalFxEndToEndTests.cpp`. Land BEFORE T4 ships its Sends-tab
+  UI, or T4 will surface Input-side bus chains that the operator can wire but
+  that don't actually process audio.
+
+#### (c) Follow-up — `Bus::process` is 173 lines (>100 default)
+- Files: `engine/src/Bus.cpp` — `Bus::process`.
+- What was deferred: after T3a-C inlined the chain-path body, `Bus::process`
+  exceeds the CLAUDE.md function-size 100-line default. The body is coherent
+  (inline-path + chain-path + wet-capture + meter writeback) and audited
+  RT-safe today, but it's growing.
+- Why deferred: out of T3a-C scope (the change was a single bind-loop add,
+  not a function refactor); not a correctness bug.
+- What's needed to finish: extract `Bus::processInline(...)` + `Bus::processChain(...)`
+  private helpers. Match RT-safety of the parent. Likely lands cleanly when
+  T3b-CMP (or any subsequent mixer-graph slice) next touches Bus.cpp.
+
 ### 2026-05-23 — Raw `EffectChainEntry` construction sites in test fixtures (T3-debt, NOT a T2 correctness bug)
 - Files: `tests/ArchivalModeTests.cpp` (10 sites around lines 335–503),
   `tests/OutOfProcessEditorTests.cpp`, `tests/OutputMixerPluginHostIntegrationTests.cpp`,

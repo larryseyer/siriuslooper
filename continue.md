@@ -1,81 +1,103 @@
-# Session Continuation — 2026-05-23 (**P7 umbrella T2 (engine union slot) SHIPPED end-to-end — `EffectChainEntry` is now a tagged union `SlotKind = Empty | Internal | Plugin` with `makePlugin`/`makeInternal` factories; `SessionFormat` round-trips the discriminant with forward-compat (missing `kind` → `Plugin`); wire-stable enum + string layer pinned by tests. ctest 585 pass / 1 documented Not-Run. NEXT = T3 (internal-FX adapters — link OTTO's header-only EQ/CMP/RVB/DLY into Sirius via Decision 3 of `docs/superpowers/specs/2026-05-22-otto-integration-design.md`).**)
+# Session Continuation — 2026-05-23 late (**P7 umbrella T3a-EQ (first internal-FX adapter) SHIPPED end-to-end — `IInternalFxAdapter` interface in core/, `EqAdapter` wrapping `otto::effects::PlayerEQ`, `InternalFxFactory`, `OutOfProcessEffectChainHost::setInternalFxAtSlot`/`prepareInternalFx`, RT-side dispatch in `pumpSlot` (internal-table-first, OOP-plugin-fallback), engine plumbing through `Bus::setEffectChain` + `ChannelStrip<Audio>::setEffectChain`, MainComponent `prepareInternalFx` wiring, double-bind `jassert` invariant between `internalAdapters_` and `instances_`. ctest 602 pass / 1 documented Not-Run (up from 585). NEXT = T3b-CMP (wrap `otto::effects::PlayerCompressor` — same adapter pattern as T3a but adds sidechain HPF).**)
 
 > **For a fresh chat picking this up cold:** read this whole file before
 > doing anything. Memory + project + user CLAUDE.md load automatically;
 > this file is the *state* (what just shipped + what's queued next).
-> Newest commit on Sirius origin/master: **`9562b38`** (T2 series ended
-> at `813f823`; `9562b38` is this continue.md / todo.md / plan-archive
-> docs commit);
+> Newest commit on Sirius origin/master: **`869318f`** (T3a series ended
+> at `869318f`; this continue.md / todo.md / umbrella-plan refresh will
+> land on top);
 > OTTO origin/main: **`abf8e4d4`** (unchanged this session);
-> ctest baseline **585 pass / 1 documented Not-Run** (up from 569 — T2
-> added 16 new test cases across `[internal-fx-id]`,
-> `[effect-chain][union-slot]`, `[sessionformat][mixer][union-slot]`,
-> `[forward-compat]`, and `[wire-stable]` tags).
+> ctest baseline **602 pass / 1 documented Not-Run** (up from 585 — T3a
+> added 17 new test cases across `[internal-fx][eq-adapter]`,
+> `[internal-fx][factory]`, `[internal-fx-host]`, and
+> `[internal-fx][end-to-end]` tags).
 > **MANDATORY at session start:** read
 > `external/OTTO/CROSS_PROJECT_INBOX.md` and acknowledge any
 > `[FROM OTTO → SIRIUS]` entries (per `project_cross_project_inbox_protocol`).
 > The whitepaper lives at `docs/Sirius_Looper_Whitepaper_V7.md`
 > (underscores — `project_whitepaper_path`).
 
-## ✅ DONE THIS SESSION (2026-05-23 — T2 engine union slot, headless TDD)
+## ✅ DONE THIS SESSION (2026-05-23 late — T3a-EQ engine adapter, headless TDD)
 
-T2 landed as a 9-commit linear series on `origin/master`
-(`ef17538`..`813f823`). Subagent-driven-development executed each of the
-4 plan tasks; spec compliance + code-quality reviews ran between tasks
-and produced 5 follow-up commits addressing review findings. Final
-cross-task review (`Code Reviewer` agent) approved the series.
+T3a-EQ landed as a 4-commit series on `origin/master`
+(`4b66bc7`..`869318f`). Subagent-driven-development executed each of
+the 3 plan tasks; a mid-series code-quality review fired off 3 small
+follow-up edits in a 4th commit. Final cross-cutting Code Reviewer
+agent approved-to-ship. Architecture seam (per Decision 3 of the OTTO
+integration spec): the existing `IEffectChainHost::pumpSlot()` audio-
+thread surface gained an internal-FX-table-first / OOP-plugin-fallback
+dispatch ordering inside the SAME concrete host (`OutOfProcessEffect
+ChainHost`) — no new audio-thread API, no composite host wrapper.
 
-- **T2.1 — `InternalFxId.h` (NEW)** — `enum class InternalFxId : uint8_t`
-  with pinned values (`kEq=0`/`kCmp=1`/`kRvb=2`/`kDly=3`) +
-  `internalFxIdToString` (`const char* noexcept`, matches sibling
-  helpers like `archivalModeToString`) + `internalFxIdFromString`
-  (`std::string_view` parameter) + 4 Catch2 cases tagged
-  `[internal-fx-id]`. Commits `ef17538` + `2820161` (follow-up).
-- **T2.2 — `EffectChainEntry` widened** — added
-  `EffectChainSlotKind { Empty=0, Internal=1, Plugin=2 }`, `kind`
-  + `internalId` fields, two factory statics
-  `makeInternal(InternalFxId)` and
-  `makePlugin(PluginDescriptor, std::string, std::string)`. `operator==`
-  is per-kind (narrowed in the final wrap-up commit). The `EffectChain`
-  class body (kMaxSlots / copy-on-write builders) is byte-identical to
-  pre-T2. 5 new test cases tagged `[effect-chain][union-slot]`.
-  Migrated `MainComponent.cpp` CLAP-scan construction site to
-  `makePlugin`. Commits `2ac052d` + `4abcb7d` (follow-up).
-- **T2.3 — `SessionFormat` discriminant** — rewrote
-  `effectChainEntryToVar` (kind first, then per-kind payload) +
-  `effectChainEntryFromVar` (forward-compat default: missing `kind`
-  → `Plugin`; `displayName` is required for non-Empty kinds + fails
-  loudly when absent). 3 new test cases tagged
-  `[effect-chain][sessionformat][union-slot]` (one carries
-  `[forward-compat]` and uses a JSON-tree walk to strip `kind` from a
-  real serialized chain rather than a hand-written fixture). Migrated
-  `ArchivalModeTests.cpp` round-trip fixtures to `makePlugin`. Commits
-  `f189880` + `de80d29` (follow-up).
-- **T2.4 — MixerGraph integration tests** — 2 new test cases tagged
-  `[sessionformat][mixer][union-slot]` proving Internal-FX inserts
-  round-trip through `InputMixer`/`OutputMixer` graph JSON for both
-  bus and channel slots. Master-bus inserts asserted empty (regression
-  guard against misrouted-inserts class of bugs). Commits `f753252` +
-  `46a3fd8` (follow-up).
-- **Wrap-up `813f823`** — pinned `EffectChainSlotKind` wire strings +
-  numeric values by tests tagged `[wire-stable]`; narrowed `operator==`
-  to per-kind payload comparison (Empty entries with arbitrary unrelated
-  field values now compare equal); fixed the misleading "Wire-stable
-  order" comment (the actual instability is RENAMING, not reordering).
+- **T3a-A `4b66bc7`** — `core/include/sirius/IInternalFxAdapter.h`
+  (JUCE-free RT contract; prepare/reset/process noexcept; outChannels-
+  unmodified-on-miss semantics mirror `IEffectChainHost::pumpSlot`);
+  `engine/src/fx/EqAdapter.{h,cpp}` (wraps `otto::effects::PlayerEQ` as
+  a member with a defaulted `PlayerEffectsConfig` and `eqEnabled=true`
+  in the ctor — flat-default EQ that actually runs DSP);
+  `engine/src/InternalFxFactory.cpp` + `core/include/sirius/InternalFxFactory.h`
+  (factory header moved to `core/` in T3a-B to avoid an engine↔host
+  cycle; the impl stays engine-side because it depends on engine-private
+  `EqAdapter`); 6 test cases tagged `[internal-fx][eq-adapter]` +
+  `[internal-fx][factory]`. RT-safety grep clean on the `process()`
+  path. OTTO `PlayerEQ.h` audited RT-safe — no cross-project inbox
+  entry needed.
+- **T3a-B `e29a709`** — `OutOfProcessEffectChainHost::setInternalFxAtSlot
+  (int64 nodeKey, size_t slotIdx, std::optional<InternalFxId>)`
+  (message-thread bind; nullopt = unbind; factory returning nullptr =
+  unbind too — keeps un-shipped IDs composable);
+  `OutOfProcessEffectChainHost::prepare(sr, maxBlock)` originally, then
+  renamed in the follow-up to `prepareInternalFx` because the same .cpp
+  uses `OutOfProcessPluginInstance::prepare` for OOP plugins and the
+  name was ambiguous at call sites; internal storage is
+  `std::unordered_map<std::pair<int64,size_t>, std::unique_ptr<
+  IInternalFxAdapter>>` mutated only with the audio callback DETACHED
+  (same precondition as `setEffectChainHost`); `pumpSlot` extended with
+  an internal-first lookup before the existing OOP plugin path; 6 test
+  cases tagged `[internal-fx-host]` covering bind/unbind/auto-prepare
+  (both orderings)/cross-key-isolation/idempotent-OOP-passthrough on a
+  miss. `unordered_map::find` is alloc-free and the map never mutates
+  while the callback is attached, so RT-safety holds.
+- **T3a-B follow-up `228e2cb`** — addresses 3 of 4 mid-series review
+  findings: (1) rename `prepare→prepareInternalFx` + all 5 test call
+  sites; (2) `jassert` in both `setInternalFxAtSlot` and `configureBus`
+  guarding the double-bind invariant (same `(nodeKey, slotIdx)` must
+  NOT appear in both `internalAdapters_` and `instances_` — silent
+  shadowing would be a hard bug class to find); (3) +1 in-place
+  aliasing test through the host (`inChannels == outChannels` aliased
+  pointer arrays). Link-time foot-gun (host has unresolved factory
+  symbol that resolves at final-link because every consuming binary
+  links both `SiriusHost` and `SiriusEngine`) was DEFERRED with a
+  comment.
+- **T3a-C `869318f`** — engine plumbing. `Bus::setEffectChain` (moved
+  from inline-header to `engine/src/Bus.cpp`) and `ChannelStrip<Audio>::
+  setEffectChain` (kept inline — header-only template) sweep
+  `[0, EffectChain::kMaxSlots)` and call `host_->setInternalFxAtSlot(
+  nodeKey, idx, Internal-id|nullopt)`. Internal slots bind their id;
+  Plugin/Empty slots and past-end indices unbind (nullopt) — the
+  unbind-before-bind ordering keeps the new jassert from firing on
+  chain transitions. `IEffectChainHost` gained two default-no-op
+  virtuals (`setInternalFxAtSlot` + `prepareInternalFx`) so the 5+ test
+  mocks (`DoublingHost`, `SlotAwareHost`, `MissHost`, `NullHost`,
+  `HalvingEffectHost`) compile unchanged. `MainComponent` calls
+  `prepareInternalFx(sr, blockSize)` in two places: the ctor (after
+  `audioDeviceManager_.initialiseWithDefaultDevices`) and inside
+  `rebuildInputStrips` (inside the existing audio-callback-detached
+  bracket). New 4-case `tests/BusInternalFxEndToEndTests.cpp` tagged
+  `[internal-fx][end-to-end]` exercises the full path from
+  `EffectChain::makeInternal(kEq)` through `Bus::setEffectChain` →
+  `host_->setInternalFxAtSlot` → `pumpSlot` → `EqAdapter::process` →
+  finite stereo output. `OutputMixer`/`InputMixer` not touched — they
+  delegate chain wiring to `Bus::setEffectChain` already.
 
-**T3-debt logged** (NOT a T2 bug): ~15 raw `EffectChainEntry` construction
-sites remain in test fixtures (`OutOfProcessEditorTests`,
-`OutputMixerPluginHostIntegrationTests`, `WetCaptureWriterTests`,
-several others, plus 7 remaining sites in `ArchivalModeTests` not
-exercised by round-trip). All set Plugin-payload fields while leaving
-`kind == Empty`. These will silently dispatch to the wrong adapter
-once T3 adds kind-aware host-vs-internal dispatch — but T3's failing
-tests will direct each migration site themselves. Logged in `todo.md`
-2026-05-23 entry.
+**ctest baseline:** 585 → **602 pass / 1 documented Not-Run** (+17
+cases). Build clean at every commit. `Sirius Looper.app` builds and
+links clean (MainComponent touched).
 
-**No production raw-construction sites remain** — `grep -rn 'EffectChainEntry [a-z][a-zA-Z]*\s*;' app/ engine/ ui/ core/src/` returns only the persistence-internal `EffectChainEntry e;` inside `effectChainEntryFromVar` (which is the *factory* of the value, not a leaked raw construction) and the factory implementations in `core/src/EffectChain.cpp`.
+**Final Code Reviewer verdict:** Approved-to-ship. 3 deferred findings
+logged in `todo.md` (see below).
 
-## ▶ NEXT — P7 umbrella T3 (internal-FX adapters, headless TDD + per-FX subagents)
+## ▶ NEXT — P7 umbrella T3b (CMP adapter — wrap `otto::effects::PlayerCompressor`)
 
 Active P7 umbrella plan:
 `~/.claude/plans/read-continue-and-proceed-ancient-phoenix.md`. Status:
@@ -83,89 +105,120 @@ Active P7 umbrella plan:
 ```
 T0  OTTO submodule          ✅ DONE
 T1  docs                    ✅ DONE
-T2  engine union slot       ✅ DONE (this session)
-T3  internal-FX adapters    ▶ RESUME HERE — EQ → CMP → DLY → RVB sequential
-                            (per-FX subagent; ~4 sub-sessions)
+T2  engine union slot       ✅ DONE (prior session)
+T3  internal-FX adapters    IN PROGRESS
+    T3a-EQ                  ✅ DONE (this session)
+    T3b-CMP                 ▶ RESUME HERE
+    T3c-DLY                 sequential after T3b
+    T3d-RVB                 last (background-thread IR loading)
 T4  Sends tab UI            (after T3 at least partially)
 T5  Insert UI               (internal-FX-only picker until "P7-scanner")
 T6  P4/P5 persistence wiring into MainComponent save/load
 ```
 
-**T3 scope** (per umbrella plan T3 + Decision 3 of
-`docs/superpowers/specs/2026-05-22-otto-integration-design.md`):
+**T3b scope** (per Decision 3 + the parameter surface in
+`docs/design/sirius-internal-fx.md`):
 
-- New `engine/include/sirius/IEffect.h` — Sirius-side thin RT-safe
-  interface (`prepare(sr, maxBlock)` / `process(buffer, n) noexcept` /
-  `setParam(...)` / `getParam(...)`).
-- New `engine/include/sirius/InternalFxFactory.h` — maps `InternalFxId`
-  → `std::unique_ptr<IEffect>` constructed from OTTO's header-only
-  Player FX targets. Header lives in `engine/include/`; per-FX adapter
-  `.cpp` files in `engine/src/fx/` (4 small files).
-- Each adapter wraps **one** OTTO Player FX as a member, satisfies
-  `IEffect`, and forwards `process()` to OTTO's processing entry point.
-  RT-safety alignment per `docs/RT_SAFETY_CONTRACT.md`: each adapter's
-  `process()` is `noexcept` + alloc-free + lock-free. If any OTTO FX
-  entry point fails RT-safety, **stop and surface** — it's an OTTO-side
-  fix (cross-project inbox).
-- Parameter swap: config-swap pattern (UI scratch → release-store
-  commit → audio-thread acquire-load) per Decision 3.
-- `EffectChain::resolvedEffectFor(EffectChainEntry)` — message-thread
-  call that builds the `IEffect` instance via the factory and hands it
-  to the audio thread bracketed by `removeAudioCallback`/
-  `addAudioCallback` (so the audio thread only ever sees a
-  fully-constructed effect).
-- Tests: extend `[effect-chain]` with adapter round-trips per FX —
-  construct → prepare → process known input → verify non-NaN output +
-  finite peak. DSP correctness is OTTO's responsibility; Sirius tests
-  verify the adapter wrapper, not the DSP math.
-- 4 sub-tasks (T3a EQ → T3b CMP → T3c DLY → T3d RVB) per the planned
-  sequence. Realistically each is its own session (per-FX subagent).
-- T3-RVB unblocked by asset policy (see `project_otto_assets_out_of_git`):
-  IR files come from `${OTTO_ASSETS_DIR}/IR/...` via the CMake variable,
-  not from the submodule (which is gitignored for assets).
+- New `engine/src/fx/CmpAdapter.{h,cpp}` — wraps
+  `otto::effects::PlayerCompressor` as a member. Same `IInternalFxAdapter`
+  contract as `EqAdapter`. Default-config + `compEnabled=true` in the
+  ctor (same flat-default-with-master-gate pattern T3a-EQ established).
+- `InternalFxFactory.cpp` — flip the `case InternalFxId::kCmp:` from
+  `return nullptr;` (T3a's stub) to `return std::make_unique<CmpAdapter>();`.
+- **The new wrinkle vs T3a-EQ:** PlayerCompressor has a sidechain HPF
+  (`compSidechainHPF`, default true). Verify how OTTO's
+  `PlayerCompressor::process()` handles the sidechain feed. If it's
+  internally synthesized from the input (same buffer), nothing new for
+  the adapter. If it expects a separate sidechain bus, T3b stops and
+  flags it — Sirius doesn't yet have a routing concept for external
+  sidechain inputs.
+- Tests: mirror `EqAdapterTests.cpp` shape — unprepared/prepared/reset/
+  in-place. Add a small DC-pulse / brick-wall test to verify the
+  compressor's gain-reduction wire actually activates (output peak
+  reduced when input crosses the threshold). DSP correctness is OTTO's
+  responsibility; we test the adapter wrapper.
+- 2 places in `tests/InternalFxFactoryTests.cpp` get updated: the
+  "`kCmp` returns nullptr" case becomes "`kCmp` returns a valid
+  adapter" (and the assertion list shrinks by one).
+- No engine plumbing change required — `Bus::setEffectChain` already
+  dispatches by `kind == Internal` and reads `internalId` from each
+  entry; CMP IS Internal, so it falls through the same path.
 
-**First moves for T3:**
+**First moves for T3b:**
 1. Read `external/OTTO/CROSS_PROJECT_INBOX.md` — ack any new
    `[FROM OTTO → SIRIUS]` entries.
 2. `git pull --rebase origin master` (defensive; this session was solo).
-3. Read T3 section of
-   `~/.claude/plans/read-continue-and-proceed-ancient-phoenix.md` +
-   Decision 3 of
-   `docs/superpowers/specs/2026-05-22-otto-integration-design.md` +
-   `docs/design/sirius-internal-fx.md` (the T1 contract doc, NOW the
-   T3 implementation target).
-4. `superpowers:writing-plans` → write T3 plan into
-   `docs/superpowers/plans/`. Likely structure: one plan per FX
-   (T3a-EQ first) OR one plan with 4 sub-tasks. Decide based on whether
-   the interface (`IEffect`, `InternalFxFactory`) can be shared up front
-   or has to evolve with the first adapter.
-5. `superpowers:subagent-driven-development` per adapter.
-6. NB: the test-fixture raw-construction debt (`todo.md` 2026-05-23
-   entry) lands as part of whichever T3 sub-task introduces the
-   `kind != Plugin` dispatch guard — its failures will surface
-   organically.
+3. Read `external/OTTO/src/otto-core/include/otto/effects/PlayerCompressor.h`
+   end-to-end — confirm `process()` signature + sidechain feed
+   semantics (the `compSidechainHPF` field interaction).
+4. Read this session's `engine/src/fx/EqAdapter.{h,cpp}` as the
+   template — T3b mirrors the shape almost line-for-line.
+5. `superpowers:writing-plans` → write T3b plan into
+   `docs/superpowers/plans/` (smaller than T3a's because the
+   architecture seam is already cut — T3b is a single subagent + spec
+   review + code review).
+6. `superpowers:subagent-driven-development`. Single implementer
+   subagent should suffice; review pass after.
+
+## ⚠ T3a follow-up debt (from final Code Reviewer)
+
+Three findings logged this session — all approved-as-deferred but
+worth surfacing before downstream UI slices:
+
+- **I-1 (Important, T5 prerequisite) — `rebuildInputStrips()` over-triggers
+  `prepareInternalFx`.** Today's call sites re-issue prepare on every
+  stereo-toggle / device-config rebuild, not only on sample-rate /
+  block change. Latent today (no adapter is bound at startup; T5 is
+  where the insert UI lets the operator bind one). Cheapest fix: host-
+  side early-return in `OutOfProcessEffectChainHost::prepareInternalFx`
+  when `(sampleRate, maxBlockSize) == (currentSampleRate_,
+  currentMaxBlock_) && prepared_`. Land BEFORE T5 ships, or T5's first
+  stereo-toggle gesture will silently zap any bound EQ's IIR state.
+  See `todo.md` 2026-05-23-late entry.
+- **I-2 (Important, T4 prerequisite) — `InputMixer` has no
+  `setEffectChainHost`.** Its bus chains never reach the host, so any
+  internal FX on an Input-side bus silently no-ops at runtime. Pre-
+  existing gap; surgical-changes rule was right to leave it. T4 (Sends
+  tab UI) will start surfacing Input-side bus chains to the operator —
+  must wire `InputMixer::setEffectChainHost(host)` + propagate to its
+  internal buses BEFORE T4 ships. See `todo.md` 2026-05-23-late entry.
+- **M-2 (Minor, follow-up) — `Bus::process` is 173 lines (>100 default).**
+  After T3a-C inlined the chain-path body, `Bus::process` exceeds the
+  CLAUDE.md function-size rule. Extract `processInline(...)` +
+  `processChain(...)` private helpers when T3b lands or sooner.
+  Recorded as follow-up; not urgent — coherent block, audited
+  RT-safe today. See `todo.md` 2026-05-23-late entry.
 
 ## Plan + memory state at session end
+
 - Plan file (this session):
-  `docs/superpowers/plans/2026-05-22-p7-t2-effect-chain-union-slot.md`
-  (4 tasks, all checkboxed complete; lives in-repo per
-  `superpowers:writing-plans` convention).
+  `~/.claude/plans/read-continue-and-proceed-structured-acorn.md`
+  (T3a-EQ — 3 subagent tasks all checkboxed complete plus the B
+  follow-up commit). Lives in `~/.claude/plans/` (outside repo) per
+  this session's plan-mode default.
 - Umbrella plan:
   `~/.claude/plans/read-continue-and-proceed-ancient-phoenix.md`
-  (T0/T1/T2 ✅; T3..T6 remain). Header updated this session to mark T2
-  done.
-- Memory: zero new memories this session — the T2 contract was already
-  pinned by `project_internal_fx_first_class` +
-  `project_whitepaper_path` + the cross-project inbox protocol. T2's
-  delivery did not surface new operator/project facts worth saving.
-- `todo.md`: one new entry (2026-05-23 — raw `EffectChainEntry`
-  construction sites in test fixtures, deferred to T3 by design). Two
-  bugs from prior sessions (Preparation tab `.json` filter; plugin
-  scanner broken at all entry points) still open.
+  (T0/T1/T2 ✅ + T3a-EQ ✅; T3b-CMP / T3c-DLY / T3d-RVB / T4..T6
+  remain). Header updated this session to mark T3a-EQ done.
+- Memory: zero new memories this session. Architecture choices (extend
+  existing OOP host vs composite, default-no-op virtuals on
+  `IEffectChainHost`, factory header in `core/`) are codebase facts
+  derivable by reading the current state; the operator/project rules
+  they were guided by (`project_internal_fx_first_class`,
+  `feedback_sirius_done_right_and_complete`) are unchanged.
+- `todo.md`: three new entries this session (I-1 / I-2 / M-2 above).
+  The 2026-05-23 "raw `EffectChainEntry` construction sites in test
+  fixtures" T3-debt entry from the prior session was NOT surfaced by
+  T3a-C — none of the listed fixtures broke under the new
+  kind-aware dispatch in `Bus::setEffectChain` (which reads `kind`
+  but treats Plugin/Empty/raw-default entries identically through the
+  nullopt-unbind path). Entry stays open for later T3 sub-tasks if a
+  fixture surfaces. Two pre-existing bugs (Preparation tab `.json`
+  filter; plugin scanner broken at all entry points) still open.
 
 ---
 
-# (archived header — 2026-05-22) — P7 umbrella T1 (docs) SHIPPED — dual-FX model is first-class in the whitepaper + routing-graph spec, new `docs/design/sirius-internal-fx.md` is the parameter-surface source of truth, all "vendor" wording purged from the routing-graph spec. NEXT = T2 (engine union slot — widen `EffectChainEntry` to `SlotKind = Empty | Internal | Plugin`).
+# (archived header — 2026-05-23) — P7 umbrella T2 (engine union slot) SHIPPED end-to-end — `EffectChainEntry` is now a tagged union `SlotKind = Empty | Internal | Plugin` with `makePlugin`/`makeInternal` factories; `SessionFormat` round-trips the discriminant with forward-compat (missing `kind` → `Plugin`); wire-stable enum + string layer pinned by tests. ctest 585 pass / 1 documented Not-Run. NEXT was T3 (internal-FX adapters); this session shipped T3a-EQ. See current header for the post-T3a state.
 
 ## ✅ DONE THIS SESSION (2026-05-22 — T1 docs)
 
