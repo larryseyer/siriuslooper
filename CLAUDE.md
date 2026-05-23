@@ -19,11 +19,75 @@ built-in FX) is the established sister-app product intent. Engine milestones
 
 ## Sister app: OTTO
 
-- OTTO lives at `/Users/larryseyer/AudioDevelopment/OTTO` and is a **READ-ONLY
-  reference**. Copy/learn FROM it; **never edit it.**
+- OTTO is consumed as a **git submodule** at `external/OTTO/`. Single source
+  of truth: bug fix in OTTO → `git submodule update --remote external/OTTO`
+  → SHA bump in Sirius → done. (The older byte-faithful vendored copy under
+  `ui/lookandfeel/` was deleted in T0b on 2026-05-22.)
 - Sirius and OTTO ship together but are sold separately and must each build
-  independently. Shared look-and-feel is **vendored** (copied) into Sirius
-  (`ui/lookandfeel/`), not aliased — a shared submodule is the eventual form.
+  independently. Sirius's installer bundles a FULL copy of OTTO; OTTO's
+  paywalled features are runtime-gated. Licensing is **identical** between
+  the two products.
+- OTTO's assets (IRs, samples, fonts, GUI, models — ~3.7 GB total) are
+  gitignored (copyright). Dev time: Sirius's build references the operator's
+  OTTO checkout at `/Users/larryseyer/AudioDevelopment/OTTO/assets/` via the
+  `OTTO_ASSETS_DIR` CMake variable. Customer install time: the bundling
+  pipeline copies OTTO's assets into the install bundle once; bundled-OTTO
+  and Sirius both read from the same path at runtime.
+
+## Cross-Project Inbox Protocol (Sirius ⇄ OTTO)
+
+Sirius's Claude has **full edit autonomy** on OTTO source. Sirius and OTTO
+communicate **AI-to-AI** via `external/OTTO/CROSS_PROJECT_INBOX.md`. The
+operator is **NOT** a required reviewer of the back-and-forth.
+
+### At session start (mandatory)
+
+Read `external/OTTO/CROSS_PROJECT_INBOX.md`. For each unacknowledged entry
+addressed to you (look under `[FROM OTTO → SIRIUS]`):
+
+1. Change `Status:` to `acked YYYY-MM-DD`.
+2. Add a `Resolution:` line describing what action you took (bumped
+   submodule SHA, refactored callers, etc.).
+3. Act on the entry's guidance.
+
+### When you edit OTTO source
+
+Sirius's session has full edit autonomy on OTTO, with mandatory awareness
+propagation:
+
+1. Make the OTTO change with a focused commit in `external/OTTO/`. Trailer:
+   `Sirius-Origin: <sirius-sha>` (or `bootstrap` for the first protocol
+   commit). For protocol commits where the SHA chicken-and-eggs, reference
+   the most-recently-landed Sirius commit.
+2. Append a new entry under `[FROM SIRIUS → OTTO]` in
+   `CROSS_PROJECT_INBOX.md` describing the change, files touched, why,
+   and what OTTO's Claude must do/avoid.
+3. Push OTTO (`origin/main`).
+4. Back in Sirius: bump the submodule SHA, commit, push Sirius.
+
+### When OTTO needs Sirius to act
+
+OTTO's Claude can append entries under `[FROM OTTO → SIRIUS]`. You'll see
+them at session start and act (bump submodule, adapt callers, etc.) per
+the entry's `For Sirius's Claude:` line. Acknowledge by updating the entry.
+
+### Entry format
+
+```
+## YYYY-MM-DD — <one-line subject>
+Direction: SIRIUS → OTTO        (or OTTO → SIRIUS)
+Sirius commit: <sha>            OTTO commit: <sha>
+Files touched: <paths>
+Why: <one-paragraph rationale>
+For <recipient>'s Claude: <specific guidance — do not revert, here's the migration, etc.>
+Status: needs-ack | acked YYYY-MM-DD | resolved
+Resolution: <added by recipient when ack'd>
+```
+
+### Audit trail
+
+`git log --grep='Sirius-Origin' --all` in `external/OTTO/` surfaces every
+Sirius-originated OTTO commit forever, even after inbox entries are pruned.
 
 ## Architecture (non-negotiable)
 
