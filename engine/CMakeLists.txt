@@ -60,6 +60,11 @@ target_include_directories(SiriusEngine PRIVATE
 
 target_compile_features(SiriusEngine PUBLIC cxx_std_20)
 
+# OTTO asset bundle path (T3d) — only RvbAdapter.cpp consumes the macro to
+# resolve a default IR path; the engine's public surface stays asset-path-free.
+target_compile_definitions(SiriusEngine PRIVATE
+    SIRIUS_OTTO_ASSETS_DIR="${OTTO_ASSETS_DIR}")
+
 # Sirius::Core is public (its types appear in the engine's headers); soxr and
 # Sirius::Persistence are private (implementation details of .cpp files that
 # never leak into engine public headers — Persistence is used by

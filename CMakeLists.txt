@@ -13,6 +13,21 @@ endif()
 
 option(SIRIUS_BUILD_TESTS "Build the Sirius Looper test suite" ON)
 
+# OTTO asset bundle (IRs, samples, fonts, GUI assets, models). Gitignored
+# under external/OTTO/assets/ because of copyright; at dev time Sirius reads
+# from the operator's OTTO checkout, at install time the bundling pipeline
+# copies the bundle into the install. Injected into SiriusEngine as a
+# PRIVATE compile definition (SIRIUS_OTTO_ASSETS_DIR) — only RvbAdapter.cpp
+# currently consumes it (T3d default IR resolution).
+set(OTTO_ASSETS_DIR "/Users/larryseyer/AudioDevelopment/OTTO/assets"
+    CACHE PATH "Path to OTTO's asset bundle (IRs, samples, fonts) at dev time.")
+if(NOT EXISTS "${OTTO_ASSETS_DIR}")
+    message(STATUS
+        "OTTO_ASSETS_DIR='${OTTO_ASSETS_DIR}' does not exist; "
+        "internal-FX features that need OTTO assets (e.g. RVB IR loading) "
+        "will degrade gracefully at runtime.")
+endif()
+
 # Third-party dependencies — vendored under external/ (see cmake/Dependencies.cmake).
 include(cmake/Dependencies.cmake)
 
