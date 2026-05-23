@@ -2,13 +2,13 @@
 
 ## Status
 state: in_progress
-current_task: T02
-last_commit: 48a0e4d
-last_updated: 2026-05-23T18:00:00Z
+current_task: T03
+last_commit: <TBD>
+last_updated: 2026-05-23T20:00:00Z
 
 ## Tasks
 [x] T01 - T3b-CMP — wrap otto::effects::PlayerCompressor as CmpAdapter
-[ ] T02 - T3c-DLY — wrap otto::effects::PlayerDelay as DlyAdapter
+[x] T02 - T3c-DLY — wrap otto::effects::PlayerDelay as DlyAdapter
 [ ] T03 - P7 T3a I-1 — prepareInternalFx early-returns on unchanged sr/block
 [ ] T04 - P7 T3a I-2 — InputMixer::setEffectChainHost wiring + end-to-end test
 [ ] T05 - P7 T3a M-2 — split Bus::process into processInline + processChain helpers

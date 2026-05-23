@@ -45,7 +45,8 @@ add_library(SiriusEngine STATIC
     # for the symmetric note.
     src/InternalFxFactory.cpp
     src/fx/EqAdapter.cpp
-    src/fx/CmpAdapter.cpp)
+    src/fx/CmpAdapter.cpp
+    src/fx/DlyAdapter.cpp)
 
 target_include_directories(SiriusEngine PUBLIC include)
 

@@ -88,6 +88,9 @@ add_executable(SiriusTests
     # P7 T3b — CmpAdapter (PlayerCompressor wrapper). Same include-path
     # pattern as EqAdapterTests above.
     CmpAdapterTests.cpp
+    # P7 T3c — DlyAdapter (PlayerDelay wrapper). Same include-path
+    # pattern as EqAdapterTests above.
+    DlyAdapterTests.cpp
     # P7 T3a-C — end-to-end Bus → host → adapter dispatch test.
     BusInternalFxEndToEndTests.cpp)
 

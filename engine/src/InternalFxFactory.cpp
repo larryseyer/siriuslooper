@@ -1,6 +1,7 @@
 #include "sirius/InternalFxFactory.h"
 
 #include "fx/CmpAdapter.h"
+#include "fx/DlyAdapter.h"
 #include "fx/EqAdapter.h"
 
 namespace sirius
@@ -29,9 +30,13 @@ std::unique_ptr<IInternalFxAdapter> makeInternalFxAdapter (InternalFxId id)
         case InternalFxId::kRvb:
             return nullptr;
 
-        // T3c — DLY adapter wraps otto::effects::PlayerDelay.
+        // T3c — DLY adapter wraps otto::effects::PlayerDelay. The ctor
+        // flips delayEnabled=true AND delaySyncEnabled=false so a
+        // freshly-inserted DLY slot tap-echoes the input at the default
+        // free-running 250 ms — the sync path needs a transport bpm Sirius
+        // doesn't plumb yet.
         case InternalFxId::kDly:
-            return nullptr;
+            return std::make_unique<DlyAdapter>();
     }
 
     // Unreachable for the four declared enum values; return nullptr to keep

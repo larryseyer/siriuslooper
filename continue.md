@@ -1,3 +1,134 @@
+# Session Continuation — 2026-05-23 (T3c-DLY) (**P7 umbrella T3c-DLY SHIPPED via ralph loop iteration #2 — `engine/src/fx/DlyAdapter.{h,cpp}` wraps `otto::effects::PlayerDelay` (default config, `delayEnabled=true` AND `delaySyncEnabled=false` in ctor so a freshly-inserted slot does DSP at the default free-running 250 ms — the sync path silently no-ops without a transport bpm > 0, which the internal-FX adapter surface doesn't plumb yet). `InternalFxFactory` `kDly` case flipped from `nullptr` to `std::make_unique<DlyAdapter>()`. 5 new `[internal-fx][dly-adapter]` cases (unprepared miss, prepared finite, reset, in-place aliasing, unit-impulse-at-250-ms-tap) + 1 new positive `[internal-fx][factory]` case for kDly. RT-safety grep clean on `DlyAdapter::process()` (pre-flight confirmed `PlayerDelay::process` does only `popSample`/`pushSample` on pre-prepared delay lines + filter `processSample` + atomic `fetch_add` — no allocation under modulation). ctest **614 pass / 1 documented Not-Run** (up from 608 — +6 cases). NEXT = T3a follow-up debt T03 (`prepareInternalFx` idempotency on unchanged sr/block).**)
+
+> **For a fresh chat picking this up cold:** read this whole file before
+> doing anything. Memory + project + user CLAUDE.md load automatically;
+> this file is the *state* (what just shipped + what's queued next).
+> Newest commit on Sirius origin/master: **`<TBD>`** (this session's
+> T3c-DLY commit landed on top of `48a0e4d`); OTTO origin/main:
+> **`abf8e4d4`** (unchanged this session); ctest baseline **614 pass / 1
+> documented Not-Run** (up from 608 — +6 cases this session).
+> **MANDATORY at session start:** read
+> `external/OTTO/CROSS_PROJECT_INBOX.md` and acknowledge any
+> `[FROM OTTO → SIRIUS]` entries (per `project_cross_project_inbox_protocol`).
+> The whitepaper lives at `docs/Sirius_Looper_Whitepaper_V7.md`
+> (underscores — `project_whitepaper_path`).
+
+## ✅ DONE THIS SESSION (2026-05-23 — T3c-DLY DlyAdapter, ralph iteration #2)
+
+Single-commit ralph iteration. Pre-flight read of
+`external/OTTO/src/otto-core/include/otto/effects/PlayerDelay.h`
+confirmed `process()` performs only `popSample(0)` / `pushSample(0, ...)`
+on the pre-prepared `juce::dsp::DelayLine<float>` instances + IIR
+feedback-filter `processSample` calls + a single lock-free
+`tapCounter_.fetch_add(1, std::memory_order_release)` per delay
+cycle — zero allocations under modulation, zero locks, zero logging.
+`updateFilters` (the only allocation site — IIR coefficient
+ReferenceCountedObject construction) lives in `updateParameters` on
+the message thread, called from `prepare()`. No halt condition fired —
+proceeded.
+
+- **`engine/src/fx/DlyAdapter.{h,cpp}`** — line-for-line mirror of
+  `CmpAdapter.{h,cpp}` shape. Holds an `otto::effects::PlayerDelay` as
+  a value member and a defaulted `PlayerEffectsConfig`. Ctor flips
+  TWO fields (one more than EQ/CMP): `cfg_.delayEnabled = true` so the
+  slot does DSP, AND `cfg_.delaySyncEnabled = false` so the delay time
+  comes from `delayTimeMs` (250 ms default) rather than the tempo-sync
+  path that requires a live bpm > 0. The internal-FX adapter surface
+  has no transport bpm hookup today (`prepare(sr, blk)` only), and
+  `setDelaySync` silently no-ops when bpm ≤ 0 — leaving the DelayLine
+  at its initial 0-sample delay and emitting silence (100 % wet of
+  nothing). Free-running mode is the only way to get a deterministic
+  delay time today; a later slice plumbs bpm and lets the operator
+  flip sync back on. `prepare()` calls
+  `dly_.prepare(sr, maxBlock)` + `dly_.updateParameters(cfg_, 120.0)`
+  — the bpm value is unused in free-running mode but passes a sane
+  sentinel that survives a future ctor change. `process()` mirrors
+  `CmpAdapter::process` — noexcept, in-place-aliasing-safe via memcpy
+  when in≠out, defensive null/non-positive/non-stereo miss-contract
+  guards matching `IEffectChainHost::pumpSlot`.
+
+- **`engine/src/InternalFxFactory.cpp`** — `case InternalFxId::kDly:`
+  flipped from `return nullptr;` to
+  `return std::make_unique<DlyAdapter>();`. Only `kRvb` remains
+  `nullptr` now (T3d, last per the umbrella because
+  `PlayerIRConvolution` carries background-thread IR-loading complexity
+  and needs `${OTTO_ASSETS_DIR}/IR/...` wiring).
+
+- **`engine/CMakeLists.txt`** — added `src/fx/DlyAdapter.cpp` to the
+  `SiriusEngine` source list alongside `src/fx/EqAdapter.cpp` and
+  `src/fx/CmpAdapter.cpp`.
+
+- **`tests/DlyAdapterTests.cpp` (NEW, 5 cases)** — mirrors
+  `CmpAdapterTests.cpp`: unprepared-miss-returns-false-leaves-output-
+  untouched, prepared-1kHz-sine-finite-bounded-output, reset-then-
+  process, in-place-vs-out-of-place-bit-identical, and a new
+  unit-impulse-delay-offset case asserting the impulse appears
+  unattenuated at the expected 12000-sample (250 ms @ 48 kHz) tap —
+  ±64-sample slack for any sub-sample interpolation rounding in
+  `juce::dsp::DelayLine`. Pre-tap samples are bounded < 0.01
+  (PlayerDelay outputs 100 % wet, so no dry contribution before the
+  first tap arrives — proves the wet-only contract). All 5 cases
+  tagged `[internal-fx][dly-adapter]`.
+
+- **`tests/InternalFxFactoryTests.cpp`** — the prior remaining
+  "kRvb + kDly return nullptr" case split into (1) a new positive case
+  for kDly mirroring T3b's kCmp split (smoke-checks the factory's
+  polymorphic dispatch through `IInternalFxAdapter*`), and (2) a
+  narrower remaining-nullptr case covering only kRvb.
+
+- **`tests/CMakeLists.txt`** — added `DlyAdapterTests.cpp` to the
+  `SiriusTests` source list alongside `CmpAdapterTests.cpp`.
+
+- **`progress.txt`** — `[ ] T02` flipped to `[x] T02`; header fields
+  (`state`, `current_task`, `last_commit`, `last_updated`) bumped.
+
+**RT-safety:**
+`awk '/^bool DlyAdapter::process/,/^}$/' engine/src/fx/DlyAdapter.cpp | grep -nE '\bnew\b|\bmalloc\b|\bthrow\b|std::mutex|Logger|DBG|std::lock|ScopedLock'`
+returns zero matches. The `process()` path is allocation-free,
+lock-free, I/O-free, log-free. Same audit shape as `EqAdapter` and
+`CmpAdapter` (acceptance criterion explicitly verified).
+
+**ctest baseline:** 608 → **614 pass / 1 documented Not-Run** (+6
+cases — 5 new DLY adapter cases + 1 factory split). Build clean;
+`cmake --build build --target SiriusTests &&
+ctest --test-dir build --output-on-failure` is the loop's allowed
+verification command and was the gate this iteration passed.
+
+## ▶ NEXT — P7 T3a follow-up debt T03 (T03 in `prd.json`)
+
+Active prd.json: `T03` — `prepareInternalFx` early-returns on unchanged
+`sr/block`. The umbrella status:
+
+```
+T0  OTTO submodule          ✅ DONE
+T1  docs                    ✅ DONE
+T2  engine union slot       ✅ DONE
+T3  internal-FX adapters    NEAR DONE
+    T3a-EQ                  ✅ DONE
+    T3b-CMP                 ✅ DONE
+    T3c-DLY                 ✅ DONE (this iteration)
+    T3d-RVB                 last (background-thread IR loading)
+T3a follow-up debt          IN PROGRESS via prd.json T03-T05
+T4  Sends tab UI            (after T3 fully)
+T5  Insert UI               (internal-FX-only picker until "P7-scanner")
+T6  P4/P5 persistence wiring into MainComponent save/load
+```
+
+**First moves for T03:**
+
+1. Open `host/src/OutOfProcessEffectChainHost.cpp` and locate
+   `prepareInternalFx(sr, maxBlock)`. Add a four-line early-return at
+   the top: `if (prepared_ && currentSampleRate_ == sr && currentMaxBlock_ == maxBlock) return;`.
+2. Verify the state fields `currentSampleRate_`, `currentMaxBlock_`,
+   `prepared_` already exist (per `todo.md` (a) — they do).
+3. Extend `tests/OutOfProcessEffectChainHostTests.cpp` with a
+   counting-mock-adapter idempotency case: "prepareInternalFx is
+   idempotent — same sr+block calls adapter->prepare() exactly once."
+4. Remove or mark resolved the `todo.md` entry (a) for 2026-05-23
+   (late).
+
+# (archived header — 2026-05-23) — P7 umbrella T3b-CMP SHIPPED via ralph iteration #1 — `CmpAdapter` wrapping `otto::effects::PlayerCompressor` (default config, `compEnabled=true` in ctor; sidechain derived internally from input — no external sidechain bus required); 5 `[internal-fx][cmp-adapter]` cases (incl. sustained-sine-above-threshold peak reduction) + 1 factory split. ctest 602 → 608 (+6). NEXT was T3c-DLY — this iteration shipped it.
+
 # Session Continuation — 2026-05-23 (T3b-CMP) (**P7 umbrella T3b-CMP SHIPPED via ralph loop iteration #1 — `engine/src/fx/CmpAdapter.{h,cpp}` wraps `otto::effects::PlayerCompressor` (default config, `compEnabled=true` in ctor; sidechain derived internally from input → 4-stage Butterworth HPF at 100 Hz → peak detector → envelope follower; no external sidechain bus required). `InternalFxFactory` `kCmp` case flipped from `nullptr` to `std::make_unique<CmpAdapter>()`. 5 new `[internal-fx][cmp-adapter]` cases (unprepared miss, prepared finite, reset, in-place aliasing, sustained-sine-above-threshold peak reduction) + 1 new positive `[internal-fx][factory]` case for kCmp. RT-safety grep clean on `CmpAdapter::process()`. ctest **608 pass / 1 documented Not-Run** (up from 602 — +6 cases). NEXT = T3c-DLY (wrap `otto::effects::PlayerDelay` — same adapter pattern).**)
 
 > **For a fresh chat picking this up cold:** read this whole file before
