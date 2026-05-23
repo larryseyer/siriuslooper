@@ -138,3 +138,36 @@ the per-output-pair picker into slice 3, with bus rename as well.
   `rm -rf build && cmake -B build -S . -G Ninja
    -DCMAKE_BUILD_TYPE=Release && cmake --build build --target
    IdaTests IDA -j`.
+
+## ▶ PARALLEL PLAN — IDA-specific plugin docs (docs-only, no engine touch)
+
+A separate session (2026-05-23) wrote a complete docs/specs plan
+covering every plugin IDA ships beyond the four shared with OTTO:
+
+- 5 IDA-only audio inserts (Phaser, Chorus, Pitch Changer, Audio
+  Gate, TAPECOLOR) — reuses existing `IInternalFxAdapter`.
+- 8 MIDI inserts (Channel Filter, Input Velocity Control, MIDI
+  Remap, Quantize, Limit Notes to Scale, plus Velocity / Timing /
+  Swing Energy-bound) — needs new `IMidiFxAdapter` subsystem.
+- 4 offline FX (Audio Peak Quantize, Autotune, Short Notes Removal,
+  Thin Controller Data) — needs new offline analyze+apply subsystem.
+- MIDI Learn across every transport + every mixer control — needs
+  new binding-registry subsystem.
+
+**Plan file:** `~/.claude/plans/there-are-several-things-moonlit-twilight.md`.
+
+**Scope:** whitepaper amendments (§6.6/6.7/6.8/6.11/6.12/new 6.13/
+15.6/17.4), 6 new design docs under `docs/design/` (umbrella,
+audio-insert, midi-insert, offline, midi-learn, energy-binding),
+user-guide stub, stale CLAUDE.md V7→V8 path fix, IDA→OTTO inbox
+entry. **No code** — every implementation lives in its own future
+slice.
+
+**No collision with slice 3.** Slice 3 touches `engine/` + Output
+Mixer UI; this plan touches only `docs/**`, `CLAUDE.md`, and
+`external/OTTO/CROSS_PROJECT_INBOX.md`. Either can land in either
+order.
+
+**When to execute:** operator's call. Recommended after slice 3
+ships (or whenever a docs-focused session has bandwidth) — the plan
+is self-contained and the executor just reads it top-to-bottom.
