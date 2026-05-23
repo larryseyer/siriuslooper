@@ -171,34 +171,44 @@ T6  P4/P5 persistence wiring into MainComponent save/load (mixed
                             engine + UI hooks; partially headless)
 ```
 
-**Optional operator gate for THIS session's work** (T3d-RVB, NOT
-required to confirm correctness — the unit tests already proved the
-adapter is wired right):
-
-1. Launch `Sirius Looper.app`.
-2. Drop an internal RVB slot on any output mixer channel.
-3. Send signal through that channel. Expect an audible plate reverb
-   tail (~1.13 s) to come up after the background worker has finished
-   the IR install (~4-6 s wall-clock on M-series Release builds).
-4. The 4-6 s install only happens once per adapter lifetime; subsequent
-   audio runs immediately.
+**No operator audible gate is available for T3d-RVB right now.** The
+insert-chain UI hasn't shipped — `MainComponent.cpp:1646` notes "today
+no internal-FX is bound at startup (the insert-chain UI hasn't
+shipped)" — and there's no way today, on either mixer, to drop an
+RVB slot via the GUI. (The Output Mixer tab is also missing per
+`project_mixer_then_transport_roadmap`, but even adding it wouldn't
+expose an insert picker — that's T5.) Operator confirmed
+2026-05-23 by launching the .app: only the Input Mixer is visible and
+neither mixer has insert slots. **Audible/visual verification of
+T3d-RVB is gated on T5 (Insert UI).** Until T5 lands, the proof of
+correctness is the unit-test suite — which exercises the full path:
+`prepare()` → `requestIRLoad()` → background worker decodes
+`Plate Bright 1.13.wav` → installs the IR into OTTO's double-buffered
+convolver → `process()` produces non-silent convolution output (case
+#5 "RvbAdapter::process produces non-silent wet output after IR load
+completes" took 8.22 s locally; the 15 s poll budget held).
 
 **First moves for the operator next session:**
 
 1. Read this file's DONE section to confirm what landed.
-2. Decide the next prd.json focus from the three remaining tracks:
+2. **The natural next track is T5 Insert UI** — it's the gate on
+   audibly verifying T3d-RVB (and on letting the operator exercise
+   ANY of the four shipped internal-FX adapters from the GUI). The
+   3rd-party plugin picker stays blocked behind the plugin scanner
+   GUI lock (`project_plugin_scanner_broken` / "P7-scanner" slice),
+   but T5 can ship internal-FX-only (the four adapters: EQ/CMP/DLY/RVB)
+   without unblocking the scanner.
+3. Alternative next tracks, deprioritized vs T5 by operator intent:
    - **T4 Sends tab UI** — per-channel sends UI on both mixers
      (RVB+DLY sends/returns design from
-     `project_mixer_routing_destinations_and_plugins`).
-   - **T5 Insert UI (internal-FX-only)** — insert-chain picker
-     surfacing the four shipped internal-FX adapters. The 3rd-party
-     plugin picker stays blocked behind the plugin scanner GUI lock
-     (`project_plugin_scanner_broken` / "P7-scanner" slice).
+     `project_mixer_routing_destinations_and_plugins`). Needs an
+     Output Mixer tab too, which is its own slice
+     (`project_mixer_then_transport_roadmap`).
    - **T6 P4/P5 persistence wiring** — wire P4/P5 state into
      MainComponent save/load. Partially headless-verifiable; could
      be a hybrid prd.json with engine slices on ralph and UI slices
      operator-side.
-3. The §11 Promotion banner gate scenarios from the prior T08 session
+4. The §11 Promotion banner gate scenarios from the prior T08 session
    are still operator-eyes-on if a fresh chat wants to also confirm
    those (independent of T3d-RVB).
 
