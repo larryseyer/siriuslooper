@@ -14,15 +14,15 @@
 
 # M8 S2 — the CLAP load sequence (dlopen + entry init + factory walk) now
 # lives in ClapBundleLoader, shared with the JUCE-dependent scanner via
-# SiriusHost. ClapBundleLoader itself is JUCE-free (PluginDescriptor + clap
+# IdaHost. ClapBundleLoader itself is JUCE-free (PluginDescriptor + clap
 # + dlfcn only), so we compile its .cpp directly into this deliberately
-# JUCE-free child binary rather than linking the JUCE-heavy SiriusHost lib.
-set(sirius_clap_loader_src ${CMAKE_SOURCE_DIR}/host/src/ClapBundleLoader.cpp)
+# JUCE-free child binary rather than linking the JUCE-heavy IdaHost lib.
+set(ida_clap_loader_src ${CMAKE_SOURCE_DIR}/host/src/ClapBundleLoader.cpp)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     add_executable(ida_plugin_host
         main.cpp
-        ${sirius_clap_loader_src}
+        ${ida_clap_loader_src}
         gui_cocoa.mm)
     target_link_libraries(ida_plugin_host PRIVATE
         Ida::Core
@@ -37,7 +37,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
 else()
     add_executable(ida_plugin_host
         main.cpp
-        ${sirius_clap_loader_src})
+        ${ida_clap_loader_src})
     target_link_libraries(ida_plugin_host PRIVATE Ida::Core clap)
 endif()
 

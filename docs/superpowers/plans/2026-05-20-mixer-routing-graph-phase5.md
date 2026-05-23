@@ -8,7 +8,7 @@
 
 **Architecture:** A JUCE-free plain-data snapshot type lives in `core/` (`MixerGraphState.h`). The engine gets member functions `exportGraphState()` / `importGraphState()` on `InputMixer` and `OutputMixer` that translate live mixer state ↔ the snapshot (members, so they read/write private state directly — no bulk accessor surface). Persistence gets `serializeMixerGraphState()` / `deserializeMixerGraphState()` in `SessionFormat.cpp` that translate the snapshot ↔ JSON, reusing the existing anonymous-namespace helpers. The existing `serializeSession(const Constituent&)` API is untouched.
 
-**Tech stack:** C++17, JUCE (`juce::var`/`juce::JSON` in persistence only), Catch2 tests, CMake/Ninja. Layering: `SiriusPersistence` links only `Ida::Core` (JUCE-free core); `IdaEngine` links `Ida::Persistence` privately. So the snapshot MUST live in core and carry only JUCE-free, engine-free types — persistence cannot include engine headers (cycle).
+**Tech stack:** C++17, JUCE (`juce::var`/`juce::JSON` in persistence only), Catch2 tests, CMake/Ninja. Layering: `IdaPersistence` links only `Ida::Core` (JUCE-free core); `IdaEngine` links `Ida::Persistence` privately. So the snapshot MUST live in core and carry only JUCE-free, engine-free types — persistence cannot include engine headers (cycle).
 
 **Scope note:** This ships **apparatus + tests**, not `MainComponent` wiring. Writing/reading the graph sections into the on-disk session file on actual save/load lands with the UI phases (P6/P7), matching Phase 4's posture. Record that deferral in `todo.md`.
 

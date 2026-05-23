@@ -1,5 +1,5 @@
 # =============================================================================
-# SiriusHost — plugin hosting and the generic parameter view
+# IdaHost — plugin hosting and the generic parameter view
 # =============================================================================
 # This is the runtime half of M5: the JUCE-dependent wrappers that scan and
 # instantiate VST3/AU plugins (PluginScanner) and the minimal plugin-format-
@@ -10,7 +10,7 @@
 # is in core/, JUCE-free. This library depends on it via Ida::Core.
 # =============================================================================
 
-add_library(SiriusHost STATIC
+add_library(IdaHost STATIC
     src/ClapBundleLoader.cpp
     src/ClapScanner.cpp
     src/PluginScanner.cpp
@@ -21,7 +21,7 @@ add_library(SiriusHost STATIC
 # P7 T3a-B: OutOfProcessEffectChainHost.cpp calls
 # `ida::makeInternalFxAdapter` (declared in core/include/ida/
 # InternalFxFactory.h, defined in engine/src/InternalFxFactory.cpp). We
-# deliberately DO NOT add Ida::Engine to SiriusHost's link line — that
+# deliberately DO NOT add Ida::Engine to IdaHost's link line — that
 # would cycle (engine already PRIVATE-links Ida::Host via
 # SessionSnapshot). The unresolved symbol is fine in a static library;
 # it resolves at final link in every binary that already pulls both
@@ -36,17 +36,17 @@ add_library(SiriusHost STATIC
 # view scaffolding from M7 S5-S8 (OutOfProcessEditorView, PluginGuiBridge,
 # IGuiBridge, xpc_service/) is gone.
 
-target_include_directories(SiriusHost PUBLIC include)
+target_include_directories(IdaHost PUBLIC include)
 
-target_compile_features(SiriusHost PUBLIC cxx_std_20)
+target_compile_features(IdaHost PUBLIC cxx_std_20)
 
 # JUCE_PLUGINHOST_VST3 / _AU are off by default; turn them on so the format
 # manager registers them when the platform supports them.
-target_compile_definitions(SiriusHost PUBLIC
+target_compile_definitions(IdaHost PUBLIC
     JUCE_PLUGINHOST_VST3=1
     $<$<PLATFORM_ID:Darwin>:JUCE_PLUGINHOST_AU=1>)
 
-target_link_libraries(SiriusHost
+target_link_libraries(IdaHost
     PUBLIC  Ida::Core
             clap
             juce::juce_audio_processors
@@ -60,8 +60,8 @@ target_link_libraries(SiriusHost
 # our behalf; a plain static library does not, so we add it explicitly when
 # linking against this lib on Apple platforms.
 if(APPLE)
-    target_link_libraries(SiriusHost PUBLIC
+    target_link_libraries(IdaHost PUBLIC
         "-framework CoreAudioKit")
 endif()
 
-add_library(Ida::Host ALIAS SiriusHost)
+add_library(Ida::Host ALIAS IdaHost)

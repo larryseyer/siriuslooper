@@ -38,13 +38,13 @@
 In `audio/CMakeLists.txt`, change:
 
 ```cmake
-target_link_libraries(SiriusAudio
+target_link_libraries(IdaAudio
     PUBLIC  Ida::Engine
             juce::juce_audio_devices)
 ```
 to:
 ```cmake
-target_link_libraries(SiriusAudio
+target_link_libraries(IdaAudio
     PUBLIC  Ida::Engine
             juce::juce_audio_devices
             juce::juce_audio_formats)

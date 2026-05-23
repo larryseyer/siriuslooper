@@ -72,6 +72,26 @@ SUBS = [
     # statements use `"sirius/Foo.h"` and `<sirius/Foo.h>` (no leading slash).
     ('"sirius/', '"ida/'),
     ("<sirius/", "<ida/"),
+    # CMake-target second pass: layer library names the §1a table didn't enumerate.
+    # These pair with already-renamed `Ida::` aliases (rows 5-13 of original table).
+    ("SiriusAppCore", "IdaAppCore"),
+    ("SiriusAudio", "IdaAudio"),
+    ("SiriusHost", "IdaHost"),
+    ("SiriusPersistence", "IdaPersistence"),
+    # CMake variables and external keychain profile name.
+    ("sirius_clap_loader_src", "ida_clap_loader_src"),
+    # Keychain profile: requires operator to re-run `xcrun notarytool store-credentials
+    # ida-notary --apple-id itunes@larryseyer.com --team-id RR5DY39W4Q` before notarization
+    # works again. Documented in todo.md as an operator action.
+    ("sirius-notary", "ida-notary"),
+    # CMake COMMENT prefix in user-visible build progress messages.
+    ('"Sirius:', '"IDA:'),
+    # Synthetic CLAP test-plugin bundle IDs — 26 refs across test fixtures, test code,
+    # MainComponent demo wiring, and CMake. Bundle ID in plist + ID in plugin's self-
+    # declaration + test expectations all flip together or scanner tests break.
+    ("com.sirius.synthetic.test", "com.ida.synthetic.test"),
+    ("com.sirius.synthetic.identity", "com.ida.synthetic.identity"),
+    ("com.sirius.synthetic.statefulsynth", "com.ida.synthetic.statefulsynth"),
 ]
 
 EXCLUDE_PATH_PREFIXES = (

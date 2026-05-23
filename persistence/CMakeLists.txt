@@ -1,5 +1,5 @@
 # =============================================================================
-# SiriusPersistence — session serialization and content-addressed tape store
+# IdaPersistence — session serialization and content-addressed tape store
 # =============================================================================
 # This layer reads and writes session directories (white paper Part 7.8):
 # kilobytes-of-JSON for the structure layer (SessionFormat), content-addressed
@@ -9,19 +9,19 @@
 # cryptographic hashing all coming from juce_core.
 # =============================================================================
 
-add_library(SiriusPersistence STATIC
+add_library(IdaPersistence STATIC
     src/SessionFormat.cpp
     src/TapeStore.cpp)
 
-target_include_directories(SiriusPersistence PUBLIC include)
+target_include_directories(IdaPersistence PUBLIC include)
 
-target_compile_features(SiriusPersistence PUBLIC cxx_std_20)
+target_compile_features(IdaPersistence PUBLIC cxx_std_20)
 
-target_link_libraries(SiriusPersistence
+target_link_libraries(IdaPersistence
     PUBLIC  Ida::Core
             juce::juce_core
             juce::juce_cryptography
             juce::juce_recommended_config_flags
             juce::juce_recommended_warning_flags)
 
-add_library(Ida::Persistence ALIAS SiriusPersistence)
+add_library(Ida::Persistence ALIAS IdaPersistence)

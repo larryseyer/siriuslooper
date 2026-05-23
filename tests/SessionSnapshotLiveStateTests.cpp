@@ -86,7 +86,7 @@ TEST_CASE ("populator hashes real state bytes, not the empty-string hash",
     ida::OutOfProcessEffectChainHost host;
     ida::EffectChain chain;
     chain = chain.withAppended (
-        makeClapEntry ("com.sirius.synthetic.identity", "1.0.0"));
+        makeClapEntry ("com.ida.synthetic.identity", "1.0.0"));
     host.configureBus (10, chain,
                        juce::File (IDA_HOST_BINARY_PATH),
                        juce::File (IDA_SYNTHETIC_CLAP_PATH));
@@ -114,11 +114,11 @@ TEST_CASE ("populator always refreshes (no !has_value() guard)",
 {
     ida::OutOfProcessEffectChainHost host;
     ida::EffectChain chain;
-    auto entry = makeClapEntry ("com.sirius.synthetic.identity", "1.0.0");
+    auto entry = makeClapEntry ("com.ida.synthetic.identity", "1.0.0");
     // Pre-populate with a record that intentionally has a different
     // version — simulates a save-A followed by an upgrade.
     ida::VersionPinningRecord stale;
-    stale.uniqueId        = "com.sirius.synthetic.identity";
+    stale.uniqueId        = "com.ida.synthetic.identity";
     stale.version         = "0.9.0";
     stale.stateBlobSha256 = "deadbeef00000000000000000000000000000000000000000000000000000000";
     entry.persistedSnapshot = stale;
@@ -126,7 +126,7 @@ TEST_CASE ("populator always refreshes (no !has_value() guard)",
 
     host.configureBus (11,
                        ida::EffectChain{}.withAppended (
-                           makeClapEntry ("com.sirius.synthetic.identity", "1.0.0")),
+                           makeClapEntry ("com.ida.synthetic.identity", "1.0.0")),
                        juce::File (IDA_HOST_BINARY_PATH),
                        juce::File (IDA_SYNTHETIC_CLAP_PATH));
     std::this_thread::sleep_for (std::chrono::milliseconds (200));
@@ -159,7 +159,7 @@ TEST_CASE ("populator falls back to descriptor-only when slot is not configured"
     ida::OutOfProcessEffectChainHost host; // no buses configured
     ida::EffectChain chain;
     chain = chain.withAppended (
-        makeClapEntry ("com.sirius.synthetic.identity", "1.0.0"));
+        makeClapEntry ("com.ida.synthetic.identity", "1.0.0"));
 
     auto root = rootWithChain (chain);
 
@@ -182,7 +182,7 @@ TEST_CASE ("verifier with matching records posts zero notifications",
     ida::OutOfProcessEffectChainHost host;
     ida::EffectChain chain;
     chain = chain.withAppended (
-        makeClapEntry ("com.sirius.synthetic.identity", "1.0.0"));
+        makeClapEntry ("com.ida.synthetic.identity", "1.0.0"));
     host.configureBus (12, chain,
                        juce::File (IDA_HOST_BINARY_PATH),
                        juce::File (IDA_SYNTHETIC_CLAP_PATH));
@@ -208,7 +208,7 @@ TEST_CASE ("verifier with mismatched version posts drift with hash prefixes",
     ida::OutOfProcessEffectChainHost host;
     ida::EffectChain chain;
     chain = chain.withAppended (
-        makeClapEntry ("com.sirius.synthetic.identity", "1.0.0"));
+        makeClapEntry ("com.ida.synthetic.identity", "1.0.0"));
     host.configureBus (13, chain,
                        juce::File (IDA_HOST_BINARY_PATH),
                        juce::File (IDA_SYNTHETIC_CLAP_PATH));
@@ -220,9 +220,9 @@ TEST_CASE ("verifier with mismatched version posts drift with hash prefixes",
     { return ida::SlotLocation { 13, i }; };
 
     // Build a tree whose snapshot has a stale version + hash.
-    auto entry = makeClapEntry ("com.sirius.synthetic.identity", "1.0.0");
+    auto entry = makeClapEntry ("com.ida.synthetic.identity", "1.0.0");
     ida::VersionPinningRecord stale;
-    stale.uniqueId        = "com.sirius.synthetic.identity";
+    stale.uniqueId        = "com.ida.synthetic.identity";
     stale.version         = "0.9.0";
     stale.stateBlobSha256 = "deadbeef00000000000000000000000000000000000000000000000000000000";
     entry.persistedSnapshot = stale;

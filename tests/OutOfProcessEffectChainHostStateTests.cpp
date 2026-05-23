@@ -39,14 +39,14 @@ TEST_CASE ("descriptorForSlot returns the configured descriptor",
            "[chain-host-state]")
 {
     OutOfProcessEffectChainHost host;
-    host.configureBus (1, singleEntryChain ("com.sirius.synthetic.identity"),
+    host.configureBus (1, singleEntryChain ("com.ida.synthetic.identity"),
                        juce::File (IDA_HOST_BINARY_PATH),
                        juce::File (IDA_SYNTHETIC_CLAP_PATH));
     std::this_thread::sleep_for (std::chrono::milliseconds (200));
 
     const auto desc = host.descriptorForSlot (1, 0);
     REQUIRE (desc.has_value());
-    CHECK (desc->uniqueId == "com.sirius.synthetic.identity");
+    CHECK (desc->uniqueId == "com.ida.synthetic.identity");
 
     const auto missing = host.descriptorForSlot (1, 99);
     CHECK_FALSE (missing.has_value());
@@ -56,7 +56,7 @@ TEST_CASE ("stateBlobForSlot returns the synthetic CLAP's payload",
            "[chain-host-state]")
 {
     OutOfProcessEffectChainHost host;
-    host.configureBus (2, singleEntryChain ("com.sirius.synthetic.identity"),
+    host.configureBus (2, singleEntryChain ("com.ida.synthetic.identity"),
                        juce::File (IDA_HOST_BINARY_PATH),
                        juce::File (IDA_SYNTHETIC_CLAP_PATH));
     std::this_thread::sleep_for (std::chrono::milliseconds (200));

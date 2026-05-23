@@ -67,7 +67,7 @@ TEST_CASE ("ClapScanner::scan finds the synthetic CLAP",
     const bool found = std::any_of (
         result.descriptors.begin(), result.descriptors.end(),
         [] (const ida::PluginDescriptor& d) {
-            return d.uniqueId == "com.sirius.synthetic.identity";
+            return d.uniqueId == "com.ida.synthetic.identity";
         });
     CHECK (found);
     CHECK (result.failedFiles.empty());

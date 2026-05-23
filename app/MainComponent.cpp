@@ -3157,7 +3157,7 @@ void MainComponent::openSyntheticTestPlugin()
 
     PluginDescriptor d;
     d.format       = PluginFormat::Clap;
-    d.uniqueId     = "com.sirius.synthetic.test";
+    d.uniqueId     = "com.ida.synthetic.test";
     d.version      = "1.0.0"; // matches kDescriptor.version in tests/fixtures/SyntheticTestPlugin.cpp
     d.name         = "Synthetic Test Plug-in";
     d.manufacturer = "IDA";

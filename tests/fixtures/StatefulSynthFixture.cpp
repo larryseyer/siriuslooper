@@ -39,7 +39,7 @@ constexpr const char* kFeatures[] = {
 
 const clap_plugin_descriptor_t kDescriptor = {
     CLAP_VERSION_INIT,
-    "com.sirius.synthetic.statefulsynth",
+    "com.ida.synthetic.statefulsynth",
     "Sirius Stateful Synth Fixture",
     "IDA Tests",
     "https://example.invalid/sirius",

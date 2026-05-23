@@ -51,8 +51,8 @@ endif()
 
 # -----------------------------------------------------------------------------
 # libsoxr — continuous async sample-rate conversion at the membranes.
-# Statically linked: libsoxr is LGPL-2.1+, which is compatible with Sirius
-# Looper's AGPLv3 software license, so static linking is permitted.
+# Statically linked: libsoxr is LGPL-2.1+, which is compatible with IDA's
+# AGPLv3 software license, so static linking is permitted.
 # -----------------------------------------------------------------------------
 set(SOXR_PATH "${CMAKE_SOURCE_DIR}/external/soxr")
 

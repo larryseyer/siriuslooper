@@ -45,7 +45,7 @@ juce_add_binary_data(IdaBinaryData
 # Source layout (T0b, 2026-05-22): all L&F sources consumed from the OTTO
 # submodule at external/OTTO/src/otto-plugin/ui. Bug fixes in OTTO
 # propagate via `git submodule update --remote external/OTTO` followed by
-# `git add external/OTTO && git commit` to record the new SHA. Sirius
+# `git add external/OTTO && git commit` to record the new SHA. IDA
 # never edits the submodule.
 #
 # OTTO_OUTPUT_COMBO_AS_JUCE_COMBOBOX (defined below) tells OTTO's

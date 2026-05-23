@@ -643,7 +643,7 @@
     `xcrun notarytool submit --wait` → `xcrun stapler staple` → `spctl`
     verify as a post-build custom command.
   - One-time operator setup done: `xcrun notarytool store-credentials
-    sirius-notary --apple-id itunes@larryseyer.com --team-id RR5DY39W4Q`.
+    ida-notary --apple-id itunes@larryseyer.com --team-id RR5DY39W4Q`.
     Profile validated against Apple's servers, stored in keychain.
   - Manual Xcode-UI verification on `IDA.app` showed
     `Authority=Developer ID Application: Larry Seyer (RR5DY39W4Q)`,

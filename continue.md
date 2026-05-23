@@ -1222,7 +1222,7 @@ ChainHost`) — no new audio-thread API, no composite host wrapper.
   aliasing test through the host (`inChannels == outChannels` aliased
   pointer arrays). Link-time foot-gun (host has unresolved factory
   symbol that resolves at final-link because every consuming binary
-  links both `SiriusHost` and `IdaEngine`) was DEFERRED with a
+  links both `IdaHost` and `IdaEngine`) was DEFERRED with a
   comment.
 - **T3a-C `869318f`** — engine plumbing. `Bus::setEffectChain` (moved
   from inline-header to `engine/src/Bus.cpp`) and `ChannelStrip<Audio>::
@@ -3416,7 +3416,7 @@ Other queued items (independent of M8 progression):
 | `host/src/OutOfProcessEffectChainHost.cpp` | Removed the lazy `PluginGuiBridge::instance()` touch in `configureBus`. The chain host no longer cares about the engine-side bridge. |
 | `app/MainComponent.cpp` + `.h` | **Deleted `PluginEditorWindow`** (the engine-side `juce::DocumentWindow` per plug-in from S7). Replaced `std::vector<std::unique_ptr<PluginEditorWindow>>` with `std::vector<std::int64_t> openEditorBusIds_`. `openPluginEditor` now just calls `configureBus` + `requestEditorShow` — no engine-side window. `closePluginEditor` just `configureBus(empty)`. |
 | `app/CMakeLists.txt` | Dropped the `sirius_gui_bridge` dependency + the `Contents/XPCServices/` copy POST_BUILD. The `ida_plugin_host` Developer-ID re-sign + final outer-app re-sign survive. The 2026-05-19 follow-up added `--entitlements` to the child re-sign. |
-| `host/CMakeLists.txt` | Dropped `PluginGuiBridge.cpp/.mm` and `OutOfProcessEditorView.cpp/.mm` from SiriusHost sources. Dropped `-framework QuartzCore` (no longer needed). |
+| `host/CMakeLists.txt` | Dropped `PluginGuiBridge.cpp/.mm` and `OutOfProcessEditorView.cpp/.mm` from IdaHost sources. Dropped `-framework QuartzCore` (no longer needed). |
 | `host_process/CMakeLists.txt` | Dropped `-framework QuartzCore` (no longer needed in child either). |
 | `CMakeLists.txt` (top-level) | Dropped `add_subdirectory(xpc_service)`. |
 | `tests/CMakeLists.txt` | Dropped `PluginGuiBridgeTests.cpp` source + the Apple-only `CARemoteLayerRoundTripTests.mm` block. |
@@ -4941,7 +4941,7 @@ backoff dominates the current baseline.
    violate the "host stays JUCE-free" constraint. `Ida::Core` is the
    JUCE-free pure library, and the SHM primitives belong there.
    `PluginIpcMessage.h` also moved core-side so the host child can
-   include it without depending on `SiriusHost` (which carries JUCE).
+   include it without depending on `IdaHost` (which carries JUCE).
 3. **`PluginIpcMessage::monotonicNs` is `int64_t` ns since
    `steady_clock` epoch, NOT an LMC `Rational`.** The plan said "LMC
    timestamps in headers" but LMC time is `Rational` (non-trivially-
@@ -4996,7 +4996,7 @@ puts the IPC layer on the audio call chain** — design care required.
      EffectChain to own the OutOfProcessPluginInstance per slot, or
      (b) introduces a sibling `EffectChainHost` that owns the spawned
      processes and EffectChain stays descriptor-only. (b) keeps Core's
-     JUCE-free contract (OutOfProcessPluginInstance is in SiriusHost
+     JUCE-free contract (OutOfProcessPluginInstance is in IdaHost
      which has JUCE deps); (a) would force Core to grow a JUCE dep.
      **Lean (b)**.
    - **Where instance ownership lives.** `MainComponent` owns mixers
@@ -5879,7 +5879,7 @@ added.
 2. **`APPLE_APP_PASSWORD`** — app-specific password for notarytool:
    - https://appleid.apple.com → sign in as `itunes@larryseyer.com`
    - Sign-In and Security → App-Specific Passwords → "+"
-   - Label `sirius-notarytool` and generate
+   - Label `ida-notarytool` and generate
    - Copy the 19-char password (`xxxx-xxxx-xxxx-xxxx`)
 
 **Two paths to finish the handoff** (operator's choice on return):

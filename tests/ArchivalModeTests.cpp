@@ -133,7 +133,7 @@ namespace
     {
         PluginDescriptor d;
         d.format       = PluginFormat::Clap;
-        d.uniqueId     = "com.sirius.synthetic.test";
+        d.uniqueId     = "com.ida.synthetic.test";
         d.version      = "1.0.0";
         d.name         = "Synthetic Test Plug-in";
         d.manufacturer = "IDA";
@@ -194,7 +194,7 @@ TEST_CASE ("makeVersionPinningRecord with empty state has the canonical empty ha
            "[archival-mode][version-pinning]")
 {
     const auto record = makeVersionPinningRecord (descriptorFixture(), {});
-    CHECK (record.uniqueId == "com.sirius.synthetic.test");
+    CHECK (record.uniqueId == "com.ida.synthetic.test");
     CHECK (record.version  == "1.0.0");
     CHECK (record.stateBlobSha256
            == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
@@ -344,7 +344,7 @@ TEST_CASE ("populateVersionPinningRecords sets persistedSnapshot on VersionPinni
     REQUIRE (populated->effectChain()->size() == 1);
     const auto& populatedEntry = populated->effectChain()->at (0);
     REQUIRE (populatedEntry.persistedSnapshot.has_value());
-    CHECK (populatedEntry.persistedSnapshot->uniqueId == "com.sirius.synthetic.test");
+    CHECK (populatedEntry.persistedSnapshot->uniqueId == "com.ida.synthetic.test");
     CHECK (populatedEntry.persistedSnapshot->version  == "1.0.0");
     CHECK (populatedEntry.persistedSnapshot->stateBlobSha256
            == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
@@ -481,7 +481,7 @@ TEST_CASE ("verifyVersionPinningOnLoad emits Warning/PluginEvent on version drif
     REQUIRE (sink.records.size() == 1);
     CHECK (sink.records[0].level    == NotificationLevel::Warning);
     CHECK (sink.records[0].category == Category::PluginEvent);
-    CHECK (sink.records[0].message.find ("com.sirius.synthetic.test") != std::string::npos);
+    CHECK (sink.records[0].message.find ("com.ida.synthetic.test") != std::string::npos);
     CHECK (sink.records[0].message.find ("0.9.0") != std::string::npos);
     CHECK (sink.records[0].message.find ("1.0.0") != std::string::npos);
 }

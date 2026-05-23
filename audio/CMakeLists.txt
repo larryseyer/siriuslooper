@@ -1,5 +1,5 @@
 # =============================================================================
-# SiriusAudio — the JUCE audio-device bridge into the engine
+# IdaAudio — the JUCE audio-device bridge into the engine
 # =============================================================================
 # The engine layer (Ida::Engine) is deliberately JUCE-free so its real-time
 # primitives stay exhaustively unit-testable from the headless harness. This
@@ -13,19 +13,19 @@
 # The engine library never links juce_audio_devices.
 # =============================================================================
 
-add_library(SiriusAudio STATIC
+add_library(IdaAudio STATIC
     src/AudioCallback.cpp
     src/FlacTapeSink.cpp)
 
-target_include_directories(SiriusAudio PUBLIC include)
+target_include_directories(IdaAudio PUBLIC include)
 
-target_compile_features(SiriusAudio PUBLIC cxx_std_20)
+target_compile_features(IdaAudio PUBLIC cxx_std_20)
 
 # JUCE's audio-device headers are part of the public surface (AudioCallback.h
 # inherits juce::AudioIODeviceCallback), so juce_audio_devices is PUBLIC.
-target_link_libraries(SiriusAudio
+target_link_libraries(IdaAudio
     PUBLIC  Ida::Engine
             juce::juce_audio_devices
             juce::juce_audio_formats)
 
-add_library(Ida::Audio ALIAS SiriusAudio)
+add_library(Ida::Audio ALIAS IdaAudio)

@@ -70,7 +70,7 @@ TEST_CASE ("openPluginEditor on synthetic descriptor spawns a child + window",
 
     ida::PluginDescriptor descriptor;
     descriptor.format       = ida::PluginFormat::Clap;
-    descriptor.uniqueId     = "com.sirius.synthetic.test";
+    descriptor.uniqueId     = "com.ida.synthetic.test";
     descriptor.name         = "Synthetic Test Plug-in";
     descriptor.manufacturer = "IDA";
     descriptor.filePath     = bundle.getFullPathName().toStdString();
@@ -110,7 +110,7 @@ TEST_CASE ("closePluginEditor tears down child + window",
 
     ida::PluginDescriptor descriptor;
     descriptor.format       = ida::PluginFormat::Clap;
-    descriptor.uniqueId     = "com.sirius.synthetic.test";
+    descriptor.uniqueId     = "com.ida.synthetic.test";
     descriptor.name         = "Synthetic Test Plug-in";
     descriptor.manufacturer = "IDA";
     descriptor.filePath     = bundle.getFullPathName().toStdString();

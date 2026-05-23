@@ -31,7 +31,7 @@ TEST_CASE ("ClapBundleLoader loads the synthetic CLAP and reports descriptors",
 
     const auto descriptors = loader.descriptors (IDA_SYNTHETIC_CLAP_PATH);
     REQUIRE (descriptors.size() == 1);
-    CHECK (descriptors[0].uniqueId == "com.sirius.synthetic.identity");
+    CHECK (descriptors[0].uniqueId == "com.ida.synthetic.identity");
     CHECK (descriptors[0].version  == "1.0.0");
     CHECK (descriptors[0].name     == "Sirius Synthetic Identity");
 }

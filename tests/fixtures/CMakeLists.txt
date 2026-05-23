@@ -42,7 +42,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     set_target_properties(SyntheticTestPlugin PROPERTIES
         BUNDLE                          TRUE
         BUNDLE_EXTENSION                clap
-        MACOSX_BUNDLE_GUI_IDENTIFIER    com.sirius.synthetic.identity
+        MACOSX_BUNDLE_GUI_IDENTIFIER    com.ida.synthetic.identity
         MACOSX_BUNDLE_BUNDLE_NAME       SyntheticTestPlugin
         MACOSX_BUNDLE_BUNDLE_VERSION    "1"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "1"
@@ -73,7 +73,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     set_target_properties(StatefulSynthFixture PROPERTIES
         BUNDLE                          TRUE
         BUNDLE_EXTENSION                clap
-        MACOSX_BUNDLE_GUI_IDENTIFIER    com.sirius.synthetic.statefulsynth
+        MACOSX_BUNDLE_GUI_IDENTIFIER    com.ida.synthetic.statefulsynth
         MACOSX_BUNDLE_BUNDLE_NAME       StatefulSynthFixture
         MACOSX_BUNDLE_BUNDLE_VERSION    "1"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "1"

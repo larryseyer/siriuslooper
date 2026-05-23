@@ -1390,7 +1390,7 @@ bash bash/autotest.sh
 - Touch UI adaptation in `app/MainComponent`; existing accessibility hooks (M18) extend with iOS-specific VoiceOver wiring.
 - Plug-in hosting: AU only (per platform memory); reuse M21's AU host code with iOS conditional compilation.
 - Code signing: Apple Developer Team `RR5DY39W4Q` (per `project-apple-developer-team-id`); existing CMake `set_target_properties` block from OTTO copied per memory guidance.
-- Notarization (notarytool keychain profile `sirius-notary` per `reference-apple-id`).
+- Notarization (notarytool keychain profile `ida-notary` per `reference-apple-id`).
 - CI: extend `.github/workflows/ci-macos-signed.yml` or fork to `ci-ios-signed.yml`.
 
 **Dependencies.** M22 (UI vocabulary stable before iOS adapts it), M21 (AU host code in place).
@@ -1505,7 +1505,7 @@ Every milestone cross-checked against the `feedback-*` and `project-*` memories 
 - `feedback-defer-big-design-to-own-session`: if any milestone surfaces a sub-design that needs its own brainstorm (e.g., M10 curves, M14 routing rules), defer it cleanly with a `todo.md` entry and continue current path.
 - `feedback-esc-while-typing-is-not-abort`: if a tool call silently rejects, wait for next message before re-planning.
 - `project-apple-developer-team-id`: `RR5DY39W4Q` used in all signing-related milestones (M11 + M23).
-- `reference-apple-id`: `itunes@larryseyer.com` for notarization; `sirius-notary` keychain profile.
+- `reference-apple-id`: `itunes@larryseyer.com` for notarization; `ida-notary` keychain profile.
 - `project-sirius-branding-and-otto`: shared L&F submodule alignment with OTTO maintained through M22 UI work.
 
 ---

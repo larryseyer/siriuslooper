@@ -1,23 +1,23 @@
 # -----------------------------------------------------------------------------
-# SiriusAppCore — JUCE-free application logic
+# IdaAppCore — JUCE-free application logic
 # -----------------------------------------------------------------------------
 # The startup capability assessment is a pure decision from measured hardware
 # to a locked tier (white paper Part 13.1). Keeping it JUCE-free here — the
 # platform-specific hardware probing is the operator-run half of M4 — means the
 # assessment ladder is exhaustively unit-testable in the headless harness.
-add_library(SiriusAppCore STATIC
+add_library(IdaAppCore STATIC
     CapabilityTier.cpp
     DemoSession.cpp)
 
-target_include_directories(SiriusAppCore PUBLIC .)
+target_include_directories(IdaAppCore PUBLIC .)
 
-target_compile_features(SiriusAppCore PUBLIC cxx_std_20)
+target_compile_features(IdaAppCore PUBLIC cxx_std_20)
 
 # DemoSession's deps (Constituent, Arrangement, TempoMap, InputDescriptor) all
 # live in Ida::Core. Public so headers travel with the library.
-target_link_libraries(SiriusAppCore PUBLIC Ida::Core)
+target_link_libraries(IdaAppCore PUBLIC Ida::Core)
 
-add_library(Ida::AppCore ALIAS SiriusAppCore)
+add_library(Ida::AppCore ALIAS IdaAppCore)
 
 # -----------------------------------------------------------------------------
 # IDA — the standalone application
@@ -89,8 +89,6 @@ if(APPLE AND CMAKE_GENERATOR STREQUAL "Xcode")
         XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS
             "${CMAKE_CURRENT_SOURCE_DIR}/IDA.macos.entitlements")
 
-    # sirius_gui_bridge signing is already set in xpc_service/CMakeLists.txt
-    # for the Xcode generator — omitted here to avoid duplication.
     set_target_properties(ida_plugin_host PROPERTIES
         XCODE_ATTRIBUTE_CODE_SIGN_STYLE "Manual"
         XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "RR5DY39W4Q"
@@ -110,7 +108,7 @@ if(APPLE)
             "$<TARGET_FILE:ida_plugin_host>"
             "$<TARGET_BUNDLE_DIR:IDA>/Contents/MacOS/$<TARGET_FILE_NAME:ida_plugin_host>"
         VERBATIM
-        COMMENT "Sirius: install ida_plugin_host into app bundle")
+        COMMENT "IDA: install ida_plugin_host into app bundle")
 
     # M7 S8 — Developer-ID re-sign the embedded ida_plugin_host. It
     # is NOT a MACOSX_BUNDLE target, so CMake's automatic linker-adhoc-
@@ -131,7 +129,7 @@ if(APPLE)
                     --generate-entitlement-der
                     "$<TARGET_BUNDLE_DIR:IDA>/Contents/MacOS/$<TARGET_FILE_NAME:ida_plugin_host>"
             VERBATIM
-            COMMENT "Sirius: Developer-ID re-sign embedded ida_plugin_host")
+            COMMENT "IDA: Developer-ID re-sign embedded ida_plugin_host")
     endif()
 
     # M7 S8 — final re-sign of the parent app AFTER the helper copies.
@@ -152,7 +150,7 @@ if(APPLE)
                     --generate-entitlement-der
                     "$<TARGET_BUNDLE_DIR:IDA>"
             VERBATIM
-            COMMENT "Sirius: Developer-ID re-sign parent .app after helper copies (audio-input entitlement, no --deep)")
+            COMMENT "IDA: Developer-ID re-sign parent .app after helper copies (audio-input entitlement, no --deep)")
     endif()
 endif()
 
@@ -161,11 +159,11 @@ endif()
 # `notarytool submit --wait` step blocks for the full Apple round-trip (often
 # minutes), then `stapler staple` writes the ticket into the bundle so
 # Gatekeeper accepts offline. `spctl` verifies the final result.
-# One-time setup: `xcrun notarytool store-credentials sirius-notary
+# One-time setup: `xcrun notarytool store-credentials ida-notary
 # --apple-id itunes@larryseyer.com --team-id RR5DY39W4Q`.
 option(IDA_NOTARIZE "Notarize and staple the Developer ID bundle (slow)" OFF)
 if(IDA_NOTARIZE AND APPLE AND CMAKE_GENERATOR STREQUAL "Xcode")
-    set(IDA_NOTARY_PROFILE "sirius-notary"
+    set(IDA_NOTARY_PROFILE "ida-notary"
         CACHE STRING "notarytool keychain profile name")
     add_custom_command(TARGET IDA POST_BUILD
         COMMAND xcrun notarytool submit
@@ -177,5 +175,5 @@ if(IDA_NOTARIZE AND APPLE AND CMAKE_GENERATOR STREQUAL "Xcode")
         COMMAND spctl -a -t exec -vv
                 "$<TARGET_BUNDLE_DIR:IDA>"
         VERBATIM
-        COMMENT "Sirius: notarize + staple + verify")
+        COMMENT "IDA: notarize + staple + verify")
 endif()

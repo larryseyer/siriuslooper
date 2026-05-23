@@ -851,7 +851,7 @@ if(APPLE)
             "$<TARGET_BUNDLE_DIR:sirius_gui_bridge>"
             "$<TARGET_BUNDLE_DIR:IDA>/Contents/XPCServices/$<TARGET_BUNDLE_DIR_NAME:sirius_gui_bridge>"
         VERBATIM
-        COMMENT "Sirius: install XPC service into app bundle")
+        COMMENT "IDA: install XPC service into app bundle")
 endif()
 ```
 
@@ -868,7 +868,7 @@ If step 1 showed no existing copy, append (also Apple-only, in the same `if(APPL
             "$<TARGET_FILE:ida_plugin_host>"
             "$<TARGET_BUNDLE_DIR:IDA>/Contents/MacOS/$<TARGET_FILE_NAME:ida_plugin_host>"
         VERBATIM
-        COMMENT "Sirius: install ida_plugin_host into app bundle")
+        COMMENT "IDA: install ida_plugin_host into app bundle")
 ```
 
 - [ ] **Step 4: Extend the Xcode signing block**

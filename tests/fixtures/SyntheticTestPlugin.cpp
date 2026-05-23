@@ -38,7 +38,7 @@ constexpr const char* kFeatures[] = {
 
 const clap_plugin_descriptor_t kDescriptor = {
     CLAP_VERSION_INIT,
-    "com.sirius.synthetic.identity",
+    "com.ida.synthetic.identity",
     "Sirius Synthetic Identity",
     "IDA Tests",
     "https://example.invalid/sirius",
