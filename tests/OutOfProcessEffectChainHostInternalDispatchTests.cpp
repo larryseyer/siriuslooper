@@ -470,6 +470,121 @@ TEST_CASE ("setInternalFxAtSlot with a fresh id resets bypass to false even if p
     }
 }
 
+TEST_CASE ("moveInternalFxSlot swaps two occupied slots — both adapters survive at the swapped keys",
+           "[internal-fx-host][move]")
+{
+    // P7 T5 slice 2 — swap. Bind two EQ adapters at distinct slots on the
+    // SAME node, swap them, and confirm pumping each post-swap key still
+    // hits a real (prepared) adapter. The miss cases earlier in this file
+    // pin "no adapter ⇒ false return"; this case pins "swap leaves both
+    // entries populated".
+    sirius::OutOfProcessEffectChainHost host;
+    host.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
+    host.setInternalFxAtSlot (42, 0, sirius::InternalFxId::kEq);
+    host.setInternalFxAtSlot (42, 5, sirius::InternalFxId::kEq);
+
+    // Sanity: both slots dispatch before the swap.
+    std::array<float, kBlockSamples> lin {}, rin {}, lout {}, rout {};
+    fillSine (lin, rin);
+    lout.fill (0.0f); rout.fill (0.0f);
+    REQUIRE (pump (host, 42, 0, lin.data(), rin.data(), lout.data(), rout.data()));
+    lout.fill (0.0f); rout.fill (0.0f);
+    REQUIRE (pump (host, 42, 5, lin.data(), rin.data(), lout.data(), rout.data()));
+
+    // Swap.
+    host.moveInternalFxSlot (42, 0, 5);
+
+    // Both slots STILL dispatch (the adapters just changed identity at
+    // each key — observationally, post-swap pumps at both keys must
+    // continue to hit prepared adapters).
+    lout.fill (0.0f); rout.fill (0.0f);
+    REQUIRE (pump (host, 42, 0, lin.data(), rin.data(), lout.data(), rout.data()));
+    lout.fill (0.0f); rout.fill (0.0f);
+    REQUIRE (pump (host, 42, 5, lin.data(), rin.data(), lout.data(), rout.data()));
+}
+
+TEST_CASE ("moveInternalFxSlot into an empty destination leaves the source empty",
+           "[internal-fx-host][move]")
+{
+    // P7 T5 slice 2 — move. Bind one adapter at slot 0, move to slot 7
+    // (empty), and confirm slot 0 now misses while slot 7 dispatches.
+    // This is the "one-sided move" shape — the most common operator
+    // reorder gesture in a chain that isn't full.
+    sirius::OutOfProcessEffectChainHost host;
+    host.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
+    host.setInternalFxAtSlot (42, 0, sirius::InternalFxId::kEq);
+
+    host.moveInternalFxSlot (42, 0, 7);
+
+    std::array<float, kBlockSamples> lin {}, rin {}, lout {}, rout {};
+    fillSine (lin, rin);
+
+    // Source (slot 0) is now empty — sentinel survives.
+    constexpr float kSentinel = 0.222222f;
+    lout.fill (kSentinel); rout.fill (kSentinel);
+    CHECK_FALSE (pump (host, 42, 0, lin.data(), rin.data(), lout.data(), rout.data()));
+    for (std::size_t i = 0; i < kBlockSamples; ++i)
+    {
+        CHECK (lout[i] == kSentinel);
+        CHECK (rout[i] == kSentinel);
+    }
+
+    // Destination (slot 7) dispatches the moved adapter.
+    lout.fill (0.0f); rout.fill (0.0f);
+    REQUIRE (pump (host, 42, 7, lin.data(), rin.data(), lout.data(), rout.data()));
+    for (std::size_t i = kBlockSamples / 2; i < kBlockSamples; ++i)
+    {
+        CHECK (std::isfinite (lout[i]));
+        CHECK (std::isfinite (rout[i]));
+    }
+}
+
+TEST_CASE ("moveInternalFxSlot preserves the bypass flag with its adapter",
+           "[internal-fx-host][move][bypass]")
+{
+    // P7 T5 slice 2 — bypass travels with the adapter. Bind at slot 0,
+    // bypass it, move to slot 3. The post-move pumpSlot at slot 3 must
+    // return false (bypass survived the move); the post-move pumpSlot at
+    // slot 0 must also return false (now empty). Pins the contract that
+    // the operator's "bypass then drag" gesture lands the bypass on the
+    // dragged adapter, not on the slot index it left behind.
+    sirius::OutOfProcessEffectChainHost host;
+    host.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
+    host.setInternalFxAtSlot      (42, 0, sirius::InternalFxId::kEq);
+    host.setInternalFxBypassAtSlot (42, 0, true);
+
+    host.moveInternalFxSlot (42, 0, 3);
+
+    std::array<float, kBlockSamples> lin {}, rin {}, lout {}, rout {};
+    fillSine (lin, rin);
+
+    // Slot 0 — empty after the move. Sentinel survives the false return.
+    {
+        constexpr float kSentinel = -0.111111f;
+        lout.fill (kSentinel); rout.fill (kSentinel);
+        CHECK_FALSE (pump (host, 42, 0, lin.data(), rin.data(), lout.data(), rout.data()));
+        CHECK (lout[0] == kSentinel);
+    }
+
+    // Slot 3 — adapter is bound (post-move) AND bypassed (flag traveled).
+    // pumpSlot must return false WITHOUT touching the output.
+    {
+        constexpr float kSentinel = 0.888888f;
+        lout.fill (kSentinel); rout.fill (kSentinel);
+        CHECK_FALSE (pump (host, 42, 3, lin.data(), rin.data(), lout.data(), rout.data()));
+        for (std::size_t i = 0; i < kBlockSamples; ++i)
+        {
+            CHECK (lout[i] == kSentinel);
+            CHECK (rout[i] == kSentinel);
+        }
+    }
+
+    // Flip bypass off at slot 3 — the moved adapter now dispatches.
+    host.setInternalFxBypassAtSlot (42, 3, false);
+    lout.fill (0.0f); rout.fill (0.0f);
+    REQUIRE (pump (host, 42, 3, lin.data(), rin.data(), lout.data(), rout.data()));
+}
+
 TEST_CASE ("in-place aliasing through the host — inChannels == outChannels survives the round trip",
            "[internal-fx-host]")
 {

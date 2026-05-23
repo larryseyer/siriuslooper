@@ -226,6 +226,71 @@ void OutOfProcessEffectChainHost::setInternalFxBypassAtSlot (
         it->second.store (bypassed, std::memory_order_release);
 }
 
+void OutOfProcessEffectChainHost::moveInternalFxSlot (std::int64_t nodeKey,
+                                                      std::size_t  fromSlot,
+                                                      std::size_t  toSlot)
+{
+    // Message-thread only — precondition documented in the header. With
+    // the audio callback detached, both maps can be safely mutated in
+    // sequence; the audio thread won't observe a half-moved state.
+    if (fromSlot == toSlot)
+        return;
+
+    const SlotKey fromKey { nodeKey, fromSlot };
+    const SlotKey toKey   { nodeKey, toSlot   };
+
+    // Adapters first. Hoist both unique_ptrs out of the map (or leave them
+    // as default-constructed null), erase the old entries, then re-emplace
+    // under the swapped keys. Re-emplace only when the moved-from pointer
+    // is non-null so a "move into empty" case actually leaves the source
+    // empty rather than seeding a null entry.
+    std::unique_ptr<IInternalFxAdapter> fromAdapter;
+    std::unique_ptr<IInternalFxAdapter> toAdapter;
+
+    if (auto fromIt = internalAdapters_.find (fromKey); fromIt != internalAdapters_.end())
+        fromAdapter = std::move (fromIt->second);
+    if (auto toItr = internalAdapters_.find (toKey); toItr != internalAdapters_.end())
+        toAdapter = std::move (toItr->second);
+
+    internalAdapters_.erase (fromKey);
+    internalAdapters_.erase (toKey);
+
+    if (toAdapter != nullptr)
+        internalAdapters_[fromKey] = std::move (toAdapter);
+    if (fromAdapter != nullptr)
+        internalAdapters_[toKey] = std::move (fromAdapter);
+
+    // Bypass flags travel with their adapter. Read the atomic values out
+    // first (relaxed is fine — audio is detached), erase, re-emplace under
+    // the swapped keys. Only re-emplace entries that actually existed so
+    // a "no bypass set" key stays absent (the audio thread treats absent
+    // as not-bypassed; seeding with `false` would be observationally
+    // identical but adds bucket-allocation cost on every reorder).
+    bool fromBypass = false;
+    bool toBypass   = false;
+    bool fromHad    = false;
+    bool toHad      = false;
+
+    if (auto fbIt = internalBypass_.find (fromKey); fbIt != internalBypass_.end())
+    {
+        fromBypass = fbIt->second.load (std::memory_order_relaxed);
+        fromHad    = true;
+    }
+    if (auto tbIt = internalBypass_.find (toKey); tbIt != internalBypass_.end())
+    {
+        toBypass = tbIt->second.load (std::memory_order_relaxed);
+        toHad    = true;
+    }
+
+    internalBypass_.erase (fromKey);
+    internalBypass_.erase (toKey);
+
+    if (toHad)
+        internalBypass_.try_emplace (fromKey, toBypass);
+    if (fromHad)
+        internalBypass_.try_emplace (toKey, fromBypass);
+}
+
 void OutOfProcessEffectChainHost::prepareInternalFx (double sampleRate, int maxBlockSize)
 {
     // Message-thread only — see the header. Forwards to every currently-

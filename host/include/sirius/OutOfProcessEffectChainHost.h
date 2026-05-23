@@ -219,6 +219,17 @@ public:
                                     std::size_t  slotIdx,
                                     bool         bypassed) override;
 
+    // P7 T5 slice 2 — message-thread reorder. Same precondition as
+    // `setInternalFxAtSlot`: caller MUST detach the audio callback before
+    // invoking. Swaps `internalAdapters_` AND `internalBypass_` entries
+    // between `(nodeKey, fromSlot)` and `(nodeKey, toSlot)` so the bypass
+    // flag travels with its adapter. Same key uses the same node — moves
+    // across nodes are not in scope (a future API can add that if cross-
+    // strip drag-reorder lands; today's UI doesn't need it).
+    void moveInternalFxSlot (std::int64_t nodeKey,
+                             std::size_t  fromSlot,
+                             std::size_t  toSlot) override;
+
     // Message-thread only. Forwards `prepare(sampleRate, maxBlockSize)` to
     // every currently-bound internal-FX adapter and remembers the values
     // so adapters bound later by `setInternalFxAtSlot` are auto-prepared

@@ -100,6 +100,29 @@ public:
                                             std::size_t  /*slotIdx*/,
                                             bool         /*bypassed*/) {}
 
+    /// P7 T5 slice 2 — message-thread reorder primitive. Atomically (w.r.t.
+    /// the audio callback — caller MUST detach first) moves whatever is
+    /// bound at `(nodeKey, fromSlot)` to `(nodeKey, toSlot)` and vice
+    /// versa:
+    ///   - Both occupied → swap.
+    ///   - From occupied, to empty → move (fromSlot becomes empty).
+    ///   - From empty, to occupied → move (toSlot becomes empty).
+    ///   - Both empty → no-op.
+    ///   - `fromSlot == toSlot` → no-op.
+    /// The associated bypass flag travels with the adapter — bypassing
+    /// slot 3 and then moving slot 3 → slot 5 leaves the bypass on the
+    /// adapter at slot 5.
+    ///
+    /// Exists so the UI's reorder gesture maps to ONE audio-detached
+    /// mutation rather than two (erase-then-reinsert leaves a visible
+    /// "empty slot" frame between).
+    ///
+    /// Default no-op so test fakes that only care about `pumpSlot` keep
+    /// compiling.
+    virtual void moveInternalFxSlot (std::int64_t /*nodeKey*/,
+                                     std::size_t  /*fromSlot*/,
+                                     std::size_t  /*toSlot*/) {}
+
     /// P7 T3a-C — message-thread prepare for every bound internal adapter.
     /// Called once at audio-device init and again on every sample-rate /
     /// max-block change (the engine has the hooks; `MainComponent` wires
