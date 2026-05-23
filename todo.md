@@ -1,5 +1,46 @@
 # IDA — Deferred Items
 
+### 2026-05-23 — ida-notary keychain profile (OPERATOR ONE-TIME SETUP)
+- Files: app/CMakeLists.txt (already references `ida-notary` as `IDA_NOTARY_PROFILE`)
+- What was deferred: re-storing notarytool credentials under the new profile
+  name. Phase 1 of the rename flipped the CMake reference from `sirius-notary`
+  to `ida-notary` for consistency.
+- Why deferred: keychain credential entry is an external system (operator's
+  login keychain) that the agent cannot touch.
+- What's needed to finish: in a terminal, run once:
+  `xcrun notarytool store-credentials ida-notary --apple-id itunes@larryseyer.com --team-id RR5DY39W4Q`
+  Enter the app-specific password when prompted. Notarization stays broken
+  until this is done; until then any release-signing path that calls
+  `notarytool submit --keychain-profile ida-notary` will fail at the
+  credential lookup step.
+
+### 2026-05-23 — automagicart.com/ida product page (CROSS-REPO)
+- Files: in the AutomagicArt website repo (separate session)
+- What was deferred: building the IDA product page at /ida — the new
+  canonical home for IDA per IDA_Naming_Decision.md.
+- Why deferred: separate repo, separate session.
+- What's needed to finish: open a Claude session in the AutomagicArt
+  repo and create the /ida page using this repo's website/src/ Eleventy
+  source as a starting draft. Until that page exists, references to
+  automagicart.com/ida (in the rebrand-pass site.json, README badges,
+  about-page links, etc.) 404 silently — fine for internal dev but
+  external communications should wait.
+
+### 2026-05-23 — larryseyer.com rename references (CROSS-REPO)
+- Files: ~/larryseyer/larryseyer.github.io/ (and sibling assets in ~/larryseyer/)
+- What was deferred: scrubbing "Sirius Looper" / "siriuslooper.com" /
+  "ottodrums.com" / "larryseyer/siriuslooper" references from the
+  personal site.
+- Why deferred: separate repo, separate session — keeps blast radius
+  contained.
+- What's needed to finish: open a Claude session in
+  ~/larryseyer/larryseyer.github.io/, grep for sirius/siriuslooper/
+  ottodrums, apply the same casing conventions used here (per
+  IDA_Rename_Plan.md §1a table), update GitHub repo link from
+  larryseyer/siriuslooper → larryseyer/ida (GitHub auto-redirect covers
+  cloning but link text should match reality), commit + push, verify on
+  larryseyer.com.
+
 ### 2026-05-23 (late) — T3a-EQ Code Reviewer follow-ups (ALL THREE ENTRIES RESOLVED 2026-05-23)
 
 #### (a) — RESOLVED 2026-05-23 by P7 T3a I-1 (prd T03)
