@@ -3,6 +3,9 @@
 > **For a fresh chat picking this up cold:** read this whole file before
 > doing anything. Memory + project + user CLAUDE.md load automatically;
 > this file is the *state* (what just shipped + what's queued next).
+> Newest commit on Sirius origin/master: **`9feed9d`**;
+> OTTO origin/main: **`abf8e4d4`** (unchanged this session);
+> ctest baseline **569 pass / 1 documented Not-Run** (unchanged — docs-only session).
 > **MANDATORY at session start:** read
 > `external/OTTO/CROSS_PROJECT_INBOX.md` and acknowledge any
 > `[FROM OTTO → SIRIUS]` entries (per `project_cross_project_inbox_protocol`).
