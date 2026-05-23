@@ -3,15 +3,21 @@
 > **For a fresh chat picking this up cold:** read this whole file before
 > doing anything. Memory + project + user CLAUDE.md load automatically;
 > this file is the *state* (what just shipped + what's queued next).
-> Newest commit on Sirius origin/master: **`85cd210`** (T3d slice 5 — factory
-> ships RvbAdapter); OTTO origin/main: **`abf8e4d4`** (unchanged this
-> session); ctest baseline **623 pass / 2 skipped** (was 621/2 — the 5
-> new RvbAdapter cases net +5, the inverted kRvb-nullptr factory case
-> nets 0, the deleted "un-shipped id (kRvb) is a no-op rebind" dispatch
-> case nets −1, the IR-loaded smoke MAY skip on environments without
-> `${OTTO_ASSETS_DIR}/IR/`). Slice-1 also injected a new `OTTO_ASSETS_DIR`
-> CACHE PATH variable — operators with a non-default OTTO checkout
-> location must pass `-DOTTO_ASSETS_DIR=<their-path>` at configure time.
+> Latest commits on Sirius origin/master this session: `da954b5` →
+> `0337907` → `e04b862` → `15278ec` → `85cd210` (T3d slices 1-5) →
+> `5b7ada5` (handoff doc) → `6b000d0` (handoff correction: no operator
+> audible gate until T5 ships) → this commit (T5 PLAN + final handoff
+> refresh). OTTO origin/main: **`abf8e4d4`** (unchanged this session);
+> ctest baseline **623 pass / 2 skipped** (was 621/2 — net +5 RvbAdapter
+> cases − 1 obsolete "un-shipped id (kRvb)" dispatch test deleted).
+> Slice-1 of T3d injected a new `OTTO_ASSETS_DIR` CACHE PATH variable —
+> operators with a non-default OTTO checkout location must pass
+> `-DOTTO_ASSETS_DIR=<their-path>` at configure time.
+> **T5 (Insert UI) was planned this session, NOT executed.** The
+> full 6-slice plan lives at
+> `/Users/larryseyer/.claude/plans/t5-insert-ui.md`. A fresh chat
+> picking up T5 should read that plan and start with slice 1
+> (bypass on internal-FX dispatch — fully headless, ralph-able).
 > **MANDATORY at session start:** read
 > `external/OTTO/CROSS_PROJECT_INBOX.md` and acknowledge any
 > `[FROM OTTO → SIRIUS]` entries (per `project_cross_project_inbox_protocol`).
@@ -144,7 +150,7 @@ was also rebuilt (compile-only, no launch) to verify the edit compiles
 — clean (the prior duplicate-library link warnings are pre-existing
 and unrelated).
 
-## ▶ NEXT — P7 internal-FX umbrella complete; GUI tracks (T4/T5/T6) are next
+## ▶ NEXT — T5 Insert UI planned (full plan at ~/.claude/plans/t5-insert-ui.md), ready to execute
 
 **T3d-RVB closes the four-adapter internal-FX-first-class umbrella.**
 All four built-in FX (EQ / CMP / DLY / RVB) now ship working adapters
@@ -164,9 +170,12 @@ T3  internal-FX adapters    ✅ ALL DONE
 T3a follow-up debt          ✅ ALL DONE via prd.json T03-T05
 2026-05-16 code-review      ✅ ALL DONE via prd.json T06-T08
 T4  Sends tab UI            queued (operator eyes-on — GUI work)
-T5  Insert UI               queued (internal-FX-only picker until
-                            "P7-scanner" is fixed, per
-                            project_plugin_scanner_broken)
+T5  Insert UI               PLANNED THIS SESSION — full 6-slice plan
+                            written at
+                            ~/.claude/plans/t5-insert-ui.md
+                            (8 free user-ordered slots, full add +
+                            remove + reorder + bypass, both Input
+                            and Bus strips)
 T6  P4/P5 persistence wiring into MainComponent save/load (mixed
                             engine + UI hooks; partially headless)
 ```
@@ -188,29 +197,34 @@ convolver → `process()` produces non-silent convolution output (case
 #5 "RvbAdapter::process produces non-silent wet output after IR load
 completes" took 8.22 s locally; the 15 s poll budget held).
 
-**First moves for the operator next session:**
+**First moves for the operator next session (fresh chat picking T5 up):**
 
-1. Read this file's DONE section to confirm what landed.
-2. **The natural next track is T5 Insert UI** — it's the gate on
-   audibly verifying T3d-RVB (and on letting the operator exercise
-   ANY of the four shipped internal-FX adapters from the GUI). The
-   3rd-party plugin picker stays blocked behind the plugin scanner
-   GUI lock (`project_plugin_scanner_broken` / "P7-scanner" slice),
-   but T5 can ship internal-FX-only (the four adapters: EQ/CMP/DLY/RVB)
-   without unblocking the scanner.
-3. Alternative next tracks, deprioritized vs T5 by operator intent:
-   - **T4 Sends tab UI** — per-channel sends UI on both mixers
-     (RVB+DLY sends/returns design from
-     `project_mixer_routing_destinations_and_plugins`). Needs an
-     Output Mixer tab too, which is its own slice
-     (`project_mixer_then_transport_roadmap`).
-   - **T6 P4/P5 persistence wiring** — wire P4/P5 state into
-     MainComponent save/load. Partially headless-verifiable; could
-     be a hybrid prd.json with engine slices on ralph and UI slices
-     operator-side.
-4. The §11 Promotion banner gate scenarios from the prior T08 session
-   are still operator-eyes-on if a fresh chat wants to also confirm
-   those (independent of T3d-RVB).
+1. Read this file's DONE section to confirm T3d-RVB landed.
+2. Read the T5 plan file at
+   **`/Users/larryseyer/.claude/plans/t5-insert-ui.md`** — written
+   this session after operator approved scope (8 free user-ordered
+   slots; full add + remove + reorder + bypass). The plan covers six
+   slices, the engine-side gaps T5 fills (no bypass on internal-FX
+   dispatch path today; no reorder API), the persistence story
+   (`EffectChainEntry::bypassed` is already JSON-round-tripped, so
+   slice 3 only wires it into the host on session load), and per-slice
+   ctest verification.
+3. Start with **slice 1** — bypass on internal-FX dispatch (fully
+   headless, ralph-able). It adds `setInternalFxBypassAtSlot` to
+   `IEffectChainHost`, a parallel `internalBypass_` atomic map on the
+   host, the audio-thread `pumpSlot` honoring the flag, and 3 new
+   ctest cases. Expected ctest shift 625/2 → 628/2.
+4. Slices 2-3 also fully headless (reorder API + persistence
+   read-back). Slice 4 adds the `InsertChainPopup` ui/ component
+   with callback-driven unit tests (no pixel rendering). Slice 5 is
+   the only operator-eyes-on slice (INS button + audible RVB gate).
+   Slice 6 is the handoff doc refresh.
+5. Cumulative ctest target: 625 → ~640.
+6. Alternative tracks if T5 gets deprioritized: T4 Sends tab UI (needs
+   an Output Mixer tab first; `project_mixer_then_transport_roadmap`),
+   T6 P4/P5 persistence wiring (mixed engine + UI; partially headless).
+   The §11 Promotion banner scenarios from the prior T08 session also
+   still operator-eyes-on independent of T3d/T5.
 
 ---
 
