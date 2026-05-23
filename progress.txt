@@ -3,8 +3,8 @@
 ## Status
 state: in_progress
 current_task: T03
-last_commit: <TBD>
-last_updated: 2026-05-23T20:00:00Z
+last_commit: 2660ad7
+last_updated: 2026-05-23T20:05:00Z
 
 ## Tasks
 [x] T01 - T3b-CMP — wrap otto::effects::PlayerCompressor as CmpAdapter

@@ -3,7 +3,7 @@
 > **For a fresh chat picking this up cold:** read this whole file before
 > doing anything. Memory + project + user CLAUDE.md load automatically;
 > this file is the *state* (what just shipped + what's queued next).
-> Newest commit on Sirius origin/master: **`<TBD>`** (this session's
+> Newest commit on Sirius origin/master: **`2660ad7`** (this session's
 > T3c-DLY commit landed on top of `48a0e4d`); OTTO origin/main:
 > **`abf8e4d4`** (unchanged this session); ctest baseline **614 pass / 1
 > documented Not-Run** (up from 608 — +6 cases this session).
