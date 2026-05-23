@@ -1,0 +1,3 @@
+[submodule "external/OTTO"]
+	path = external/OTTO
+	url = https://github.com/larryseyer/OTTO.git

@@ -72,5 +72,11 @@ secrets/
 
 # === Vendored third-party dependencies ===
 # Present on disk, not committed. Populated by `bash/setup-deps.sh`
-# (matches the sister app OTTO's layout).
-external/
+# (matches the sister app OTTO's layout). Pattern is `external/*` (contents
+# ignored) rather than `external/` (whole directory ignored) so the
+# negation below can un-ignore the OTTO submodule.
+external/*
+# Exception: OTTO is consumed as a git submodule (sister product under
+# active joint development — SHA pinning matters), not a plain snapshot.
+# See .gitmodules + ui/CMakeLists.txt.
+!external/OTTO
