@@ -3,7 +3,7 @@
 > **For a fresh chat picking this up cold:** read this whole file before
 > doing anything. Memory + project + user CLAUDE.md load automatically;
 > this file is the *state* (what just shipped + what's queued next).
-> Newest commit on Sirius origin/master: **`<filled in by final commit>`**;
+> Newest commit on Sirius origin/master: **`8d85ecd`**;
 > OTTO origin/main: **`abf8e4d4`**; ctest baseline **569 pass / 1 documented
 > Not-Run** (`MainComponentPluginEditorTests_NOT_BUILT` runs separately via
 > `bash/test-s7.sh`). One pre-existing FLAKY supervisor test
