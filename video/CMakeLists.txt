@@ -1,5 +1,5 @@
 # =============================================================================
-# SiriusVideo — the video membrane and tape model (white paper Parts 5.3, 6.2)
+# IdaVideo — the video membrane and tape model (white paper Parts 5.3, 6.2)
 # =============================================================================
 # Two halves:
 #
@@ -14,18 +14,18 @@
 #     against any source of frames they choose.
 # =============================================================================
 
-add_library(SiriusVideo STATIC
+add_library(IdaVideo STATIC
     src/FrameMembrane.cpp
     src/VideoPreview.cpp)
 
-target_include_directories(SiriusVideo PUBLIC include)
+target_include_directories(IdaVideo PUBLIC include)
 
-target_compile_features(SiriusVideo PUBLIC cxx_std_20)
+target_compile_features(IdaVideo PUBLIC cxx_std_20)
 
-target_link_libraries(SiriusVideo
-    PUBLIC  Sirius::Core
+target_link_libraries(IdaVideo
+    PUBLIC  Ida::Core
             juce::juce_gui_basics
             juce::juce_recommended_config_flags
             juce::juce_recommended_warning_flags)
 
-add_library(Sirius::Video ALIAS SiriusVideo)
+add_library(Ida::Video ALIAS IdaVideo)

@@ -32,7 +32,7 @@ public:
         : buffer_ (capacity + 1)
     {
         if (capacity == 0)
-            throw std::invalid_argument ("sirius::LockFreeSpscQueue: capacity must be positive");
+            throw std::invalid_argument ("ida::LockFreeSpscQueue: capacity must be positive");
     }
 
     LockFreeSpscQueue (const LockFreeSpscQueue&) = delete;

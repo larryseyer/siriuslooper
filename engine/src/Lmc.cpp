@@ -18,7 +18,7 @@ Lmc::Lmc (std::shared_ptr<const MonotonicClock> clock)
     : clock_ (std::move (clock))
 {
     if (clock_ == nullptr)
-        throw std::invalid_argument ("sirius::Lmc: clock must not be null");
+        throw std::invalid_argument ("ida::Lmc: clock must not be null");
 
     epochNanos_ = clock_->nowNanos();
 }

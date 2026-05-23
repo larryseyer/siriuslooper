@@ -5,7 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace sirius::palette
+namespace ida::palette
 {
 
 /// Sirius's colour method (sister-app parity with OTTO). The full rationale is
@@ -46,4 +46,4 @@ inline juce::Colour loopShade (juce::Colour phraseHue, int loopOrderWithinPhrase
     return d >= 0.0f ? phraseHue.brighter (d) : phraseHue.darker (-d);
 }
 
-} // namespace sirius::palette
+} // namespace ida::palette

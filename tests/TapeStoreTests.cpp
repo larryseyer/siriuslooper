@@ -12,7 +12,7 @@
 #include <cstring>
 #include <stdexcept>
 
-using sirius::persistence::TapeStore;
+using ida::persistence::TapeStore;
 
 namespace
 {

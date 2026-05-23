@@ -11,25 +11,25 @@
 
 #include <string>
 
-#ifndef SIRIUS_SYNTHETIC_CLAP_PATH
-    #error "SIRIUS_SYNTHETIC_CLAP_PATH must be defined for ClapBundleLoaderTests"
+#ifndef IDA_SYNTHETIC_CLAP_PATH
+    #error "IDA_SYNTHETIC_CLAP_PATH must be defined for ClapBundleLoaderTests"
 #endif
 
-#ifndef SIRIUS_HOST_BINARY_PATH
-    #error "SIRIUS_HOST_BINARY_PATH must be defined for ClapBundleLoaderTests"
+#ifndef IDA_HOST_BINARY_PATH
+    #error "IDA_HOST_BINARY_PATH must be defined for ClapBundleLoaderTests"
 #endif
 
-using sirius::ClapBundleLoader;
+using ida::ClapBundleLoader;
 
 TEST_CASE ("ClapBundleLoader loads the synthetic CLAP and reports descriptors",
            "[clap-bundle-loader]")
 {
     std::string err;
-    auto loader = ClapBundleLoader::load (SIRIUS_SYNTHETIC_CLAP_PATH, err);
+    auto loader = ClapBundleLoader::load (IDA_SYNTHETIC_CLAP_PATH, err);
     REQUIRE (loader.valid());
     REQUIRE (err.empty());
 
-    const auto descriptors = loader.descriptors (SIRIUS_SYNTHETIC_CLAP_PATH);
+    const auto descriptors = loader.descriptors (IDA_SYNTHETIC_CLAP_PATH);
     REQUIRE (descriptors.size() == 1);
     CHECK (descriptors[0].uniqueId == "com.sirius.synthetic.identity");
     CHECK (descriptors[0].version  == "1.0.0");
@@ -51,11 +51,11 @@ TEST_CASE ("ClapBundleLoader returns invalid loader for malformed bundle",
     // Point at a path that exists but is not a valid CLAP bundle. The
     // host binary itself works as a malformed-from-CLAP-perspective
     // target: it's a real Mach-O without a `clap_entry` symbol.
-    // SIRIUS_HOST_BINARY_PATH is the bare sirius_plugin_host executable
+    // IDA_HOST_BINARY_PATH is the bare ida_plugin_host executable
     // ($<TARGET_FILE:...>), so we point at it directly — there is no
     // surrounding .app bundle for the test target's copy.
     std::string err;
-    auto loader = ClapBundleLoader::load (SIRIUS_HOST_BINARY_PATH, err);
+    auto loader = ClapBundleLoader::load (IDA_HOST_BINARY_PATH, err);
     CHECK_FALSE (loader.valid());
     CHECK_FALSE (err.empty());
 }
@@ -64,7 +64,7 @@ TEST_CASE ("ClapBundleLoader::createPlugin returns nullptr for unknown id",
            "[clap-bundle-loader]")
 {
     std::string err;
-    auto loader = ClapBundleLoader::load (SIRIUS_SYNTHETIC_CLAP_PATH, err);
+    auto loader = ClapBundleLoader::load (IDA_SYNTHETIC_CLAP_PATH, err);
     REQUIRE (loader.valid());
 
     clap_host_t host {};

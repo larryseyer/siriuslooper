@@ -1,4 +1,4 @@
-// Tests for sirius::DlyAdapter — the third internal-FX adapter (T3c of
+// Tests for ida::DlyAdapter — the third internal-FX adapter (T3c of
 // the P7 umbrella). We do NOT test delay-line DSP correctness
 // (PlayerDelay owns that); we test the Sirius-side wrapper:
 // prepare/process/reset state, the miss contract on an un-prepared
@@ -10,7 +10,7 @@
 // a transport bpm.
 //
 // DlyAdapter lives in engine/src/fx/ (private to the engine target). The
-// SiriusTests target adds engine/src to its PRIVATE include path so this
+// IdaTests target adds engine/src to its PRIVATE include path so this
 // test can reach the adapter header without exposing it on the engine's
 // public surface — see tests/CMakeLists.txt.
 #include "fx/DlyAdapter.h"
@@ -22,7 +22,7 @@
 #include <cstring>
 #include <vector>
 
-using sirius::DlyAdapter;
+using ida::DlyAdapter;
 
 namespace
 {

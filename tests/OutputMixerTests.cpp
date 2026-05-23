@@ -1,4 +1,4 @@
-// Tests for sirius::OutputMixer — the V3 §2.2 output-side mixer.
+// Tests for ida::OutputMixer — the V3 §2.2 output-side mixer.
 //
 // M2 Session 3 shipped the default-ctor/dtor floor (assert-false bodies).
 // M5 Session 2 extends with configuration-surface tests: channel registry,
@@ -25,16 +25,16 @@
 #include <type_traits>
 #include <vector>
 
-using sirius::BusConfig;
-using sirius::BusId;
-using sirius::ChannelStrip;
-using sirius::EffectChain;
-using sirius::EffectChainEntry;
-using sirius::OutputChannelId;
-using sirius::OutputMixer;
-using sirius::PluginDescriptor;
-using sirius::PluginFormat;
-using sirius::SignalType;
+using ida::BusConfig;
+using ida::BusId;
+using ida::ChannelStrip;
+using ida::EffectChain;
+using ida::EffectChainEntry;
+using ida::OutputChannelId;
+using ida::OutputMixer;
+using ida::PluginDescriptor;
+using ida::PluginFormat;
+using ida::SignalType;
 
 static_assert (std::is_default_constructible_v<OutputMixer>,
                "OutputMixer must remain default-constructible");
@@ -468,7 +468,7 @@ namespace
     // way to prove signal actually traversed a given bus in a Phase-1 unity
     // routing graph (where total signal reaching master is otherwise
     // path-invariant).
-    struct HalvingEffectHost : sirius::IEffectChainHost
+    struct HalvingEffectHost : ida::IEffectChainHost
     {
         bool pumpSlot (std::int64_t, std::size_t,
                        const float* const* inChannels, float* const* outChannels,
@@ -485,11 +485,11 @@ namespace
 TEST_CASE ("OutputMixer bus->bus subgroup actually routes audio through the parent bus",
            "[output-mixer][subgroup]")
 {
-    using sirius::BusConfig;
-    using sirius::EffectChain;
-    using sirius::EffectChainEntry;
-    using sirius::OutputMixer;
-    using sirius::SignalType;
+    using ida::BusConfig;
+    using ida::EffectChain;
+    using ida::EffectChainEntry;
+    using ida::OutputMixer;
+    using ida::SignalType;
 
     OutputMixer mixer;
     const auto ch   = mixer.addChannel (SignalType::Audio);
@@ -528,8 +528,8 @@ TEST_CASE ("OutputMixer bus->bus subgroup actually routes audio through the pare
 TEST_CASE ("OutputMixer routeBusToBus rejects master-as-source and unknown buses",
            "[output-mixer][subgroup]")
 {
-    using sirius::BusConfig;
-    using sirius::OutputMixer;
+    using ida::BusConfig;
+    using ida::OutputMixer;
 
     OutputMixer mixer;
     const auto busA = mixer.addBus (BusConfig { 2, "A" });
@@ -543,34 +543,34 @@ TEST_CASE ("OutputMixer routeBusToBus rejects master-as-source and unknown buses
 
 TEST_CASE ("OutputMixer export/import round-trips buses, sends, subgroups, inserts", "[output-mixer][persistence]")
 {
-    sirius::OutputMixer source;
-    const auto aux = source.addBus (sirius::BusConfig { 2, "Aux", sirius::BusKind::Bus });
-    REQUIRE (source.routeBusToBus (aux, sirius::BusId (0)));   // aux -> master
+    ida::OutputMixer source;
+    const auto aux = source.addBus (ida::BusConfig { 2, "Aux", ida::BusKind::Bus });
+    REQUIRE (source.routeBusToBus (aux, ida::BusId (0)));   // aux -> master
 
-    sirius::EffectChainEntry comp; comp.displayName = "comp";
-    source.setBusEffectChain (aux, sirius::EffectChain{}.withAppended (comp));
+    ida::EffectChainEntry comp; comp.displayName = "comp";
+    source.setBusEffectChain (aux, ida::EffectChain{}.withAppended (comp));
 
-    const auto ch = source.addChannel (sirius::SignalType::Audio);
-    auto strip = std::make_unique<sirius::ChannelStrip<sirius::SignalType::Audio>>();
-    sirius::EffectChainEntry eq; eq.displayName = "eq";
-    strip->setEffectChain (sirius::EffectChain{}.withAppended (eq));
+    const auto ch = source.addChannel (ida::SignalType::Audio);
+    auto strip = std::make_unique<ida::ChannelStrip<ida::SignalType::Audio>>();
+    ida::EffectChainEntry eq; eq.displayName = "eq";
+    strip->setEffectChain (ida::EffectChain{}.withAppended (eq));
     source.setChannelStrip (ch, std::move (strip));
-    source.routeChannelToBus (ch, sirius::BusId (0), 0.7f);    // non-default master level
+    source.routeChannelToBus (ch, ida::BusId (0), 0.7f);    // non-default master level
     source.routeChannelToBus (ch, aux, 0.4f);                 // send to aux
 
     const auto exported = source.exportGraphState();
     REQUIRE (exported.buses.size() == 2);              // master (0) + aux
     CHECK (exported.buses[0].busId == 0);              // master first
 
-    sirius::OutputMixer loaded;
+    ida::OutputMixer loaded;
     loaded.importGraphState (exported);
     CHECK (loaded.exportGraphState() == exported);
 }
 
 TEST_CASE ("OutputMixer import of an empty snapshot keeps only the master bus", "[output-mixer][persistence]")
 {
-    sirius::OutputMixer mixer;
-    mixer.importGraphState (sirius::OutputMixerGraphState{});
+    ida::OutputMixer mixer;
+    mixer.importGraphState (ida::OutputMixerGraphState{});
     const auto state = mixer.exportGraphState();
     REQUIRE (state.buses.size() == 1);
     CHECK (state.buses[0].busId == 0);

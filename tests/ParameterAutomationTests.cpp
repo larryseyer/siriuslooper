@@ -17,14 +17,14 @@
 
 #include <stdexcept>
 
-using sirius::Constituent;
-using sirius::ConstituentId;
-using sirius::ParameterEvent;
-using sirius::ParameterTape;
-using sirius::Position;
-using sirius::Rational;
-using sirius::TapeId;
-using sirius::TapeReference;
+using ida::Constituent;
+using ida::ConstituentId;
+using ida::ParameterEvent;
+using ida::ParameterTape;
+using ida::Position;
+using ida::Rational;
+using ida::TapeId;
+using ida::TapeReference;
 
 namespace
 {

@@ -15,19 +15,19 @@
 #include <thread>
 #include <vector>
 
-#ifndef SIRIUS_HOST_BINARY_PATH
-    #error "SIRIUS_HOST_BINARY_PATH required"
+#ifndef IDA_HOST_BINARY_PATH
+    #error "IDA_HOST_BINARY_PATH required"
 #endif
-#ifndef SIRIUS_SYNTHETIC_CLAP_PATH
-    #error "SIRIUS_SYNTHETIC_CLAP_PATH required"
+#ifndef IDA_SYNTHETIC_CLAP_PATH
+    #error "IDA_SYNTHETIC_CLAP_PATH required"
 #endif
 
-using sirius::OutOfProcessPluginInstance;
+using ida::OutOfProcessPluginInstance;
 
 namespace
 {
-    juce::File hostBinary()      { return juce::File (SIRIUS_HOST_BINARY_PATH); }
-    juce::File syntheticBundle() { return juce::File (SIRIUS_SYNTHETIC_CLAP_PATH); }
+    juce::File hostBinary()      { return juce::File (IDA_HOST_BINARY_PATH); }
+    juce::File syntheticBundle() { return juce::File (IDA_SYNTHETIC_CLAP_PATH); }
 }
 
 TEST_CASE ("requestStateSave returns the synthetic CLAP's 4-byte payload",

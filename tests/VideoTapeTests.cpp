@@ -1,5 +1,5 @@
 // Tests for the video-tape data model (white paper Parts 5.3, 6.2). The tape
-// is just `Tape<VideoFrame>` — every Sirius tape shares the same template —
+// is just `Tape<VideoFrame>` — every IDA tape shares the same template —
 // so these tests focus on the *video-specific* claims: the metadata each
 // frame carries is correct, the per-frame duration accommodates variable-rate
 // streams, and `findFrameAt` returns the most recent frame ≤ the query time
@@ -12,12 +12,12 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using sirius::Position;
-using sirius::Rational;
-using sirius::TapeId;
-using sirius::VideoFrame;
-using sirius::VideoPixelFormat;
-using sirius::VideoTape;
+using ida::Position;
+using ida::Rational;
+using ida::TapeId;
+using ida::VideoFrame;
+using ida::VideoPixelFormat;
+using ida::VideoTape;
 
 namespace
 {
@@ -63,26 +63,26 @@ TEST_CASE ("findFrameAt returns the most recent frame at or before the query",
 
     SECTION ("a query before the first frame returns nullptr")
     {
-        CHECK (sirius::findFrameAt (tape, Rational (-1, 1)) == nullptr);
+        CHECK (ida::findFrameAt (tape, Rational (-1, 1)) == nullptr);
     }
 
     SECTION ("a query exactly on a frame returns that frame")
     {
-        const auto* f = sirius::findFrameAt (tape, Rational (1, 30));
+        const auto* f = ida::findFrameAt (tape, Rational (1, 30));
         REQUIRE (f != nullptr);
         CHECK (f->metadata.presentationLmcSeconds == Rational (1, 30));
     }
 
     SECTION ("a query between frames returns the earlier frame")
     {
-        const auto* f = sirius::findFrameAt (tape, Rational (3, 60)); // = 1.5/30
+        const auto* f = ida::findFrameAt (tape, Rational (3, 60)); // = 1.5/30
         REQUIRE (f != nullptr);
         CHECK (f->metadata.presentationLmcSeconds == Rational (1, 30));
     }
 
     SECTION ("a query past the last frame holds on the last frame")
     {
-        const auto* f = sirius::findFrameAt (tape, Rational (100));
+        const auto* f = ida::findFrameAt (tape, Rational (100));
         REQUIRE (f != nullptr);
         CHECK (f->metadata.presentationLmcSeconds == Rational (2, 30));
     }
@@ -91,5 +91,5 @@ TEST_CASE ("findFrameAt returns the most recent frame at or before the query",
 TEST_CASE ("findFrameAt on an empty tape returns nullptr", "[videotape]")
 {
     VideoTape tape (TapeId (1));
-    CHECK (sirius::findFrameAt (tape, Rational (0)) == nullptr);
+    CHECK (ida::findFrameAt (tape, Rational (0)) == nullptr);
 }

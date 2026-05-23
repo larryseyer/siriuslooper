@@ -1,9 +1,9 @@
 # =============================================================================
-# Sirius Looper — test fixtures
+# IDA — test fixtures
 # =============================================================================
-# Test-only artifacts that the SiriusTests binary depends on at run time.
+# Test-only artifacts that the IdaTests binary depends on at run time.
 # Currently a single fixture: SyntheticTestPlugin, a minimal CLAP plug-in
-# used by the M7 S2+ round-trip tests for sirius_plugin_host.
+# used by the M7 S2+ round-trip tests for ida_plugin_host.
 #
 # Bundle pattern lifted from external/clap/CMakeLists.txt's reference build
 # of clap-plugin-template — same SUFFIX/BUNDLE/symbol-list shape, so a CLAP

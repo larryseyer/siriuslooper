@@ -1,5 +1,5 @@
 # =============================================================================
-# SiriusCore — the conceptual-time engine core
+# IdaCore — the conceptual-time engine core
 # =============================================================================
 # Deliberately JUCE-free and real-time-free (white paper Appendix D): the
 # symbolic time model is a pure library so it can be exercised exhaustively in
@@ -7,7 +7,7 @@
 # checkable. Do NOT add JUCE or any audio-framework dependency to this target.
 # =============================================================================
 
-add_library(SiriusCore STATIC
+add_library(IdaCore STATIC
     src/Rational.cpp
     src/Meter.cpp
     src/TempoMap.cpp
@@ -25,8 +25,8 @@ add_library(SiriusCore STATIC
     src/VersionPinningRecord.cpp
     src/TapePool.cpp)
 
-target_include_directories(SiriusCore PUBLIC include)
+target_include_directories(IdaCore PUBLIC include)
 
-target_compile_features(SiriusCore PUBLIC cxx_std_20)
+target_compile_features(IdaCore PUBLIC cxx_std_20)
 
-add_library(Sirius::Core ALIAS SiriusCore)
+add_library(Ida::Core ALIAS IdaCore)

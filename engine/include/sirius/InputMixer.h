@@ -146,7 +146,7 @@ public:
     // Injected non-owning collaborators (set-once on the message thread).
     void setTapeWriter (TapeWriter* writer) noexcept;
     void setOverloadProtection (OverloadProtection* overload) noexcept;
-    void setTapeStore (sirius::persistence::TapeStore* store) noexcept;
+    void setTapeStore (ida::persistence::TapeStore* store) noexcept;
     /// M6 Session 2 — attach the engine→UI truthfulness channel. When bound,
     /// the queue-full branch of `processBuffer` posts a `Warning/CpuPressure`
     /// notification alongside the existing `OverloadProtection::reportLoad`
@@ -286,7 +286,7 @@ private:
 
     TapeWriter* tapeWriter_ { nullptr };
     OverloadProtection* overload_ { nullptr };
-    sirius::persistence::TapeStore* tapeStore_ { nullptr };
+    ida::persistence::TapeStore* tapeStore_ { nullptr };
     NotificationBus* notificationBus_ { nullptr };
     ITapeSink* tapeSink_ { nullptr };
 

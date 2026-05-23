@@ -1,4 +1,4 @@
-// Tests for sirius::SampleClock — the exact sample-count <-> time conversion
+// Tests for ida::SampleClock — the exact sample-count <-> time conversion
 // the membrane math is built on.
 #include "sirius/SampleClock.h"
 
@@ -6,8 +6,8 @@
 
 #include <stdexcept>
 
-using sirius::Rational;
-using sirius::SampleClock;
+using ida::Rational;
+using ida::SampleClock;
 
 TEST_CASE ("a sample clock converts sample counts to exact time", "[sampleclock]")
 {

@@ -9,7 +9,7 @@ namespace sirius
 /// — `host/` in particular — can name the enumerators without pulling the
 /// engine layer into their dependency graph.** The concrete
 /// `NotificationBus` (in `engine/`) re-exports this enum from its own
-/// header so existing call sites continue to write `sirius::NotificationLevel`
+/// header so existing call sites continue to write `ida::NotificationLevel`
 /// unchanged.
 enum class NotificationLevel
 {
@@ -25,9 +25,9 @@ enum class NotificationLevel
 /// `NotificationBus`.
 ///
 /// Lives in `core/` for the same dependency-inversion reason as
-/// `NotificationLevel` above. `engine/include/sirius/NotificationBus.h`
+/// `NotificationLevel` above. `engine/include/ida/NotificationBus.h`
 /// re-exports the enumerators so call sites keep writing
-/// `sirius::Category::PluginEvent` (etc.) unchanged.
+/// `ida::Category::PluginEvent` (etc.) unchanged.
 enum class Category
 {
     DiskPressure,

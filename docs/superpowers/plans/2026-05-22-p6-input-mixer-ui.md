@@ -8,7 +8,7 @@
 
 **Architecture:** Pure UI work in `app/MainComponent.cpp` (the `InputMixerPane` inner class) + `app/MainComponent.h`. The engine routing graph, buses, FX returns, and all main-out setters already exist and are unit-tested at the `engine` layer — P6 only wires the existing `InputMixer` API to OTTO-vendored `CompactFaderStrip` widgets. Bus strips are a **second strip vector** alongside the channel strips so the existing channel-strip gestures, pickers, and selection logic are untouched. The destination picker mirrors the just-shipped T6 tape picker (`InputMixerPane`'s own `TextButton` + `PopupMenu`, **not** `CompactFaderStrip`'s output combo).
 
-**Tech Stack:** C++17, JUCE 8, vendored `otto::ui::CompactFaderStrip`, the `sirius::InputMixer` / `sirius::Bus` engine API.
+**Tech Stack:** C++17, JUCE 8, vendored `otto::ui::CompactFaderStrip`, the `ida::InputMixer` / `ida::Bus` engine API.
 
 ---
 
@@ -28,7 +28,7 @@ No other files change. No new CMake targets. No engine edits.
 
 ## Testing reality (read before starting)
 
-Per `CLAUDE.md`: **GUI changes are operator-verified, not unit-tested** — `InputMixerPane` lives in `app/` and is not in the `SiriusTests` target. So tasks below do **not** follow red/green TDD; each task ends with a **compile-green gate** (`cmake --build build --target SiriusLooper`) plus a **no-regression gate** (`ctest --test-dir build`, baseline 567 pass / 1 documented Not-Run) and a commit. Final acceptance is operator eyes-on the `.app` after a clean `rm -rf build` rebuild (Task 4). Do not claim a task "works" — claim it "compiles green, ctest baseline holds, ready for eyes-on."
+Per `CLAUDE.md`: **GUI changes are operator-verified, not unit-tested** — `InputMixerPane` lives in `app/` and is not in the `IdaTests` target. So tasks below do **not** follow red/green TDD; each task ends with a **compile-green gate** (`cmake --build build --target IDA`) plus a **no-regression gate** (`ctest --test-dir build`, baseline 567 pass / 1 documented Not-Run) and a commit. Final acceptance is operator eyes-on the `.app` after a clean `rm -rf build` rebuild (Task 4). Do not claim a task "works" — claim it "compiles green, ctest baseline holds, ready for eyes-on."
 
 ---
 
@@ -171,7 +171,7 @@ In `app/MainComponent.h`, near `rebuildInputStrips` and `inputStripChannelIds_`,
 
 ```cpp
     void rebuildBusStrips();
-    std::vector<sirius::BusId> busStripIds_;   // parallel to InputMixerPane bus strips
+    std::vector<ida::BusId> busStripIds_;   // parallel to InputMixerPane bus strips
 ```
 
 In `app/MainComponent.cpp`, add after `rebuildInputStrips` (after line 2033):
@@ -191,7 +191,7 @@ void MainComponent::rebuildBusStrips()
     for (int i = 0; i < n; ++i)
     {
         const auto id   = inputMixer_->busIdAt (i);
-        const bool isFx = inputMixer_->busKindAt (i) == sirius::BusKind::FxReturn;
+        const bool isFx = inputMixer_->busKindAt (i) == ida::BusKind::FxReturn;
         if (auto* bus = inputMixer_->busForId (id))
         {
             bus->prepare (sampleRate, kInputLufsMaxBlock);   // EBU R128, off the audio thread
@@ -203,7 +203,7 @@ void MainComponent::rebuildBusStrips()
 }
 ```
 
-(`kInputLufsMaxBlock` is the same constant `rebuildInputStrips` uses at line 2024. `sirius::BusKind` comes from `sirius/Bus.h`, already transitively included via `InputMixer.h`.)
+(`kInputLufsMaxBlock` is the same constant `rebuildInputStrips` uses at line 2024. `ida::BusKind` comes from `sirius/Bus.h`, already transitively included via `InputMixer.h`.)
 
 - [ ] **Step 5: Wire the bus fader/mute/solo relays + call `rebuildBusStrips()` at setup.**
 
@@ -250,7 +250,7 @@ In `refreshInputMixer()` (1892–1912), after the channel-strip meter loop (afte
 
 - [ ] **Step 7: Compile-green gate.**
 
-Run: `cmake --build build --target SiriusLooper`
+Run: `cmake --build build --target IDA`
 Expected: builds with no errors or warnings (the app target is `-Werror`).
 
 - [ ] **Step 8: No-regression gate.**
@@ -306,18 +306,18 @@ After the `onBusSolo` wiring from Task 1 (~line 1598), add:
 ```cpp
         inputMixerPane_->onAddBus = [this]
         {
-            if (inputMixer_->busCount() >= sirius::InputMixer::kMaxInputBuses) return;
+            if (inputMixer_->busCount() >= ida::InputMixer::kMaxInputBuses) return;
             audioDeviceManager_.removeAudioCallback (audioCallback_.get());
-            inputMixer_->addBus (sirius::BusConfig{ /*channelCount*/ 2,
+            inputMixer_->addBus (ida::BusConfig{ /*channelCount*/ 2,
                                  "Bus " + std::to_string (inputMixer_->busCount() + 1),
-                                 sirius::BusKind::Bus });
+                                 ida::BusKind::Bus });
             audioDeviceManager_.addAudioCallback (audioCallback_.get());
             rebuildBusStrips();
             refreshInputDestinations();   // a new bus is a new channel destination
         };
         inputMixerPane_->onAddFxReturn = [this]
         {
-            if (inputMixer_->busCount() >= sirius::InputMixer::kMaxInputBuses) return;
+            if (inputMixer_->busCount() >= ida::InputMixer::kMaxInputBuses) return;
             audioDeviceManager_.removeAudioCallback (audioCallback_.get());
             inputMixer_->addFxReturn ("FX " + std::to_string (inputMixer_->busCount() + 1));
             audioDeviceManager_.addAudioCallback (audioCallback_.get());
@@ -330,7 +330,7 @@ After the `onBusSolo` wiring from Task 1 (~line 1598), add:
 
 - [ ] **Step 4: Compile-green gate.**
 
-Run: `cmake --build build --target SiriusLooper`
+Run: `cmake --build build --target IDA`
 Expected: builds clean.
 
 - [ ] **Step 5: No-regression gate.**
@@ -454,7 +454,7 @@ void MainComponent::refreshInputDestinations()
         Pane::StripDest dest;
         switch (inputMixer_->channelMainOut (chId))
         {
-            case sirius::InputMixer::MainOutDest::Tape:
+            case ida::InputMixer::MainOutDest::Tape:
                 for (const auto& t : tapePool_.tapes())
                     if (inputMixer_->channelMainOutIsTape (chId, t.id))
                     {
@@ -464,7 +464,7 @@ void MainComponent::refreshInputDestinations()
                         break;
                     }
                 break;
-            case sirius::InputMixer::MainOutDest::Bus:
+            case ida::InputMixer::MainOutDest::Bus:
                 for (int i = 0; i < inputMixer_->busCount(); ++i)
                 {
                     const auto bid = inputMixer_->busIdAt (i);
@@ -479,7 +479,7 @@ void MainComponent::refreshInputDestinations()
                 dest.currentKind = Pane::DestKind::Bus;
                 dest.currentName = "Bus";
                 break;
-            case sirius::InputMixer::MainOutDest::HardwareOutput:
+            case ida::InputMixer::MainOutDest::HardwareOutput:
                 dest.currentKind = Pane::DestKind::HardwareOutput;
                 dest.currentId   = 0;
                 dest.currentName = "Direct out";
@@ -506,10 +506,10 @@ Replace the `onDestinationChosen` handler (1585–1595):
             switch (dest.kind)
             {
                 case InputMixerPane::DestKind::Tape:
-                    inputMixer_->setChannelMainOutToTape (chId, static_cast<sirius::TapeId> (dest.id));
+                    inputMixer_->setChannelMainOutToTape (chId, static_cast<ida::TapeId> (dest.id));
                     break;
                 case InputMixerPane::DestKind::Bus:
-                    inputMixer_->setChannelMainOutToBus (chId, static_cast<sirius::BusId> (dest.id));
+                    inputMixer_->setChannelMainOutToBus (chId, static_cast<ida::BusId> (dest.id));
                     break;
                 case InputMixerPane::DestKind::HardwareOutput:
                     inputMixer_->setChannelMainOutToHardwareOutput (chId);
@@ -524,7 +524,7 @@ Replace the `onDestinationChosen` handler (1585–1595):
 
 - [ ] **Step 6: Compile-green gate.**
 
-Run: `cmake --build build --target SiriusLooper`
+Run: `cmake --build build --target IDA`
 Expected: builds clean. (Watch for the `choices_` type change rippling anywhere else — grep `TapeChoice` to confirm no stragglers: `grep -n "TapeChoice" app/MainComponent.cpp` should return nothing.)
 
 - [ ] **Step 7: No-regression gate.**
@@ -553,7 +553,7 @@ P6 is operator-verified. This task gates on a clean build and a human confirming
 ```bash
 rm -rf build
 cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target SiriusLooper
+cmake --build build --target IDA
 ```
 
 Expected: configures + builds clean from scratch.
@@ -561,7 +561,7 @@ Expected: configures + builds clean from scratch.
 - [ ] **Step 2: Launch the app and ask the operator to confirm.**
 
 ```bash
-open "build/app/SiriusLooper_artefacts/Release/Sirius Looper.app"
+open "build/app/IDA_artefacts/Release/IDA.app"
 ```
 
 Operator eyes-on checklist (the agent cannot verify GUI behavior — the operator confirms each):

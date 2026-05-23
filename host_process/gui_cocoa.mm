@@ -1,7 +1,7 @@
 // =============================================================================
-// gui_cocoa.mm — Cocoa shim for sirius_plugin_host (M7 S9 Reaper-style)
+// gui_cocoa.mm — Cocoa shim for ida_plugin_host (M7 S9 Reaper-style)
 // =============================================================================
-// Each `sirius_plugin_host` child owns its own top-level NSWindow per hosted
+// Each `ida_plugin_host` child owns its own top-level NSWindow per hosted
 // plug-in editor. The plug-in's NSView is hosted as the window's contentView.
 // Cross-process pixel transport (S6 CARemoteLayer) is gone — every other
 // professional DAW on macOS ships plug-ins this way (Logic, Live, Reaper,
@@ -25,7 +25,7 @@
 // hook) services NSWindow input events without blocking. Empirically
 // sub-microsecond when the event queue is empty.
 //
-// **Single-instance assumption.** Each `sirius_plugin_host` child hosts
+// **Single-instance assumption.** Each `ida_plugin_host` child hosts
 // exactly one plug-in instance, so a single static editor slot suffices.
 // =============================================================================
 
@@ -61,7 +61,7 @@ namespace
     /// attached). The NSWindowDelegate uses it to publish editor-closed
     /// when the user clicks the X button — without that path, the
     /// engine's PluginsPane button would stay "Close editor" forever.
-    sirius::PluginGuiState* g_guiState { nullptr };
+    ida::PluginGuiState* g_guiState { nullptr };
 
     /// Non-zero value published as `responseContextId` when the editor
     /// is up. The engine treats any non-zero value as "open"; the
@@ -142,7 +142,7 @@ namespace
 // C-linkage entry points consumed by host_process/main.cpp
 // =============================================================================
 
-extern "C" void sirius_gui_set_state (sirius::PluginGuiState* state) noexcept
+extern "C" void sirius_gui_set_state (ida::PluginGuiState* state) noexcept
 {
     g_guiState = state;
 }

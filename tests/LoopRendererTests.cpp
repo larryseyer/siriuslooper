@@ -1,4 +1,4 @@
-// Tests for sirius::LoopRenderer — the outbound membrane's M2 job, rendering a
+// Tests for ida::LoopRenderer — the outbound membrane's M2 job, rendering a
 // single repeating loop. These encode the white paper's claim that loop
 // repetition is exact: the read position at the hundredth cycle is bit-
 // identical to the first (Part 9.3).
@@ -8,8 +8,8 @@
 
 #include <stdexcept>
 
-using sirius::LoopRenderer;
-using sirius::Rational;
+using ida::LoopRenderer;
+using ida::Rational;
 
 TEST_CASE ("a loop region must be non-empty and forward", "[looprenderer]")
 {

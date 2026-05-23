@@ -45,7 +45,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: website/_site
           publish_branch: gh-pages
-          cname: siriuslooper.com
+          cname: automagicart.com/ida
           user_name: "github-actions[bot]"
           user_email: "github-actions[bot]@users.noreply.github.com"
           commit_message: "site: deploy ${{ github.sha }}"

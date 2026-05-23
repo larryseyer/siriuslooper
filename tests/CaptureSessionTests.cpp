@@ -1,4 +1,4 @@
-// Tests for sirius::CaptureSession — the performer-facing capture state
+// Tests for ida::CaptureSession — the performer-facing capture state
 // machine that sits above the always-running tape (white paper Part 7
 // architecture vs Part 14.6 UX). Pins down each transition: arm/disarm
 // gating, in-point setting and replacement, valid/invalid out-point
@@ -11,10 +11,10 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using sirius::CaptureSession;
-using sirius::CaptureState;
-using sirius::Rational;
-using sirius::TapeId;
+using ida::CaptureSession;
+using ida::CaptureState;
+using ida::Rational;
+using ida::TapeId;
 
 TEST_CASE ("a fresh session is Disarmed with no pending in-point or tape",
            "[capture-session]")

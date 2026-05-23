@@ -18,14 +18,14 @@ LatencyBudget::LatencyBudget (std::size_t capacity)
     : capacity_ (capacity)
 {
     if (capacity == 0)
-        throw std::invalid_argument ("sirius::LatencyBudget: capacity must be at least 1");
+        throw std::invalid_argument ("ida::LatencyBudget: capacity must be at least 1");
     samples_.reserve (capacity);
 }
 
 void LatencyBudget::record (double latencyMs)
 {
     if (latencyMs < 0.0)
-        throw std::invalid_argument ("sirius::LatencyBudget: latency must not be negative");
+        throw std::invalid_argument ("ida::LatencyBudget: latency must not be negative");
 
     if (samples_.size() < capacity_)
     {

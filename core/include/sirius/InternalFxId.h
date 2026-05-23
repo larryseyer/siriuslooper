@@ -8,7 +8,7 @@
 namespace sirius
 {
 
-/// The four built-in FX shipped by Sirius (white paper §6.6 + the contract in
+/// The four built-in FX shipped by IDA (white paper §6.6 + the contract in
 /// `docs/design/sirius-internal-fx.md`). Each id resolves at T3 to one of OTTO's
 /// header-only Player FX via a Sirius-side adapter. The underlying type is
 /// `uint8_t` with a reserved range up to 16 so a future built-in (e.g. saturator,
@@ -49,7 +49,7 @@ inline InternalFxId internalFxIdFromString (std::string_view s)
     if (s == "CMP") return InternalFxId::kCmp;
     if (s == "RVB") return InternalFxId::kRvb;
     if (s == "DLY") return InternalFxId::kDly;
-    throw std::invalid_argument ("sirius::internalFxIdFromString: unknown id \"" + std::string (s) + "\"");
+    throw std::invalid_argument ("ida::internalFxIdFromString: unknown id \"" + std::string (s) + "\"");
 }
 
 } // namespace sirius

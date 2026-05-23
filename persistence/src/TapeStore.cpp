@@ -4,7 +4,7 @@
 
 #include <stdexcept>
 
-namespace sirius::persistence
+namespace ida::persistence
 {
 
 namespace
@@ -22,10 +22,10 @@ TapeStore::TapeStore (juce::File directory)
 {
     const auto created = directory_.createDirectory();
     if (created.failed())
-        throw std::runtime_error ("sirius::persistence::TapeStore: cannot create directory: "
+        throw std::runtime_error ("ida::persistence::TapeStore: cannot create directory: "
                                   + created.getErrorMessage().toStdString());
     if (! directory_.hasWriteAccess())
-        throw std::runtime_error ("sirius::persistence::TapeStore: directory is not writable: "
+        throw std::runtime_error ("ida::persistence::TapeStore: directory is not writable: "
                                   + directory_.getFullPathName().toStdString());
 }
 
@@ -40,7 +40,7 @@ juce::String TapeStore::store (const juce::MemoryBlock& bytes)
         return hash;
 
     if (! file.replaceWithData (bytes.getData(), bytes.getSize()))
-        throw std::runtime_error ("sirius::persistence::TapeStore: write failed: "
+        throw std::runtime_error ("ida::persistence::TapeStore: write failed: "
                                   + file.getFullPathName().toStdString());
 
     return hash;
@@ -58,7 +58,7 @@ bool TapeStore::read (const juce::String& contentHash, juce::MemoryBlock& out) c
         return false;
 
     if (! file.loadFileAsData (out))
-        throw std::runtime_error ("sirius::persistence::TapeStore: read failed: "
+        throw std::runtime_error ("ida::persistence::TapeStore: read failed: "
                                   + file.getFullPathName().toStdString());
     return true;
 }
@@ -68,4 +68,4 @@ juce::File TapeStore::fileFor (const juce::String& contentHash) const
     return directory_.getChildFile (contentHash + tapeFileExtension);
 }
 
-} // namespace sirius::persistence
+} // namespace ida::persistence

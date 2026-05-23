@@ -1,4 +1,4 @@
-// Tests for sirius::AudioCallback — the single audio-thread entry point landed
+// Tests for ida::AudioCallback — the single audio-thread entry point landed
 // in M1 Session 1 and grown through M4 Session 3 into an actual driver of the
 // InputMixer / OutputMixer / DirectLayer collaborators. These cover:
 //   * the silence-on-default contract (which prevents a hot mic from going to
@@ -34,13 +34,13 @@
 #include <cstring>
 #include <vector>
 
-using sirius::AudioCallback;
-using sirius::DirectLayer;
-using sirius::EngineConfig;
-using sirius::InputId;
-using sirius::InputMixer;
-using sirius::OutputChannelId;
-using sirius::OutputMixer;
+using ida::AudioCallback;
+using ida::DirectLayer;
+using ida::EngineConfig;
+using ida::InputId;
+using ida::InputMixer;
+using ida::OutputChannelId;
+using ida::OutputMixer;
 
 namespace
 {
@@ -347,14 +347,14 @@ TEST_CASE ("AudioCallback exposes sample rate and buffer size after device start
 TEST_CASE ("AudioCallback carries the EngineConfig it was constructed with", "[audio-callback]")
 {
     EngineConfig cfg;
-    cfg.asrcQuality            = sirius::Asrc::Quality::Medium;
+    cfg.asrcQuality            = ida::Asrc::Quality::Medium;
     cfg.preferredSampleRate    = 96000.0;
     cfg.preferredBufferSize    = 256;
     cfg.minPreferredBufferSize = 64;
 
     AudioCallback cb { cfg };
 
-    CHECK (cb.config().asrcQuality            == sirius::Asrc::Quality::Medium);
+    CHECK (cb.config().asrcQuality            == ida::Asrc::Quality::Medium);
     CHECK (cb.config().preferredSampleRate    == 96000.0);
     CHECK (cb.config().preferredBufferSize    == 256u);
     CHECK (cb.config().minPreferredBufferSize == 64u);
@@ -446,9 +446,9 @@ TEST_CASE ("AudioCallback elapsed-seconds resets to zero on device stop", "[audi
 TEST_CASE ("AudioCallback drives renderInputGraph: a tape-routed channel reaches the sink",
            "[audio-callback][render]")
 {
-    using sirius::SignalType;
-    using sirius::TapeId;
-    using sirius::TapeMode;
+    using ida::SignalType;
+    using ida::TapeId;
+    using ida::TapeMode;
 
     InputMixer mixer;
     const auto ch = mixer.addChannel (InputId { 0 }, SignalType::Audio);
@@ -459,10 +459,10 @@ TEST_CASE ("AudioCallback drives renderInputGraph: a tape-routed channel reaches
     // harmless — we call it here to make the intent explicit for readers.
     REQUIRE (mixer.setChannelMainOutToTape (ch));
 
-    struct Sink : sirius::ITapeSink {
+    struct Sink : ida::ITapeSink {
         bool         got    = false;
         std::int64_t tapeId = -1;
-        void deliverTapeBlock (sirius::TapeId t, const float*, const float*,
+        void deliverTapeBlock (ida::TapeId t, const float*, const float*,
                                int n) noexcept override
         {
             got = (n > 0);

@@ -1,4 +1,4 @@
-// Tests for sirius::RetroactiveRing — the in-memory window of recent tape data
+// Tests for ida::RetroactiveRing — the in-memory window of recent tape data
 // (white paper Part 6.4). These pin down the behaviour that lets a boundary be
 // pulled backward in time: the ring always holds the most recent N events, and
 // when it overflows the oldest falls off.
@@ -9,7 +9,7 @@
 #include <stdexcept>
 #include <vector>
 
-using sirius::RetroactiveRing;
+using ida::RetroactiveRing;
 
 TEST_CASE ("a new ring is empty and rejects zero capacity", "[retroring]")
 {

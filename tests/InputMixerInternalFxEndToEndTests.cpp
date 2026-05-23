@@ -71,22 +71,22 @@ TEST_CASE ("InputMixer routes audio through an Internal-EQ bus chain via setEffe
     // and forward the host pointer; otherwise the bus's effect chain would
     // hold the Internal-EQ entry but Bus::process would never dispatch
     // because host_ is null (silent no-op — the pre-T04 bug).
-    sirius::OutOfProcessEffectChainHost host;
+    ida::OutOfProcessEffectChainHost host;
     host.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
 
-    sirius::InputMixer mixer;
-    const auto bus = mixer.addBus (sirius::BusConfig { 2, "Aux" });
-    REQUIRE (bus != sirius::BusId { 0 });
+    ida::InputMixer mixer;
+    const auto bus = mixer.addBus (ida::BusConfig { 2, "Aux" });
+    REQUIRE (bus != ida::BusId { 0 });
 
     mixer.setEffectChainHost (&host);
     mixer.setBusEffectChain (bus,
-        sirius::EffectChain{}.withAppended (
-            sirius::EffectChainEntry::makeInternal (sirius::InternalFxId::kEq)));
+        ida::EffectChain{}.withAppended (
+            ida::EffectChainEntry::makeInternal (ida::InternalFxId::kEq)));
 
     // Register a channel that feeds device channels 0/1 stereo, route it
     // through the bus, and send the bus to HardwareOutput so renderInputGraph
     // delivers the processed audio into the directOut buffer.
-    const auto ch = mixer.addChannel (sirius::InputId (0), sirius::SignalType::Audio);
+    const auto ch = mixer.addChannel (ida::InputId (0), ida::SignalType::Audio);
     mixer.setChannelInputSource (ch, /*leftDeviceChannel*/ 0,
                                      /*rightDeviceChannel*/ 1, /*stereo*/ true);
     REQUIRE (mixer.setChannelMainOutToBus (ch, bus));
@@ -124,20 +124,20 @@ TEST_CASE ("InputMixer addBus AFTER setEffectChainHost still wires the new bus t
     // that field when constructing the new bus, otherwise a bus added later
     // would silently no-op its chain. Mirrors OutputMixer::addBus's same
     // post-stash behavior.
-    sirius::OutOfProcessEffectChainHost host;
+    ida::OutOfProcessEffectChainHost host;
     host.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
 
-    sirius::InputMixer mixer;
+    ida::InputMixer mixer;
     mixer.setEffectChainHost (&host);
 
-    const auto bus = mixer.addBus (sirius::BusConfig { 2, "AuxLate" });
-    REQUIRE (bus != sirius::BusId { 0 });
+    const auto bus = mixer.addBus (ida::BusConfig { 2, "AuxLate" });
+    REQUIRE (bus != ida::BusId { 0 });
 
     mixer.setBusEffectChain (bus,
-        sirius::EffectChain{}.withAppended (
-            sirius::EffectChainEntry::makeInternal (sirius::InternalFxId::kEq)));
+        ida::EffectChain{}.withAppended (
+            ida::EffectChainEntry::makeInternal (ida::InternalFxId::kEq)));
 
-    const auto ch = mixer.addChannel (sirius::InputId (0), sirius::SignalType::Audio);
+    const auto ch = mixer.addChannel (ida::InputId (0), ida::SignalType::Audio);
     mixer.setChannelInputSource (ch, 0, 1, true);
     REQUIRE (mixer.setChannelMainOutToBus (ch, bus));
     REQUIRE (mixer.setBusMainOutToHardwareOutput (bus));

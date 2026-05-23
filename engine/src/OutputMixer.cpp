@@ -35,10 +35,10 @@ namespace
     /// busId for everything else.
     // Mirrors InputMixer::mainOutSnapshot intentionally — the two consoles are
     // separate by design (one terminal here vs two there); shared *types* only.
-    sirius::MixerMainOut busMainOutSnapshot (const sirius::MixerGraph& graph,
-                                             sirius::MixerNodeId node,
-                                             const std::vector<sirius::MixerNodeId>& busNodeIds,
-                                             const std::vector<sirius::Bus>& buses)
+    ida::MixerMainOut busMainOutSnapshot (const ida::MixerGraph& graph,
+                                             ida::MixerNodeId node,
+                                             const std::vector<ida::MixerNodeId>& busNodeIds,
+                                             const std::vector<ida::Bus>& buses)
     {
         using namespace sirius;
         const auto dest = graph.mainOutOf (node);

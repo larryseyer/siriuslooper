@@ -9,7 +9,7 @@
 #include <cstdint>
 #include <stdexcept>
 
-using sirius::InternalFxId;
+using ida::InternalFxId;
 
 TEST_CASE ("InternalFxId enum values are stable", "[internal-fx-id]")
 {
@@ -26,7 +26,7 @@ TEST_CASE ("InternalFxId round-trips through toString / fromString", "[internal-
     for (auto id : { InternalFxId::kEq, InternalFxId::kCmp,
                      InternalFxId::kRvb, InternalFxId::kDly })
     {
-        CHECK (sirius::internalFxIdFromString (sirius::internalFxIdToString (id)) == id);
+        CHECK (ida::internalFxIdFromString (ida::internalFxIdToString (id)) == id);
     }
 }
 
@@ -34,14 +34,14 @@ TEST_CASE ("internalFxIdToString produces the documented strings", "[internal-fx
 {
     // These strings are the wire format. Do not rename them without a
     // forward-compat plan in SessionFormat.
-    CHECK (sirius::internalFxIdToString (InternalFxId::kEq)  == std::string ("EQ"));
-    CHECK (sirius::internalFxIdToString (InternalFxId::kCmp) == std::string ("CMP"));
-    CHECK (sirius::internalFxIdToString (InternalFxId::kRvb) == std::string ("RVB"));
-    CHECK (sirius::internalFxIdToString (InternalFxId::kDly) == std::string ("DLY"));
+    CHECK (ida::internalFxIdToString (InternalFxId::kEq)  == std::string ("EQ"));
+    CHECK (ida::internalFxIdToString (InternalFxId::kCmp) == std::string ("CMP"));
+    CHECK (ida::internalFxIdToString (InternalFxId::kRvb) == std::string ("RVB"));
+    CHECK (ida::internalFxIdToString (InternalFxId::kDly) == std::string ("DLY"));
 }
 
 TEST_CASE ("internalFxIdFromString throws on unknown id", "[internal-fx-id]")
 {
-    CHECK_THROWS_AS (sirius::internalFxIdFromString ("Synth"),  std::invalid_argument);
-    CHECK_THROWS_AS (sirius::internalFxIdFromString (""),       std::invalid_argument);
+    CHECK_THROWS_AS (ida::internalFxIdFromString ("Synth"),  std::invalid_argument);
+    CHECK_THROWS_AS (ida::internalFxIdFromString (""),       std::invalid_argument);
 }

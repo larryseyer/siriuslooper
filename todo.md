@@ -1,4 +1,4 @@
-# Sirius Looper — Deferred Items
+# IDA — Deferred Items
 
 ### 2026-05-23 (late) — T3a-EQ Code Reviewer follow-ups (ALL THREE ENTRIES RESOLVED 2026-05-23)
 
@@ -151,7 +151,7 @@
   separate (wet-capture) concern, not this path.
 
 ### 2026-05-21 — Tape subsystem slice 3 (capture-to-disk / FLAC) deferrals
-- Files: audio/src/FlacTapeSink.cpp, audio/include/sirius/FlacTapeSink.h, app/MainComponent.cpp.
+- Files: audio/src/FlacTapeSink.cpp, audio/include/ida/FlacTapeSink.h, app/MainComponent.cpp.
 - What was deferred (all intentional — slice-3 scope was "make routing record"):
   1. **float→24-bit FLAC quantization** is the live capture fidelity floor. Bit-exact-float
      archival (whitepaper §15 "archival exact") would need a different codec/bit depth — revisit
@@ -184,7 +184,7 @@
   the destination picker lands in slice 4) — that remaining sub-item folds into slice 4.
 
 ### 2026-05-21 - Tape subsystem slice 2 carry-forward — NOW SCHEDULED as tape-UI slice T1 (2026-05-22)
-- Files: engine/src/InputMixer.cpp (mainOutSnapshot), core/include/sirius/MixerGraphState.h,
+- Files: engine/src/InputMixer.cpp (mainOutSnapshot), core/include/ida/MixerGraphState.h,
   persistence/src/SessionFormat.cpp.
 - What was deferred: persisting WHICH tape a node's main-out targets. mainOutSnapshot
   records only MixerTerminalKind::Tape (no TapeId); a non-primary tape route round-trips
@@ -222,7 +222,7 @@
   flag to the graph send model + the traversal if a use case appears.
 
 ### 2026-05-20 — White-paper "always recording" caveat: global enable/disable
-- Files: docs/Sirius Looper Whitepaper V7.md (the "tape is the always-running
+- Files: docs/IDA Whitepaper V7.md (the "tape is the always-running
   source of truth" / "everything the input mixer produces is captured to tape"
   framing); app/MainComponent.cpp (existing CaptureSession arm/disarm, ~line
   1688/1913).
@@ -247,7 +247,7 @@
 - What was deferred: the timeline pills currently draw the OTTO 4-corner contract
   as TEXT (loop count TL, loop-toggle TR, entrance BL, exit BR, name centre). OTTO
   shows ICONS in the corners instead. Port OTTO's corner icons (likely via OTTO's
-  Phosphor icon font) so Sirius pills match OTTO's pill corner treatment.
+  Phosphor icon font) so IDA pills match OTTO's pill corner treatment.
 - Why deferred: operator approved the per-entity colour pass and asked to move on
   to the mixer; icons are a polish step on the pills (part of sub-project E).
 - What's needed to finish: bring OTTO's Phosphor icon font into Sirius's binary
@@ -283,7 +283,7 @@
 - Files: future — engine/RenderPipeline + new "part" materialization +
   clip/timeline arrangement layer; reconcile with core/Arrangement.h and the
   V7 milestone roadmap (docs/superpowers/plans/2026-05-17-v7-alignment.md).
-- What was deferred: the operator's end-goal — Sirius records everything but
+- What was deferred: the operator's end-goal — IDA records everything but
   keeps only what's promoted; defined phrases get RENDERED into keepable
   "parts"/"pills", arranged on a timeline, bounced into a finished song
   ("Ableton Live territory"). The current RenderPipeline answers "what sounds
@@ -296,7 +296,7 @@
   as project_render_to_parts_timeline.md.
 
 ### 2026-05-19 — M8 S3 follow-ups (non-blocking, surfaced by final review)
-- Files: engine/src/RenderPipeline.cpp, engine/include/sirius/RenderPipeline.h,
+- Files: engine/src/RenderPipeline.cpp, engine/include/ida/RenderPipeline.h,
   engine/src/ConstituentValidator.cpp.
 - What was deferred:
   (1) The 3-arg RenderPipeline ctor (validation-aware render-as-silence) is the
@@ -317,8 +317,8 @@
   the validation; (2) decide descendant-warning policy + test it.
 
 ### 2026-05-20 — M8 S4 follow-ups (non-blocking, surfaced by spec scope + final review)
-- Files: engine/src/Bus.cpp, engine/include/sirius/Bus.h,
-  engine/include/sirius/WetCaptureWriter.h, engine/include/sirius/TapeWriter.h,
+- Files: engine/src/Bus.cpp, engine/include/ida/Bus.h,
+  engine/include/ida/WetCaptureWriter.h, engine/include/ida/TapeWriter.h,
   app/MainComponent.cpp (future).
 - What was deferred:
   (1) The Bus wet-capture seam (setWetCaptureSink + the processedBuffer_ tap) is
@@ -337,7 +337,7 @@
   Deferred to avoid touching proven M3 RT code in this session.
   (4) ALIGNMENT: WetWriteMessage::samples got `alignas(alignof(float))` so the
   reinterpret_cast<float*> is well-defined regardless of field layout.
-  TapeWriteMessage (engine/include/sirius/TapeWriter.h) has the IDENTICAL cast
+  TapeWriteMessage (engine/include/ida/TapeWriter.h) has the IDENTICAL cast
   pattern (inherited by InputMixer.cpp) WITHOUT the alignas — currently safe only
   because `samples` happens to land at a float-aligned offset. Bring
   TapeWriteMessage in line (add the same alignas) when next touching TapeWriter,
@@ -386,7 +386,7 @@
 | M8 | Plug-in determinism + failure semantics + CLAP | not started |
 | M9 | MIDI 2.0 / UMP end-to-end | not started |
 | M10 | Mix snapshots | not started |
-| M11 | Sirius Archive Format (clean break from JSON) | not started |
+| M11 | IDA Archive Format (clean break from JSON) | not started |
 | M12 | Video tier-aware rendering | not started |
 | M13 | File I/O + export (ralph inner loop) | not started |
 | M14 | Automatic direct-routing inference | not started |
@@ -457,15 +457,15 @@
   APPLE_TEAM_ID, KEYCHAIN_PASSWORD).
 - **Followups filed during this milestone:** see the three new entries
   immediately below (`get-task-allow=true`, `open` -10825 on dev tree,
-  `Sirius Looper` bundle-id collision). None are blocking; all surface
+  `IDA` bundle-id collision). None are blocking; all surface
   the same underlying surface the milestone touched.
 
 ### 2026-05-16 — `com.apple.security.get-task-allow=true` in signed bundle (notarization blocker)
 
 - **Files:** `app/CMakeLists.txt` (the `set_target_properties` Xcode-
   attribute block, lines ~66-104), possibly
-  `app/SiriusLooper.macos.entitlements`.
-- **What was deferred:** `codesign -dv --entitlements - "Sirius Looper.app"`
+  `app/IDA.macos.entitlements`.
+- **What was deferred:** `codesign -dv --entitlements - "IDA.app"`
   on the freshly-built signed bundle reports two entitlements:
   ```
   [Key] com.apple.security.device.audio-input
@@ -489,7 +489,7 @@
   happens. Local dev signing is unaffected.
 - **What's needed to finish:**
   1. Either bake `get-task-allow=false` into
-     `app/SiriusLooper.macos.entitlements` and verify Xcode doesn't
+     `app/IDA.macos.entitlements` and verify Xcode doesn't
      re-inject the `true` version, OR add a `codesign --entitlements`
      post-build step that strips/replaces it, OR adjust the CMake
      XCODE_ATTRIBUTE flags.
@@ -505,29 +505,29 @@
   issue, not a project code issue. Workaround already in place in
   `bash/smoke-persistence.sh` (direct binary launch instead of `open`).
 - **What was deferred:** root-cause investigation. Symptoms:
-  - `open "build-xcode/app/SiriusLooper_artefacts/Release/Sirius Looper.app"`
+  - `open "build-xcode/app/IDA_artefacts/Release/IDA.app"`
     → `_LSOpenURLsWithCompletionHandler() failed with error -10825`,
     no process launches. Every variant tried (`-n`, `-a`, `-F`,
     `lsregister -f` first) fails the same way.
-  - `open "build/app/.../Sirius Looper.app"` (the ad-hoc-signed
+  - `open "build/app/.../IDA.app"` (the ad-hoc-signed
     sibling) works fine.
-  - `"build-xcode/.../Contents/MacOS/Sirius Looper"` launches fine
+  - `"build-xcode/.../Contents/MacOS/IDA"` launches fine
     directly (used by the smoke script now).
   - No quarantine xattrs on either bundle. `spctl -a -t exec -vv`
     accepts the signed bundle as `Developer ID`.
 - **Working hypothesis:** Launch Services has cached the ad-hoc
-  bundle's invalid `Identifier=Sirius Looper` (a string with a space,
+  bundle's invalid `Identifier=IDA` (a string with a space,
   which is not a legal bundle identifier) and is rejecting the
-  signed bundle which has the correct `com.larryseyer.siriuslooper`
+  signed bundle which has the correct `com.larryseyer.ida`
   identifier with the same display name. The two same-named bundles
   in sibling dev-tree paths confuse LS in a way `lsregister -u/-f`
   doesn't fully clear.
 - **What this means for operators:** end-user launches through
   Finder/Dock against a notarized bundle in /Applications are not
   affected — that's a fresh path with a fresh LS entry. But if an
-  operator wants to double-click `Sirius Looper.app` from a dev tree
+  operator wants to double-click `IDA.app` from a dev tree
   in Finder, they may hit this -10825. Workaround: launch via
-  Terminal directly with `"path/Contents/MacOS/Sirius Looper"`.
+  Terminal directly with `"path/Contents/MacOS/IDA"`.
 - **What's needed to finish:**
   1. Confirm hypothesis by `lsregister -dump | grep -i sirius` and
      looking for duplicate entries with different identifiers.
@@ -540,15 +540,15 @@
 - **Surfaced by:** auto-testing Phase A `open` failure during smoke
   script setup (2026-05-16).
 
-### 2026-05-16 — `build/` ad-hoc bundle has invalid `Identifier=Sirius Looper` (should be reverse-DNS)
+### 2026-05-16 — `build/` ad-hoc bundle has invalid `Identifier=IDA` (should be reverse-DNS)
 
 - **Files:** the Unix-Makefiles half of `app/CMakeLists.txt` — the
   `juce_add_gui_app` invocation or the JUCE_* CMake properties that
   set `CFBundleIdentifier`.
-- **What was deferred:** `codesign -dv "build/app/.../Sirius Looper.app"`
-  reports `Identifier=Sirius Looper` (literal string with a space).
-  The Xcode-gen build correctly produces `Identifier=com.larryseyer.siriuslooper`.
-  Both targets are the same `SiriusLooper` JUCE app target; the
+- **What was deferred:** `codesign -dv "build/app/.../IDA.app"`
+  reports `Identifier=IDA` (literal string with a space).
+  The Xcode-gen build correctly produces `Identifier=com.larryseyer.ida`.
+  Both targets are the same `IDA` JUCE app target; the
   difference comes from CMake generator-specific defaults.
 - **Why this matters:** invalid bundle identifiers (containing
   whitespace, lacking reverse-DNS structure) confuse Launch Services
@@ -558,7 +558,7 @@
 - **What's needed to finish:**
   1. Locate where the bundle identifier is set in `app/CMakeLists.txt`
      and either:
-     - Set an explicit `BUNDLE_ID "com.larryseyer.siriuslooper"` in the
+     - Set an explicit `BUNDLE_ID "com.larryseyer.ida"` in the
       `juce_add_gui_app` call (JUCE's documented mechanism), OR
      - Set `XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER` AND the
        equivalent Makefile-path property (CMake's
@@ -619,7 +619,7 @@
      fix, push, watch. This is the cost of a long Apple-Clang-only
      dev period coming home to roost.
   4. Optional belt-and-suspenders: add an `-Werror` build mode
-     gated behind `-DSIRIUS_STRICT=ON` and run it on macOS CI too,
+     gated behind `-DIDA_STRICT=ON` and run it on macOS CI too,
      so the next divergence is caught locally instead of by a CI
      email loop.
 - **Don't pursue inside another milestone session:** worth handling
@@ -631,35 +631,35 @@
 
 - **Status:** Implemented end-to-end 2026-05-16 (commit `128913a`).
 - **What landed:**
-  - `app/SiriusLooper.macos.entitlements` (audio-input only — sandbox-only
+  - `app/IDA.macos.entitlements` (audio-input only — sandbox-only
     keys like `files.user-selected.read-write` are unnecessary outside the
     sandbox; Info.plist `NS*UsageDescription` keys handle Load-dialog TCC).
-  - `app/CMakeLists.txt` — `set_target_properties(SiriusLooper PROPERTIES
+  - `app/CMakeLists.txt` — `set_target_properties(IDA PROPERTIES
     XCODE_ATTRIBUTE_*)` block, active only under `-G Xcode`. The default
     `cmake -B build` (Unix Makefiles) stays ad-hoc-signed for fast dev
     iteration; `cmake -B build-xcode -G Xcode` produces a Developer-ID-
     signed bundle with hardened runtime.
-  - Notarization gated behind `-DSIRIUS_NOTARIZE=ON`. Runs
+  - Notarization gated behind `-DIDA_NOTARIZE=ON`. Runs
     `xcrun notarytool submit --wait` → `xcrun stapler staple` → `spctl`
     verify as a post-build custom command.
   - One-time operator setup done: `xcrun notarytool store-credentials
     sirius-notary --apple-id itunes@larryseyer.com --team-id RR5DY39W4Q`.
     Profile validated against Apple's servers, stored in keychain.
-  - Manual Xcode-UI verification on `Sirius Looper.app` showed
+  - Manual Xcode-UI verification on `IDA.app` showed
     `Authority=Developer ID Application: Larry Seyer (RR5DY39W4Q)`,
     `flags=0x10000(runtime)`, audio-input entitlement, timestamp.
 - **OTTO backport — partial:** CMake block + entitlements file added to
   `OTTO/src/otto-plugin/CMakeLists.txt` and
   `OTTO/src/otto-plugin/OTTOPlugin.macos.entitlements` during this
   session. Another Claude is working OTTO concurrently — the edits are
-  on disk but Sirius did not test the OTTO build end-to-end.
+  on disk but IDA did not test the OTTO build end-to-end.
 - **Deferrals from this session (DO NOT test claims unverified):**
   - `bash/smoke-persistence.sh` not run against the signed bundle
     (operator said "do not test"). The AppleScript -25211 should be
     cleared but is unverified.
-  - Load dialog `.sirius.json` greying in `~/Downloads` is similarly
+  - Load dialog `.ida.json` greying in `~/Downloads` is similarly
     unverified.
-  - `SiriusTests` not re-run against the regenerated build trees;
+  - `IdaTests` not re-run against the regenerated build trees;
     expected still 256 / 4283 (no code paths touched).
 
 ### 2026-05-16 — Developer ID signing milestone (original entry, for history)
@@ -671,18 +671,18 @@
   a side errand inside a feature session. Per the
   `feedback-defer-big-design-to-own-session` memory pattern.
 - **What it unblocks (two symptoms, one root cause):**
-  1. `bash/smoke-persistence.sh` — `tell process "Sirius Looper" to ...`
+  1. `bash/smoke-persistence.sh` — `tell process "IDA" to ...`
      fails with AppleScript error `-25211` because the bundle is
      ad-hoc-signed. The same call against `Finder` works from the same
      shell, so this is process-targeted denial, not a TCC scope issue.
      See the 2026-05-16 entry below.
-  2. The Load dialog greys `*.sirius.json` files in `~/Downloads` — the
+  2. The Load dialog greys `*.ida.json` files in `~/Downloads` — the
      four protected-folder TCC keys we added to `Info.plist` are inert
      against an ad-hoc bundle. See the 2026-05-15 entry below for the
      full failed-attempt log; the working hypothesis there reaches the
      same conclusion.
 - **Current bundle signing state:**
-  `codesign -dv "Sirius Looper.app"` reports
+  `codesign -dv "IDA.app"` reports
   `flags=0x20002(adhoc,linker-signed)`, `Signature=adhoc`, no
   entitlements. Below macOS's TCC trust threshold for both directions:
   the bundle cannot be granted protected-folder access, and other
@@ -698,7 +698,7 @@
   shows the format (Sirius's macOS keys will differ).
 - **What OTTO does NOT have (genuinely new ground for both apps):**
   OTTO's *macOS desktop* targets (Standalone, VST3, AU, CLAP) are
-  ad-hoc-signed exactly like Sirius today. No hardened runtime, no
+  ad-hoc-signed exactly like IDA today. No hardened runtime, no
   notarization, no `Developer ID Application` identity, no macOS
   entitlements file. Sirius's signing session is the first time
   desktop signing lands in this codebase family — the work is
@@ -710,10 +710,10 @@
      If not, fetch from Apple Developer portal (cert exists implicitly
      since OTTO's iOS targets sign cleanly, but the macOS-specific
      `Developer ID Application` cert may be separate).
-  2. **macOS entitlements file** at `app/SiriusLooper.macos.entitlements`
+  2. **macOS entitlements file** at `app/IDA.macos.entitlements`
      containing at minimum:
        * `com.apple.security.files.user-selected.read-write` (fixes
-         the Load dialog `.sirius.json` greying)
+         the Load dialog `.ida.json` greying)
        * `com.apple.security.device.audio-input` (live capture path)
        * `com.apple.security.cs.allow-jit` only if a hosted plugin
          needs it (test without first; add only if a plugin scan fails)
@@ -721,34 +721,34 @@
      `juce_add_gui_app` / `PLIST_TO_MERGE` block with a
      `set_target_properties()` block modelled on OTTO's:
      ```cmake
-     set_target_properties(SiriusLooper PROPERTIES
+     set_target_properties(IDA PROPERTIES
          XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "RR5DY39W4Q"
          XCODE_ATTRIBUTE_CODE_SIGN_STYLE "Automatic"
          XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "Developer ID Application"
          XCODE_ATTRIBUTE_ENABLE_HARDENED_RUNTIME "YES"
          XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS
-             "${CMAKE_CURRENT_SOURCE_DIR}/SiriusLooper.macos.entitlements"
+             "${CMAKE_CURRENT_SOURCE_DIR}/IDA.macos.entitlements"
          XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED "YES")
      ```
-     Gate behind `-DSIRIUS_SIGN=ON` so dev iteration stays cheap
+     Gate behind `-DIDA_SIGN=ON` so dev iteration stays cheap
      (ad-hoc default; signed on explicit opt-in and on the
      operator-verification build).
   4. **Notarization step** — post-build script that runs
      `notarytool submit ... --wait` and `stapler staple` only when
-     `-DSIRIUS_SIGN=ON`. Needs an `xcrun notarytool store-credentials`
+     `-DIDA_SIGN=ON`. Needs an `xcrun notarytool store-credentials`
      keychain profile set up once; document the one-time setup in the
      session's deliverable.
   5. **Verification matrix** post-signing:
-       * `codesign -dv "Sirius Looper.app"` reports
+       * `codesign -dv "IDA.app"` reports
          `Authority=Developer ID Application: Larry Seyer (RR5DY39W4Q)`
          and the entitlements blob includes the keys above.
-       * `spctl -a -t exec -vv "Sirius Looper.app"` reports
+       * `spctl -a -t exec -vv "IDA.app"` reports
          `source=Notarized Developer ID`.
        * `bash/smoke-persistence.sh` exits 0 end-to-end (its TCC
          probe already validates the same trust transition).
-       * Load dialog allows selection of `*.sirius.json` in
+       * Load dialog allows selection of `*.ida.json` in
          `~/Downloads` (the 2026-05-15 entry's original symptom).
-       * `SiriusTests` still green (headless tests don't touch the
+       * `IdaTests` still green (headless tests don't touch the
          bundle but the CMake paths share configure logic).
   6. **Backport to OTTO** — once Sirius's macOS signing block is
      proven, replicate it in OTTO's `src/otto-standalone/CMakeLists.txt`
@@ -815,12 +815,12 @@
 - **Original spec/brainstorm:** preserved below for historical
   context; no longer actionable.
 
-- **Files:** `core/include/sirius/Arrangement.h`,
-  `core/src/Arrangement.cpp`, `core/include/sirius/Constituent.h`
+- **Files:** `core/include/ida/Arrangement.h`,
+  `core/src/Arrangement.cpp`, `core/include/ida/Constituent.h`
   (possibly), `ui/src/TimelineViewState.cpp`,
-  `ui/include/sirius/UndoStack.h`, `core/src/Promotion.cpp` (the
+  `ui/include/ida/UndoStack.h`, `core/src/Promotion.cpp` (the
   runtime guard added by the capture-promotion design goes away),
-  `docs/Sirius Looper User Guide.md` (Roadmap section + a new chapter
+  `docs/IDA User Guide.md` (Roadmap section + a new chapter
   once the feature lands).
 - **What was deferred:** shared-placement semantics for repeated
   Phrases. Today `arrangement::sequence` (`core/src/Arrangement.cpp:60`)
@@ -943,13 +943,13 @@
 ### 2026-05-15 — OTTO Look-and-Feel integration (cross-app)
 
 - **Files:** new top-level shared module (location TBD — see open
-  question below), `ui/` (new `sirius::LookAndFeel` subclass),
+  question below), `ui/` (new `ida::LookAndFeel` subclass),
   `app/Main.cpp` (currently calls `juce::Desktop::getInstance()
   .getDefaultLookAndFeel()` at line ~38 — replace with the shared
-  Sirius L&F), CMake wiring on both OTTO and Sirius sides.
+  IDA L&F), CMake wiring on both OTTO and IDA sides.
 - **What was deferred:** wholesale visual integration with OTTO's
-  existing design system. Sirius today runs JUCE stock `LookAndFeel_V4`
-  with default colours and fonts; the user wants Sirius to visually
+  existing design system. IDA today runs JUCE stock `LookAndFeel_V4`
+  with default colours and fonts; the user wants IDA to visually
   match OTTO so the two products read as one family.
 - **What OTTO already has (inventoried 2026-05-15):**
   Located at `/Users/larryseyer/AudioDevelopment/OTTO`.
@@ -1001,21 +1001,21 @@
   present:
   1. **New top-level repo** (e.g.
      `~/AudioDevelopment/audio-ui-core/`). Cleanest separation; both
-     OTTO and Sirius pull via git submodule or CMake FetchContent.
+     OTTO and IDA pull via git submodule or CMake FetchContent.
      One-time cost: extract code from OTTO into the new repo, update
      OTTO to consume from it, add the consumer to Sirius. **Working
      recommendation** — most-aligned with the "shared submodule"
      answer.
-  2. **OTTO's `ui/` becomes the canonical home**, Sirius adds OTTO as
+  2. **OTTO's `ui/` becomes the canonical home**, IDA adds OTTO as
      a submodule. Faster bootstrap but couples Sirius's CMake to all
      of OTTO (HISE assets, sampler code) and OTTO becomes a hard
-     dependency for any Sirius build.
+     dependency for any IDA build.
   3. **Sirius hosts** the shared module, OTTO consumes. Unusual since
      OTTO has the source today.
-  4. **Pragmatic two-stage**: vendor what Sirius needs from OTTO now
-     (commit as `ui/sirius/lookandfeel/` inside Sirius), and schedule
+  4. **Pragmatic two-stage**: vendor what IDA needs from OTTO now
+     (commit as `ui/ida/lookandfeel/` inside Sirius), and schedule
      the extraction-into-shared-module as a follow-up cross-repo
-     session. Keeps Sirius UI velocity high; pays the refactor cost
+     session. Keeps IDA UI velocity high; pays the refactor cost
      once both apps are visually settled. **Pragmatic fallback** if
      full shared-module setup is too much for one session.
 - **Why deferred:** wholesale L&F adoption + cross-repo submodule
@@ -1032,13 +1032,13 @@
      into it. Rename namespace from `otto::` to whatever the shared
      namespace is (`audiodev::ui::`? `larryseyer::ui::`? — open).
      Update OTTO's CMake to consume from the shared module. Add the
-     shared module as a submodule to Sirius. Bind a `sirius::LookAndFeel`
+     shared module as a submodule to Sirius. Bind a `ida::LookAndFeel`
      subclass that extends the shared base with any Sirius-specific
      widgets (timeline pills, tape strips). Install it in
      `app/Main.cpp`.
   3. **If option 4:** copy `OTTOColours.h` and a stripped
      `OTTOLookAndFeel.h/cpp` (no pattern cells, no player badges) into
-     `ui/include/sirius/` and `ui/src/`, rename `otto::` to `sirius::`,
+     `ui/include/ida/` and `ui/src/`, rename `otto::` to `ida::`,
      copy the relevant fonts from `OTTO/assets/Fonts/` to
      `Resources/Fonts/`, wire them as JUCE binary-data, install the
      L&F in `app/Main.cpp`. File a follow-up todo for the shared-module
@@ -1053,7 +1053,7 @@
      mute/solo/transport hue conventions — Arm shows red when armed
      (mute family), Mark In/Out are accent-coloured action buttons.
 - **Open sub-decisions for the next session:**
-  - **Font subset.** OTTO ships 10 families; Sirius likely needs only
+  - **Font subset.** OTTO ships 10 families; IDA likely needs only
     3–4 (Roboto for body, Orbitron for display, Roboto Condensed for
     menus, JetBrains Mono for time/numeric readouts on the diagnostics
     row). Pick which to bundle to keep the .app bundle small.
@@ -1067,7 +1067,7 @@
     nicer for performer agency (operator picks the colour) but
     larger scope.
   - **Touch targets.** OTTO is touch-first (44pt min, iOS in scope).
-    Sirius is touch-friendly-on-iPad but desktop-primary for now.
+    IDA is touch-friendly-on-iPad but desktop-primary for now.
     Adopt OTTO's 44pt minimums anyway (no harm on desktop), or trim
     to denser desktop sizing for Sirius? Working recommendation: keep
     44pt — the eyes-free performance metaphor (white paper 14.4)
@@ -1080,7 +1080,7 @@
 
 ### 2026-05-15 — M5: Plugin scanner crashes + scan-strategy redesign
 
-- **Files:** `host/src/PluginScanner.cpp`, `host/include/sirius/PluginScanner.h`,
+- **Files:** `host/src/PluginScanner.cpp`, `host/include/ida/PluginScanner.h`,
   eventually the app-level integration that triggers scans and the
   persistence layer that caches scan results.
 - **Symptom (operator report, 2026-05-15):** the standalone app crashed
@@ -1125,7 +1125,7 @@
   with a brainstorm pass and a written design before code.
 - **What's needed to finish:**
   1. **Capture a crash report.** Next time the scanner crashes, grab
-     the `~/Library/Logs/DiagnosticReports/Sirius Looper-*.crash` file
+     the `~/Library/Logs/DiagnosticReports/IDA-*.crash` file
      and attach it to this entry — that determines whether the crash
      is in our scanner code, in JUCE's plugin loader, or in a specific
      plugin's constructor.
@@ -1155,7 +1155,7 @@
 - **What was deferred:**
   1. Throwaway FFmpeg-integration spike to de-risk M6 video.
   2. Operator verification that the standalone window launches and renders
-     (build produces a valid `Sirius Looper.app` bundle; the window itself was
+     (build produces a valid `IDA.app` bundle; the window itself was
      not launched in this environment).
   3. CI workflow (`.github/workflows/ci.yml`) is committed but unverified — it
      cannot run until the repo has a GitHub remote and a push.
@@ -1167,8 +1167,8 @@
 - **What's needed to finish:**
   1. Install FFmpeg, write a small decode-one-frame probe, confirm libav links
      cleanly via CMake on all three platforms. Do before/early in M6.
-  2. Launch `build/app/SiriusLooper_artefacts/Release/Sirius Looper.app` and
-     confirm the window opens, is resizable, and shows "Sirius Looper".
+  2. Launch `build/app/IDA_artefacts/Release/IDA.app` and
+     confirm the window opens, is resizable, and shows "IDA".
   3. Add a GitHub remote and push; confirm the CI matrix goes green on
      macOS/Windows/Linux.
 
@@ -1214,10 +1214,10 @@ already held (same licensing model as the sister app OTTO; see
      Constituent tree renders as an indented hierarchy, the playhead slider
      scrubs, and the "loops sounding" panel updates as it moves.
 - **Why deferred:** GUI testing is operator-run per project conventions; the
-  build produces a valid `Sirius Looper.app` bundle but the window was not
+  build produces a valid `IDA.app` bundle but the window was not
   launched in this environment.
 - **What's needed to finish:**
-  1. Launch `build/app/SiriusLooper_artefacts/Release/Sirius Looper.app`.
+  1. Launch `build/app/IDA_artefacts/Release/IDA.app`.
      Confirm: the demo tree shows the session with intro/verse/outro phrases
      (verse holding two layered loops); dragging the playhead from 0 to 24 s
      moves the active-reads panel through intro -> verse (2 loops) -> outro;
@@ -1404,7 +1404,7 @@ already held (same licensing model as the sister app OTTO; see
 
 - **Headless verification already done for M6:** the VideoFrame data
   model (metadata + opaque bytes), `Tape<VideoFrame>` (same shared
-  template every Sirius tape uses), `findFrameAt` (the most-recent-frame-
+  template every IDA tape uses), `findFrameAt` (the most-recent-frame-
   at-or-before-query rule, with the empty-tape, before-first, on-frame,
   between-frames, and past-end cases pinned down), and `FrameMembrane` /
   `convertFrameRate` (exact-Rational nearest-frame selection, including
@@ -1424,7 +1424,7 @@ already held (same licensing model as the sister app OTTO; see
   shared-encoding concern that previously blocked this entry is
   resolved.
 - **Files:** `persistence/src/SessionFormat.cpp`,
-  `persistence/include/sirius/SessionFormat.h`, `app/MainComponent.cpp`
+  `persistence/include/ida/SessionFormat.h`, `app/MainComponent.cpp`
   (Save/Load callers), eventually `persistence/src/TapeStore.cpp`.
 - **What was deferred:** Whitepaper V2 §7.8 says a session is a
   directory `my-session.sirius/` containing:
@@ -1436,7 +1436,7 @@ already held (same licensing model as the sister app OTTO; see
   tapes/                  # the data layer — content-addressed
       <tape-id-hash>.{caf,flac,mkv}
   ```
-  Current code writes a single `session.sirius.json` file containing
+  Current code writes a single `session.ida.json` file containing
   only the Constituent graph. LMC discipline history and per-device
   calibration are not persisted; `TapeStore` exists but is not
   bundled into the same session unit. A session today is not the
@@ -1501,13 +1501,13 @@ already held (same licensing model as the sister app OTTO; see
   Launch Services landmines worked around — see the Auto-testing
   milestone entry above for the diff catalogue. Commit `4e8a1df`.
 
-### 2026-05-15 — Load dialog .sirius.json greying — RESOLVED-VIA-SIGNING 2026-05-16
+### 2026-05-15 — Load dialog .ida.json greying — RESOLVED-VIA-SIGNING 2026-05-16
 
-- **Status:** the Load dialog now reliably accepts `.sirius.json` on
+- **Status:** the Load dialog now reliably accepts `.ida.json` on
   the Developer-ID-signed bundle. Verified by `bash/smoke-persistence.sh`
   driving the actual NSOpenPanel and round-tripping a saved session.
   The remaining sub-question (does Finder *double-click* on a
-  `.sirius.json` in `~/Downloads` open it in Sirius?) is unverified
+  `.ida.json` in `~/Downloads` open it in Sirius?) is unverified
   this session — that's a Launch Services type-association question
   separate from the dialog gating, and intersects with the open-app
   -10825 follow-up below.
@@ -1516,10 +1516,10 @@ already held (same licensing model as the sister app OTTO; see
 - **Files:** `app/MainComponent.cpp` (`chooseFileAndLoad`),
   `app/CMakeLists.txt` (the `PLIST_TO_MERGE` TCC keys).
 - **What was deferred:** the macOS NSOpenPanel greys out
-  `session.sirius.json` (and `.md` files) in `~/Downloads` no matter what
+  `session.ida.json` (and `.md` files) in `~/Downloads` no matter what
   is tried. Save side writes the file fine; only Load is broken.
 - **What was already attempted (all failed):**
-  1. Filter `*.sirius.json;*.json` (commit `cad8cb9`).
+  1. Filter `*.ida.json;*.json` (commit `cad8cb9`).
   2. Filter `*.json` (commit `f9deccc`).
   3. Filter empty `juce::String()` (commit `c041936`). JUCE source review
      showed this is *worse* — when `filters.size()==0`, the
@@ -1553,17 +1553,17 @@ already held (same licensing model as the sister app OTTO; see
   1. Sign the bundle with a Developer ID Application certificate (or
      enable the hardened runtime + entitlements at minimum) so macOS
      issues a TCC prompt. Quickest test: `codesign --sign - --deep
-     --force --entitlements <plist> "Sirius Looper.app"` with a
+     --force --entitlements <plist> "IDA.app"` with a
      minimal entitlements file containing
      `com.apple.security.files.user-selected.read-write`.
   2. Or: investigate why `Elephant.png` was selectable while
-     `.sirius.json` / `.md` were greyed in the same panel. That
+     `.ida.json` / `.md` were greyed in the same panel. That
      asymmetry suggests macOS may be applying a file-type-class
      allowlist (images pass, opaque-data files don't) when the bundle
      is below the trust threshold — independent of the JUCE filter.
   3. Or: ship the load via a drag-and-drop target on the Preparation
      pane (`FileDragAndDropTarget`) as a secondary path. The user
-     drags `session.sirius.json` from Finder onto the app window;
+     drags `session.ida.json` from Finder onto the app window;
      bypasses NSOpenPanel entirely. Save stays as-is.
 - **Out of scope until then:** continuing with the rest of the headless
   coding work. Returning to this bug after that is finished.
@@ -1574,11 +1574,11 @@ already held (same licensing model as the sister app OTTO; see
 
 ---
 
-### 2026-05-15 — Marketing site asset gaps (siriuslooper.com)
+### 2026-05-15 — Marketing site asset gaps (automagicart.com/ida)
 
 The v0 website was scaffolded under `/website/` (Eleventy, deploys to
 `gh-pages` via `.github/workflows/pages.yml`, custom domain
-`siriuslooper.com`). The following placeholders shipped and need real
+`automagicart.com/ida`). The following placeholders shipped and need real
 assets before public launch:
 
 - **Logo / wordmark:** Currently a typographic mark in Orbitron with a
@@ -1611,16 +1611,16 @@ assets before public launch:
   form-action URL into `signupEndpoint`, redeploy.
 
 - **GitHub repo URL verification:** Site assumes
-  `https://github.com/larryseyer/SiriusLooper` (matches the
+  `https://github.com/larryseyer/IDA` (matches the
   user/slug convention used for OTTO). If the parallel push session
   used a different repo name, update `website/src/_data/site.json#github`
   and the `View source on GitHub` link in `doc.njk`.
 
 - **Custom domain DNS + Pages config (operator step):** Add A records
   to GitHub's apex-domain IPs (185.199.108–111.153) at the registrar
-  for `siriuslooper.com`, then in repo Settings → Pages set source =
-  `gh-pages` branch, custom domain = `siriuslooper.com`, Enforce HTTPS
-  on. Verify with `dig siriuslooper.com +short`.
+  for `automagicart.com/ida`, then in repo Settings → Pages set source =
+  `gh-pages` branch, custom domain = `automagicart.com/ida`, Enforce HTTPS
+  on. Verify with `dig automagicart.com/ida +short`.
 
 ### 2026-05-18 — Out-of-process plug-in scanner (Reaper-style crash isolation)
 
@@ -1629,7 +1629,7 @@ assets before public launch:
   `--mode scan` path), new IPC contract for scan results.
 - **What was deferred:** the current scanner instantiates each plug-in
   **in the engine process**. A crashy plug-in (segfault during ctor,
-  buggy initialize, etc.) takes the entire Sirius Looper engine down
+  buggy initialize, etc.) takes the entire IDA engine down
   with it. The operator has 1000+ installed plug-ins; in a real-world
   scan this is genuinely likely. The "FabFilter" testing filter (next
   entry below) only masks this problem.
@@ -1640,7 +1640,7 @@ assets before public launch:
   attempt during the scan phase. Different code, different lifecycle,
   different failure mode.
 - **What's needed to finish (Reaper-style):**
-  1. New `sirius_plugin_host` mode: `--mode scan --plugin-path <bundle>`.
+  1. New `ida_plugin_host` mode: `--mode scan --plugin-path <bundle>`.
      Child loads the plug-in via dlopen, instantiates it, calls
      `clap_entry.init` (or VST3/AU equivalent when those land),
      queries name + descriptor + parameter count, writes a small
@@ -1651,7 +1651,7 @@ assets before public launch:
      "skip — failed to scan" and the file is added to the failed-list
      surface (PluginsPane already has the slot for this).
   3. Engine-side: replace `PluginDirectoryScanner` usage with a loop
-     that spawns `sirius_plugin_host --mode scan` per candidate file,
+     that spawns `ida_plugin_host --mode scan` per candidate file,
      reads the report on stdout, captures exit status, accumulates
      results into a `juce::KnownPluginList`-shaped collection.
   4. Parallelism budget: scan N children in parallel (N = hardware
@@ -1663,8 +1663,8 @@ assets before public launch:
   exactly this; Logic and Live similar (each via their own helper
   process). Critical for shipping — without it, one bad VST = no scan.
 - **Sequencing:** wait until M7 S9 lands (editor) + the VST3 / AU
-  hosting in `sirius_plugin_host` lands (separate todo). Then this
-  scanner rework picks the same `sirius_plugin_host` binary up and
+  hosting in `ida_plugin_host` lands (separate todo). Then this
+  scanner rework picks the same `ida_plugin_host` binary up and
   just adds a new mode.
 
 ### 2026-05-18 - M7 S7 testing-only PluginScanner hardcoded "FabFilter" filter
@@ -1684,16 +1684,16 @@ assets before public launch:
   - `host/src/PluginGuiBridge.cpp` (os_log + switched to `xpc_connection_create`)
   - `host_process/main.cpp` (os_log + switched to `xpc_connection_create`)
   - `xpc_service/CMakeLists.txt` (Developer-ID POST_BUILD re-sign of .xpc)
-  - `app/CMakeLists.txt` (Developer-ID POST_BUILD re-sign of sirius_plugin_host + final outer .app re-sign)
+  - `app/CMakeLists.txt` (Developer-ID POST_BUILD re-sign of ida_plugin_host + final outer .app re-sign)
 
 - **What landed (engine side is GREEN end-to-end):**
   1. **Diagnostic instrumentation** — full `os_log` trace via subsystem
-     `com.larryseyer.siriuslooper`, category `gui-bridge`. Filter with
-     `log show --predicate 'subsystem == "com.larryseyer.siriuslooper"' --last 5m`.
+     `com.larryseyer.ida`, category `gui-bridge`. Filter with
+     `log show --predicate 'subsystem == "com.larryseyer.ida"' --last 5m`.
      Silent XPC failures are the failure mode this session burned a
      full chat diagnosing; the logging stays permanently.
   2. **Codesign identifier matching** — the .xpc bundle now has
-     codesign `Identifier=com.larryseyer.siriuslooper.gui-bridge` to
+     codesign `Identifier=com.larryseyer.ida.gui-bridge` to
      match the plist's `CFBundleIdentifier`. Was `sirius_gui_bridge`
      (the binary name) because `--sign -` (ad-hoc) defaults to that.
      launchd refuses to register in-app XPC services when the two
@@ -1702,7 +1702,7 @@ assets before public launch:
      rejects ad-hoc-signed embedded XPC services with
      `Code=-423 "The file is adhoc signed or signed by an unknown
      certificate chain"`. POST_BUILD now re-signs the .xpc, the
-     `sirius_plugin_host` helper, and the outer .app with
+     `ida_plugin_host` helper, and the outer .app with
      `Developer ID Application: Larry Seyer (RR5DY39W4Q)` plus
      `--options runtime`. `codesign --verify --deep --strict` passes.
   4. **Engine uses `xpc_connection_create`, not
@@ -1714,7 +1714,7 @@ assets before public launch:
      name=... error=3: No such process`.
   5. **Final outer .app re-sign closes M7 S6 deviation #2** — the
      parent's CodeResources seal now covers `Contents/XPCServices/`
-     and the embedded `sirius_plugin_host`. (Note: NOT `--deep`, which
+     and the embedded `ida_plugin_host`. (Note: NOT `--deep`, which
      would clobber the .xpc's identifier with the parent's.)
 
   Verified by os_log trace at 21:59:32 (2026-05-18):
@@ -1729,13 +1729,13 @@ assets before public launch:
   ```
 
 - **What's still broken (architectural, deferred to its own session):**
-  The child (`sirius_plugin_host`) calls
-  `xpc_connection_create("com.larryseyer.siriuslooper.gui-bridge", ...)`
+  The child (`ida_plugin_host`) calls
+  `xpc_connection_create("com.larryseyer.ida.gui-bridge", ...)`
   and gets routed to a **DIFFERENT bridge process** with empty state.
   launchd spawns one bridge per requester:
   ```
-  [pid/<engine_pid>/com.larryseyer.siriuslooper.gui-bridge [37633]: Successfully spawned
-  [pid/<child_pid>/com.larryseyer.siriuslooper.gui-bridge [37635]: Successfully spawned
+  [pid/<engine_pid>/com.larryseyer.ida.gui-bridge [37633]: Successfully spawned
+  [pid/<child_pid>/com.larryseyer.ida.gui-bridge [37635]: Successfully spawned
   ```
   The cached `g_cachedServerPort` is process-local to each bridge
   instance. The child's `get_server_port` against its own (fresh)
@@ -1803,7 +1803,7 @@ assets before public launch:
   Developer-ID-signed `.app` with sealed CodeResources.
 
 ### [2026-05-19] - M8 S2 — OutOfProcessPluginInstance state-result is bool-collapsed
-- Files: `/Users/larryseyer/SiriusLooper/src/sirius/OutOfProcessPluginInstance.h`, `/Users/larryseyer/SiriusLooper/src/sirius/OutOfProcessPluginInstance.cpp`, `/Users/larryseyer/SiriusLooper/tests/ThirdPartyClapIntegrationTests.cpp`
+- Files: `/Users/larryseyer/IDA/src/ida/OutOfProcessPluginInstance.h`, `/Users/larryseyer/IDA/src/ida/OutOfProcessPluginInstance.cpp`, `/Users/larryseyer/IDA/tests/ThirdPartyClapIntegrationTests.cpp`
 - What was deferred: `OutOfProcessPluginInstance::requestStateSave` / `requestStateLoad` collapse three distinct outcomes — (a) plug-in has no `clap_plugin_state` extension, (b) IPC round-trip timed out, (c) child-side save/load error — into a single `false` return. The third-party CLAP integration test (`ThirdPartyClapIntegrationTests.cpp`, Case 2) therefore cannot tell a genuine timeout/error apart from a legitimately-stateless plug-in, so it WARN+SUCCEED on `false`. A real timeout is currently swallowed as a pass (fail-loud violation that cannot be cleanly fixed at the test layer).
 - Why deferred: Fixing the root cause requires changing the public API of `OutOfProcessPluginInstance` (tri-state result enum, or a `lastError()` accessor) and threading the distinction back through the IPC reply protocol — out of scope for the test-only Task 12 follow-up.
 - What's needed to finish: Give `requestStateSave` / `requestStateLoad` a tri-state result (e.g. `enum class StateResult { Ok, NoExtension, TimedOut, ChildError }`) or a `lastStateError()` accessor populated from the IPC reply, then update Case 2 to hard-fail on `TimedOut` / `ChildError` and only WARN+SUCCEED on `NoExtension`.
@@ -1820,7 +1820,7 @@ assets before public launch:
 - What's needed to finish: each item is its own slice; see `docs/design/mixer-design.md` (decision 8) and whitepaper §6.1/§6.2.
 
 ### [2026-05-20] - Dynamic bus + tape-output creation via blank-area long-press (NEEDS SPEC)
-- Files (anticipated): `app/MainComponent.cpp` (InputMixerPane + the future OutputMixerPane — shared blank-area gesture + layout), `engine/src/InputMixer.cpp` / `engine/src/OutputMixer.cpp` + their headers (bus/tape/output-target registry), `docs/design/mixer-design.md` + `docs/Sirius Looper Whitepaper V7.md` §5.2/§6 (spec).
+- Files (anticipated): `app/MainComponent.cpp` (InputMixerPane + the future OutputMixerPane — shared blank-area gesture + layout), `engine/src/InputMixer.cpp` / `engine/src/OutputMixer.cpp` + their headers (bus/tape/output-target registry), `docs/design/mixer-design.md` + `docs/IDA Whitepaper V7.md` §5.2/§6 (spec).
 - What was deferred (operator request, this session): the operator wants the performer to **dynamically add destinations** directly from the mixer via a **long-press on any BLANK area** (not on a strip), which pops a **small two-option menu**. The two options are **context-specific to which mixer**:
     - **Input Mixer** (capture console): **"Add a bus" / "Add a tape"** — the input mixer routes to tapes.
     - **Output Mixer** (mixdown console): **"Add a bus" / "Add an output"** — the output mixer routes to outputs/buses/master, never tapes (per CLAUDE.md: input mixer → tapes, output mixer → stereo outputs/buses/master).
@@ -1830,25 +1830,25 @@ assets before public launch:
 
 ### [2026-05-20] - FX returns (RVB/DLY) + per-channel sends (NEEDS SPEC; see OTTO)
 - Files (anticipated): `engine/` (new SendBus/FxReturn + reverb/delay DSP), `app/MainComponent.cpp` (FXReturn strips + a Sends detail tab beside Pan/Width), `ui/lookandfeel/components/` (vendor OTTO `ChannelDetailSendsTab`), `docs/design/mixer-design.md` + whitepaper §5.2/§6.
-- What was deferred (operator request, this session): Sirius wants **FX-return channels — reverb (RVB) and delay (DLY)**, like OTTO. **OTTO model** (`otto-core/include/otto/mixer/GlobalMixer.h`, `SendBus.h`, `MixerChannel.h`; UI `ChannelDetailSendsTab.h`): **4 FIXED FX returns** (3 reverb + 1 delay). Each is a `SendBus`: accumulate per-channel sends → 100% wet effect (`effects::PlayerIRConvolution` reverb / `effects::PlayerDelay` delay) → optional return EQ/comp → gain/pan/width → **sum to master**. Each channel carries `sendLevel[4]` set via a **Sends detail tab** (`ChannelDetailSendsTab` = 4 send knobs + preset buttons), a **sibling of the Pan/Width tab just vendored** (`ChannelDetailPanWidTab`). FX returns render as `CompactFaderStrip(ChannelType::FXReturn)` — that enum value **already exists** in Sirius's vendored strip — with no output combo (returns sum to master).
-- **Design tension to resolve in spec:** OTTO's FX returns are **fixed (4)**; the operator separately wants **dynamically-added buses** (the blank-area long-press add-bus/tape/output gesture, prior entry). Decide whether Sirius FX returns are (a) **fixed RVB/DLY** like OTTO, or (b) a **type of dynamically-added bus** — i.e. an "add a bus" that hosts a built-in reverb or delay. Option (b) unifies the model: a *send* becomes "route some of this strip to a bus," and RVB/DLY are simply buses with an effect on them. This is exactly why sends were earlier noted as depending on the bus model — in OTTO the send destinations ARE the FX returns.
+- What was deferred (operator request, this session): IDA wants **FX-return channels — reverb (RVB) and delay (DLY)**, like OTTO. **OTTO model** (`otto-core/include/otto/mixer/GlobalMixer.h`, `SendBus.h`, `MixerChannel.h`; UI `ChannelDetailSendsTab.h`): **4 FIXED FX returns** (3 reverb + 1 delay). Each is a `SendBus`: accumulate per-channel sends → 100% wet effect (`effects::PlayerIRConvolution` reverb / `effects::PlayerDelay` delay) → optional return EQ/comp → gain/pan/width → **sum to master**. Each channel carries `sendLevel[4]` set via a **Sends detail tab** (`ChannelDetailSendsTab` = 4 send knobs + preset buttons), a **sibling of the Pan/Width tab just vendored** (`ChannelDetailPanWidTab`). FX returns render as `CompactFaderStrip(ChannelType::FXReturn)` — that enum value **already exists** in Sirius's vendored strip — with no output combo (returns sum to master).
+- **Design tension to resolve in spec:** OTTO's FX returns are **fixed (4)**; the operator separately wants **dynamically-added buses** (the blank-area long-press add-bus/tape/output gesture, prior entry). Decide whether IDA FX returns are (a) **fixed RVB/DLY** like OTTO, or (b) a **type of dynamically-added bus** — i.e. an "add a bus" that hosts a built-in reverb or delay. Option (b) unifies the model: a *send* becomes "route some of this strip to a bus," and RVB/DLY are simply buses with an effect on them. This is exactly why sends were earlier noted as depending on the bus model — in OTTO the send destinations ARE the FX returns.
 - Why deferred: net DSP (reverb + delay engines — vendor from OTTO or build new, decide in spec) + send-routing graph + the Sends UI tab; a full sub-feature of the creative mixer. Stereo invariant holds (returns are stereo); RT-safe registry mutation (same removeAudioCallback/addAudioCallback bracket); persistence in the session format. Defer-to-own-session rule.
 - What's needed to finish: brainstorm against whitepaper §5.2/§6 + OTTO's `GlobalMixer`/`SendBus`/`ChannelDetailSendsTab` + the dynamic-bus entry above; **spec the bus + FX-return + send model as ONE routing graph**; then plan + implement.
 
 ### [2026-05-21] - Routing Phase 4 (per-node insert chains) — apparatus shipped, production wiring deferred
-- Files: `core/include/sirius/EffectChain.h` + `core/src/EffectChain.cpp` (8-slot cap), `engine/include/sirius/ChannelStrip.h` (EffectChain + IEffectChainHost dispatch), `tests/EffectChainTests.cpp` + `tests/ChannelStripTests.cpp`. Commits `41c7cb8`, `f7ebffa`, `291a487`, `eac4d72` on origin/master.
+- Files: `core/include/ida/EffectChain.h` + `core/src/EffectChain.cpp` (8-slot cap), `engine/include/ida/ChannelStrip.h` (EffectChain + IEffectChainHost dispatch), `tests/EffectChainTests.cpp` + `tests/ChannelStripTests.cpp`. Commits `41c7cb8`, `f7ebffa`, `291a487`, `eac4d72` on origin/master.
 - What was deferred:
   1. **Production wiring (→ UI Phases 6–7).** No mixer calls `setEffectChainHost` outside tests; `InputMixer`/`OutputMixer`/`MainComponent` are untouched. Channels default to no host = the pre-Phase-4 path, byte-identical. Wiring = a mixer owns an `OutOfProcessEffectChainHost`, **partitions the `int64` pumpSlot key space so channel keys don't collide with bus keys** (cleanest: each mixer owns its own host instance; alt: channels in the high half of the int64 space), and calls `configureBus` per channel. `ChannelStrip::setEffectChainHost(host, nodeKey)` takes the key explicitly precisely so the caller owns this.
   2. **`OutOfProcessEffectChainHost::configureBus` → `configureNode` rename (future tidy).** The API is already node-agnostic (`std::int64_t` key); only the name is bus-historical. Rename touches the host + all call sites + tests for zero behavior change — out of scope for Phase 4 (surgical), do on a future touch of `host/`.
-  3. **Built-in Sirius FX as slot contents (the follow-on spec).** Phase 4 ships no selectable-but-dead effects; the union slot model (external plugin OR built-in EQ/Comp/Rvb/Dly, seeded by OTTO's `PlayerIRConvolution`/`PlayerDelay`) is the "right behind" spec after the UI phases.
+  3. **Built-in IDA FX as slot contents (the follow-on spec).** Phase 4 ships no selectable-but-dead effects; the union slot model (external plugin OR built-in EQ/Comp/Rvb/Dly, seeded by OTTO's `PlayerIRConvolution`/`PlayerDelay`) is the "right behind" spec after the UI phases.
   4. **Muted strip never pumps the host (review observation, eac4d72 code-quality review).** Inserts sit after the mute early-return, so a muted strip stops calling `pumpSlot`. For the real out-of-process pipelined host this could starve/desync the slot's ring, so on unmute the first buffer or two return misses (dry) until the pipeline refills. Harmless for a muted (silent) strip; the unmute miss-dry is the documented graceful path. The production-wiring phase should consciously decide pump-while-muted-and-discard vs. accept-refill-latency. The mute test locks in the current skip behavior so any change is a deliberate test edit, not a silent regression.
-  5. **`IEffectChainHost::pumpSlot` docblock terminology (review observation).** The first param is named `busId` / documented as `BusId::value()`, but channels now pass a non-bus `nodeKey_`. Behavior is correct (caller-partitioned key space); generalize the interface docblock (`busId` → "node key") on the next touch of `core/include/sirius/IEffectChainHost.h`.
+  5. **`IEffectChainHost::pumpSlot` docblock terminology (review observation).** The first param is named `busId` / documented as `BusId::value()`, but channels now pass a non-bus `nodeKey_`. Behavior is correct (caller-partitioned key space); generalize the interface docblock (`busId` → "node key") on the next touch of `core/include/ida/IEffectChainHost.h`.
   6. **Stereo-buffer dispatch test (nice-to-have, not a blocker).** Every Phase 4 insert test uses a mono buffer (to isolate from pan); the `std::min(numChannels, kMaxInsertChannels)` stereo clamp + 2-channel `pumpSlot` path are exercised only at numChannels==1. Bus already covers the stereo clamp. Add a numChannels==2 dispatch assertion if/when convenient.
 - Why deferred: Phase 4 is the engine+core apparatus (tested headless with a synchronous mock host), matching the Phase-3 "apparatus, not wired to production" posture. Production wiring depends on the UI surfaces (Phases 6–7).
 - What's needed to finish: items 1–3 land in Phases 5–7 per the spec sequence; items 4–6 are recorded so the wiring phase decides them deliberately.
 
 ### [2026-05-21] - Routing Phase 5 Task 2 — extract `registerChannelWithId` seam from `importGraphState`
-- Files: `engine/src/InputMixer.cpp`, `engine/include/sirius/InputMixer.h`.
+- Files: `engine/src/InputMixer.cpp`, `engine/include/ida/InputMixer.h`.
 - What was deferred: `InputMixer::importGraphState` duplicates the channel-registration steps that `addChannel` performs — it emplaces into `channels_`, assigns `channelNodeIds_[id] = graph_.addNode(MixerNodeKind::Channel)`, and seeds the `ChannelInputSource`. A future private seam `registerChannelWithId(ChannelId, SignalType, InputId, TapeMode)` shared by both `addChannel` and `importGraphState` would prevent the two paths from silently diverging if channel registration ever gains side effects (e.g. notification, metering registration, collaborator callback).
 - Why deferred: current code is correct under the "call on a freshly-constructed mixer" precondition; duplication is not a bug today. Non-blocking.
 - What's needed to finish: extract the 3-line registration body into a private `registerChannelWithId(ChannelId, SignalType, InputId, TapeMode)` helper; call it from both `addChannel` (which mints the id from `nextChannelId_`) and `importGraphState` (which uses the persisted id). Add a `setChannelInputSource` call in `registerChannelWithId` if it can absorb the source-map init cleanly.

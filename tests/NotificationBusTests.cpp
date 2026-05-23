@@ -1,4 +1,4 @@
-// Tests for sirius::NotificationBus — the V5 §8.6 engine↔UI truthfulness
+// Tests for ida::NotificationBus — the V5 §8.6 engine↔UI truthfulness
 // channel. The audio thread posts wait-free into per-category SPSC rings; the
 // message thread drains. These tests pin down: trivially-copyable layout,
 // empty-drain no-op, single-post round-trip, per-category FIFO at scale,
@@ -16,10 +16,10 @@
 #include <type_traits>
 #include <vector>
 
-using sirius::Category;
-using sirius::Notification;
-using sirius::NotificationBus;
-using sirius::NotificationLevel;
+using ida::Category;
+using ida::Notification;
+using ida::NotificationBus;
+using ida::NotificationLevel;
 
 // Compile-time guarantee that the POD shape Holds — this is the contract the
 // SPSC ring's in-place copy relies on for allocation-free pushes.

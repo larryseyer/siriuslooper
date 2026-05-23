@@ -1,4 +1,4 @@
-// Tests for sirius::TapePool — the project's pool of tapes (tape subsystem
+// Tests for ida::TapePool — the project's pool of tapes (tape subsystem
 // slice 1). Pins the >=1 invariant, monotonic id allocation, add/remove/rename,
 // the explicit-list ctor's validation, and the SessionFormat round-trip.
 #include "sirius/TapePool.h"
@@ -11,9 +11,9 @@
 
 #include <stdexcept>
 
-using sirius::TapeDescriptor;
-using sirius::TapeId;
-using sirius::TapePool;
+using ida::TapeDescriptor;
+using ida::TapeId;
+using ida::TapePool;
 
 TEST_CASE ("default TapePool holds exactly one primary tape", "[tape-pool]")
 {
@@ -136,8 +136,8 @@ TEST_CASE ("TapePool round-trips through SessionFormat", "[tape-pool][sessionfor
         TapeDescriptor { TapeId (5), "Drums" },
         TapeDescriptor { TapeId (9), "Bass" } });
 
-    const auto json   = sirius::persistence::serializeTapePool (original);
-    const auto loaded = sirius::persistence::deserializeTapePool (json);
+    const auto json   = ida::persistence::serializeTapePool (original);
+    const auto loaded = ida::persistence::deserializeTapePool (json);
 
     REQUIRE (loaded.count() == original.count());
     for (int i = 0; i < original.count(); ++i)
@@ -151,12 +151,12 @@ TEST_CASE ("TapePool round-trips through SessionFormat", "[tape-pool][sessionfor
 TEST_CASE ("deserializeTapePool rejects empty and malformed documents", "[tape-pool][sessionformat]")
 {
     // Present-but-empty tapes array violates the >=1 on-disk contract.
-    REQUIRE_THROWS_AS (sirius::persistence::deserializeTapePool ("{ \"tapes\": [] }"),
+    REQUIRE_THROWS_AS (ida::persistence::deserializeTapePool ("{ \"tapes\": [] }"),
                        std::runtime_error);
     // Not valid JSON.
-    REQUIRE_THROWS_AS (sirius::persistence::deserializeTapePool ("{ not json"),
+    REQUIRE_THROWS_AS (ida::persistence::deserializeTapePool ("{ not json"),
                        std::runtime_error);
     // Object without a tapes array.
-    REQUIRE_THROWS_AS (sirius::persistence::deserializeTapePool ("{}"),
+    REQUIRE_THROWS_AS (ida::persistence::deserializeTapePool ("{}"),
                        std::runtime_error);
 }

@@ -1,4 +1,4 @@
-// Tests for sirius::ChannelStrip<SignalType> — M5 Session 1 (per V7
+// Tests for ida::ChannelStrip<SignalType> — M5 Session 1 (per V7
 // alignment plan amendment §3). The `Audio` specialization carries real
 // gain/pan DSP; the other specializations are no-op stubs until their
 // real-DSP milestones (M9 / M12 / M13).
@@ -21,11 +21,11 @@
 #include <cstdint>
 #include <utility>
 
-using sirius::ChannelStrip;
-using sirius::FileChain;
-using sirius::MidiChain;
-using sirius::SignalType;
-using sirius::VideoChain;
+using ida::ChannelStrip;
+using ida::FileChain;
+using ida::MidiChain;
+using ida::SignalType;
+using ida::VideoChain;
 
 using AudioStrip = ChannelStrip<SignalType::Audio>;
 
@@ -108,7 +108,7 @@ TEST_CASE ("ChannelStrip<Audio> pan=0.0 zeros the right channel; pan=1.0 zeros t
 
         strip.process (channelData, 2, static_cast<int> (left.size()));
 
-        const float expected = std::cos (sirius::kHalfPi * 0.5f); // ~0.7071
+        const float expected = std::cos (ida::kHalfPi * 0.5f); // ~0.7071
         for (float v : left)  CHECK (v == Catch::Approx (expected));
         for (float v : right) CHECK (v == Catch::Approx (expected));
     }
@@ -167,7 +167,7 @@ TEST_CASE ("ChannelStrip<Audio> width=1.0 leaves the panned block byte-identical
 
     strip.process (channelData, 2, static_cast<int> (left.size()));
 
-    const float centerGain = std::cos (sirius::kHalfPi * 0.5f); // ~0.7071
+    const float centerGain = std::cos (ida::kHalfPi * 0.5f); // ~0.7071
     for (float v : left)  CHECK (v == Catch::Approx (1.0f * centerGain));
     for (float v : right) CHECK (v == Catch::Approx (0.5f * centerGain));
 }
@@ -208,7 +208,7 @@ TEST_CASE ("ChannelStrip<Audio> width=2.0 doubles the side component",
 
     strip.process (channelData, 2, static_cast<int> (left.size()));
 
-    const float cg = std::cos (sirius::kHalfPi * 0.5f); // center pan gain ~0.7071
+    const float cg = std::cos (ida::kHalfPi * 0.5f); // center pan gain ~0.7071
     const float l  = cg, r = 0.0f;                       // post-pan
     const float mid = (l + r) * 0.5f;
     const float side = (l - r) * 0.5f * 2.0f;
@@ -233,7 +233,7 @@ TEST_CASE ("ChannelStrip<Audio> width composes with gain and pan",
 
     strip.process (channelData, 2, static_cast<int> (left.size()));
 
-    const float postPanLeft = 2.0f * std::cos (sirius::kHalfPi * 0.5f); // gain×panL
+    const float postPanLeft = 2.0f * std::cos (ida::kHalfPi * 0.5f); // gain×panL
     const float mid = postPanLeft * 0.5f;                                // (l+0)/2
     for (float v : left)  CHECK (v == Catch::Approx (mid));
     for (float v : right) CHECK (v == Catch::Approx (mid));
@@ -275,7 +275,7 @@ TEST_CASE ("ChannelStrip<Audio> peak meters reflect the post-width signal",
 
     strip.process (channelData, 2, 3);
 
-    const float cg = std::cos (sirius::kHalfPi * 0.5f);
+    const float cg = std::cos (ida::kHalfPi * 0.5f);
     const float mid = cg * 0.5f, side = cg * 0.5f * 2.0f;
     CHECK (strip.peakLeft()  == Catch::Approx (std::fabs (mid + side)));
     CHECK (strip.peakRight() == Catch::Approx (std::fabs (mid - side)));
@@ -420,7 +420,7 @@ namespace
     // Applies a different non-commuting op per slot index, proving dispatch
     // visits slots in ascending index order: slot 0 adds 1.0, slot 1 doubles.
     // (in+1)*2 != in*2+1, so the asserted value pins the order.
-    struct SlotAwareHost : sirius::IEffectChainHost
+    struct SlotAwareHost : ida::IEffectChainHost
     {
         bool pumpSlot (std::int64_t nodeKey, std::size_t slotIndex,
                        const float* const* in, float* const* out,
@@ -438,7 +438,7 @@ namespace
 
     // Always reports a miss — leaves `out` untouched (the pipelined 1-buffer
     // "dry on miss" case). Records that it was reached.
-    struct MissHost : sirius::IEffectChainHost
+    struct MissHost : ida::IEffectChainHost
     {
         bool pumpSlot (std::int64_t, std::size_t, const float* const*,
                        float* const*, int, int) noexcept override
@@ -449,12 +449,12 @@ namespace
         int calls { 0 };
     };
 
-    sirius::EffectChain chainOf (std::size_t activeSlots, std::size_t bypassedAtIndex = 999)
+    ida::EffectChain chainOf (std::size_t activeSlots, std::size_t bypassedAtIndex = 999)
     {
-        sirius::EffectChain chain;
+        ida::EffectChain chain;
         for (std::size_t i = 0; i < activeSlots; ++i)
         {
-            sirius::EffectChainEntry e;
+            ida::EffectChainEntry e;
             e.descriptor.name = "Fx";
             e.bypassed = (i == bypassedAtIndex);
             chain = chain.withAppended (e);
@@ -505,8 +505,8 @@ TEST_CASE ("ChannelStrip<Audio> loudness is silent + safe before prepare() is ca
 TEST_CASE ("ChannelStrip<Audio> stores a set-once effect chain + host + node key",
            "[channel-strip][inserts]")
 {
-    using sirius::EffectChain;
-    using sirius::EffectChainEntry;
+    using ida::EffectChain;
+    using ida::EffectChainEntry;
 
     AudioStrip strip;
 
@@ -521,7 +521,7 @@ TEST_CASE ("ChannelStrip<Audio> stores a set-once effect chain + host + node key
     strip.setEffectChain (chain);
     CHECK (strip.effectChain().size() == 1u);
 
-    struct NullHost : sirius::IEffectChainHost
+    struct NullHost : ida::IEffectChainHost
     {
         bool pumpSlot (std::int64_t, std::size_t, const float* const*,
                        float* const*, int, int) noexcept override { return false; }

@@ -15,11 +15,11 @@ namespace sirius
 {
 
 // `NotificationLevel` and `Category` live in
-// `core/include/sirius/INotificationSink.h` so JUCE-free libraries
+// `core/include/ida/INotificationSink.h` so JUCE-free libraries
 // (notably `host/`) can name the enumerators without pulling in the
 // engine layer. The definitions are unchanged from M6 Session 1 — this
-// header keeps them visible at `sirius::NotificationLevel` /
-// `sirius::Category` for all existing call sites.
+// header keeps them visible at `ida::NotificationLevel` /
+// `ida::Category` for all existing call sites.
 
 /// The number of `Category` values. Keep in sync with the enum above; the bus
 /// constructor uses this to size the per-category storage. The `static_assert`
@@ -55,7 +55,7 @@ struct Notification
 };
 
 static_assert (std::is_trivially_copyable_v<Notification>,
-               "sirius::Notification must be trivially copyable so the per-category "
+               "ida::Notification must be trivially copyable so the per-category "
                "LockFreeSpscQueue<Notification> push remains allocation-free and bounded "
                "on the audio thread.");
 

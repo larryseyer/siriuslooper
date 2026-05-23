@@ -56,7 +56,7 @@ namespace
     juce::File calibrationSidecarFile()
     {
         return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-            .getChildFile ("Sirius Looper")
+            .getChildFile ("IDA")
             .getChildFile ("calibration.json");
     }
 
@@ -66,7 +66,7 @@ namespace
     juce::File tapesDirectory()
     {
         return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-            .getChildFile ("Sirius Looper")
+            .getChildFile ("IDA")
             .getChildFile ("tapes");
     }
 
@@ -76,7 +76,7 @@ namespace
 
     /// Default stereo-channel count — matches initialiseWithDefaultDevices(2, 2)
     /// and the M4 default identity routes (input N → output N for N in [0, count)).
-    /// If a Sirius device with a different default ever lands, change this in
+    /// If a IDA device with a different default ever lands, change this in
     /// one place.
     constexpr int kDefaultStereoChannels = 2;
 
@@ -198,11 +198,11 @@ namespace
     /// Deep-copy a Constituent subtree, minting fresh ConstituentIds for
     /// every node. The structure (boundaries, names, metadata, tape refs) is
     /// preserved; only ids change. Used by the fork gesture to break sharing.
-    sirius::Constituent deepCopyWithFreshIds (
-        const sirius::Constituent& src,
-        const sirius::promotion::IdAllocator& allocate)
+    ida::Constituent deepCopyWithFreshIds (
+        const ida::Constituent& src,
+        const ida::promotion::IdAllocator& allocate)
     {
-        sirius::Constituent copy (allocate(), src.conceptualIn(), src.conceptualOut());
+        ida::Constituent copy (allocate(), src.conceptualIn(), src.conceptualOut());
         if (! src.name().empty())  copy = copy.withName (src.name());
         if (src.phraseMetadata())  copy = copy.withPhraseMetadata (*src.phraseMetadata());
         if (src.tapeReference())   copy = copy.withTapeReference  (*src.tapeReference());
@@ -213,7 +213,7 @@ namespace
         copy = copy.withRepetitionRules (src.repetitionRules());
         for (const auto& child : src.children())
             copy = copy.withChildAdded (
-                std::make_shared<const sirius::Constituent> (
+                std::make_shared<const ida::Constituent> (
                     deepCopyWithFreshIds (*child, allocate)));
         return copy;
     }
@@ -221,12 +221,12 @@ namespace
     /// Locate the wrapper by id in `root` and return its index path from the
     /// root's children. Returns empty optional if not found (caller can no-op).
     std::optional<std::vector<std::size_t>> findWrapperPath (
-        const sirius::Constituent& root, sirius::ConstituentId wrapperId)
+        const ida::Constituent& root, ida::ConstituentId wrapperId)
     {
         std::optional<std::vector<std::size_t>> found;
         std::vector<std::size_t> path;
-        std::function<void (const sirius::Constituent&)> walk;
-        walk = [&] (const sirius::Constituent& c)
+        std::function<void (const ida::Constituent&)> walk;
+        walk = [&] (const ida::Constituent& c)
         {
             if (c.id() == wrapperId) { found = path; return; }
             for (std::size_t i = 0; i < c.children().size(); ++i)
@@ -938,12 +938,12 @@ class MainComponent::TapesPane final : public juce::Component
 {
 public:
     /// One pool entry's display state: the tape's id and current name.
-    struct TapeInfo { sirius::TapeId id; juce::String name; };
+    struct TapeInfo { ida::TapeId id; juce::String name; };
 
     // Intent relays. Set by MainComponent; wired to the T3 pool methods.
     std::function<void()>                              onCreate;
-    std::function<void (sirius::TapeId, juce::String)> onRename;
-    std::function<void (sirius::TapeId)>               onRemove;
+    std::function<void (ida::TapeId, juce::String)> onRename;
+    std::function<void (ida::TapeId)>               onRemove;
 
     TapesPane()
     {
@@ -967,7 +967,7 @@ public:
     /// (b) on the primary tape, which is permanent (TapePool/InputMixer/MainComponent
     /// all refuse to remove it). Both must be reflected in the UI or the operator
     /// can click a Remove that silently desyncs pool from mixer.
-    void setTapes (const std::vector<TapeInfo>& infos, sirius::TapeId primary)
+    void setTapes (const std::vector<TapeInfo>& infos, ida::TapeId primary)
     {
         rows_.clear();
         const bool poolAboveFloor = infos.size() > 1;
@@ -975,11 +975,11 @@ public:
         {
             const bool canRemove = poolAboveFloor && info.id != primary;
             auto row = std::make_unique<Row> (info.id, info.name, canRemove);
-            row->onRename = [this] (sirius::TapeId id, juce::String n)
+            row->onRename = [this] (ida::TapeId id, juce::String n)
             {
                 if (onRename) onRename (id, n);
             };
-            row->onRemove = [this] (sirius::TapeId id) { if (onRemove) onRemove (id); };
+            row->onRemove = [this] (ida::TapeId id) { if (onRemove) onRemove (id); };
             addAndMakeVisible (*row);
             rows_.push_back (std::move (row));
         }
@@ -1027,10 +1027,10 @@ private:
     class Row final : public juce::Component
     {
     public:
-        std::function<void (sirius::TapeId, juce::String)> onRename;
-        std::function<void (sirius::TapeId)>               onRemove;
+        std::function<void (ida::TapeId, juce::String)> onRename;
+        std::function<void (ida::TapeId)>               onRemove;
 
-        Row (sirius::TapeId id, const juce::String& name, bool canRemove) : id_ (id)
+        Row (ida::TapeId id, const juce::String& name, bool canRemove) : id_ (id)
         {
             name_.setText (name, juce::dontSendNotification);
             name_.setColour (juce::TextEditor::backgroundColourId, otto::Colours::bg3);
@@ -1063,7 +1063,7 @@ private:
             if (trimmed.isNotEmpty() && onRename) onRename (id_, trimmed);
         }
 
-        sirius::TapeId   id_;
+        ida::TapeId   id_;
         juce::TextEditor name_;
         juce::TextButton remove_;
         bool             committed_ { false };
@@ -1433,12 +1433,12 @@ private:
 
 juce::File MainComponent::hostBinaryPath() const
 {
-    // Inside a .app bundle this is Contents/MacOS/Sirius Looper; the helper
+    // Inside a .app bundle this is Contents/MacOS/IDA; the helper
     // sits in the same MacOS directory. Outside a bundle (dev-loop test
     // runs from build/...), the sibling doesn't exist and the returned
     // juce::File reports existsAsFile() == false — callers must check.
     const auto self = juce::File::getSpecialLocation (juce::File::currentExecutableFile);
-    const auto sibling = self.getParentDirectory().getChildFile ("sirius_plugin_host");
+    const auto sibling = self.getParentDirectory().getChildFile ("ida_plugin_host");
     return sibling;
 }
 
@@ -1522,7 +1522,7 @@ MainComponent::MainComponent()
     // Tape subsystem slice 3 — bind the live per-tape FLAC recorder. Sample rate
     // is set from the device setup (and on device change) below; 256 queue slots
     // cover the worst-case touched-tapes-per-block burst with headroom.
-    flacTapeSink_ = std::make_unique<sirius::FlacTapeSink> (
+    flacTapeSink_ = std::make_unique<ida::FlacTapeSink> (
         tapesDirectory(),
         audioDeviceManager_.getAudioDeviceSetup().sampleRate,
         256);
@@ -1530,7 +1530,7 @@ MainComponent::MainComponent()
 
     // Tape-UI slice — TapePool is the single source of truth for which tapes exist.
     // Mirror it into the input mixer's routing terminals at startup.
-    sirius::mirrorTapePool (tapePool_, *inputMixer_);
+    ida::mirrorTapePool (tapePool_, *inputMixer_);
 
     audioCallback_   = std::make_unique<AudioCallback> (engineConfig_);
     audioCallback_->setLmc (lmc_.get());
@@ -1674,7 +1674,7 @@ MainComponent::MainComponent()
         for (std::size_t depth = 1; depth < path->size(); ++depth)
             target = target->children()[(*path)[depth]];
 
-        if (! sirius::isPlacementWrapper (*target)) return;
+        if (! ida::isPlacementWrapper (*target)) return;
 
         juce::PopupMenu menu;
         menu.addItem ("Vary this one", [this, wrapperId] { forkPlacement (wrapperId); });
@@ -1764,10 +1764,10 @@ MainComponent::MainComponent()
             switch (dest.kind)
             {
                 case InputMixerPane::DestKind::Tape:
-                    inputMixer_->setChannelMainOutToTape (chId, sirius::TapeId (dest.id));
+                    inputMixer_->setChannelMainOutToTape (chId, ida::TapeId (dest.id));
                     break;
                 case InputMixerPane::DestKind::Bus:
-                    inputMixer_->setChannelMainOutToBus (chId, sirius::BusId (dest.id));
+                    inputMixer_->setChannelMainOutToBus (chId, ida::BusId (dest.id));
                     break;
                 case InputMixerPane::DestKind::HardwareOutput:
                     inputMixer_->setChannelMainOutToHardwareOutput (chId);
@@ -1786,10 +1786,10 @@ MainComponent::MainComponent()
             switch (dest.kind)
             {
                 case InputMixerPane::DestKind::Tape:
-                    inputMixer_->setBusMainOutToTape (busId, sirius::TapeId (dest.id));
+                    inputMixer_->setBusMainOutToTape (busId, ida::TapeId (dest.id));
                     break;
                 case InputMixerPane::DestKind::Bus:
-                    inputMixer_->setBusMainOutToBus (busId, sirius::BusId (dest.id));
+                    inputMixer_->setBusMainOutToBus (busId, ida::BusId (dest.id));
                     break;
                 case InputMixerPane::DestKind::HardwareOutput:
                     inputMixer_->setBusMainOutToHardwareOutput (busId);
@@ -1821,18 +1821,18 @@ MainComponent::MainComponent()
         };
         inputMixerPane_->onAddBus = [this]
         {
-            if (inputMixer_->busCount() >= sirius::InputMixer::kMaxInputBuses) return;
+            if (inputMixer_->busCount() >= ida::InputMixer::kMaxInputBuses) return;
             audioDeviceManager_.removeAudioCallback (audioCallback_.get());
-            inputMixer_->addBus (sirius::BusConfig{ /*channelCount*/ 2,
+            inputMixer_->addBus (ida::BusConfig{ /*channelCount*/ 2,
                                  "Bus " + std::to_string (inputMixer_->busCount() + 1),
-                                 sirius::BusKind::Bus });
+                                 ida::BusKind::Bus });
             audioDeviceManager_.addAudioCallback (audioCallback_.get());
             rebuildBusStrips();
             refreshInputDestinations();   // a new bus is a new channel destination
         };
         inputMixerPane_->onAddFxReturn = [this]
         {
-            if (inputMixer_->busCount() >= sirius::InputMixer::kMaxInputBuses) return;
+            if (inputMixer_->busCount() >= ida::InputMixer::kMaxInputBuses) return;
             audioDeviceManager_.removeAudioCallback (audioCallback_.get());
             inputMixer_->addFxReturn ("FX " + std::to_string (inputMixer_->busCount() + 1));
             audioDeviceManager_.addAudioCallback (audioCallback_.get());
@@ -1852,11 +1852,11 @@ MainComponent::MainComponent()
     {
         tapesPane_ = std::make_unique<TapesPane>();
         tapesPane_->onCreate = [this] { addNextTape(); };
-        tapesPane_->onRename = [this] (sirius::TapeId id, juce::String name)
+        tapesPane_->onRename = [this] (ida::TapeId id, juce::String name)
         {
             renameTape (id, name);
         };
-        tapesPane_->onRemove = [this] (sirius::TapeId id) { removeTape (id); };
+        tapesPane_->onRemove = [this] (ida::TapeId id) { removeTape (id); };
         tabs_.addTab ("Tapes", juce::Colours::black, tapesPane_.get(), false);
 
         refreshTapesPane();
@@ -1943,7 +1943,7 @@ MainComponent::~MainComponent()
     // cleanly and the OS reclaims the windows.
     for (const auto busId : openEditorBusIds_)
         effectChainHost_.configureBus (
-            busId, sirius::EffectChain{}, hostBinaryPath(), juce::File{});
+            busId, ida::EffectChain{}, hostBinaryPath(), juce::File{});
     openEditorBusIds_.clear();
 
     // Explicit teardown order: detach the callback from the device manager
@@ -2181,7 +2181,7 @@ void MainComponent::refreshInputDestinations()
         choices.push_back (Pane::DestChoice { Pane::DestKind::Tape, t.id.value(), juce::String (t.name) });
     for (int i = 0; i < inputMixer_->busCount(); ++i)
     {
-        if (inputMixer_->busKindAt (i) != sirius::BusKind::Bus)
+        if (inputMixer_->busKindAt (i) != ida::BusKind::Bus)
             continue;   // FX returns are send-only, not main-out destinations
         const auto bid = inputMixer_->busIdAt (i);
         if (auto* bus = inputMixer_->busForId (bid))
@@ -2199,7 +2199,7 @@ void MainComponent::refreshInputDestinations()
         Pane::StripDest dest;
         switch (inputMixer_->channelMainOut (chId))
         {
-            case sirius::InputMixer::MainOutDest::Tape:
+            case ida::InputMixer::MainOutDest::Tape:
                 for (const auto& t : tapePool_.tapes())
                     if (inputMixer_->channelMainOutIsTape (chId, t.id))
                     {
@@ -2209,7 +2209,7 @@ void MainComponent::refreshInputDestinations()
                         break;
                     }
                 break;
-            case sirius::InputMixer::MainOutDest::Bus:
+            case ida::InputMixer::MainOutDest::Bus:
             {
                 const auto bid = inputMixer_->channelMainOutBus (chId);
                 if (auto* bus = inputMixer_->busForId (bid))
@@ -2220,7 +2220,7 @@ void MainComponent::refreshInputDestinations()
                 }
                 break;
             }
-            case sirius::InputMixer::MainOutDest::HardwareOutput:
+            case ida::InputMixer::MainOutDest::HardwareOutput:
                 dest.currentKind = Pane::DestKind::HardwareOutput;
                 dest.currentId   = 0;
                 dest.currentName = "Direct out";
@@ -2245,7 +2245,7 @@ void MainComponent::refreshInputDestinations()
             choicesForBus.push_back (Pane::DestChoice { Pane::DestKind::Tape, t.id.value(), juce::String (t.name) });
         for (int i = 0; i < inputMixer_->busCount(); ++i)
         {
-            if (inputMixer_->busKindAt (i) != sirius::BusKind::Bus)
+            if (inputMixer_->busKindAt (i) != ida::BusKind::Bus)
                 continue;   // FX returns are send-only, not main-out destinations
             const auto target = inputMixer_->busIdAt (i);
             if (target.value() == busId.value())
@@ -2263,7 +2263,7 @@ void MainComponent::refreshInputDestinations()
         Pane::StripDest dest;
         switch (inputMixer_->busMainOut (busId))
         {
-            case sirius::InputMixer::MainOutDest::Tape:
+            case ida::InputMixer::MainOutDest::Tape:
                 for (const auto& t : tapePool_.tapes())
                     if (inputMixer_->busMainOutIsTape (busId, t.id))
                     {
@@ -2273,7 +2273,7 @@ void MainComponent::refreshInputDestinations()
                         break;
                     }
                 break;
-            case sirius::InputMixer::MainOutDest::Bus:
+            case ida::InputMixer::MainOutDest::Bus:
             {
                 const auto bid = inputMixer_->busMainOutBus (busId);
                 if (auto* bus = inputMixer_->busForId (bid))
@@ -2284,7 +2284,7 @@ void MainComponent::refreshInputDestinations()
                 }
                 break;
             }
-            case sirius::InputMixer::MainOutDest::HardwareOutput:
+            case ida::InputMixer::MainOutDest::HardwareOutput:
                 dest.currentKind = Pane::DestKind::HardwareOutput;
                 dest.currentId   = 0;
                 dest.currentName = "Direct out";
@@ -2421,7 +2421,7 @@ void MainComponent::rebuildBusStrips()
     for (int i = 0; i < n; ++i)
     {
         const auto id   = inputMixer_->busIdAt (i);
-        const bool isFx = inputMixer_->busKindAt (i) == sirius::BusKind::FxReturn;
+        const bool isFx = inputMixer_->busKindAt (i) == ida::BusKind::FxReturn;
         if (auto* bus = inputMixer_->busForId (id))
         {
             bus->prepare (sampleRate, kInputLufsMaxBlock);
@@ -2510,7 +2510,7 @@ void MainComponent::setFocused (TapeId tape)
 
 void MainComponent::addTape (const juce::String& name)
 {
-    if (inputMixer_->tapeCount() >= sirius::InputMixer::kMaxTapes)
+    if (inputMixer_->tapeCount() >= ida::InputMixer::kMaxTapes)
         return;                                         // capacity guard: pool and mixer stay in lockstep
     const auto id = tapePool_.add (name.toStdString());
     audioDeviceManager_.removeAudioCallback (audioCallback_.get());
@@ -2525,14 +2525,14 @@ void MainComponent::addNextTape()
     addTape ("Tape " + juce::String (tapePool_.count() + 1));
 }
 
-void MainComponent::renameTape (sirius::TapeId id, const juce::String& name)
+void MainComponent::renameTape (ida::TapeId id, const juce::String& name)
 {
     const bool ok = tapePool_.rename (id, name.toStdString());   // pool-only; no engine/sink effect
     jassert (ok); juce::ignoreUnused (ok);
     refreshTapesPane();
 }
 
-void MainComponent::removeTape (sirius::TapeId id)
+void MainComponent::removeTape (ida::TapeId id)
 {
     if (tapePool_.count() <= 1) return;          // >=1 pool floor (TapePool also refuses)
     if (id == tapePool_.primary()) return;       // primary is permanent (InputMixer pins it
@@ -2695,7 +2695,7 @@ void MainComponent::onMarkOut()
     const Rational t = playheadValueToLmc (playhead_.getValue());
     if (auto region = captureSession_.markOut (t))
     {
-        const sirius::CaptureRestorePoint restorePoint {
+        const ida::CaptureRestorePoint restorePoint {
             region->inLmcSeconds, region->tape };
 
         lastRequestWasOverlay_ = pendingOverlay_;
@@ -2885,34 +2885,34 @@ void MainComponent::forkPlacement (ConstituentId wrapperId)
     // is rebuilt. At the wrapper we swap in a deep copy of its shared child
     // (with fresh ids) and flip the role string. Mirrors the splice shape
     // promote() uses on the capture path.
-    std::function<sirius::Constituent (const sirius::Constituent&, std::size_t)>
+    std::function<ida::Constituent (const ida::Constituent&, std::size_t)>
         forkedSplice;
-    forkedSplice = [&] (const sirius::Constituent& c, std::size_t depth)
-                       -> sirius::Constituent
+    forkedSplice = [&] (const ida::Constituent& c, std::size_t depth)
+                       -> ida::Constituent
     {
         if (depth == wrapperPath->size())
         {
-            if (! sirius::isPlacementWrapper (c)) return c;
+            if (! ida::isPlacementWrapper (c)) return c;
             const auto& sharedPhrase = *c.children()[0];
             auto allocate = [this] { return ConstituentId (nextConstituentId_++); };
-            const auto deepCopy = std::make_shared<const sirius::Constituent> (
+            const auto deepCopy = std::make_shared<const ida::Constituent> (
                 deepCopyWithFreshIds (sharedPhrase, allocate));
 
-            sirius::PhraseMetadata forkedMeta = *c.phraseMetadata();
+            ida::PhraseMetadata forkedMeta = *c.phraseMetadata();
             forkedMeta.role = "forked-placement";
             return c.withPhraseMetadata (std::move (forkedMeta))
                     .withChildReplaced (0, deepCopy);
         }
         const std::size_t i = (*wrapperPath)[depth];
-        auto childCopy = std::make_shared<const sirius::Constituent> (
+        auto childCopy = std::make_shared<const ida::Constituent> (
             forkedSplice (*c.children()[i], depth + 1));
         return c.withChildReplaced (i, childCopy);
     };
 
-    sirius::Constituent newRoot = forkedSplice (root, 0);
+    ida::Constituent newRoot = forkedSplice (root, 0);
 
     undoStack_.push (
-        std::make_shared<const sirius::Constituent> (std::move (newRoot)),
+        std::make_shared<const ida::Constituent> (std::move (newRoot)),
         "vary this placement");
 
     refreshAll();
@@ -2921,9 +2921,9 @@ void MainComponent::forkPlacement (ConstituentId wrapperId)
 void MainComponent::chooseFileAndSave()
 {
     sessionFileChooser_ = std::make_unique<juce::FileChooser> (
-        "Save Sirius session as...",
+        "Save IDA session as...",
         juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
-            .getChildFile ("session.sirius.json"),
+            .getChildFile ("session.ida.json"),
         "*.json");
 
     sessionFileChooser_->launchAsync (
@@ -2943,7 +2943,7 @@ void MainComponent::chooseFileAndSave()
             // M8 S2: the populator consults the live host through
             // slotLookup() so each VersionPinning entry freezes the
             // descriptor + live state blob of the bus its instance runs on.
-            const auto populated = sirius::populateVersionPinningRecords (
+            const auto populated = ida::populateVersionPinningRecords (
                 undoStack_.current(), effectChainHost_, slotLookup(), *notificationBus_);
             const auto sessionJson = persistence::serializeSession (*populated);
             const auto poolJson    = persistence::serializeTapePool (tapePool_);
@@ -2966,7 +2966,7 @@ void MainComponent::chooseFileAndSave()
 void MainComponent::chooseFileAndLoad()
 {
     sessionFileChooser_ = std::make_unique<juce::FileChooser> (
-        "Load Sirius session...",
+        "Load IDA session...",
         juce::File::getSpecialLocation (juce::File::userDocumentsDirectory),
         "*.json");
 
@@ -3016,7 +3016,7 @@ void MainComponent::chooseFileAndLoad()
                 // slotLookup(), comparing the saved snapshot against the
                 // current bus state and warning on drift.
                 if (notificationBus_ != nullptr)
-                    sirius::verifyVersionPinningOnLoad (
+                    ida::verifyVersionPinningOnLoad (
                         *loaded, effectChainHost_, slotLookup(), *notificationBus_);
                 // M8 S3: derive Constituent state and warn on Broken/Invalid
                 // nodes (white paper §17.7). The session still loads — the
@@ -3026,8 +3026,8 @@ void MainComponent::chooseFileAndLoad()
                 if (notificationBus_ != nullptr)
                 {
                     const auto validation =
-                        sirius::validate (*loaded, sirius::alwaysResolves);
-                    sirius::postConstituentStateNotifications (
+                        ida::validate (*loaded, ida::alwaysResolves);
+                    ida::postConstituentStateNotifications (
                         *loaded, validation, *notificationBus_);
                 }
                 // M8 S6: re-validate the device-scoped calibration sidecar on
@@ -3040,8 +3040,8 @@ void MainComponent::chooseFileAndLoad()
                     const std::string contents = sidecar.existsAsFile()
                         ? sidecar.loadFileAsString().toStdString()
                         : std::string {};
-                    sirius::postCalibrationRecoveryNotification (
-                        sirius::parseAndValidateCalibration (contents).status,
+                    ida::postCalibrationRecoveryNotification (
+                        ida::parseAndValidateCalibration (contents).status,
                         *notificationBus_);
                 }
                 // Re-mirror the loaded tape pool into the InputMixer. The audio
@@ -3060,7 +3060,7 @@ void MainComponent::chooseFileAndLoad()
                         inputMixer_->removeTape (tape.id);
                     }
                     tapePool_ = std::move (loadedPool);
-                    sirius::mirrorTapePool (tapePool_, *inputMixer_);
+                    ida::mirrorTapePool (tapePool_, *inputMixer_);
                     audioDeviceManager_.addAudioCallback (audioCallback_.get());
                 }
                 refreshTapesPane();
@@ -3145,13 +3145,13 @@ void MainComponent::scanUserPluginFolder()
 
 void MainComponent::openSyntheticTestPlugin()
 {
-   #ifdef SIRIUS_SYNTHETIC_CLAP_PATH
-    const juce::File bundle (SIRIUS_SYNTHETIC_CLAP_PATH);
+   #ifdef IDA_SYNTHETIC_CLAP_PATH
+    const juce::File bundle (IDA_SYNTHETIC_CLAP_PATH);
     if (! bundle.exists())
     {
         pluginsPane_->setScanStatus (
             juce::String ("Synthetic test plug-in not found at ")
-            + SIRIUS_SYNTHETIC_CLAP_PATH);
+            + IDA_SYNTHETIC_CLAP_PATH);
         return;
     }
 
@@ -3160,18 +3160,18 @@ void MainComponent::openSyntheticTestPlugin()
     d.uniqueId     = "com.sirius.synthetic.test";
     d.version      = "1.0.0"; // matches kDescriptor.version in tests/fixtures/SyntheticTestPlugin.cpp
     d.name         = "Synthetic Test Plug-in";
-    d.manufacturer = "Sirius";
+    d.manufacturer = "IDA";
     d.filePath     = bundle.getFullPathName().toStdString();
     openPluginEditor (d);
    #else
     pluginsPane_->setScanStatus (
         "Synthetic test plug-in path not compiled in "
-        "(SIRIUS_SYNTHETIC_CLAP_PATH undefined).");
+        "(IDA_SYNTHETIC_CLAP_PATH undefined).");
    #endif
 }
 #endif
 
-sirius::SlotLookup MainComponent::slotLookup() const
+ida::SlotLookup MainComponent::slotLookup() const
 {
     // M7 S9 "one editor per bus" model: openPluginEditor allocates a fresh
     // bus per editor and pushes its busId onto openEditorBusIds_, with the
@@ -3181,12 +3181,12 @@ sirius::SlotLookup MainComponent::slotLookup() const
     // Message-thread only (save/load callbacks + open/close all run there),
     // so reading openEditorBusIds_ needs no lock. When the engine grows
     // nested chains (M11+), this resolves through the save orchestrator.
-    return [this] (const sirius::Constituent&, std::size_t entryIndex)
-        -> std::optional<sirius::SlotLocation>
+    return [this] (const ida::Constituent&, std::size_t entryIndex)
+        -> std::optional<ida::SlotLocation>
     {
         if (entryIndex >= openEditorBusIds_.size())
             return std::nullopt;
-        return sirius::SlotLocation { openEditorBusIds_[entryIndex], 0 };
+        return ida::SlotLocation { openEditorBusIds_[entryIndex], 0 };
     };
 }
 
@@ -3208,8 +3208,8 @@ void MainComponent::openPluginEditor (const PluginDescriptor& descriptor)
 
     const auto busId = nextScratchBusId_++;
 
-    sirius::EffectChain chain;
-    chain = chain.withAppended (sirius::EffectChainEntry::makePlugin (descriptor, descriptor.name));
+    ida::EffectChain chain;
+    chain = chain.withAppended (ida::EffectChainEntry::makePlugin (descriptor, descriptor.name));
 
     effectChainHost_.configureBus (busId, chain, hostBinary, clapBundle);
 
@@ -3243,7 +3243,7 @@ void MainComponent::closePluginEditor (std::int64_t busId)
     // configureBus, supervisor reaps the child. The child's NSWindow
     // dies with the process; no engine-side window to dispose of.
     const auto hostBinary = hostBinaryPath();
-    effectChainHost_.configureBus (busId, sirius::EffectChain{}, hostBinary, juce::File{});
+    effectChainHost_.configureBus (busId, ida::EffectChain{}, hostBinary, juce::File{});
 
     openEditorBusIds_.erase (
         std::remove (openEditorBusIds_.begin(), openEditorBusIds_.end(), busId),

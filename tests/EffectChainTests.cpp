@@ -16,12 +16,12 @@
 
 #include <stdexcept>
 
-using sirius::Constituent;
-using sirius::ConstituentId;
-using sirius::EffectChain;
-using sirius::EffectChainEntry;
-using sirius::Position;
-using sirius::Rational;
+using ida::Constituent;
+using ida::ConstituentId;
+using ida::EffectChain;
+using ida::EffectChainEntry;
+using ida::Position;
+using ida::Rational;
 
 namespace
 {
@@ -30,8 +30,8 @@ namespace
     // the spelling of every downstream test case.
     EffectChainEntry makeEntry (const char* uniqueId, const char* name)
     {
-        sirius::PluginDescriptor desc;
-        desc.format       = sirius::PluginFormat::Vst3;
+        ida::PluginDescriptor desc;
+        desc.format       = ida::PluginFormat::Vst3;
         desc.uniqueId     = uniqueId;
         desc.version      = "1.0.0";
         desc.name         = name;
@@ -43,7 +43,7 @@ namespace
     // Round-trips a single entry through the Constituent + SessionFormat path
     // and returns the kind of the deserialized entry. Used by the wire-stable
     // test to confirm serializer and deserializer agree on discriminant strings.
-    sirius::EffectChainSlotKind roundTripKind (const EffectChainEntry& entry)
+    ida::EffectChainSlotKind roundTripKind (const EffectChainEntry& entry)
     {
         EffectChain chain;
         chain = chain.withAppended (entry);
@@ -51,8 +51,8 @@ namespace
             Constituent (ConstituentId (42), Position(), Position (Rational (4)))
                 .withName ("pin")
                 .withEffectChain (chain);
-        const auto json = sirius::persistence::serializeSession (c);
-        const auto back = sirius::persistence::deserializeSession (json);
+        const auto json = ida::persistence::serializeSession (c);
+        const auto back = ida::persistence::deserializeSession (json);
         REQUIRE (back->hasEffectChain());
         REQUIRE (back->effectChain()->size() == 1);
         return back->effectChain()->entries()[0].kind;
@@ -153,8 +153,8 @@ TEST_CASE ("an effect chain round-trips through SessionFormat",
             .withName ("processed")
             .withEffectChain (chain);
 
-    const auto json  = sirius::persistence::serializeSession (c);
-    const auto round = sirius::persistence::deserializeSession (json);
+    const auto json  = ida::persistence::serializeSession (c);
+    const auto round = ida::persistence::deserializeSession (json);
 
     REQUIRE (round->hasEffectChain());
     CHECK (*round->effectChain() == chain);
@@ -168,8 +168,8 @@ TEST_CASE ("a Constituent without effect chain stays absent through round-trip",
     // The serializer must not emit the property when the chain is absent, and
     // the deserializer must not invent one.
     const Constituent c (ConstituentId (1), Position(), Position (Rational (1)));
-    const auto round = sirius::persistence::deserializeSession (
-        sirius::persistence::serializeSession (c));
+    const auto round = ida::persistence::deserializeSession (
+        ida::persistence::serializeSession (c));
     CHECK_FALSE (round->hasEffectChain());
 }
 
@@ -210,20 +210,20 @@ TEST_CASE ("EffectChainEntry default-constructs as Empty kind", "[effect-chain][
     // A fresh entry must NOT silently look like a Plugin — empty-by-default
     // protects callers who forget to set the discriminant.
     EffectChainEntry e;
-    CHECK (e.kind == sirius::EffectChainSlotKind::Empty);
+    CHECK (e.kind == ida::EffectChainSlotKind::Empty);
     CHECK (e.descriptor.uniqueId.empty());
 }
 
 TEST_CASE ("EffectChainEntry::makeInternal stamps the kind + internalId", "[effect-chain][union-slot]")
 {
-    const auto eq  = EffectChainEntry::makeInternal (sirius::InternalFxId::kEq);
-    const auto cmp = EffectChainEntry::makeInternal (sirius::InternalFxId::kCmp);
+    const auto eq  = EffectChainEntry::makeInternal (ida::InternalFxId::kEq);
+    const auto cmp = EffectChainEntry::makeInternal (ida::InternalFxId::kCmp);
 
-    CHECK (eq.kind == sirius::EffectChainSlotKind::Internal);
-    CHECK (eq.internalId == sirius::InternalFxId::kEq);
+    CHECK (eq.kind == ida::EffectChainSlotKind::Internal);
+    CHECK (eq.internalId == ida::InternalFxId::kEq);
 
-    CHECK (cmp.kind == sirius::EffectChainSlotKind::Internal);
-    CHECK (cmp.internalId == sirius::InternalFxId::kCmp);
+    CHECK (cmp.kind == ida::EffectChainSlotKind::Internal);
+    CHECK (cmp.internalId == ida::InternalFxId::kCmp);
 
     // descriptor stays default-empty on an Internal slot (no plugin payload)
     CHECK (eq.descriptor.uniqueId.empty());
@@ -231,24 +231,24 @@ TEST_CASE ("EffectChainEntry::makeInternal stamps the kind + internalId", "[effe
 
 TEST_CASE ("EffectChainEntry::makePlugin stamps the kind + descriptor", "[effect-chain][union-slot]")
 {
-    sirius::PluginDescriptor d;
-    d.format       = sirius::PluginFormat::Vst3;
+    ida::PluginDescriptor d;
+    d.format       = ida::PluginFormat::Vst3;
     d.uniqueId     = "EQ-1";
     d.name         = "Saturn EQ";
     d.manufacturer = "AcmeAudio";
 
     const auto e = EffectChainEntry::makePlugin (d, "EQ", "");
 
-    CHECK (e.kind == sirius::EffectChainSlotKind::Plugin);
+    CHECK (e.kind == ida::EffectChainSlotKind::Plugin);
     CHECK (e.descriptor.uniqueId == "EQ-1");
     CHECK (e.displayName == "EQ");
 }
 
 TEST_CASE ("EffectChainEntry equality includes the kind + internalId", "[effect-chain][union-slot]")
 {
-    const auto a = EffectChainEntry::makeInternal (sirius::InternalFxId::kEq);
-    const auto b = EffectChainEntry::makeInternal (sirius::InternalFxId::kEq);
-    const auto c = EffectChainEntry::makeInternal (sirius::InternalFxId::kCmp);
+    const auto a = EffectChainEntry::makeInternal (ida::InternalFxId::kEq);
+    const auto b = EffectChainEntry::makeInternal (ida::InternalFxId::kEq);
+    const auto c = EffectChainEntry::makeInternal (ida::InternalFxId::kCmp);
 
     EffectChainEntry empty;          // kind == Empty
     EffectChainEntry pluginLooking;  // kind == Empty but with plugin data filled in
@@ -264,30 +264,30 @@ TEST_CASE ("EffectChainEntry equality includes the kind + internalId", "[effect-
 
 TEST_CASE ("a chain can mix Internal and Plugin slots", "[effect-chain][union-slot]")
 {
-    sirius::PluginDescriptor d;
-    d.format = sirius::PluginFormat::Vst3;
+    ida::PluginDescriptor d;
+    d.format = ida::PluginFormat::Vst3;
     d.uniqueId = "RV-1";
     d.name = "Plate Reverb";
 
     EffectChain chain;
-    chain = chain.withAppended (EffectChainEntry::makeInternal (sirius::InternalFxId::kEq))
+    chain = chain.withAppended (EffectChainEntry::makeInternal (ida::InternalFxId::kEq))
                  .withAppended (EffectChainEntry::makePlugin (d, "Reverb", ""))
-                 .withAppended (EffectChainEntry::makeInternal (sirius::InternalFxId::kCmp));
+                 .withAppended (EffectChainEntry::makeInternal (ida::InternalFxId::kCmp));
 
     REQUIRE (chain.size() == 3);
-    CHECK (chain.entries()[0].kind == sirius::EffectChainSlotKind::Internal);
-    CHECK (chain.entries()[0].internalId == sirius::InternalFxId::kEq);
-    CHECK (chain.entries()[1].kind == sirius::EffectChainSlotKind::Plugin);
+    CHECK (chain.entries()[0].kind == ida::EffectChainSlotKind::Internal);
+    CHECK (chain.entries()[0].internalId == ida::InternalFxId::kEq);
+    CHECK (chain.entries()[1].kind == ida::EffectChainSlotKind::Plugin);
     CHECK (chain.entries()[1].descriptor.uniqueId == "RV-1");
-    CHECK (chain.entries()[2].kind == sirius::EffectChainSlotKind::Internal);
-    CHECK (chain.entries()[2].internalId == sirius::InternalFxId::kCmp);
+    CHECK (chain.entries()[2].kind == ida::EffectChainSlotKind::Internal);
+    CHECK (chain.entries()[2].internalId == ida::InternalFxId::kCmp);
 }
 
 TEST_CASE ("an Internal effect entry round-trips through SessionFormat",
            "[effect-chain][sessionformat][union-slot]")
 {
-    using sirius::EffectChainEntry;
-    using sirius::InternalFxId;
+    using ida::EffectChainEntry;
+    using ida::InternalFxId;
 
     EffectChain chain;
     chain = chain.withAppended (EffectChainEntry::makeInternal (InternalFxId::kEq))
@@ -298,14 +298,14 @@ TEST_CASE ("an Internal effect entry round-trips through SessionFormat",
             .withName ("internal-only")
             .withEffectChain (chain);
 
-    const auto json  = sirius::persistence::serializeSession (c);
-    const auto round = sirius::persistence::deserializeSession (json);
+    const auto json  = ida::persistence::serializeSession (c);
+    const auto round = ida::persistence::deserializeSession (json);
 
     REQUIRE (round->hasEffectChain());
     REQUIRE (round->effectChain()->size() == 2);
-    CHECK (round->effectChain()->entries()[0].kind == sirius::EffectChainSlotKind::Internal);
+    CHECK (round->effectChain()->entries()[0].kind == ida::EffectChainSlotKind::Internal);
     CHECK (round->effectChain()->entries()[0].internalId == InternalFxId::kEq);
-    CHECK (round->effectChain()->entries()[1].kind == sirius::EffectChainSlotKind::Internal);
+    CHECK (round->effectChain()->entries()[1].kind == ida::EffectChainSlotKind::Internal);
     CHECK (round->effectChain()->entries()[1].internalId == InternalFxId::kCmp);
     CHECK (*round->effectChain() == chain);
 }
@@ -313,11 +313,11 @@ TEST_CASE ("an Internal effect entry round-trips through SessionFormat",
 TEST_CASE ("a mixed Internal + Plugin chain round-trips through SessionFormat",
            "[effect-chain][sessionformat][union-slot]")
 {
-    using sirius::EffectChainEntry;
-    using sirius::InternalFxId;
+    using ida::EffectChainEntry;
+    using ida::InternalFxId;
 
-    sirius::PluginDescriptor d;
-    d.format = sirius::PluginFormat::Vst3;
+    ida::PluginDescriptor d;
+    d.format = ida::PluginFormat::Vst3;
     d.uniqueId = "RV-1";
     d.version = "1.0.0";
     d.name = "Plate Reverb";
@@ -334,8 +334,8 @@ TEST_CASE ("a mixed Internal + Plugin chain round-trips through SessionFormat",
             .withName ("mixed")
             .withEffectChain (chain);
 
-    const auto json  = sirius::persistence::serializeSession (c);
-    const auto round = sirius::persistence::deserializeSession (json);
+    const auto json  = ida::persistence::serializeSession (c);
+    const auto round = ida::persistence::deserializeSession (json);
 
     REQUIRE (round->hasEffectChain());
     REQUIRE (round->effectChain()->size() == 3);
@@ -362,7 +362,7 @@ TEST_CASE ("a pre-union session (no `kind` field) loads every entry as Plugin",
             .withName ("legacy")
             .withEffectChain (chain);
 
-    const auto jsonWithKind = sirius::persistence::serializeSession (c);
+    const auto jsonWithKind = ida::persistence::serializeSession (c);
 
     // Parse, walk effects.entries, drop the "kind" property from each entry,
     // re-emit. We do not assume envelope structure beyond `effects.entries`
@@ -403,11 +403,11 @@ TEST_CASE ("a pre-union session (no `kind` field) loads every entry as Plugin",
 
     const auto preUnionJson = juce::JSON::toString (parsed);
 
-    const auto round = sirius::persistence::deserializeSession (preUnionJson);
+    const auto round = ida::persistence::deserializeSession (preUnionJson);
     REQUIRE (round->hasEffectChain());
     REQUIRE (round->effectChain()->size() == 1);
     const auto& entry = round->effectChain()->entries()[0];
-    CHECK (entry.kind == sirius::EffectChainSlotKind::Plugin);
+    CHECK (entry.kind == ida::EffectChainSlotKind::Plugin);
     CHECK (entry.descriptor.uniqueId == "legacy-eq");
 }
 
@@ -416,9 +416,9 @@ TEST_CASE ("EffectChainSlotKind enum values are stable", "[effect-chain][union-s
     // Pinned to guard against reordering. The serializer emits names (not
     // numeric values), but in-memory switches and binary comparisons rely on
     // these values; reordering is still a breaking change.
-    CHECK (static_cast<std::uint8_t> (sirius::EffectChainSlotKind::Empty)    == 0);
-    CHECK (static_cast<std::uint8_t> (sirius::EffectChainSlotKind::Internal) == 1);
-    CHECK (static_cast<std::uint8_t> (sirius::EffectChainSlotKind::Plugin)   == 2);
+    CHECK (static_cast<std::uint8_t> (ida::EffectChainSlotKind::Empty)    == 0);
+    CHECK (static_cast<std::uint8_t> (ida::EffectChainSlotKind::Internal) == 1);
+    CHECK (static_cast<std::uint8_t> (ida::EffectChainSlotKind::Plugin)   == 2);
 }
 
 TEST_CASE ("EffectChainSlotKind wire strings are stable", "[effect-chain][union-slot][wire-stable]")
@@ -430,16 +430,16 @@ TEST_CASE ("EffectChainSlotKind wire strings are stable", "[effect-chain][union-
     // and confirming kind identity. If the serializer and deserializer drift
     // apart, the returned kind will not match the original and this test catches it.
     EffectChainEntry emptyEntry; // default kind = Empty
-    CHECK (roundTripKind (emptyEntry) == sirius::EffectChainSlotKind::Empty);
+    CHECK (roundTripKind (emptyEntry) == ida::EffectChainSlotKind::Empty);
 
-    CHECK (roundTripKind (EffectChainEntry::makeInternal (sirius::InternalFxId::kEq))
-            == sirius::EffectChainSlotKind::Internal);
+    CHECK (roundTripKind (EffectChainEntry::makeInternal (ida::InternalFxId::kEq))
+            == ida::EffectChainSlotKind::Internal);
 
-    sirius::PluginDescriptor d;
-    d.format       = sirius::PluginFormat::Vst3;
+    ida::PluginDescriptor d;
+    d.format       = ida::PluginFormat::Vst3;
     d.uniqueId     = "pin-test";
     d.name         = "Pin";
     d.manufacturer = "Acme";
     CHECK (roundTripKind (EffectChainEntry::makePlugin (d, "Pin", ""))
-            == sirius::EffectChainSlotKind::Plugin);
+            == ida::EffectChainSlotKind::Plugin);
 }

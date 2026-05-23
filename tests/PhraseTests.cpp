@@ -1,4 +1,4 @@
-// Tests for sirius::PhraseMetadata — the metadata a phrase carries beyond what
+// Tests for ida::PhraseMetadata — the metadata a phrase carries beyond what
 // a loop carries (white paper Part VIII). Phrase metadata is plain data with no
 // invariants; these tests pin down its defaults and that its open-ended fields
 // hold what they are given.
@@ -6,11 +6,11 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using sirius::ConstituentId;
-using sirius::EntranceCharacter;
-using sirius::ExitCharacter;
-using sirius::GrammaticalLink;
-using sirius::PhraseMetadata;
+using ida::ConstituentId;
+using ida::EntranceCharacter;
+using ida::ExitCharacter;
+using ida::GrammaticalLink;
+using ida::PhraseMetadata;
 
 TEST_CASE ("phrase metadata starts blank and unspecified", "[phrase]")
 {

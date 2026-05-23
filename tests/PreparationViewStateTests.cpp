@@ -18,21 +18,21 @@
 
 #include <memory>
 
-using sirius::Constituent;
-using sirius::ConstituentId;
-using sirius::EffectChain;
-using sirius::EffectChainEntry;
-using sirius::PhraseMetadata;
-using sirius::PluginFormat;
-using sirius::Position;
-using sirius::Rational;
-using sirius::TapeId;
-using sirius::TapeReference;
+using ida::Constituent;
+using ida::ConstituentId;
+using ida::EffectChain;
+using ida::EffectChainEntry;
+using ida::PhraseMetadata;
+using ida::PluginFormat;
+using ida::Position;
+using ida::Rational;
+using ida::TapeId;
+using ida::TapeReference;
 
 TEST_CASE ("a single Constituent appears as one row at indent 0", "[prepview]")
 {
     const Constituent solo (ConstituentId (1), Position(), Position (Rational (4)));
-    const auto state = sirius::selectPreparationView (solo);
+    const auto state = ida::selectPreparationView (solo);
     REQUIRE (state.rows.size() == 1);
     CHECK (state.rows[0].indentLevel == 0);
     CHECK (state.rows[0].id == ConstituentId (1));
@@ -69,7 +69,7 @@ TEST_CASE ("a nested tree appears depth-first with rising indent", "[prepview]")
             .withEffectChain (EffectChain().withAppended (e))
             .withChildAdded (phrase);
 
-    const auto state = sirius::selectPreparationView (root);
+    const auto state = ida::selectPreparationView (root);
     REQUIRE (state.rows.size() == 3);
 
     CHECK (state.rows[0].indentLevel == 0);

@@ -177,7 +177,7 @@ TEST_CASE ("WetCaptureWriter posts DiskPressure on open failure", "[wet-capture]
 namespace
 {
 // Doubles every sample in-place; proves the tap is post-effects.
-struct DoublingHost : sirius::IEffectChainHost
+struct DoublingHost : ida::IEffectChainHost
 {
     bool pumpSlot (std::int64_t, std::size_t,
                    const float* const* in, float* const* out,
@@ -190,11 +190,11 @@ struct DoublingHost : sirius::IEffectChainHost
     }
 };
 
-sirius::EffectChain chainWithOneSlot()
+ida::EffectChain chainWithOneSlot()
 {
-    sirius::EffectChainEntry entry;
+    ida::EffectChainEntry entry;
     entry.descriptor.name = "doubler";
-    return sirius::EffectChain{}.withAppended (entry);
+    return ida::EffectChain{}.withAppended (entry);
 }
 } // namespace
 

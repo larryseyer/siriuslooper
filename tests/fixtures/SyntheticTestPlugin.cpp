@@ -7,9 +7,9 @@
 // watchdog (S4) and supervisor (S5) work, not here.
 //
 // Built as a CLAP bundle by tests/fixtures/CMakeLists.txt; the host binary
-// (`sirius_plugin_host --mode clap --plugin-path <this>`) dlopens it and
+// (`ida_plugin_host --mode clap --plugin-path <this>`) dlopens it and
 // pumps audio through `process()`. Tests find it via the
-// SIRIUS_SYNTHETIC_CLAP_PATH generator-expression define.
+// IDA_SYNTHETIC_CLAP_PATH generator-expression define.
 //
 // Structure follows external/clap/src/plugin-template.c — kept deliberately
 // close to the upstream reference so a CLAP-format change rebases cleanly.
@@ -40,12 +40,12 @@ const clap_plugin_descriptor_t kDescriptor = {
     CLAP_VERSION_INIT,
     "com.sirius.synthetic.identity",
     "Sirius Synthetic Identity",
-    "Sirius Looper Tests",
+    "IDA Tests",
     "https://example.invalid/sirius",
     "https://example.invalid/sirius",
     "https://example.invalid/sirius",
     "1.0.0",
-    "Identity audio effect used by Sirius Looper round-trip tests.",
+    "Identity audio effect used by IDA round-trip tests.",
     kFeatures
 };
 

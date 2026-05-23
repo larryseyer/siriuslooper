@@ -1,4 +1,4 @@
-// Tests for sirius::CmpAdapter — the second internal-FX adapter (T3b of
+// Tests for ida::CmpAdapter — the second internal-FX adapter (T3b of
 // the P7 umbrella). We do NOT test compressor DSP correctness
 // (PlayerCompressor owns that); we test the Sirius-side wrapper:
 // prepare/process/reset state, the miss contract on an un-prepared
@@ -8,7 +8,7 @@
 // attack.
 //
 // CmpAdapter lives in engine/src/fx/ (private to the engine target). The
-// SiriusTests target adds engine/src to its PRIVATE include path so this
+// IdaTests target adds engine/src to its PRIVATE include path so this
 // test can reach the adapter header without exposing it on the engine's
 // public surface — see tests/CMakeLists.txt.
 #include "fx/CmpAdapter.h"
@@ -20,7 +20,7 @@
 #include <cstring>
 #include <vector>
 
-using sirius::CmpAdapter;
+using ida::CmpAdapter;
 
 namespace
 {

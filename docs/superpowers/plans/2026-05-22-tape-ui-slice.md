@@ -16,11 +16,11 @@
 
 ## File Structure
 
-- `core/include/sirius/MixerGraphState.h` — add `tapeId` to `MixerMainOut` (T1).
+- `core/include/ida/MixerGraphState.h` — add `tapeId` to `MixerMainOut` (T1).
 - `engine/src/InputMixer.cpp` — `mainOutSnapshot` records the tape id; `applyChannelMainOut`/`applyBusMainOut` route to the specific tape (T1).
 - `persistence/src/SessionFormat.cpp` — serialize/parse the new `tapeId` (T1).
 - `tests/InputMixerTests.cpp`, `tests/MixerGraphPersistenceTests.cpp` — T1 coverage.
-- `tests/TapePoolMirrorTests.cpp` (new) + `core/include/sirius/TapePoolMirror.h` (new) — T2/T3 testable logic.
+- `tests/TapePoolMirrorTests.cpp` (new) + `core/include/ida/TapePoolMirror.h` (new) — T2/T3 testable logic.
 - `tests/CMakeLists.txt` — register the new test file.
 - `app/MainComponent.h` / `app/MainComponent.cpp` — TapePool ownership, ops, persistence, Tapes tab, picker, gesture (T2–T7).
 
@@ -31,7 +31,7 @@
 Today `InputMixer::mainOutSnapshot` only recognizes the **primary** tape terminal (`graph_.terminalNode(MixerTerminal::Tape)`); a channel routed to a NON-primary tape falls through to the bus loop and trips `jassertfalse` (`engine/src/InputMixer.cpp:185`). The multi-tape picker (T6) creates exactly such routes, and persistence (T4) calls `exportGraphState()`. Fix the snapshot to use `tapeSlotForNode` (which already covers all tapes, primary at slot 0 — ctor seeds it at `InputMixer.cpp:40`) and record the `TapeId`.
 
 **Files:**
-- Modify: `core/include/sirius/MixerGraphState.h:26-36` (the `MixerMainOut` struct)
+- Modify: `core/include/ida/MixerGraphState.h:26-36` (the `MixerMainOut` struct)
 - Modify: `engine/src/InputMixer.cpp:162-187` (`mainOutSnapshot`), `:316-336` (`applyChannelMainOut`/`applyBusMainOut`)
 - Modify: `persistence/src/SessionFormat.cpp` (the `MixerMainOut` ↔ var helpers — search for where `mainOut.terminal`/`mainOut.busId` are written/read)
 - Test: `tests/InputMixerTests.cpp`, `tests/MixerGraphPersistenceTests.cpp`
@@ -41,34 +41,34 @@ Today `InputMixer::mainOutSnapshot` only recognizes the **primary** tape termina
 ```cpp
 TEST_CASE ("exportGraphState round-trips a non-primary tape route", "[input-mixer][tape]")
 {
-    sirius::InputMixer mixer;
-    const auto ch = mixer.addChannel (sirius::InputId (0), sirius::SignalType::Audio);
-    REQUIRE (mixer.addTape (sirius::TapeId { 2 }));
-    REQUIRE (mixer.setChannelMainOutToTape (ch, sirius::TapeId { 2 }));
+    ida::InputMixer mixer;
+    const auto ch = mixer.addChannel (ida::InputId (0), ida::SignalType::Audio);
+    REQUIRE (mixer.addTape (ida::TapeId { 2 }));
+    REQUIRE (mixer.setChannelMainOutToTape (ch, ida::TapeId { 2 }));
 
     // Must NOT trip the mainOutSnapshot jassertfalse, and must record tape 2.
     const auto state = mixer.exportGraphState();
     REQUIRE (state.channels.size() == 1);
     const auto& mo = state.channels[0].mainOut;
-    CHECK (mo.kind     == sirius::MixerMainOut::Kind::Terminal);
-    CHECK (mo.terminal == sirius::MixerTerminalKind::Tape);
+    CHECK (mo.kind     == ida::MixerMainOut::Kind::Terminal);
+    CHECK (mo.terminal == ida::MixerTerminalKind::Tape);
     CHECK (mo.tapeId   == 2);
 
     // Re-import into a fresh mixer (with tape 2 present) restores the route.
-    sirius::InputMixer restored;
-    REQUIRE (restored.addTape (sirius::TapeId { 2 }));
+    ida::InputMixer restored;
+    REQUIRE (restored.addTape (ida::TapeId { 2 }));
     restored.importGraphState (state);
-    CHECK (restored.channelMainOutIsTape (sirius::ChannelId (state.channels[0].channelId),
-                                          sirius::TapeId { 2 }));
+    CHECK (restored.channelMainOutIsTape (ida::ChannelId (state.channels[0].channelId),
+                                          ida::TapeId { 2 }));
 }
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cmake --build build --target SiriusTests && ctest --test-dir build -R InputMixer --output-on-failure`
+Run: `cmake --build build --target IdaTests && ctest --test-dir build -R InputMixer --output-on-failure`
 Expected: FAIL — either the `jassertfalse` at `InputMixer.cpp:185` fires (debug) or `mo.tapeId` does not compile (field absent).
 
-- [ ] **Step 3: Add the `tapeId` field** to `MixerMainOut` in `core/include/sirius/MixerGraphState.h`:
+- [ ] **Step 3: Add the `tapeId` field** to `MixerMainOut` in `core/include/ida/MixerGraphState.h`:
 
 ```cpp
 struct MixerMainOut
@@ -144,28 +144,28 @@ Apply the identical `setBusMainOutToTape (id, TapeId (m.tapeId))` change to `app
 ```cpp
 TEST_CASE ("input mixer graph serializes a non-primary tape route", "[sessionformat][mixer][tape]")
 {
-    sirius::InputMixer mixer;
-    const auto ch = mixer.addChannel (sirius::InputId (0), sirius::SignalType::Audio);
-    REQUIRE (mixer.addTape (sirius::TapeId { 3 }));
-    REQUIRE (mixer.setChannelMainOutToTape (ch, sirius::TapeId { 3 }));
+    ida::InputMixer mixer;
+    const auto ch = mixer.addChannel (ida::InputId (0), ida::SignalType::Audio);
+    REQUIRE (mixer.addTape (ida::TapeId { 3 }));
+    REQUIRE (mixer.setChannelMainOutToTape (ch, ida::TapeId { 3 }));
 
-    const auto json    = sirius::serializeMixerGraphState (mixer.exportGraphState());
-    const auto decoded = sirius::deserializeInputMixerGraphState (json);
+    const auto json    = ida::serializeMixerGraphState (mixer.exportGraphState());
+    const auto decoded = ida::deserializeInputMixerGraphState (json);
     CHECK (decoded.channels.size() == 1);
-    CHECK (decoded.channels[0].mainOut.terminal == sirius::MixerTerminalKind::Tape);
+    CHECK (decoded.channels[0].mainOut.terminal == ida::MixerTerminalKind::Tape);
     CHECK (decoded.channels[0].mainOut.tapeId   == 3);
 }
 ```
 
 - [ ] **Step 8: Run tests to verify they pass**
 
-Run: `cmake --build build --target SiriusTests && ctest --test-dir build -R "InputMixer|MixerGraphPersistence" --output-on-failure`
+Run: `cmake --build build --target IdaTests && ctest --test-dir build -R "InputMixer|MixerGraphPersistence" --output-on-failure`
 Expected: PASS.
 
 - [ ] **Step 9: Commit**
 
 ```bash
-git add core/include/sirius/MixerGraphState.h engine/src/InputMixer.cpp persistence/src/SessionFormat.cpp tests/InputMixerTests.cpp tests/MixerGraphPersistenceTests.cpp
+git add core/include/ida/MixerGraphState.h engine/src/InputMixer.cpp persistence/src/SessionFormat.cpp tests/InputMixerTests.cpp tests/MixerGraphPersistenceTests.cpp
 git commit -m "fix: MixerMainOut carries TapeId — non-primary tape routes export/persist (tape-UI T1)"
 ```
 
@@ -176,10 +176,10 @@ git commit -m "fix: MixerMainOut carries TapeId — non-primary tape routes expo
 Extract the mirror as a free function so it is testable without `MainComponent`, then own a `TapePool` in `MainComponent` and run the mirror at init.
 
 **Files:**
-- Create: `core/include/sirius/TapePoolMirror.h`
+- Create: `core/include/ida/TapePoolMirror.h`
 - Create: `tests/TapePoolMirrorTests.cpp`
 - Modify: `tests/CMakeLists.txt` (register the new test source)
-- Modify: `app/MainComponent.h` (add `#include "sirius/TapePool.h"` + a `sirius::TapePool tapePool_;` member), `app/MainComponent.cpp` (init block ~1096, after `inputMixer_` exists / `flacTapeSink_` is constructed)
+- Modify: `app/MainComponent.h` (add `#include "sirius/TapePool.h"` + a `ida::TapePool tapePool_;` member), `app/MainComponent.cpp` (init block ~1096, after `inputMixer_` exists / `flacTapeSink_` is constructed)
 
 - [ ] **Step 1: Write the failing test** — `tests/TapePoolMirrorTests.cpp`:
 
@@ -191,17 +191,17 @@ Extract the mirror as a free function so it is testable without `MainComponent`,
 
 TEST_CASE ("mirrorTapePool registers every non-primary pool tape in the mixer", "[tape-pool][mirror]")
 {
-    sirius::TapePool pool;            // seeds TapeId{1} "Tape 1"
+    ida::TapePool pool;            // seeds TapeId{1} "Tape 1"
     const auto drums = pool.add ("Drums");
     const auto vox   = pool.add ("Vox");
 
-    sirius::InputMixer mixer;         // ctor seeds the primary tape terminal only
+    ida::InputMixer mixer;         // ctor seeds the primary tape terminal only
     REQUIRE (mixer.tapeCount() == 1);
 
-    sirius::mirrorTapePool (pool, mixer);
+    ida::mirrorTapePool (pool, mixer);
 
     CHECK (mixer.tapeCount() == 3);
-    CHECK (mixer.hasTape (sirius::TapeId { 1 }));
+    CHECK (mixer.hasTape (ida::TapeId { 1 }));
     CHECK (mixer.hasTape (drums));
     CHECK (mixer.hasTape (vox));
 }
@@ -209,10 +209,10 @@ TEST_CASE ("mirrorTapePool registers every non-primary pool tape in the mixer", 
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `cmake --build build --target SiriusTests`
+Run: `cmake --build build --target IdaTests`
 Expected: FAIL — `TapePoolMirror.h` not found.
 
-- [ ] **Step 3: Write the mirror helper** — `core/include/sirius/TapePoolMirror.h`:
+- [ ] **Step 3: Write the mirror helper** — `core/include/ida/TapePoolMirror.h`:
 
 ```cpp
 #pragma once
@@ -241,28 +241,28 @@ inline void mirrorTapePool (const TapePool& pool, InputMixer& mixer)
 
 - [ ] **Step 5: Run to verify it passes**
 
-Run: `cmake --build build --target SiriusTests && ctest --test-dir build -R "mirror|TapePool" --output-on-failure`
+Run: `cmake --build build --target IdaTests && ctest --test-dir build -R "mirror|TapePool" --output-on-failure`
 Expected: PASS.
 
-- [ ] **Step 6: Own the pool in MainComponent.** In `app/MainComponent.h`, add near the other engine members: `#include "sirius/TapePool.h"` and `sirius::TapePool tapePool_;`. In `app/MainComponent.cpp`, immediately after the `flacTapeSink_` construction + `inputMixer_->setTapeSink(...)` block (~1103), add:
+- [ ] **Step 6: Own the pool in MainComponent.** In `app/MainComponent.h`, add near the other engine members: `#include "sirius/TapePool.h"` and `ida::TapePool tapePool_;`. In `app/MainComponent.cpp`, immediately after the `flacTapeSink_` construction + `inputMixer_->setTapeSink(...)` block (~1103), add:
 
 ```cpp
     // Tape-UI slice — TapePool is the single source of truth for which tapes exist.
     // Mirror it into the input mixer's routing terminals at startup.
-    sirius::mirrorTapePool (tapePool_, *inputMixer_);
+    ida::mirrorTapePool (tapePool_, *inputMixer_);
 ```
 
 Add `#include "sirius/TapePoolMirror.h"` to `MainComponent.cpp`.
 
 - [ ] **Step 7: Build the app to verify it compiles**
 
-Run: `cmake --build build --target SiriusLooper`
+Run: `cmake --build build --target IDA`
 Expected: builds clean.
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add core/include/sirius/TapePoolMirror.h tests/TapePoolMirrorTests.cpp tests/CMakeLists.txt app/MainComponent.h app/MainComponent.cpp
+git add core/include/ida/TapePoolMirror.h tests/TapePoolMirrorTests.cpp tests/CMakeLists.txt app/MainComponent.h app/MainComponent.cpp
 git commit -m "feat: own TapePool in MainComponent + mirror into InputMixer (tape-UI T2)"
 ```
 
@@ -273,7 +273,7 @@ git commit -m "feat: own TapePool in MainComponent + mirror into InputMixer (tap
 Three `MainComponent` methods keep `TapePool` ↔ `InputMixer` ↔ `FlacTapeSink` consistent. The consistency rules are headless-testable via the mirror helper + public APIs; the audio-callback bracketing and auto-disarm GUI effects are operator-verified.
 
 **Files:**
-- Modify: `app/MainComponent.h` (declare `void addTape(juce::String); void renameTape(sirius::TapeId, juce::String); void removeTape(sirius::TapeId);`), `app/MainComponent.cpp` (implement)
+- Modify: `app/MainComponent.h` (declare `void addTape(juce::String); void renameTape(ida::TapeId, juce::String); void removeTape(ida::TapeId);`), `app/MainComponent.cpp` (implement)
 - Test: `tests/TapePoolMirrorTests.cpp` (extend with a remove-consistency case over pool+mixer)
 
 - [ ] **Step 1: Write the failing test** (the remove-consistency invariant, headless) — append to `tests/TapePoolMirrorTests.cpp`:
@@ -281,11 +281,11 @@ Three `MainComponent` methods keep `TapePool` ↔ `InputMixer` ↔ `FlacTapeSink
 ```cpp
 TEST_CASE ("removing a pooled tape re-mirrors to a consistent mixer", "[tape-pool][mirror]")
 {
-    sirius::TapePool pool;
+    ida::TapePool pool;
     const auto drums = pool.add ("Drums");
-    sirius::InputMixer mixer;
-    sirius::mirrorTapePool (pool, mixer);
-    const auto ch = mixer.addChannel (sirius::InputId (0), sirius::SignalType::Audio);
+    ida::InputMixer mixer;
+    ida::mirrorTapePool (pool, mixer);
+    const auto ch = mixer.addChannel (ida::InputId (0), ida::SignalType::Audio);
     REQUIRE (mixer.setChannelMainOutToTape (ch, drums));
 
     // The MainComponent remove sequence, modelled headlessly: route dependents to
@@ -297,22 +297,22 @@ TEST_CASE ("removing a pooled tape re-mirrors to a consistent mixer", "[tape-poo
 
     CHECK (pool.count() == 1);
     CHECK (mixer.tapeCount() == 1);
-    CHECK (mixer.channelMainOutIsTape (ch, sirius::TapeId { 1 }));
+    CHECK (mixer.channelMainOutIsTape (ch, ida::TapeId { 1 }));
     CHECK_FALSE (mixer.hasTape (drums));
 }
 
 TEST_CASE ("the pool floor and primary tape are protected", "[tape-pool][mirror]")
 {
-    sirius::TapePool pool;                 // one tape
-    CHECK_FALSE (pool.remove (sirius::TapeId { 1 })); // ≥1 floor refuses
-    sirius::InputMixer mixer;
-    CHECK_FALSE (mixer.removeTape (sirius::TapeId { 1 })); // primary is permanent
+    ida::TapePool pool;                 // one tape
+    CHECK_FALSE (pool.remove (ida::TapeId { 1 })); // ≥1 floor refuses
+    ida::InputMixer mixer;
+    CHECK_FALSE (mixer.removeTape (ida::TapeId { 1 })); // primary is permanent
 }
 ```
 
 - [ ] **Step 2: Run to verify it fails/passes appropriately**
 
-Run: `cmake --build build --target SiriusTests && ctest --test-dir build -R mirror --output-on-failure`
+Run: `cmake --build build --target IdaTests && ctest --test-dir build -R mirror --output-on-failure`
 Expected: these PASS using existing APIs (they encode the contract the MainComponent methods must follow). If any assertion fails, the engine/pool contract is wrong — stop and investigate before writing the MainComponent methods.
 
 - [ ] **Step 3: Implement the three methods** in `app/MainComponent.cpp`. `removeTape` MUST bracket with `removeAudioCallback`/`addAudioCallback` (the pattern at `MainComponent.cpp:1595/1676`), and `closeTape` MUST be inside the bracket:
@@ -327,13 +327,13 @@ void MainComponent::addTape (juce::String name)
     refreshTapesPane();
 }
 
-void MainComponent::renameTape (sirius::TapeId id, juce::String name)
+void MainComponent::renameTape (ida::TapeId id, juce::String name)
 {
     tapePool_.rename (id, name.toStdString());   // pool-only; no engine/sink effect
     refreshTapesPane();
 }
 
-void MainComponent::removeTape (sirius::TapeId id)
+void MainComponent::removeTape (ida::TapeId id)
 {
     if (tapePool_.count() <= 1) return;          // ≥1 pool floor (TapePool also refuses)
 
@@ -362,7 +362,7 @@ void MainComponent::removeTape (sirius::TapeId id)
 
 - [ ] **Step 4: Build to verify it compiles**
 
-Run: `cmake --build build --target SiriusLooper`
+Run: `cmake --build build --target IDA`
 Expected: compiles (with a forward-declared `refreshTapesPane()`).
 
 - [ ] **Step 5: Commit**
@@ -387,12 +387,12 @@ Embed the pool in session save/load. Depends on T1 (saving a session whose chann
 ```cpp
 TEST_CASE ("TapePool round-trips through serialize/deserialize", "[sessionformat][tape-pool]")
 {
-    sirius::TapePool pool;
+    ida::TapePool pool;
     const auto drums = pool.add ("Drums");
     pool.add ("Vox");
     pool.rename (drums, "Kit");
 
-    const auto restored = sirius::deserializeTapePool (sirius::serializeTapePool (pool));
+    const auto restored = ida::deserializeTapePool (ida::serializeTapePool (pool));
     REQUIRE (restored.count() == pool.count());
     CHECK (restored.tapes() == pool.tapes());
     CHECK (restored.primary() == pool.primary());
@@ -400,15 +400,15 @@ TEST_CASE ("TapePool round-trips through serialize/deserialize", "[sessionformat
 
 TEST_CASE ("a pre-tape-pool session yields a default TapePool", "[sessionformat][tape-pool]")
 {
-    const auto restored = sirius::deserializeTapePool ("{}");
+    const auto restored = ida::deserializeTapePool ("{}");
     CHECK (restored.count() == 1);
-    CHECK (restored.primary() == sirius::TapeId { 1 });
+    CHECK (restored.primary() == ida::TapeId { 1 });
 }
 ```
 
 - [ ] **Step 2: Run to verify**
 
-Run: `cmake --build build --target SiriusTests && ctest --test-dir build -R SessionFormat --output-on-failure`
+Run: `cmake --build build --target IdaTests && ctest --test-dir build -R SessionFormat --output-on-failure`
 Expected: PASS if `serializeTapePool`/`deserializeTapePool` honor the back-compat contract; if the empty-doc case throws instead of defaulting, fix `deserializeTapePool` per `SessionFormat.h:49` (missing → default `TapePool()`), then re-run.
 
 - [ ] **Step 3: Wire save.** In `chooseFileAndSave` (~2089), after the existing session JSON is produced, write the pool alongside it. Read the function first to match how it composes/writes the document; embed `serializeTapePool(tapePool_)` as a sibling section or sidecar key (the pool is independent of the Constituent per `SessionFormat.h:42`). Keep the existing `serializeSession` output byte-compatible.
@@ -419,17 +419,17 @@ Expected: PASS if `serializeTapePool`/`deserializeTapePool` honor the back-compa
     audioDeviceManager_.removeAudioCallback (audioCallback_.get());
     // Drop non-primary terminals, then re-mirror the loaded pool.
     for (const auto& tape : tapePoolBeforeLoad.tapes())
-        if (tape.id != sirius::TapeId { 1 })
+        if (tape.id != ida::TapeId { 1 })
             inputMixer_->removeTape (tape.id);
     tapePool_ = loadedPool;
-    sirius::mirrorTapePool (tapePool_, *inputMixer_);
+    ida::mirrorTapePool (tapePool_, *inputMixer_);
     audioDeviceManager_.addAudioCallback (audioCallback_.get());
     refreshTapesPane();
 ```
 
 - [ ] **Step 5: Build + test**
 
-Run: `cmake --build build --target SiriusLooper SiriusTests && ctest --test-dir build -R SessionFormat --output-on-failure`
+Run: `cmake --build build --target IDA IdaTests && ctest --test-dir build -R SessionFormat --output-on-failure`
 Expected: app builds; tests PASS.
 
 - [ ] **Step 6: Commit**
@@ -458,10 +458,10 @@ GUI — no unit test (this repo verifies MainComponent GUI by operator eyes-on).
 
 - [ ] **Step 5: Build**
 
-Run: `rm -rf build && cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build --target SiriusLooper`
+Run: `rm -rf build && cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build --target IDA`
 Expected: clean build (clean rebuild required before operator eyes-on per CLAUDE.md).
 
-- [ ] **Step 6: Operator verification** — launch `build/app/SiriusLooper_artefacts/Release/Sirius Looper.app`; operator confirms: Tapes tab lists "Tape 1"; New tape adds a row; rename persists in the list; Remove is **disabled at one tape**, enabled with ≥2 and removes; dropped-block counter shows 0 at idle.
+- [ ] **Step 6: Operator verification** — launch `build/app/IDA_artefacts/Release/IDA.app`; operator confirms: Tapes tab lists "Tape 1"; New tape adds a row; rename persists in the list; Remove is **disabled at one tape**, enabled with ≥2 and removes; dropped-block counter shows 0 at idle.
 
 - [ ] **Step 7: Commit**
 
@@ -483,16 +483,16 @@ A picker beneath each Input-Mixer strip choosing which tape the channel records 
 
 - [ ] **Step 2:** On click, open a `juce::PopupMenu` listing **the pooled tapes only** (no "Direct"/hardware-output entry). Selecting a tape fires `onDestinationChosen(stripIdx, tapeId)`.
 
-- [ ] **Step 3:** Wire the callback in the ctor: `inputMixerPane_->onDestinationChosen = [this](int idx, sirius::TapeId t){ if (auto chId = inputStripChannelIdAt(idx)) inputMixer_->setChannelMainOutToTape(*chId, t); refreshInputMixer(); };` (use the existing `inputStripChannelIds_` indexing; bracketing is NOT needed for a pure `setMainOut` graph edge change — it is a single atomic graph mutation on the message thread that the audio thread reads safely, same as existing send/gain edits; confirm against how `onGain` is handled).
+- [ ] **Step 3:** Wire the callback in the ctor: `inputMixerPane_->onDestinationChosen = [this](int idx, ida::TapeId t){ if (auto chId = inputStripChannelIdAt(idx)) inputMixer_->setChannelMainOutToTape(*chId, t); refreshInputMixer(); };` (use the existing `inputStripChannelIds_` indexing; bracketing is NOT needed for a pure `setMainOut` graph edge change — it is a single atomic graph mutation on the message thread that the audio thread reads safely, same as existing send/gain edits; confirm against how `onGain` is handled).
 
 - [ ] **Step 4:** Refresh the picker labels in `refreshInputMixer` (~1569) or on rebuild so they track route changes and pool renames.
 
 - [ ] **Step 5: Build**
 
-Run: `rm -rf build && cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build --target SiriusLooper`
+Run: `rm -rf build && cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build --target IDA`
 Expected: clean build.
 
-- [ ] **Step 6: Operator verification** — with ≥2 tapes, each strip shows its destination tape; choosing a different tape re-routes; **make live input and confirm audio lands in the chosen `~/Library/Sirius Looper/tapes/tape-<id>.flac`** (quit to finalize, measure as in the slice-3 procedure); the picker list updates when tapes are added/removed/renamed.
+- [ ] **Step 6: Operator verification** — with ≥2 tapes, each strip shows its destination tape; choosing a different tape re-routes; **make live input and confirm audio lands in the chosen `~/Library/IDA/tapes/tape-<id>.flac`** (quit to finalize, measure as in the slice-3 procedure); the picker list updates when tapes are added/removed/renamed.
 
 - [ ] **Step 7: Commit**
 
@@ -520,7 +520,7 @@ Extend `InputMixerPane::mouseDown` (~510) so a right-click / 500 ms long-press o
 
 - [ ] **Step 5: Build**
 
-Run: `rm -rf build && cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build --target SiriusLooper`
+Run: `rm -rf build && cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build --target IDA`
 Expected: clean build.
 
 - [ ] **Step 6: Operator verification** — right-click and long-press on empty Input-Mixer pane area both open the menu; "Add tape" creates a tape (appears in the Tapes tab list and in each strip's picker).
@@ -536,11 +536,11 @@ git commit -m "feat: blank-area Add-tape creation gesture in Input Mixer (tape-U
 
 ## Final verification (after all tasks)
 
-- `cmake --build build --target SiriusTests && ctest --test-dir build` — green; new `[tape]`/`[mirror]`/`[tape-pool]` cases added over the slice-3 baseline (559/560; the one Not-Run is the documented `MainComponentPluginEditorTests_NOT_BUILT`).
+- `cmake --build build --target IdaTests && ctest --test-dir build` — green; new `[tape]`/`[mirror]`/`[tape-pool]` cases added over the slice-3 baseline (559/560; the one Not-Run is the documented `MainComponentPluginEditorTests_NOT_BUILT`).
 - Clean `rm -rf build` rebuild; operator eyes-on the full flow: create tapes, route channels per-tape, record live input to distinct `tape-<id>.flac` files, save+reload a session and confirm tapes + routes survive.
 - Refresh `continue.md` (mark the tape-UI slice shipped, commits + ctest count; next = P6 Input Mixer UI / the bridge slice with P8).
 
 ## Self-review notes
 - Spec coverage: Tapes tab (T5), per-channel tape picker (T6), creation gesture (T7), TapePool wiring (T2/T3), persistence (T4), the latent non-primary-tape snapshot bug (T1). The active ≥1-channel→≥1-tape enforcement + direct-out opt-out are intentionally OUT (deferred to the bridge slice — no no-tape destination exists here).
-- Type consistency: `mirrorTapePool`, `addTape`/`renameTape`/`removeTape`, `refreshTapesPane`, `onDestinationChosen` are used consistently across tasks. `TapeId` is `explicit` (construct as `sirius::TapeId{n}`), `.value()` for the int64.
+- Type consistency: `mirrorTapePool`, `addTape`/`renameTape`/`removeTape`, `refreshTapesPane`, `onDestinationChosen` are used consistently across tasks. `TapeId` is `explicit` (construct as `ida::TapeId{n}`), `.value()` for the int64.
 - GUI tasks (T5–T7) carry no unit tests by design (MainComponent GUI is operator-verified in this repo); their "test" steps are clean-build + an operator checklist.

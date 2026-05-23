@@ -14,11 +14,11 @@
 #include <memory>
 #include <stdexcept>
 
-using sirius::Constituent;
-using sirius::ConstituentId;
-using sirius::Position;
-using sirius::Rational;
-using sirius::UndoStack;
+using ida::Constituent;
+using ida::ConstituentId;
+using ida::Position;
+using ida::Rational;
+using ida::UndoStack;
 
 namespace
 {
@@ -127,8 +127,8 @@ TEST_CASE ("the stack caps depth at the configured maximum, dropping the oldest"
 TEST_CASE ("UndoStack carries an optional CaptureRestorePoint per entry",
            "[undo][promotion]")
 {
-    using sirius::CaptureRestorePoint;
-    using sirius::TapeId;
+    using ida::CaptureRestorePoint;
+    using ida::TapeId;
 
     UndoStack stack (makeRoot (1, "initial"));
 

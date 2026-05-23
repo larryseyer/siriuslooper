@@ -1,4 +1,4 @@
-// Tests for sirius::findCandidatesFor / resolveFirst — the engine-side half of
+// Tests for ida::findCandidatesFor / resolveFirst — the engine-side half of
 // role-fillable phrase resolution (white paper Part 8.4). The engine does not
 // pick which phrase fills a role; it surfaces the eligible pool deterministically
 // and provides resolveFirst as the trivial default policy. These tests pin down
@@ -16,12 +16,12 @@
 #include <cstdint>
 #include <memory>
 
-using sirius::Constituent;
-using sirius::ConstituentId;
-using sirius::PhraseMetadata;
-using sirius::Position;
-using sirius::Rational;
-using sirius::RoleSlot;
+using ida::Constituent;
+using ida::ConstituentId;
+using ida::PhraseMetadata;
+using ida::Position;
+using ida::Rational;
+using ida::RoleSlot;
 
 namespace
 {
@@ -57,7 +57,7 @@ namespace
 TEST_CASE ("empty pool yields no candidates", "[role-resolver]")
 {
     const auto slot = makeSlot ("chorus");
-    const auto candidates = sirius::findCandidatesFor (slot, {});
+    const auto candidates = ida::findCandidatesFor (slot, {});
     CHECK (candidates.empty());
 }
 
@@ -68,7 +68,7 @@ TEST_CASE ("a single matching fillable phrase is returned", "[role-resolver]")
         makePhrase (42, "chorus", true)
     };
 
-    const auto candidates = sirius::findCandidatesFor (slot, pool);
+    const auto candidates = ida::findCandidatesFor (slot, pool);
     REQUIRE (candidates.size() == 1);
     CHECK (candidates[0] == ConstituentId (42));
 }
@@ -82,7 +82,7 @@ TEST_CASE ("multiple matches are returned in pool order", "[role-resolver]")
         makePhrase (3, "solo", true)
     };
 
-    const auto candidates = sirius::findCandidatesFor (slot, pool);
+    const auto candidates = ida::findCandidatesFor (slot, pool);
     REQUIRE (candidates.size() == 3);
     CHECK (candidates[0] == ConstituentId (1));
     CHECK (candidates[1] == ConstituentId (2));
@@ -98,7 +98,7 @@ TEST_CASE ("a phrase whose role does not match is skipped", "[role-resolver]")
         makePhrase (12, "chorus", true)
     };
 
-    const auto candidates = sirius::findCandidatesFor (slot, pool);
+    const auto candidates = ida::findCandidatesFor (slot, pool);
     REQUIRE (candidates.size() == 1);
     CHECK (candidates[0] == ConstituentId (12));
 }
@@ -112,7 +112,7 @@ TEST_CASE ("a matching phrase that is not role-fillable is skipped",
         makePhrase (21, "chorus", true)
     };
 
-    const auto candidates = sirius::findCandidatesFor (slot, pool);
+    const auto candidates = ida::findCandidatesFor (slot, pool);
     REQUIRE (candidates.size() == 1);
     CHECK (candidates[0] == ConstituentId (21));
 }
@@ -126,7 +126,7 @@ TEST_CASE ("a Constituent with no phrase metadata is skipped",
         makePhrase (31, "fill", true)
     };
 
-    const auto candidates = sirius::findCandidatesFor (slot, pool);
+    const auto candidates = ida::findCandidatesFor (slot, pool);
     REQUIRE (candidates.size() == 1);
     CHECK (candidates[0] == ConstituentId (31));
 }
@@ -143,7 +143,7 @@ TEST_CASE ("null entries in the pool are skipped without crashing",
         nullptr
     };
 
-    const auto candidates = sirius::findCandidatesFor (slot, pool);
+    const auto candidates = ida::findCandidatesFor (slot, pool);
     REQUIRE (candidates.size() == 2);
     CHECK (candidates[0] == ConstituentId (40));
     CHECK (candidates[1] == ConstituentId (41));
@@ -160,7 +160,7 @@ TEST_CASE ("resolveFirst fills the slot with the first matching candidate",
         makePhrase (51, "solo", true)
     };
 
-    const auto resolved = sirius::resolveFirst (slot, pool);
+    const auto resolved = ida::resolveFirst (slot, pool);
     REQUIRE (resolved.isFilled());
     CHECK (*resolved.filledBy() == ConstituentId (50));
     // The slot's other properties — role and span — are preserved.
@@ -179,7 +179,7 @@ TEST_CASE ("resolveFirst leaves the slot unchanged when no candidate matches",
         makeBareLoop (62)
     };
 
-    const auto resolved = sirius::resolveFirst (slot, pool);
+    const auto resolved = ida::resolveFirst (slot, pool);
     CHECK_FALSE (resolved.isFilled());
     CHECK (resolved.role() == slot.role());
 }

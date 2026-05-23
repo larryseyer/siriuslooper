@@ -18,7 +18,7 @@
 #include <unordered_map>
 
 namespace juce { class String; }
-namespace sirius::persistence { class TapeStore; }
+namespace ida::persistence { class TapeStore; }
 
 namespace sirius
 {

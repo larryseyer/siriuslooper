@@ -1,4 +1,4 @@
-// Tests for sirius::InputMixer — real-body coverage added in M3 Session 2.
+// Tests for ida::InputMixer — real-body coverage added in M3 Session 2.
 // The M2 stubs have been replaced with real implementations; these tests
 // verify channel registration, tape-bearing buffer dispatch, and overload
 // reporting on queue-full. M5 Session 1 adds [audio-dsp] coverage —
@@ -29,12 +29,12 @@
 #include <type_traits>
 #include <utility>
 
-using sirius::InputMixer;
+using ida::InputMixer;
 
 static_assert (std::is_default_constructible_v<InputMixer>,
                "InputMixer must remain default-constructible");
 static_assert (std::is_destructible_v<InputMixer>);
-static_assert (noexcept (std::declval<sirius::InputMixer&>().renderInputGraph (
+static_assert (noexcept (std::declval<ida::InputMixer&>().renderInputGraph (
                    nullptr, 0, nullptr, 0, 0)),
                "InputMixer::renderInputGraph must be noexcept (RT-safety contract §6)");
 
@@ -48,12 +48,12 @@ TEST_CASE ("InputMixer is default-constructible and destructible without crashin
 TEST_CASE ("InputMixer::processBuffer enqueues one message per tape-bearing channel",
            "[input-mixer][process-buffer]")
 {
-    using sirius::ChannelId;
-    using sirius::InputId;
-    using sirius::OverloadProtection;
-    using sirius::SignalType;
-    using sirius::TapeMode;
-    using sirius::TapeWriter;
+    using ida::ChannelId;
+    using ida::InputId;
+    using ida::OverloadProtection;
+    using ida::SignalType;
+    using ida::TapeMode;
+    using ida::TapeWriter;
 
     const auto tempDirJuce = juce::File::getSpecialLocation (juce::File::tempDirectory)
                                  .getChildFile ("sirius-inputmixer-process-"
@@ -96,11 +96,11 @@ TEST_CASE ("InputMixer::processBuffer enqueues one message per tape-bearing chan
 TEST_CASE ("InputMixer::processBuffer reports overload when the writer queue is full",
            "[input-mixer][overload]")
 {
-    using sirius::InputId;
-    using sirius::OverloadProtection;
-    using sirius::SignalType;
-    using sirius::TapeMode;
-    using sirius::TapeWriter;
+    using ida::InputId;
+    using ida::OverloadProtection;
+    using ida::SignalType;
+    using ida::TapeMode;
+    using ida::TapeWriter;
 
     const auto tempDirJuce = juce::File::getSpecialLocation (juce::File::tempDirectory)
                                  .getChildFile ("sirius-inputmixer-overload-"
@@ -135,15 +135,15 @@ TEST_CASE ("InputMixer::processBuffer reports overload when the writer queue is 
 TEST_CASE ("InputMixer::processBuffer posts a CpuPressure notification on queue-full",
            "[input-mixer][notification]")
 {
-    using sirius::Category;
-    using sirius::InputId;
-    using sirius::Notification;
-    using sirius::NotificationBus;
-    using sirius::NotificationLevel;
-    using sirius::OverloadProtection;
-    using sirius::SignalType;
-    using sirius::TapeMode;
-    using sirius::TapeWriter;
+    using ida::Category;
+    using ida::InputId;
+    using ida::Notification;
+    using ida::NotificationBus;
+    using ida::NotificationLevel;
+    using ida::OverloadProtection;
+    using ida::SignalType;
+    using ida::TapeMode;
+    using ida::TapeWriter;
 
     const auto tempDirJuce = juce::File::getSpecialLocation (juce::File::tempDirectory)
                                  .getChildFile ("sirius-inputmixer-notification-"
@@ -168,7 +168,7 @@ TEST_CASE ("InputMixer::processBuffer posts a CpuPressure notification on queue-
         mixer.processBuffer (ch, buffer.data(), buffer.size());
 
     std::vector<Notification> drained;
-    drained.reserve (sirius::kCategoryCount * NotificationBus::kRingCapacity);
+    drained.reserve (ida::kCategoryCount * NotificationBus::kRingCapacity);
     bus.drain (drained);
 
     // At least one Warning/CpuPressure notification must have been posted for
@@ -187,7 +187,7 @@ TEST_CASE ("InputMixer::finalizeChannel produces a content-addressed tape and cl
            "[input-mixer][finalize]")
 {
     using namespace sirius;
-    using sirius::persistence::TapeStore;
+    using ida::persistence::TapeStore;
 
     auto root = juce::File::getSpecialLocation (juce::File::tempDirectory)
                     .getChildFile ("sirius-finalize-"
@@ -236,7 +236,7 @@ TEST_CASE ("NonDestructive channel writes both audio partial and JSONL params pa
            "[input-mixer][non-destructive]")
 {
     using namespace sirius;
-    using sirius::persistence::TapeStore;
+    using ida::persistence::TapeStore;
 
     auto root = juce::File::getSpecialLocation (juce::File::tempDirectory)
                     .getChildFile ("sirius-nondestructive-"
@@ -396,12 +396,12 @@ namespace
 
     // Test-only: deliverTapeBlock allocates (vector copies). NOT a production
     // ITapeSink implementation — a real sink must be allocation-free.
-    struct RecordingTapeSink : sirius::ITapeSink
+    struct RecordingTapeSink : ida::ITapeSink
     {
         struct Block { std::int64_t tapeId; std::vector<float> left, right; };
         std::vector<Block> blocks;
 
-        void deliverTapeBlock (sirius::TapeId tape, const float* l, const float* r,
+        void deliverTapeBlock (ida::TapeId tape, const float* l, const float* r,
                                int n) noexcept override
         {
             blocks.push_back ({ tape.value(),
@@ -416,11 +416,11 @@ namespace
         }
     };
 
-    sirius::ChannelId addStereoChannel (sirius::InputMixer& mixer, int leftDev, int rightDev)
+    ida::ChannelId addStereoChannel (ida::InputMixer& mixer, int leftDev, int rightDev)
     {
-        using sirius::InputId; using sirius::SignalType;
+        using ida::InputId; using ida::SignalType;
         const auto ch = mixer.addChannel (InputId { 1 }, SignalType::Audio);
-        mixer.setChannelTapeMode (ch, sirius::TapeMode::CommitToTape);
+        mixer.setChannelTapeMode (ch, ida::TapeMode::CommitToTape);
         mixer.setChannelInputSource (ch, leftDev, rightDev, true);
         return ch;
     }
@@ -429,9 +429,9 @@ namespace
 TEST_CASE ("processDeviceInputs meters a stereo source's L and R independently",
            "[input-mixer][input-source]")
 {
-    using sirius::ChannelStrip;
-    using sirius::InputId;
-    using sirius::SignalType;
+    using ida::ChannelStrip;
+    using ida::InputId;
+    using ida::SignalType;
 
     InputMixer mixer;
     const auto ch = mixer.addChannel (InputId (0), SignalType::Audio);
@@ -459,9 +459,9 @@ TEST_CASE ("processDeviceInputs meters a stereo source's L and R independently",
 TEST_CASE ("processDeviceInputs presents a mono source dual-mono and pans it",
            "[input-mixer][input-source]")
 {
-    using sirius::ChannelStrip;
-    using sirius::InputId;
-    using sirius::SignalType;
+    using ida::ChannelStrip;
+    using ida::InputId;
+    using ida::SignalType;
 
     InputMixer mixer;
     const auto ch = mixer.addChannel (InputId (3), SignalType::Audio);
@@ -492,9 +492,9 @@ TEST_CASE ("processDeviceInputs presents a mono source dual-mono and pans it",
 TEST_CASE ("processDeviceInputs ignores channels without a source descriptor",
            "[input-mixer][input-source]")
 {
-    using sirius::ChannelStrip;
-    using sirius::InputId;
-    using sirius::SignalType;
+    using ida::ChannelStrip;
+    using ida::InputId;
+    using ida::SignalType;
 
     InputMixer mixer;
     const auto ch = mixer.addChannel (InputId (0), SignalType::Audio);  // no source set
@@ -515,9 +515,9 @@ TEST_CASE ("processDeviceInputs ignores channels without a source descriptor",
 TEST_CASE ("processDeviceInputs safely skips a source whose device channel is out of range",
            "[input-mixer][input-source]")
 {
-    using sirius::ChannelStrip;
-    using sirius::InputId;
-    using sirius::SignalType;
+    using ida::ChannelStrip;
+    using ida::InputId;
+    using ida::SignalType;
 
     InputMixer mixer;
     const auto ch = mixer.addChannel (InputId (0), SignalType::Audio);
@@ -544,17 +544,17 @@ TEST_CASE ("processDeviceInputs safely skips a source whose device channel is ou
 TEST_CASE ("InputMixer constructs with Tape+HardwareOutput terminals and zero buses",
            "[input-routing]")
 {
-    sirius::InputMixer mixer;
+    ida::InputMixer mixer;
     CHECK (mixer.busCount() == 0);
     CHECK (mixer.tapeCount() == 1);                          // primary tape terminal
-    CHECK (mixer.hasTape (sirius::TapeId (1)));              // permanent default
+    CHECK (mixer.hasTape (ida::TapeId (1)));              // permanent default
 }
 
 TEST_CASE ("InputMixer addBus registers a graph node defaulting its main-out to the tape terminal",
            "[input-routing]")
 {
-    sirius::InputMixer mixer;
-    const auto bus = mixer.addBus (sirius::BusConfig { 2, "Drums", sirius::BusKind::Bus });
+    ida::InputMixer mixer;
+    const auto bus = mixer.addBus (ida::BusConfig { 2, "Drums", ida::BusKind::Bus });
     CHECK (bus.value() != 0);
     CHECK (mixer.busCount() == 1); // Drums
     CHECK (mixer.busMainOutIsTape (bus));
@@ -563,8 +563,8 @@ TEST_CASE ("InputMixer addBus registers a graph node defaulting its main-out to 
 TEST_CASE ("InputMixer addChannel registers a Channel graph node; removeChannel drops it",
            "[input-routing]")
 {
-    sirius::InputMixer mixer;
-    const auto ch = mixer.addChannel (sirius::InputId { 0 }, sirius::SignalType::Audio);
+    ida::InputMixer mixer;
+    const auto ch = mixer.addChannel (ida::InputId { 0 }, ida::SignalType::Audio);
     CHECK (mixer.channelIsRegisteredInGraph (ch));
     mixer.removeChannel (ch);
     CHECK_FALSE (mixer.channelIsRegisteredInGraph (ch));
@@ -573,32 +573,32 @@ TEST_CASE ("InputMixer addChannel registers a Channel graph node; removeChannel 
 TEST_CASE ("InputMixer routes a channel main-out to a bus, the tape, or a hardware output",
            "[input-routing]")
 {
-    sirius::InputMixer mixer;
-    const auto ch  = mixer.addChannel (sirius::InputId { 0 }, sirius::SignalType::Audio);
-    const auto bus = mixer.addBus (sirius::BusConfig { 2, "Drums", sirius::BusKind::Bus });
+    ida::InputMixer mixer;
+    const auto ch  = mixer.addChannel (ida::InputId { 0 }, ida::SignalType::Audio);
+    const auto bus = mixer.addBus (ida::BusConfig { 2, "Drums", ida::BusKind::Bus });
 
     SECTION ("default is the tape terminal")
     {
-        CHECK (mixer.channelMainOut (ch) == sirius::InputMixer::MainOutDest::Tape);
+        CHECK (mixer.channelMainOut (ch) == ida::InputMixer::MainOutDest::Tape);
     }
     SECTION ("to a bus")
     {
         CHECK (mixer.setChannelMainOutToBus (ch, bus));
-        CHECK (mixer.channelMainOut (ch) == sirius::InputMixer::MainOutDest::Bus);
+        CHECK (mixer.channelMainOut (ch) == ida::InputMixer::MainOutDest::Bus);
     }
     SECTION ("to the hardware output (RME direct-out monitoring)")
     {
         CHECK (mixer.setChannelMainOutToHardwareOutput (ch));
-        CHECK (mixer.channelMainOut (ch) == sirius::InputMixer::MainOutDest::HardwareOutput);
+        CHECK (mixer.channelMainOut (ch) == ida::InputMixer::MainOutDest::HardwareOutput);
     }
 }
 
 TEST_CASE ("InputMixer rejects a channel send to a non-FX-return and accepts one to an FX return",
            "[input-routing]")
 {
-    sirius::InputMixer mixer;
-    const auto ch  = mixer.addChannel (sirius::InputId { 0 }, sirius::SignalType::Audio);
-    const auto bus = mixer.addBus (sirius::BusConfig { 2, "Drums", sirius::BusKind::Bus });
+    ida::InputMixer mixer;
+    const auto ch  = mixer.addChannel (ida::InputId { 0 }, ida::SignalType::Audio);
+    const auto bus = mixer.addBus (ida::BusConfig { 2, "Drums", ida::BusKind::Bus });
     const auto rvb = mixer.addFxReturn ("RVB2");
 
     CHECK_FALSE (mixer.setChannelSend (ch, bus, 0.5f)); // a Bus is not an FX return
@@ -609,9 +609,9 @@ TEST_CASE ("InputMixer rejects a channel send to a non-FX-return and accepts one
 TEST_CASE ("InputMixer rejects a bus main-out assignment that would create a cycle",
            "[input-routing]")
 {
-    sirius::InputMixer mixer;
-    const auto a = mixer.addBus (sirius::BusConfig { 2, "A", sirius::BusKind::Bus });
-    const auto b = mixer.addBus (sirius::BusConfig { 2, "B", sirius::BusKind::Bus });
+    ida::InputMixer mixer;
+    const auto a = mixer.addBus (ida::BusConfig { 2, "A", ida::BusKind::Bus });
+    const auto b = mixer.addBus (ida::BusConfig { 2, "B", ida::BusKind::Bus });
     REQUIRE (mixer.setBusMainOutToBus (a, b)); // A -> B
     CHECK_FALSE (mixer.setBusMainOutToBus (b, a)); // closing the loop is refused
 }
@@ -623,8 +623,8 @@ TEST_CASE ("InputMixer rejects a bus main-out assignment that would create a cyc
 TEST_CASE ("renderInputGraph: default-graph tape-routed channel delivers its processed block to the tape sink",
            "[input-routing][render]")
 {
-    using sirius::InputMixer; using sirius::InputId; using sirius::SignalType;
-    using sirius::TapeMode;
+    using ida::InputMixer; using ida::InputId; using ida::SignalType;
+    using ida::TapeMode;
 
     RecordingTapeSink sink;
     InputMixer mixer;
@@ -650,8 +650,8 @@ TEST_CASE ("renderInputGraph: default-graph tape-routed channel delivers its pro
 TEST_CASE ("renderInputGraph: a channel routed to the hardware output sums into direct-out, not tape",
            "[input-routing][render]")
 {
-    using sirius::InputMixer; using sirius::InputId; using sirius::SignalType;
-    using sirius::TapeMode;
+    using ida::InputMixer; using ida::InputId; using ida::SignalType;
+    using ida::TapeMode;
 
     RecordingTapeSink sink;
     InputMixer mixer;
@@ -681,7 +681,7 @@ TEST_CASE ("renderInputGraph: a channel routed to the hardware output sums into 
 TEST_CASE ("renderInputGraph: a channel send reaches an FX return, which delivers to direct-out",
            "[input-routing][render]")
 {
-    using sirius::InputMixer; using sirius::InputId; using sirius::SignalType;
+    using ida::InputMixer; using ida::InputId; using ida::SignalType;
 
     InputMixer mixer;
     const auto ch  = mixer.addChannel (InputId (0), SignalType::Audio);
@@ -713,30 +713,30 @@ TEST_CASE ("InputMixer exportGraphState reflects buses, routing, sends, inserts"
     // A freshly-constructed mixer has zero buses (minimal-defaults rule), so the
     // bus vector after these adds is [Drums, Reverb] and exportGraphState reflects
     // exactly what the test wired up — no ctor-seeded nodes intrude.
-    sirius::InputMixer mixer;
-    const sirius::InputDescriptor desc {
-        sirius::TapeId (1), sirius::InputKind::Audio, std::string ("In 1"),
+    ida::InputMixer mixer;
+    const ida::InputDescriptor desc {
+        ida::TapeId (1), ida::InputKind::Audio, std::string ("In 1"),
         std::optional<int> (0)
     };
-    mixer.registerInput (sirius::InputId (1), desc);
+    mixer.registerInput (ida::InputId (1), desc);
 
-    const auto drums = mixer.addBus (sirius::BusConfig { 2, "Drums", sirius::BusKind::Bus });
+    const auto drums = mixer.addBus (ida::BusConfig { 2, "Drums", ida::BusKind::Bus });
     const auto reverb = mixer.addFxReturn ("Reverb");
 
-    sirius::EffectChainEntry comp; comp.displayName = "comp";
-    mixer.setBusEffectChain (drums, sirius::EffectChain{}.withAppended (comp));
+    ida::EffectChainEntry comp; comp.displayName = "comp";
+    mixer.setBusEffectChain (drums, ida::EffectChain{}.withAppended (comp));
 
-    const auto ch = mixer.addChannel (sirius::InputId (1), sirius::SignalType::Audio);
+    const auto ch = mixer.addChannel (ida::InputId (1), ida::SignalType::Audio);
     mixer.setChannelInputSource (ch, 2, 3, true);
-    mixer.setChannelTapeMode (ch, sirius::TapeMode::CommitToTape);
+    mixer.setChannelTapeMode (ch, ida::TapeMode::CommitToTape);
     mixer.setChannelMainOutToBus (ch, drums);
     mixer.setChannelSend (ch, reverb, 0.5f);
 
     auto* chain = mixer.processingChainFor (ch);
     REQUIRE (chain != nullptr);
-    auto* strip = static_cast<sirius::ChannelStrip<sirius::SignalType::Audio>*> (chain);
-    sirius::EffectChainEntry eq; eq.displayName = "eq";
-    strip->setEffectChain (sirius::EffectChain{}.withAppended (eq));
+    auto* strip = static_cast<ida::ChannelStrip<ida::SignalType::Audio>*> (chain);
+    ida::EffectChainEntry eq; eq.displayName = "eq";
+    strip->setEffectChain (ida::EffectChain{}.withAppended (eq));
 
     const auto state = mixer.exportGraphState();
 
@@ -745,20 +745,20 @@ TEST_CASE ("InputMixer exportGraphState reflects buses, routing, sends, inserts"
     const auto& drumsState = state.buses[0];
     CHECK (drumsState.busId == drums.value());
     CHECK (drumsState.name == "Drums");
-    CHECK (drumsState.kind == sirius::MixerBusKind::Bus);
+    CHECK (drumsState.kind == ida::MixerBusKind::Bus);
     CHECK (drumsState.inserts.entries().size() == 1);
 
     const auto& reverbState = state.buses[1];
     CHECK (reverbState.busId == reverb.value());
-    CHECK (reverbState.kind == sirius::MixerBusKind::FxReturn);
+    CHECK (reverbState.kind == ida::MixerBusKind::FxReturn);
 
     REQUIRE (state.channels.size() == 1);
     const auto& c = state.channels[0];
     CHECK (c.channelId == ch.value());
     CHECK (c.inputSourceId == 1);
-    CHECK (c.source == sirius::MixerChannelSource { 2, 3, true });
-    CHECK (c.tapeMode == sirius::TapeMode::CommitToTape);
-    CHECK (c.mainOut.kind == sirius::MixerMainOut::Kind::Bus);
+    CHECK (c.source == ida::MixerChannelSource { 2, 3, true });
+    CHECK (c.tapeMode == ida::TapeMode::CommitToTape);
+    CHECK (c.mainOut.kind == ida::MixerMainOut::Kind::Bus);
     CHECK (c.mainOut.busId == drums.value());
     REQUIRE (c.sends.size() == 1);
     CHECK (c.sends[0].busId == reverb.value());
@@ -768,25 +768,25 @@ TEST_CASE ("InputMixer exportGraphState reflects buses, routing, sends, inserts"
 
 TEST_CASE ("InputMixer importGraphState round-trips an exported graph", "[input-mixer][persistence]")
 {
-    sirius::InputMixer source;
-    const sirius::InputDescriptor desc {
-        sirius::TapeId (1), sirius::InputKind::Audio, std::string ("In 1"),
+    ida::InputMixer source;
+    const ida::InputDescriptor desc {
+        ida::TapeId (1), ida::InputKind::Audio, std::string ("In 1"),
         std::optional<int> (0)
     };
-    source.registerInput (sirius::InputId (1), desc);
-    const auto drums  = source.addBus (sirius::BusConfig { 2, "Drums", sirius::BusKind::Bus });
+    source.registerInput (ida::InputId (1), desc);
+    const auto drums  = source.addBus (ida::BusConfig { 2, "Drums", ida::BusKind::Bus });
     const auto reverb = source.addFxReturn ("Reverb");
-    sirius::EffectChainEntry comp; comp.displayName = "comp";
-    source.setBusEffectChain (drums, sirius::EffectChain{}.withAppended (comp));
-    const auto ch = source.addChannel (sirius::InputId (1), sirius::SignalType::Audio);
+    ida::EffectChainEntry comp; comp.displayName = "comp";
+    source.setBusEffectChain (drums, ida::EffectChain{}.withAppended (comp));
+    const auto ch = source.addChannel (ida::InputId (1), ida::SignalType::Audio);
     source.setChannelInputSource (ch, 2, 3, true);
-    source.setChannelTapeMode (ch, sirius::TapeMode::CommitToTape);
+    source.setChannelTapeMode (ch, ida::TapeMode::CommitToTape);
     source.setChannelMainOutToBus (ch, drums);
     source.setChannelSend (ch, reverb, 0.5f);
 
     const auto exported = source.exportGraphState();
 
-    sirius::InputMixer loaded;
+    ida::InputMixer loaded;
     loaded.importGraphState (exported);
 
     CHECK (loaded.exportGraphState() == exported);
@@ -794,30 +794,30 @@ TEST_CASE ("InputMixer importGraphState round-trips an exported graph", "[input-
 
 TEST_CASE ("InputMixer importGraphState of an empty snapshot yields an empty mixer", "[input-mixer][persistence]")
 {
-    sirius::InputMixer mixer;
-    mixer.importGraphState (sirius::InputMixerGraphState{});
+    ida::InputMixer mixer;
+    mixer.importGraphState (ida::InputMixerGraphState{});
 
     // Minimal-defaults rule: a fresh mixer has zero buses, and an empty import
     // adds none — the mixer stays in the pristine ctor state and a fresh add
     // works normally (channel default-routes to the tape terminal).
     CHECK (mixer.busCount() == 0);
 
-    const sirius::InputDescriptor desc {
-        sirius::TapeId (1), sirius::InputKind::Audio, std::string ("In 1"),
+    const ida::InputDescriptor desc {
+        ida::TapeId (1), ida::InputKind::Audio, std::string ("In 1"),
         std::optional<int> (0)
     };
-    mixer.registerInput (sirius::InputId (1), desc);
-    const auto ch = mixer.addChannel (sirius::InputId (1), sirius::SignalType::Audio);
-    CHECK (mixer.channelMainOut (ch) == sirius::InputMixer::MainOutDest::Tape);
+    mixer.registerInput (ida::InputId (1), desc);
+    const auto ch = mixer.addChannel (ida::InputId (1), ida::SignalType::Audio);
+    CHECK (mixer.channelMainOut (ch) == ida::InputMixer::MainOutDest::Tape);
 }
 
 TEST_CASE ("InputMixer::busForId returns the bus for a known id, nullptr otherwise",
            "[input-mixer][bus-access]")
 {
-    sirius::InputMixer mixer;
-    const sirius::BusId id = mixer.addBus (sirius::BusConfig { 2, "Drum Bus", sirius::BusKind::Bus });
+    ida::InputMixer mixer;
+    const ida::BusId id = mixer.addBus (ida::BusConfig { 2, "Drum Bus", ida::BusKind::Bus });
 
-    sirius::Bus* bus = mixer.busForId (id);
+    ida::Bus* bus = mixer.busForId (id);
     REQUIRE (bus != nullptr);
     REQUIRE (bus->id() == id);
     REQUIRE (bus->config().name == "Drum Bus");
@@ -826,13 +826,13 @@ TEST_CASE ("InputMixer::busForId returns the bus for a known id, nullptr otherwi
     bus->setGain (0.3f);
     REQUIRE (mixer.busForId (id)->gain() == Catch::Approx (0.3f));
 
-    REQUIRE (mixer.busForId (sirius::BusId { 9999 }) == nullptr);
+    REQUIRE (mixer.busForId (ida::BusId { 9999 }) == nullptr);
 }
 
 TEST_CASE ("InputMixer: a freshly constructed mixer has exactly the primary tape (TapeId 1)",
            "[input-mixer][multi-tape]")
 {
-    using sirius::InputMixer; using sirius::TapeId;
+    using ida::InputMixer; using ida::TapeId;
     InputMixer mixer;
     CHECK (mixer.tapeCount() == 1);
     CHECK (mixer.hasTape (TapeId { 1 }));
@@ -842,7 +842,7 @@ TEST_CASE ("InputMixer: a freshly constructed mixer has exactly the primary tape
 TEST_CASE ("InputMixer: addTape registers a routable terminal; removeTape unregisters it; primary is permanent",
            "[input-mixer][multi-tape]")
 {
-    using sirius::InputMixer; using sirius::TapeId;
+    using ida::InputMixer; using ida::TapeId;
     InputMixer mixer;
 
     CHECK (mixer.addTape (TapeId { 2 }));
@@ -860,7 +860,7 @@ TEST_CASE ("InputMixer: addTape registers a routable terminal; removeTape unregi
 TEST_CASE ("InputMixer: a channel routes to a chosen tape; the no-arg overload targets the primary",
            "[input-mixer][multi-tape]")
 {
-    using sirius::InputMixer; using sirius::InputId; using sirius::SignalType; using sirius::TapeId;
+    using ida::InputMixer; using ida::InputId; using ida::SignalType; using ida::TapeId;
     InputMixer mixer;
     REQUIRE (mixer.addTape (TapeId { 2 }));
     const auto ch = mixer.addChannel (InputId { 1 }, SignalType::Audio);
@@ -879,10 +879,10 @@ TEST_CASE ("InputMixer: a channel routes to a chosen tape; the no-arg overload t
 TEST_CASE ("InputMixer: a bus routes to a chosen tape via setBusMainOutToTape(BusId, TapeId)",
            "[input-mixer][multi-tape]")
 {
-    using sirius::InputMixer; using sirius::BusId; using sirius::BusConfig; using sirius::TapeId;
+    using ida::InputMixer; using ida::BusId; using ida::BusConfig; using ida::TapeId;
     InputMixer mixer;
     REQUIRE (mixer.addTape (TapeId { 2 }));
-    const auto bus = mixer.addBus (BusConfig { 2, "Sub", sirius::BusKind::Bus });
+    const auto bus = mixer.addBus (BusConfig { 2, "Sub", ida::BusKind::Bus });
 
     REQUIRE (mixer.setBusMainOutToTape (bus, TapeId { 2 }));
     CHECK (mixer.busMainOut (bus) == InputMixer::MainOutDest::Tape);
@@ -899,7 +899,7 @@ TEST_CASE ("InputMixer: a bus routes to a chosen tape via setBusMainOutToTape(Bu
 TEST_CASE ("renderInputGraph: a tape-routed channel is delivered to that tape via the sink",
            "[input-mixer][multi-tape][render]")
 {
-    using sirius::InputMixer; using sirius::TapeId;
+    using ida::InputMixer; using ida::TapeId;
     InputMixer mixer;
     RecordingTapeSink sink;
     mixer.setTapeSink (&sink);
@@ -924,7 +924,7 @@ TEST_CASE ("renderInputGraph: a tape-routed channel is delivered to that tape vi
 TEST_CASE ("renderInputGraph: two channels on one tape SUM into a single delivery",
            "[input-mixer][multi-tape][render]")
 {
-    using sirius::InputMixer;
+    using ida::InputMixer;
     InputMixer mixer;
     RecordingTapeSink sink;
     mixer.setTapeSink (&sink);
@@ -950,7 +950,7 @@ TEST_CASE ("renderInputGraph: two channels on one tape SUM into a single deliver
 TEST_CASE ("renderInputGraph: channels on distinct tapes record in parallel",
            "[input-mixer][multi-tape][render]")
 {
-    using sirius::InputMixer; using sirius::TapeId;
+    using ida::InputMixer; using ida::TapeId;
     InputMixer mixer;
     RecordingTapeSink sink;
     mixer.setTapeSink (&sink);
@@ -977,12 +977,12 @@ TEST_CASE ("renderInputGraph: channels on distinct tapes record in parallel",
 TEST_CASE ("renderInputGraph: channel -> bus -> tape delivers the bus output to the chosen tape",
            "[input-mixer][multi-tape][render]")
 {
-    using sirius::InputMixer; using sirius::BusId; using sirius::BusConfig; using sirius::TapeId;
+    using ida::InputMixer; using ida::BusId; using ida::BusConfig; using ida::TapeId;
     InputMixer mixer;
     RecordingTapeSink sink;
     mixer.setTapeSink (&sink);
 
-    const auto bus = mixer.addBus (BusConfig { 2, "Sub", sirius::BusKind::Bus });
+    const auto bus = mixer.addBus (BusConfig { 2, "Sub", ida::BusKind::Bus });
     const auto ch  = addStereoChannel (mixer, 0, 1);
     REQUIRE (mixer.setChannelMainOutToBus (ch, bus));
     REQUIRE (mixer.setBusMainOutToTape (bus));
@@ -1002,7 +1002,7 @@ TEST_CASE ("renderInputGraph: channel -> bus -> tape delivers the bus output to 
 TEST_CASE ("renderInputGraph: with no sink bound, tape-routed signal is dropped without crashing",
            "[input-mixer][multi-tape][render]")
 {
-    using sirius::InputMixer;
+    using ida::InputMixer;
     InputMixer mixer; // no setTapeSink
     const auto ch = addStereoChannel (mixer, 0, 1);
     REQUIRE (mixer.setChannelMainOutToTape (ch));
@@ -1017,7 +1017,7 @@ TEST_CASE ("renderInputGraph: with no sink bound, tape-routed signal is dropped 
 TEST_CASE ("renderInputGraph: removing a tape a channel was routed to falls the channel back to the primary",
            "[input-mixer][multi-tape][render]")
 {
-    using sirius::InputMixer; using sirius::TapeId;
+    using ida::InputMixer; using ida::TapeId;
     InputMixer mixer;
     RecordingTapeSink sink;
     mixer.setTapeSink (&sink);
@@ -1043,33 +1043,33 @@ TEST_CASE ("renderInputGraph: removing a tape a channel was routed to falls the 
 
 TEST_CASE ("exportGraphState round-trips a non-primary tape route", "[input-mixer][tape]")
 {
-    sirius::InputMixer mixer;
-    const auto ch = mixer.addChannel (sirius::InputId (0), sirius::SignalType::Audio);
-    REQUIRE (mixer.addTape (sirius::TapeId { 2 }));
-    REQUIRE (mixer.setChannelMainOutToTape (ch, sirius::TapeId { 2 }));
+    ida::InputMixer mixer;
+    const auto ch = mixer.addChannel (ida::InputId (0), ida::SignalType::Audio);
+    REQUIRE (mixer.addTape (ida::TapeId { 2 }));
+    REQUIRE (mixer.setChannelMainOutToTape (ch, ida::TapeId { 2 }));
 
     // Must NOT trip the mainOutSnapshot jassertfalse, and must record tape 2.
     const auto state = mixer.exportGraphState();
     REQUIRE (state.channels.size() == 1);
     const auto& mo = state.channels[0].mainOut;
-    CHECK (mo.kind     == sirius::MixerMainOut::Kind::Terminal);
-    CHECK (mo.terminal == sirius::MixerTerminalKind::Tape);
+    CHECK (mo.kind     == ida::MixerMainOut::Kind::Terminal);
+    CHECK (mo.terminal == ida::MixerTerminalKind::Tape);
     CHECK (mo.tapeId   == 2);
 
     // Re-import into a fresh mixer (with tape 2 present) restores the route.
-    sirius::InputMixer restored;
-    REQUIRE (restored.addTape (sirius::TapeId { 2 }));
+    ida::InputMixer restored;
+    REQUIRE (restored.addTape (ida::TapeId { 2 }));
     restored.importGraphState (state);
-    CHECK (restored.channelMainOutIsTape (sirius::ChannelId (state.channels[0].channelId),
-                                          sirius::TapeId { 2 }));
+    CHECK (restored.channelMainOutIsTape (ida::ChannelId (state.channels[0].channelId),
+                                          ida::TapeId { 2 }));
 }
 
 TEST_CASE ("InputMixer reports which bus a node's main-out targets", "[input-mixer]")
 {
-    sirius::InputMixer mixer;
-    const auto a  = mixer.addBus (sirius::BusConfig { 2, "A", sirius::BusKind::Bus });
-    const auto b  = mixer.addBus (sirius::BusConfig { 2, "B", sirius::BusKind::Bus });
-    const auto ch = mixer.addChannel (sirius::InputId (0), sirius::SignalType::Audio);
+    ida::InputMixer mixer;
+    const auto a  = mixer.addBus (ida::BusConfig { 2, "A", ida::BusKind::Bus });
+    const auto b  = mixer.addBus (ida::BusConfig { 2, "B", ida::BusKind::Bus });
+    const auto ch = mixer.addChannel (ida::InputId (0), ida::SignalType::Audio);
 
     REQUIRE (mixer.setChannelMainOutToBus (ch, a));
     REQUIRE (mixer.channelMainOutBus (ch).value() == a.value());
@@ -1084,9 +1084,9 @@ TEST_CASE ("InputMixer reports which bus a node's main-out targets", "[input-mix
 
 TEST_CASE ("InputMixer flags bus main-out routes that would cycle", "[input-mixer]")
 {
-    sirius::InputMixer mixer;
-    const auto a = mixer.addBus (sirius::BusConfig { 2, "A", sirius::BusKind::Bus });
-    const auto b = mixer.addBus (sirius::BusConfig { 2, "B", sirius::BusKind::Bus });
+    ida::InputMixer mixer;
+    const auto a = mixer.addBus (ida::BusConfig { 2, "A", ida::BusKind::Bus });
+    const auto b = mixer.addBus (ida::BusConfig { 2, "B", ida::BusKind::Bus });
     REQUIRE (mixer.setBusMainOutToBus (a, b));           // a -> b
     REQUIRE (mixer.busMainOutToBusWouldCycle (b, a));    // b -> a would close the loop
     REQUIRE_FALSE (mixer.busMainOutToBusWouldCycle (a, b));

@@ -1,4 +1,4 @@
-// Golden-value tests for sirius::Rational — the exact-arithmetic bedrock of the
+// Golden-value tests for ida::Rational — the exact-arithmetic bedrock of the
 // conceptual-time engine. These tests encode *why* the type exists: exactness,
 // no tolerance, no accumulated drift, loud failure on overflow. A test here
 // fails exactly when the white paper's "exact by construction" claim is broken.
@@ -10,7 +10,7 @@
 #include <limits>
 #include <stdexcept>
 
-using sirius::Rational;
+using ida::Rational;
 
 TEST_CASE ("default-constructed Rational is canonical zero", "[rational]")
 {

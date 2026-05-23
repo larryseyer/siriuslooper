@@ -70,7 +70,7 @@ namespace
 
     // Drives one block through a stereo Bus: fills the bus's mix scratch
     // with the supplied signal and calls Bus::process.
-    void runBus (sirius::Bus&                       bus,
+    void runBus (ida::Bus&                       bus,
                  const std::array<float, kBlockSamples>& left,
                  const std::array<float, kBlockSamples>& right,
                  std::array<float, kBlockSamples>&       outL,
@@ -95,14 +95,14 @@ namespace
 TEST_CASE ("Bus with Internal-EQ in slot 0 routes audio through the adapter",
            "[internal-fx][end-to-end]")
 {
-    sirius::OutOfProcessEffectChainHost host;
+    ida::OutOfProcessEffectChainHost host;
     host.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
 
-    sirius::Bus bus (sirius::BusId { 1 }, sirius::BusConfig { 2, "Aux" });
+    ida::Bus bus (ida::BusId { 1 }, ida::BusConfig { 2, "Aux" });
     bus.setEffectChainHost (&host);
 
-    auto chain = sirius::EffectChain{}.withAppended (
-        sirius::EffectChainEntry::makeInternal (sirius::InternalFxId::kEq));
+    auto chain = ida::EffectChain{}.withAppended (
+        ida::EffectChainEntry::makeInternal (ida::InternalFxId::kEq));
     bus.setEffectChain (chain);
 
     std::array<float, kBlockSamples> lin {}, rin {};
@@ -128,15 +128,15 @@ TEST_CASE ("Bus with Internal-EQ in slot 0 routes audio through the adapter",
 TEST_CASE ("Bus chain transition Internal → empty → Internal — adapter unbinds and re-binds",
            "[internal-fx][end-to-end]")
 {
-    sirius::OutOfProcessEffectChainHost host;
+    ida::OutOfProcessEffectChainHost host;
     host.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
 
-    sirius::Bus bus (sirius::BusId { 2 }, sirius::BusConfig { 2, "Aux2" });
+    ida::Bus bus (ida::BusId { 2 }, ida::BusConfig { 2, "Aux2" });
     bus.setEffectChainHost (&host);
 
     // Start with the EQ in slot 0.
-    auto chainWithEq = sirius::EffectChain{}.withAppended (
-        sirius::EffectChainEntry::makeInternal (sirius::InternalFxId::kEq));
+    auto chainWithEq = ida::EffectChain{}.withAppended (
+        ida::EffectChainEntry::makeInternal (ida::InternalFxId::kEq));
     bus.setEffectChain (chainWithEq);
 
     std::array<float, kBlockSamples> lin {}, rin {};
@@ -156,7 +156,7 @@ TEST_CASE ("Bus chain transition Internal → empty → Internal — adapter unb
     // all) since hasActiveSlot is false. The internal-adapter table was
     // swept clean by setEffectChain's nullopt-everywhere pass, so no stale
     // adapter lingers. Output should be the input signal (gain 1.0).
-    bus.setEffectChain (sirius::EffectChain{});
+    bus.setEffectChain (ida::EffectChain{});
     {
         std::array<float, kBlockSamples> outL {}, outR {};
         runBus (bus, lin, rin, outL, outR);
@@ -198,17 +198,17 @@ TEST_CASE ("Bus chain transition Internal → Plugin clears the internal binding
     // Bus::setEffectChain, and confirm the host no longer reports the
     // internal adapter as bound. The exclusivity invariant is then trivially
     // safe — there's nothing to collide with.
-    sirius::OutOfProcessEffectChainHost host;
+    ida::OutOfProcessEffectChainHost host;
     host.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
 
     constexpr std::int64_t kNodeKey = 3;
-    sirius::Bus bus (sirius::BusId { kNodeKey }, sirius::BusConfig { 2, "Aux3" });
+    ida::Bus bus (ida::BusId { kNodeKey }, ida::BusConfig { 2, "Aux3" });
     bus.setEffectChainHost (&host);
 
     // Phase 1 — bind EQ via the engine path. Verify with a real audio
     // round-trip: the bus produces non-zero output ⇒ the adapter is bound.
-    bus.setEffectChain (sirius::EffectChain{}.withAppended (
-        sirius::EffectChainEntry::makeInternal (sirius::InternalFxId::kEq)));
+    bus.setEffectChain (ida::EffectChain{}.withAppended (
+        ida::EffectChainEntry::makeInternal (ida::InternalFxId::kEq)));
     {
         std::array<float, kBlockSamples> lin {}, rin {}, outL {}, outR {};
         fillSine (lin, rin);
@@ -224,11 +224,11 @@ TEST_CASE ("Bus chain transition Internal → Plugin clears the internal binding
     // has no instance, so returns false (dry pass-through carries the
     // mixBuffer signal through processedBuffer_). Output should equal the
     // input — proving the adapter no longer intercepts.
-    sirius::PluginDescriptor descriptor;
-    descriptor.format = sirius::PluginFormat::Clap;
+    ida::PluginDescriptor descriptor;
+    descriptor.format = ida::PluginFormat::Clap;
     descriptor.name   = "fakePlugin";
-    bus.setEffectChain (sirius::EffectChain{}.withAppended (
-        sirius::EffectChainEntry::makePlugin (descriptor, "fakePlugin")));
+    bus.setEffectChain (ida::EffectChain{}.withAppended (
+        ida::EffectChainEntry::makePlugin (descriptor, "fakePlugin")));
 
     {
         std::array<float, kBlockSamples> lin {}, rin {}, outL {}, outR {};
@@ -255,22 +255,22 @@ TEST_CASE ("Bus chain shrink — orphan internal adapters on past-end slots are 
     // When a chain shrinks from N slots to M < N slots, the rebind sweep
     // walks 0..kMaxSlots so the orphan (M..N-1) slots get unbound. Verifies
     // setEffectChain's "sweep up to kMaxSlots" guarantee.
-    sirius::OutOfProcessEffectChainHost host;
+    ida::OutOfProcessEffectChainHost host;
     host.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
 
-    sirius::Bus bus (sirius::BusId { 4 }, sirius::BusConfig { 2, "Aux4" });
+    ida::Bus bus (ida::BusId { 4 }, ida::BusConfig { 2, "Aux4" });
     bus.setEffectChainHost (&host);
 
     // Phase 1 — two EQs.
-    auto twoEqs = sirius::EffectChain{}
-        .withAppended (sirius::EffectChainEntry::makeInternal (sirius::InternalFxId::kEq))
-        .withAppended (sirius::EffectChainEntry::makeInternal (sirius::InternalFxId::kEq));
+    auto twoEqs = ida::EffectChain{}
+        .withAppended (ida::EffectChainEntry::makeInternal (ida::InternalFxId::kEq))
+        .withAppended (ida::EffectChainEntry::makeInternal (ida::InternalFxId::kEq));
     bus.setEffectChain (twoEqs);
 
     // Phase 2 — drop to one EQ. Slot 1's adapter must be unbound. After
     // this, pumping (4, 1) directly through the host must miss.
-    bus.setEffectChain (sirius::EffectChain{}.withAppended (
-        sirius::EffectChainEntry::makeInternal (sirius::InternalFxId::kEq)));
+    bus.setEffectChain (ida::EffectChain{}.withAppended (
+        ida::EffectChainEntry::makeInternal (ida::InternalFxId::kEq)));
 
     std::array<float, kBlockSamples> lin {}, rin {}, lout {}, rout {};
     fillSine (lin, rin);
@@ -303,18 +303,18 @@ TEST_CASE ("Bus::setEffectChain with a bypassed Internal slot propagates the fla
     // pins the load-path contract directly against the host (bypassing
     // Bus::processChain's own per-entry bypass skip, which would mask
     // the host-side propagation if we only observed Bus output).
-    sirius::OutOfProcessEffectChainHost host;
+    ida::OutOfProcessEffectChainHost host;
     host.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
 
     constexpr std::int64_t kBusId = 9001;
-    sirius::Bus bus (sirius::BusId { kBusId }, sirius::BusConfig { 2, "Aux" });
+    ida::Bus bus (ida::BusId { kBusId }, ida::BusConfig { 2, "Aux" });
     bus.setEffectChainHost (&host);
 
     // Build a chain entry the same way SessionFormat does on load:
     // makeInternal(kEq), then flip the persisted bypassed flag.
-    auto entry = sirius::EffectChainEntry::makeInternal (sirius::InternalFxId::kEq);
+    auto entry = ida::EffectChainEntry::makeInternal (ida::InternalFxId::kEq);
     entry.bypassed = true;
-    auto chain = sirius::EffectChain{}.withAppended (std::move (entry));
+    auto chain = ida::EffectChain{}.withAppended (std::move (entry));
     bus.setEffectChain (chain);
 
     // Direct host pumpSlot — adapter IS bound (Bus's chain-set sweep called
@@ -347,15 +347,15 @@ TEST_CASE ("Bus::setEffectChain with bypassed=false leaves the host dispatching 
     // P7 T5 slice 3 — symmetric: a chain whose Internal slot has
     // bypassed=false (the common case) must leave the host's bypass map
     // absent (or false) for that slot, so pumpSlot dispatches normally.
-    sirius::OutOfProcessEffectChainHost host;
+    ida::OutOfProcessEffectChainHost host;
     host.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
 
     constexpr std::int64_t kBusId = 9002;
-    sirius::Bus bus (sirius::BusId { kBusId }, sirius::BusConfig { 2, "Aux" });
+    ida::Bus bus (ida::BusId { kBusId }, ida::BusConfig { 2, "Aux" });
     bus.setEffectChainHost (&host);
 
-    auto chain = sirius::EffectChain{}.withAppended (
-        sirius::EffectChainEntry::makeInternal (sirius::InternalFxId::kEq));
+    auto chain = ida::EffectChain{}.withAppended (
+        ida::EffectChainEntry::makeInternal (ida::InternalFxId::kEq));
     bus.setEffectChain (chain);
 
     std::array<float, kBlockSamples> lin {}, rin {};
@@ -383,23 +383,23 @@ TEST_CASE ("Bus::setEffectChain replacing a bypassed Internal slot with a fresh 
     // setInternalFxAtSlot (resets bypass to absent in the host) and then
     // setInternalFxBypassAtSlot(.., false) — both no-ops if absent. Either
     // way the host must dispatch the second call's adapter.
-    sirius::OutOfProcessEffectChainHost host;
+    ida::OutOfProcessEffectChainHost host;
     host.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
 
     constexpr std::int64_t kBusId = 9003;
-    sirius::Bus bus (sirius::BusId { kBusId }, sirius::BusConfig { 2, "Aux" });
+    ida::Bus bus (ida::BusId { kBusId }, ida::BusConfig { 2, "Aux" });
     bus.setEffectChainHost (&host);
 
     // Chain 1 — bypassed.
     {
-        auto e = sirius::EffectChainEntry::makeInternal (sirius::InternalFxId::kEq);
+        auto e = ida::EffectChainEntry::makeInternal (ida::InternalFxId::kEq);
         e.bypassed = true;
-        bus.setEffectChain (sirius::EffectChain{}.withAppended (std::move (e)));
+        bus.setEffectChain (ida::EffectChain{}.withAppended (std::move (e)));
     }
 
     // Chain 2 — not bypassed.
-    bus.setEffectChain (sirius::EffectChain{}.withAppended (
-        sirius::EffectChainEntry::makeInternal (sirius::InternalFxId::kEq)));
+    bus.setEffectChain (ida::EffectChain{}.withAppended (
+        ida::EffectChainEntry::makeInternal (ida::InternalFxId::kEq)));
 
     std::array<float, kBlockSamples> lin {}, rin {};
     fillSine (lin, rin);

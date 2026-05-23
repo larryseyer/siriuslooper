@@ -18,7 +18,7 @@ This phase ships the **engine + core apparatus, tested with a synchronous mock `
 - **Out of scope (deferred, record in `todo.md`):**
   - **Production wiring.** No mixer calls `setEffectChainHost` outside tests; `InputMixer`/`OutputMixer`/`MainComponent` are **untouched**. Channels default to no host = the pre-Phase-4 path, byte-identical. Wiring (mixer owns/holds an `OutOfProcessEffectChainHost`, allocates a non-colliding `int64` key space for channel-vs-bus chains, calls `configureBus` per channel) lands with the Input/Output Mixer insert-management UI (Phases 6–7).
   - **Real VST/CLAP loading.** Satisfied by the unchanged `int64`-keyed `OutOfProcessEffectChainHost`; this phase proves dispatch with a mock host (the `HalvingEffectHost` pattern already in `OutputMixerTests.cpp`).
-  - **Built-in Sirius FX as slot contents** — the explicit follow-on spec; this phase ships no selectable-but-dead effects.
+  - **Built-in IDA FX as slot contents** — the explicit follow-on spec; this phase ships no selectable-but-dead effects.
   - **Renaming `OutOfProcessEffectChainHost::configureBus` → `configureNode`.** The name is historical; the API is already node-agnostic (`std::int64_t` key). A rename touches the host + all call sites + tests for zero behavior change — out of scope, surgical-changes rule. Note as a future tidy in `todo.md`.
 
 **Key-space note (for the future wiring phase, not this phase):** `pumpSlot`/`configureBus` key on a single `std::int64_t`. When channels and buses are eventually hosted on the **same** `OutOfProcessEffectChainHost` instance, `ChannelId` and `BusId` values can collide (both start at small integers). The wiring phase must either give each mixer its own host instance (cleanest) or partition the `int64` space (e.g. channels in the high half). `ChannelStrip` takes the key as an explicit `setEffectChainHost(host, nodeKey)` argument precisely so the **caller** owns that decision. This phase's tests pass distinct keys and assert the key is forwarded verbatim.
@@ -29,10 +29,10 @@ This phase ships the **engine + core apparatus, tested with a synchronous mock `
 
 | File | Responsibility | Change |
 |---|---|---|
-| `core/include/sirius/EffectChain.h` | Shared structural chain type | Add `kMaxSlots`, `full()`, doc the `withAppended` cap |
+| `core/include/ida/EffectChain.h` | Shared structural chain type | Add `kMaxSlots`, `full()`, doc the `withAppended` cap |
 | `core/src/EffectChain.cpp` | `withAppended`/`withReplaced`/… bodies | Guard `withAppended` at the cap |
 | `tests/EffectChainTests.cpp` | Chain unit tests | Add `[effect-chain][cap]` cases |
-| `engine/include/sirius/ChannelStrip.h` | Per-channel audio node (header-only template) | Add `EffectChain` + host collaborators + pre-fader insert dispatch in `process` |
+| `engine/include/ida/ChannelStrip.h` | Per-channel audio node (header-only template) | Add `EffectChain` + host collaborators + pre-fader insert dispatch in `process` |
 | `tests/ChannelStripTests.cpp` | ChannelStrip unit tests | Add `[channel-strip][inserts]` cases + mock hosts |
 
 No CMake changes (both test files are already registered in `tests/CMakeLists.txt`). No host changes. No mixer changes.
@@ -44,7 +44,7 @@ No CMake changes (both test files are already registered in `tests/CMakeLists.tx
 The cap lives on the shared type, so it binds channels, buses, and FX returns simultaneously — that is the spec's "the cap applies to buses and returns too." `withReplaced` / `withRemoved` / `withMoved` never grow the chain, so only `withAppended` needs guarding. Throwing `std::length_error` is consistent with the existing `withReplaced`/`withRemoved`/`withMoved` throwing `std::out_of_range`; a `full()` predicate lets UI callers check before offering "add a slot" rather than using the exception for control flow.
 
 **Files:**
-- Modify: `core/include/sirius/EffectChain.h`
+- Modify: `core/include/ida/EffectChain.h`
 - Modify: `core/src/EffectChain.cpp`
 - Test: `tests/EffectChainTests.cpp`
 
@@ -89,12 +89,12 @@ TEST_CASE ("EffectChain at the cap still allows replace / remove / move", "[effe
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[effect-chain][cap]"`
+Run: `cmake --build build --target IdaTests && ./build/tests/IdaTests "[effect-chain][cap]"`
 Expected: compile error — `kMaxSlots` and `full()` are not members of `EffectChain` yet.
 
 - [ ] **Step 3: Add `kMaxSlots` + `full()` to the header**
 
-In `core/include/sirius/EffectChain.h`, inside `class EffectChain`'s `public:` section, immediately after the `EffectChain() = default;` line, add:
+In `core/include/ida/EffectChain.h`, inside `class EffectChain`'s `public:` section, immediately after the `EffectChain() = default;` line, add:
 
 ```cpp
     /// Hard per-node insert-slot ceiling (routing-graph Phase 4). The cap
@@ -129,18 +129,18 @@ Ensure `#include <stdexcept>` is present at the top of `core/src/EffectChain.cpp
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[effect-chain][cap]"`
+Run: `cmake --build build --target IdaTests && ./build/tests/IdaTests "[effect-chain][cap]"`
 Expected: PASS, 2 cases.
 
 - [ ] **Step 6: Run the full EffectChain tag to confirm no regression**
 
-Run: `./build/tests/SiriusTests "[effect-chain]"`
+Run: `./build/tests/IdaTests "[effect-chain]"`
 Expected: PASS (existing cases + the 2 new ones).
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add core/include/sirius/EffectChain.h core/src/EffectChain.cpp tests/EffectChainTests.cpp
+git add core/include/ida/EffectChain.h core/src/EffectChain.cpp tests/EffectChainTests.cpp
 git commit -m "feat: EffectChain 8-slot cap (binds channels/buses/returns)"
 ```
 
@@ -151,7 +151,7 @@ git commit -m "feat: EffectChain 8-slot cap (binds channels/buses/returns)"
 Mirror `Bus`'s set-once collaborators. `Bus` derives its `pumpSlot` key from its own `id_`; `ChannelStrip<Audio>` has no id field, so `setEffectChainHost` takes the key explicitly — the caller owns key-space allocation (see the key-space note above). No dispatch yet; this task only adds the accessors so `process` (Task 3) has something to read.
 
 **Files:**
-- Modify: `engine/include/sirius/ChannelStrip.h`
+- Modify: `engine/include/ida/ChannelStrip.h`
 - Test: `tests/ChannelStripTests.cpp`
 
 - [ ] **Step 1: Write the failing test**
@@ -174,8 +174,8 @@ Then append this test:
 TEST_CASE ("ChannelStrip<Audio> stores a set-once effect chain + host + node key",
            "[channel-strip][inserts]")
 {
-    using sirius::EffectChain;
-    using sirius::EffectChainEntry;
+    using ida::EffectChain;
+    using ida::EffectChainEntry;
 
     AudioStrip strip;
 
@@ -190,7 +190,7 @@ TEST_CASE ("ChannelStrip<Audio> stores a set-once effect chain + host + node key
     strip.setEffectChain (chain);
     CHECK (strip.effectChain().size() == 1u);
 
-    struct NullHost : sirius::IEffectChainHost
+    struct NullHost : ida::IEffectChainHost
     {
         bool pumpSlot (std::int64_t, std::size_t, const float* const*,
                        float* const*, int, int) noexcept override { return false; }
@@ -203,12 +203,12 @@ TEST_CASE ("ChannelStrip<Audio> stores a set-once effect chain + host + node key
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[channel-strip][inserts]"`
+Run: `cmake --build build --target IdaTests && ./build/tests/IdaTests "[channel-strip][inserts]"`
 Expected: compile error — `setEffectChain` / `effectChain` / `setEffectChainHost` / `effectChainHost` are not members.
 
 - [ ] **Step 3: Add the collaborators to the header**
 
-In `engine/include/sirius/ChannelStrip.h`, add these includes after `#include "sirius/SignalType.h"`:
+In `engine/include/ida/ChannelStrip.h`, add these includes after `#include "sirius/SignalType.h"`:
 
 ```cpp
 #include "sirius/EffectChain.h"
@@ -260,13 +260,13 @@ In the `private:` section, add after the `lufsMeter_` member:
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[channel-strip][inserts]"`
+Run: `cmake --build build --target IdaTests && ./build/tests/IdaTests "[channel-strip][inserts]"`
 Expected: PASS, 1 case.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/include/sirius/ChannelStrip.h tests/ChannelStripTests.cpp
+git add engine/include/ida/ChannelStrip.h tests/ChannelStripTests.cpp
 git commit -m "feat: ChannelStrip<Audio> set-once EffectChain + host collaborators"
 ```
 
@@ -277,7 +277,7 @@ git commit -m "feat: ChannelStrip<Audio> set-once EffectChain + host collaborato
 The dispatch runs after the mute check (a muted strip is silence — no point processing it) and before gain/pan/width/metering, so inserts are **pre-fader** (pro convention) and the post-fader meter reflects the post-insert, post-fader signal. Each non-bypassed slot pumps in-place on the caller's buffer for at most 2 channels (the stereo invariant). When no host is bound or every slot is empty/bypassed, the dispatch is a cheap early-out and the existing DSP body is byte-identical to the pre-Phase-4 code.
 
 **Files:**
-- Modify: `engine/include/sirius/ChannelStrip.h`
+- Modify: `engine/include/ida/ChannelStrip.h`
 - Test: `tests/ChannelStripTests.cpp`
 
 - [ ] **Step 1: Write the failing tests**
@@ -290,7 +290,7 @@ namespace
     // Applies a different non-commuting op per slot index, proving dispatch
     // visits slots in ascending index order: slot 0 adds 1.0, slot 1 doubles.
     // (in+1)*2 != in*2+1, so the asserted value pins the order.
-    struct SlotAwareHost : sirius::IEffectChainHost
+    struct SlotAwareHost : ida::IEffectChainHost
     {
         bool pumpSlot (std::int64_t nodeKey, std::size_t slotIndex,
                        const float* const* in, float* const* out,
@@ -308,7 +308,7 @@ namespace
 
     // Always reports a miss — leaves `out` untouched (the pipelined 1-buffer
     // "dry on miss" case). Records that it was reached.
-    struct MissHost : sirius::IEffectChainHost
+    struct MissHost : ida::IEffectChainHost
     {
         bool pumpSlot (std::int64_t, std::size_t, const float* const*,
                        float* const*, int, int) noexcept override
@@ -319,12 +319,12 @@ namespace
         int calls { 0 };
     };
 
-    sirius::EffectChain chainOf (std::size_t activeSlots, std::size_t bypassedAtIndex = 999)
+    ida::EffectChain chainOf (std::size_t activeSlots, std::size_t bypassedAtIndex = 999)
     {
-        sirius::EffectChain chain;
+        ida::EffectChain chain;
         for (std::size_t i = 0; i < activeSlots; ++i)
         {
-            sirius::EffectChainEntry e;
+            ida::EffectChainEntry e;
             e.descriptor.name = "Fx";
             e.bypassed = (i == bypassedAtIndex);
             chain = chain.withAppended (e);
@@ -483,12 +483,12 @@ TEST_CASE ("ChannelStrip<Audio> meter reflects the post-insert, post-fader signa
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[channel-strip][inserts]"`
+Run: `cmake --build build --target IdaTests && ./build/tests/IdaTests "[channel-strip][inserts]"`
 Expected: the new dispatch cases FAIL — `process` does not call the host yet, so e.g. the ascending-order case sees `1.0` (gain-only) instead of `4.0`. (The Task 2 storage case still passes.)
 
 - [ ] **Step 3: Add the dispatch helper + call it in `process`**
 
-In `engine/include/sirius/ChannelStrip.h`, add a private helper. Place it in the `private:` section of the `ChannelStrip<SignalType::Audio>` specialization, after the new `nodeKey_` member:
+In `engine/include/ida/ChannelStrip.h`, add a private helper. Place it in the `private:` section of the `ChannelStrip<SignalType::Audio>` specialization, after the new `nodeKey_` member:
 
 ```cpp
     /// Stereo invariant — inserts dispatch at most two channels.
@@ -553,20 +553,20 @@ Change it to:
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[channel-strip][inserts]"`
+Run: `cmake --build build --target IdaTests && ./build/tests/IdaTests "[channel-strip][inserts]"`
 Expected: PASS — all `[channel-strip][inserts]` cases (the Task 2 storage case + the 7 dispatch cases).
 
 - [ ] **Step 5: Confirm RT-safety static-assert + no channel-strip regression**
 
 The header's existing `static_assert` on `process` being `noexcept` must still hold (compilation proves it). Run the full channel-strip tag:
 
-Run: `./build/tests/SiriusTests "[channel-strip]"`
+Run: `./build/tests/IdaTests "[channel-strip]"`
 Expected: PASS (all pre-existing gain/pan/width/lufs cases + the new insert cases).
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add engine/include/sirius/ChannelStrip.h tests/ChannelStripTests.cpp
+git add engine/include/ida/ChannelStrip.h tests/ChannelStripTests.cpp
 git commit -m "feat: ChannelStrip<Audio> pre-fader insert dispatch via IEffectChainHost"
 ```
 
@@ -586,14 +586,14 @@ Run:
 ```bash
 rm -rf build
 cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target SiriusTests
+cmake --build build --target IdaTests
 ctest --test-dir build
 ```
 Expected: build green; ctest passes with **one** documented non-pass (`MainComponentPluginEditorTests_NOT_BUILT`, run separately by `bash/test-s7.sh`). Record the exact `N/N+1` count for the handoff. (Phase 3 was 495/496; the new cases push the numerator up — record the actual number printed.)
 
 - [ ] **Step 2: Append the Phase 4 deferrals to `todo.md`**
 
-Add a dated entry capturing: (1) production wiring deferred to UI Phases 6–7 (mixer owns an `OutOfProcessEffectChainHost`, allocates a non-colliding channel/bus `int64` key space, calls `configureBus` per channel); (2) the `configureBus` → `configureNode` rename as a future tidy; (3) built-in Sirius FX as slot contents = the follow-on spec. Use the exact `### [Date] - [Task]` / Files / What was deferred / Why / What's needed format from `~/.claude/CLAUDE.md`.
+Add a dated entry capturing: (1) production wiring deferred to UI Phases 6–7 (mixer owns an `OutOfProcessEffectChainHost`, allocates a non-colliding channel/bus `int64` key space, calls `configureBus` per channel); (2) the `configureBus` → `configureNode` rename as a future tidy; (3) built-in IDA FX as slot contents = the follow-on spec. Use the exact `### [Date] - [Task]` / Files / What was deferred / Why / What's needed format from `~/.claude/CLAUDE.md`.
 
 - [ ] **Step 3: Rewrite the `continue.md` RESUME block for Phase 5**
 

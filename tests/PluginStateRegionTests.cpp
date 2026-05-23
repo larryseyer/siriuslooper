@@ -7,8 +7,8 @@
 #include <cstddef>
 #include <type_traits>
 
-using sirius::PluginStateState;
-using sirius::makeStateRegionName;
+using ida::PluginStateState;
+using ida::makeStateRegionName;
 
 TEST_CASE ("PluginStateState size fits within the per-instance shm budget",
            "[plugin-state-region]")

@@ -9,7 +9,7 @@ main-out, sends, acyclic enforcement, topological evaluation order) plus a
 `BusKind` discriminator, with `OutputMixer` refactored to drive its bus evaluation
 order from `MixerGraph` (behavior-preserving; enables bus→bus subgroups).
 
-**Architecture:** New engine module `engine/include/sirius/MixerGraph.h` +
+**Architecture:** New engine module `engine/include/ida/MixerGraph.h` +
 `engine/src/MixerGraph.cpp`, JUCE-free (no graph utility exists anywhere — written
 fresh). `BusKind` lands on `BusConfig` in `Bus.h`. `OutputMixer` constructs/owns a
 `MixerGraph(MixerTerminal::Output)`, mirrors channel/bus registration into graph
@@ -25,14 +25,14 @@ main-out into another bus or the master.
 
 - Spec: `docs/superpowers/specs/2026-05-20-mixer-routing-graph-design.md` (Phase 1 =
   "Engine routing-graph core (shared substrate)").
-- `engine/include/sirius/OutputMixer.h` — `addChannel`/`addBus`/`routeChannelToBus`/
+- `engine/include/ida/OutputMixer.h` — `addChannel`/`addBus`/`routeChannelToBus`/
   `sendLevelFor`/`renderBuffer`; `kMaxOutputChannels=32`, `kMaxBuses=64`; master at
   `BusId{0}`; `std::vector<Bus> buses_`; dense `sendMatrix_`.
 - `engine/src/OutputMixer.cpp` — `renderBuffer` 4-step traversal; Step 3 (~lines
   247-318) currently sends **every** non-master bus into master.
-- `engine/include/sirius/Bus.h` — `BusConfig` (2-field POD); `Bus` stereo summing node.
-- `tests/CMakeLists.txt` — `SiriusTests` source list (append `MixerGraphTests.cpp`).
-- `engine/CMakeLists.txt` — `SiriusEngine` source list (append `src/MixerGraph.cpp`).
+- `engine/include/ida/Bus.h` — `BusConfig` (2-field POD); `Bus` stereo summing node.
+- `tests/CMakeLists.txt` — `IdaTests` source list (append `MixerGraphTests.cpp`).
+- `engine/CMakeLists.txt` — `IdaEngine` source list (append `src/MixerGraph.cpp`).
 - RT-safety contract: `docs/RT_SAFETY_CONTRACT.md` §6. Graph mutation is bracketed by
   the mixer's `removeAudioCallback`/`addAudioCallback` (the `rebuildInputStrips()`
   pattern), so `MixerGraph` needs no internal atomic snapshot.
@@ -50,7 +50,7 @@ already stereo-only (`kMaxBusChannelsHard=2`).
 ## Task 1: `BusKind` discriminator on `BusConfig`
 
 **Files:**
-- Modify: `engine/include/sirius/Bus.h` (add `enum class BusKind` before `BusConfig`; add field)
+- Modify: `engine/include/ida/Bus.h` (add `enum class BusKind` before `BusConfig`; add field)
 - Test: `tests/BusTests.cpp` (append one TEST_CASE)
 
 - [ ] **Step 1: Write the failing test** (append to `tests/BusTests.cpp`)
@@ -59,10 +59,10 @@ already stereo-only (`kMaxBusChannelsHard=2`).
 TEST_CASE ("BusConfig defaults to BusKind::Bus and carries FxReturn through a Bus",
            "[bus][bus-kind]")
 {
-    using sirius::Bus;
-    using sirius::BusConfig;
-    using sirius::BusId;
-    using sirius::BusKind;
+    using ida::Bus;
+    using ida::BusConfig;
+    using ida::BusId;
+    using ida::BusKind;
 
     SECTION ("default kind is Bus")
     {
@@ -81,10 +81,10 @@ TEST_CASE ("BusConfig defaults to BusKind::Bus and carries FxReturn through a Bu
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cmake --build build --target SiriusTests`
+Run: `cmake --build build --target IdaTests`
 Expected: COMPILE FAIL — `BusKind` undeclared, `BusConfig` has no `kind` member.
 
-- [ ] **Step 3: Add the enum + field** (`engine/include/sirius/Bus.h`, immediately before `struct BusConfig`)
+- [ ] **Step 3: Add the enum + field** (`engine/include/ida/Bus.h`, immediately before `struct BusConfig`)
 
 ```cpp
 /// Distinguishes a summing node that takes channel/bus main-outs (Bus) from one
@@ -102,19 +102,19 @@ struct BusConfig
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[bus-kind]"`
+Run: `cmake --build build --target IdaTests && ./build/tests/IdaTests "[bus-kind]"`
 Expected: PASS (2 sections).
 
 - [ ] **Step 5: Confirm no regression**
 
-Run: `./build/tests/SiriusTests "[bus]"`
+Run: `./build/tests/IdaTests "[bus]"`
 Expected: all existing `[bus]` cases still pass (the new field is defaulted, so
 existing `BusConfig{2,"Master"}` aggregate-inits leave `kind == Bus`).
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add engine/include/sirius/Bus.h tests/BusTests.cpp
+git add engine/include/ida/Bus.h tests/BusTests.cpp
 git commit -m "feat: BusKind discriminator on BusConfig"
 ```
 
@@ -123,13 +123,13 @@ git commit -m "feat: BusKind discriminator on BusConfig"
 ## Task 2: `MixerGraph` types + node registry
 
 **Files:**
-- Create: `engine/include/sirius/MixerGraph.h`
+- Create: `engine/include/ida/MixerGraph.h`
 - Create: `engine/src/MixerGraph.cpp`
 - Create: `tests/MixerGraphTests.cpp`
-- Modify: `engine/CMakeLists.txt` (append `src/MixerGraph.cpp` to `SiriusEngine`)
-- Modify: `tests/CMakeLists.txt` (append `MixerGraphTests.cpp` to `SiriusTests`)
+- Modify: `engine/CMakeLists.txt` (append `src/MixerGraph.cpp` to `IdaEngine`)
+- Modify: `tests/CMakeLists.txt` (append `MixerGraphTests.cpp` to `IdaTests`)
 
-- [ ] **Step 1: Create the header** `engine/include/sirius/MixerGraph.h`
+- [ ] **Step 1: Create the header** `engine/include/ida/MixerGraph.h`
 
 ```cpp
 #pragma once
@@ -471,12 +471,12 @@ void MixerGraph::recomputeOrder()
 
 - [ ] **Step 3: Register in CMake**
 
-In `engine/CMakeLists.txt`, append to the `SiriusEngine` source list (after
+In `engine/CMakeLists.txt`, append to the `IdaEngine` source list (after
 `src/ConstituentValidator.cpp`):
 ```cmake
     src/MixerGraph.cpp)
 ```
-In `tests/CMakeLists.txt`, append to the `SiriusTests` source list (after
+In `tests/CMakeLists.txt`, append to the `IdaTests` source list (after
 `StatefulSynthFixtureTests.cpp`):
 ```cmake
     MixerGraphTests.cpp)
@@ -491,10 +491,10 @@ In `tests/CMakeLists.txt`, append to the `SiriusTests` source list (after
 
 #include <type_traits>
 
-using sirius::MixerGraph;
-using sirius::MixerNodeId;
-using sirius::MixerNodeKind;
-using sirius::MixerTerminal;
+using ida::MixerGraph;
+using ida::MixerNodeId;
+using ida::MixerNodeKind;
+using ida::MixerTerminal;
 
 TEST_CASE ("MixerNodeId validity + equality", "[mixer-graph][node-registry]")
 {
@@ -556,13 +556,13 @@ TEST_CASE ("MixerGraph::removeNode drops the node, its main-out, and its sends",
 
 - [ ] **Step 5: Build + run**
 
-Run: `cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[mixer-graph][node-registry]"`
+Run: `cmake --build build --target IdaTests && ./build/tests/IdaTests "[mixer-graph][node-registry]"`
 Expected: PASS (4 cases).
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add engine/include/sirius/MixerGraph.h engine/src/MixerGraph.cpp \
+git add engine/include/ida/MixerGraph.h engine/src/MixerGraph.cpp \
         engine/CMakeLists.txt tests/CMakeLists.txt tests/MixerGraphTests.cpp
 git commit -m "feat: MixerGraph node registry + terminal"
 ```
@@ -620,7 +620,7 @@ TEST_CASE ("MixerGraph main-out defaults to terminal and validates destination k
 
 - [ ] **Step 2: Run**
 
-Run: `cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[mixer-graph][main-out]"`
+Run: `cmake --build build --target IdaTests && ./build/tests/IdaTests "[mixer-graph][main-out]"`
 Expected: PASS (all sections). If any fail, fix `setMainOut`/`mainOutOf` in `MixerGraph.cpp`.
 
 - [ ] **Step 3: Commit**
@@ -663,7 +663,7 @@ TEST_CASE ("MixerGraph rejects main-out assignments that would create a cycle",
 
 - [ ] **Step 2: Run**
 
-Run: `cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[mixer-graph][cycle]"`
+Run: `cmake --build build --target IdaTests && ./build/tests/IdaTests "[mixer-graph][cycle]"`
 Expected: PASS.
 
 - [ ] **Step 3: Commit**
@@ -722,7 +722,7 @@ TEST_CASE ("MixerGraph sends target FX returns only, clamp, and reject cycles",
 
 - [ ] **Step 2: Run**
 
-Run: `cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[mixer-graph][sends]"`
+Run: `cmake --build build --target IdaTests && ./build/tests/IdaTests "[mixer-graph][sends]"`
 Expected: PASS. Fix `setSend`/`sendLevel` in `MixerGraph.cpp` on any failure.
 
 - [ ] **Step 3: Commit**
@@ -810,7 +810,7 @@ TEST_CASE ("MixerGraph evaluation order: sources before destinations, terminal l
 
 - [ ] **Step 3: Run**
 
-Run: `cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[mixer-graph][evaluation-order]"`
+Run: `cmake --build build --target IdaTests && ./build/tests/IdaTests "[mixer-graph][evaluation-order]"`
 Expected: PASS. Add `#include <utility>` and `#include <vector>` to the test file if
 the compiler flags `std::declval`/`std::vector`.
 
@@ -826,7 +826,7 @@ git commit -m "test: MixerGraph topological evaluation order + RT-safety static_
 ## Task 7: OutputMixer drives bus evaluation order from MixerGraph
 
 **Files:**
-- Modify: `engine/include/sirius/OutputMixer.h`
+- Modify: `engine/include/ida/OutputMixer.h`
 - Modify: `engine/src/OutputMixer.cpp`
 - Test: `tests/OutputMixerTests.cpp` (append one TEST_CASE)
 
@@ -840,9 +840,9 @@ reproduces the current "channels → all buses → master → outputs" behavior 
 TEST_CASE ("OutputMixer bus->bus subgroup routes through the parent bus",
            "[output-mixer][subgroup]")
 {
-    using sirius::BusConfig;
-    using sirius::OutputMixer;
-    using sirius::SignalType;
+    using ida::BusConfig;
+    using ida::OutputMixer;
+    using ida::SignalType;
 
     OutputMixer mixer;
     const auto ch   = mixer.addChannel (SignalType::Audio);
@@ -870,7 +870,7 @@ TEST_CASE ("OutputMixer bus->bus subgroup routes through the parent bus",
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `cmake --build build --target SiriusTests`
+Run: `cmake --build build --target IdaTests`
 Expected: COMPILE FAIL — `OutputMixer::routeBusToBus` does not exist yet.
 
 - [ ] **Step 3: Add `MixerGraph` to `OutputMixer.h`**
@@ -946,7 +946,7 @@ governs **bus processing order + bus main-out destination only** in Phase 1.
 
 - [ ] **Step 6: Build + run the subgroup test and the full output-mixer suite**
 
-Run: `cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[output-mixer]"`
+Run: `cmake --build build --target IdaTests && ./build/tests/IdaTests "[output-mixer]"`
 Expected: PASS — every pre-existing `[output-mixer]` case AND the new
 `[output-mixer][subgroup]` case. If a pre-existing render test regresses, the Step 5
 refactor changed default behavior — revisit the destination resolution so aux buses
@@ -955,7 +955,7 @@ still sum into master at unity.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add engine/include/sirius/OutputMixer.h engine/src/OutputMixer.cpp tests/OutputMixerTests.cpp
+git add engine/include/ida/OutputMixer.h engine/src/OutputMixer.cpp tests/OutputMixerTests.cpp
 git commit -m "feat: OutputMixer drives bus evaluation order from MixerGraph"
 ```
 
@@ -968,7 +968,7 @@ git commit -m "feat: OutputMixer drives bus evaluation order from MixerGraph"
 ```bash
 rm -rf build
 cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target SiriusTests
+cmake --build build --target IdaTests
 ctest --test-dir build
 ```
 Expected: prior baseline + the new `[mixer-graph]`, `[bus-kind]`, and
@@ -979,10 +979,10 @@ remains and is not a regression.
 - [ ] **Step 2: Standalone module run + placeholder grep**
 
 ```bash
-./build/tests/SiriusTests "[mixer-graph]"
-grep -rnE "TODO|FIXME|XXX|stub|placeholder" engine/include/sirius/MixerGraph.h \
-     engine/src/MixerGraph.cpp engine/include/sirius/OutputMixer.h \
-     engine/src/OutputMixer.cpp engine/include/sirius/Bus.h
+./build/tests/IdaTests "[mixer-graph]"
+grep -rnE "TODO|FIXME|XXX|stub|placeholder" engine/include/ida/MixerGraph.h \
+     engine/src/MixerGraph.cpp engine/include/ida/OutputMixer.h \
+     engine/src/OutputMixer.cpp engine/include/ida/Bus.h
 ```
 Expected: `[mixer-graph]` all green; grep returns zero hits (or each accounted for in `todo.md`).
 

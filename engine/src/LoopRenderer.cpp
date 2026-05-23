@@ -10,7 +10,7 @@ LoopRenderer::LoopRenderer (Rational tapeIn, Rational tapeOut, Rational loopStar
 {
     if (! (tapeIn_ < tapeOut_))
         throw std::invalid_argument (
-            "sirius::LoopRenderer: tapeOut must be strictly greater than tapeIn");
+            "ida::LoopRenderer: tapeOut must be strictly greater than tapeIn");
 }
 
 LoopRenderer::ReadPosition LoopRenderer::at (Rational lmcPresentTime) const

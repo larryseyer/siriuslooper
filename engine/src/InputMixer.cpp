@@ -44,7 +44,7 @@ InputMixer::~InputMixer() = default;
 
 void InputMixer::setTapeWriter (TapeWriter* writer) noexcept       { tapeWriter_ = writer; }
 void InputMixer::setOverloadProtection (OverloadProtection* o) noexcept { overload_ = o; }
-void InputMixer::setTapeStore (sirius::persistence::TapeStore* store) noexcept { tapeStore_ = store; }
+void InputMixer::setTapeStore (ida::persistence::TapeStore* store) noexcept { tapeStore_ = store; }
 void InputMixer::setNotificationBus (NotificationBus* bus) noexcept { notificationBus_ = bus; }
 void InputMixer::setTapeSink (ITapeSink* sink) noexcept { tapeSink_ = sink; }
 

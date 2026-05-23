@@ -13,7 +13,7 @@
 #include <algorithm>
 #include <string>
 
-using sirius::PluginScanner;
+using ida::PluginScanner;
 
 namespace
 {

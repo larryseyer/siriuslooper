@@ -81,8 +81,8 @@ public:
     // --- tape pool management (tape-UI T3) ---
     void addTape      (const juce::String& name);
     void addNextTape  ();
-    void renameTape   (sirius::TapeId id, const juce::String& name);
-    void removeTape   (sirius::TapeId id);
+    void renameTape   (ida::TapeId id, const juce::String& name);
+    void removeTape   (ida::TapeId id);
     void refreshTapesPane();  // body filled in tape-UI T5
 
 private:
@@ -194,7 +194,7 @@ private:
     // Tape-UI slice — single source of truth for which tapes exist; mirrored
     // into the input mixer's routing terminals at startup. Declared before
     // inputMixer_ so it outlives the mixer on destruction.
-    sirius::TapePool                      tapePool_;
+    ida::TapePool                      tapePool_;
     std::unique_ptr<InputMixer>           inputMixer_;
     std::unique_ptr<OutputMixer>          outputMixer_;
     std::unique_ptr<DirectLayer>          directLayer_;
@@ -203,7 +203,7 @@ private:
     // must land before the sink's worker thread drains and finalises the files.
     // The destructor's explicit removeAudioCallback is the primary guard; this
     // ordering is a belt-and-suspenders invariant.
-    std::unique_ptr<sirius::FlacTapeSink> flacTapeSink_;
+    std::unique_ptr<ida::FlacTapeSink> flacTapeSink_;
     std::unique_ptr<AudioCallback>        audioCallback_;
     juce::String                          audioDeviceLastError_;
 
@@ -288,7 +288,7 @@ private:
     std::vector<bool>               inputStripSoloed_;
     // Bus/FX-return strip IDs, parallel to InputMixerPane bus strips.
     // Kept in sync by rebuildBusStrips().
-    std::vector<sirius::BusId>      busStripIds_;
+    std::vector<ida::BusId>      busStripIds_;
 
     // --- Plugins tab ---
     class PluginListBox;
@@ -305,22 +305,22 @@ private:
     // per-bus chain integration is a later session.
     static constexpr std::int64_t kScratchBusIdBase = 1000;
 
-    sirius::OutOfProcessEffectChainHost effectChainHost_;
+    ida::OutOfProcessEffectChainHost effectChainHost_;
     std::int64_t                        nextScratchBusId_ { kScratchBusIdBase };
 
     /// Bus IDs of currently-open editors (M7 S9). Each entry corresponds
-    /// to one sirius_plugin_host child that has been asked to show its
+    /// to one ida_plugin_host child that has been asked to show its
     /// editor; the child owns the actual NSWindow. The engine just tracks
     /// which children currently have an editor visible so the PluginsPane
     /// can toggle its button label.
     std::vector<std::int64_t> openEditorBusIds_;
 
-    /// Resolves Contents/MacOS/sirius_plugin_host alongside the running app
+    /// Resolves Contents/MacOS/ida_plugin_host alongside the running app
     /// binary. Returns an invalid juce::File outside a .app bundle (dev-loop
     /// runs from build/...); callers must check `existsAsFile()` before use.
     juce::File hostBinaryPath() const;
 
-    /// Spawns a sirius_plugin_host child via configureBus on a fresh scratch
+    /// Spawns a ida_plugin_host child via configureBus on a fresh scratch
     /// busId, then sends requestEditorShow so the child opens its OWN
     /// top-level NSWindow (Reaper-style; M7 S9). Message-thread only.
     void openPluginEditor (const PluginDescriptor& descriptor);
@@ -328,7 +328,7 @@ private:
     /// Builds the save/load slot lookup over openEditorBusIds_: entry index
     /// N → bus openEditorBusIds_[N], slot 0 (M7 S9 one-editor-per-bus model).
     /// Message-thread only — reads openEditorBusIds_ without locking.
-    sirius::SlotLookup slotLookup() const;
+    ida::SlotLookup slotLookup() const;
 
     /// Tears down the slot at `busId`. The child window dies with the
     /// child process. Message-thread only.

@@ -119,10 +119,10 @@ content possible.
 
 ### 2. New primitive: `arrangement::sequenceShared`
 
-`core/include/sirius/Arrangement.h` gains one declaration:
+`core/include/ida/Arrangement.h` gains one declaration:
 
 ```cpp
-namespace sirius::arrangement
+namespace ida::arrangement
 {
 /// Places `phrase` at each offset in `offsets`, producing one wrapper
 /// Constituent per offset. All wrappers share `phrase` by reference
@@ -156,7 +156,7 @@ Phrase that appears exactly once).
 
 ### 3. Wrapper recognition predicate
 
-A single shared free function in `core/include/sirius/Constituent.h`,
+A single shared free function in `core/include/ida/Constituent.h`,
 used by every tree walker (selector, promotion, renderer) that needs
 the wrapper-vs-bare-Phrase distinction:
 
@@ -206,7 +206,7 @@ musical Phrase, never the placement structure.
 argument and `PromotionResult` gains a matching field:
 
 ```cpp
-namespace sirius::promotion
+namespace ida::promotion
 {
 enum class AttachmentMode
 {
@@ -280,7 +280,7 @@ device. No keyboard chord to learn, no toggle to forget about.
 
 ### 7. Selector changes (`TimelineViewState`)
 
-`ui/include/sirius/TimelineViewState.h` extends `PillState`:
+`ui/include/ida/TimelineViewState.h` extends `PillState`:
 
 ```cpp
 struct PillState
@@ -469,7 +469,7 @@ change, not regression.
 
 ### 13. User guide — Roadmap update + future chapter
 
-`docs/Sirius Looper User Guide.md` Roadmap section gains a paragraph
+`docs/IDA User Guide.md` Roadmap section gains a paragraph
 naming "repeating song sections" as the next musician-visible feature
 landing in this design. A dedicated chapter is **not** written yet; it
 lands once the implementation ships and operator verification confirms

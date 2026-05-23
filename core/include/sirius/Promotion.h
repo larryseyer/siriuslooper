@@ -10,7 +10,7 @@
 #include <optional>
 #include <string>
 
-namespace sirius::promotion
+namespace ida::promotion
 {
 
 /// What the operator's gesture asked for. The default capture (a tap on Mark
@@ -96,4 +96,4 @@ PromotionResult promote (const Constituent&   root,
 /// from JSON so loads fail loud when the on-disk shape is inconsistent.
 void enforceSharedInstancesAreShared (const Constituent& root);
 
-} // namespace sirius::promotion
+} // namespace ida::promotion

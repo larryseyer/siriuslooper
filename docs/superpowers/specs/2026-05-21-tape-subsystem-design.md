@@ -62,20 +62,20 @@ count are unrelated: 16 inputs may share 1 tape; 4 inputs may each take their ow
 
 ## Relationship to existing types
 
-- **`TapeId`** (`core/include/sirius/TapeId.h`) — the existing `int64` value type
+- **`TapeId`** (`core/include/ida/TapeId.h`) — the existing `int64` value type
   identifying a tape. Reused unchanged as the pool's key.
-- **`InputDescriptor`** (`core/include/sirius/InputDescriptor.h`) — input-source
+- **`InputDescriptor`** (`core/include/ida/InputDescriptor.h`) — input-source
   metadata that carries a `tapeId` back-reference. An input descriptor *points at*
   a tape; it is **not** the pool. The pool is the authoritative list of tapes that
   exist; an input's `tapeId` names its default capture target within that pool.
   This subsystem does **not** repurpose `InputDescriptor` as the pool — the pool is
   a new, explicit list (counts are independent; you can have more tapes than
   inputs, or route many inputs to one tape).
-- **`Tape<Payload>`** (`core/include/sirius/Tape.h`) — the heavy, immutable
+- **`Tape<Payload>`** (`core/include/ida/Tape.h`) — the heavy, immutable
   event-stream data type. The pool stores **light metadata** (id + name), never
   the heavy stream, honoring the §7.2 data-layer / structure-layer split exactly
   as `InputDescriptor` does.
-- **`MixerGraph`** (`engine/include/sirius/MixerGraph.h`) — currently one
+- **`MixerGraph`** (`engine/include/ida/MixerGraph.h`) — currently one
   implicit `Tape` terminal on the input side. Slice 2 generalizes the input
   mixer's instance to N `Tape` terminals.
 
@@ -161,7 +161,7 @@ its destination picker.
 
 ### Component: `TapeDescriptor` (core, header-only)
 
-`core/include/sirius/TapeDescriptor.h` — light, value-typed pool entry, parallel
+`core/include/ida/TapeDescriptor.h` — light, value-typed pool entry, parallel
 to `InputDescriptor`. JUCE-free.
 
 ```cpp
@@ -194,7 +194,7 @@ struct TapeDescriptor
 
 ### Component: `TapePool` (core, header + cpp)
 
-`core/include/sirius/TapePool.h` + `core/src/TapePool.cpp` — owns the ordered
+`core/include/ida/TapePool.h` + `core/src/TapePool.cpp` — owns the ordered
 list, enforces the ≥1 invariant, allocates ids monotonically. Pure C++, JUCE-free,
 fully headless-testable. Message-thread only (no audio-thread access in slice 1).
 
@@ -268,7 +268,7 @@ private:
 
 ### Component: persistence serializer (persistence)
 
-Extend `persistence/include/sirius/SessionFormat.h` + `.cpp` with a tape-pool
+Extend `persistence/include/ida/SessionFormat.h` + `.cpp` with a tape-pool
 round-trip, mirroring the `serializeMixerGraphState` / `deserializeInputMixerGraphState`
 pattern (a standalone JSON document, `juce::var`-based, reusing the file's
 anonymous-namespace helpers).

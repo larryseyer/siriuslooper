@@ -45,12 +45,12 @@ TEST_CASE ("FlacTapeSink writes one growing FLAC per delivered tape", "[flac-tap
 {
     auto dir = makeTempTapesDir();
     {
-        sirius::FlacTapeSink sink (dir, 48000.0, 256);
+        ida::FlacTapeSink sink (dir, 48000.0, 256);
         std::vector<float> l (480), r (480);
         for (std::size_t i = 0; i < 480; ++i) { l[i] = static_cast<float> (i) / 480.0f * 0.5f;
                                              r[i] = -l[i]; }
         for (int block = 0; block < 4; ++block)
-            sink.deliverTapeBlock (sirius::TapeId { 1 }, l.data(), r.data(), 480);
+            sink.deliverTapeBlock (ida::TapeId { 1 }, l.data(), r.data(), 480);
     }
     const auto f = dir.getChildFile ("tape-1.flac");
     REQUIRE (f.existsAsFile());
@@ -67,10 +67,10 @@ TEST_CASE ("FlacTapeSink writes distinct tapes to distinct files in parallel", "
 {
     auto dir = makeTempTapesDir();
     {
-        sirius::FlacTapeSink sink (dir, 44100.0, 256);
+        ida::FlacTapeSink sink (dir, 44100.0, 256);
         std::vector<float> a (256, 0.25f), b (256, -0.25f);
-        sink.deliverTapeBlock (sirius::TapeId { 1 }, a.data(), a.data(), 256);
-        sink.deliverTapeBlock (sirius::TapeId { 7 }, b.data(), b.data(), 256);
+        sink.deliverTapeBlock (ida::TapeId { 1 }, a.data(), a.data(), 256);
+        sink.deliverTapeBlock (ida::TapeId { 7 }, b.data(), b.data(), 256);
     }
     CHECK (dir.getChildFile ("tape-1.flac").existsAsFile());
     CHECK (dir.getChildFile ("tape-7.flac").existsAsFile());
@@ -82,11 +82,11 @@ TEST_CASE ("FlacTapeSink closeTape finalizes a complete re-readable file mid-ses
 {
     auto dir = makeTempTapesDir();
     {
-        sirius::FlacTapeSink sink (dir, 48000.0, 256);
+        ida::FlacTapeSink sink (dir, 48000.0, 256);
         std::vector<float> l (480, 0.1f), r (480, -0.1f);
         for (int block = 0; block < 3; ++block)
-            sink.deliverTapeBlock (sirius::TapeId { 2 }, l.data(), r.data(), 480);
-        sink.closeTape (sirius::TapeId { 2 });
+            sink.deliverTapeBlock (ida::TapeId { 2 }, l.data(), r.data(), 480);
+        sink.closeTape (ida::TapeId { 2 });
 
         // closeTape runs through the worker asynchronously; poll up to ~1s for the
         // file to be finalized. Test-only polling — production code never polls.
@@ -108,10 +108,10 @@ TEST_CASE ("FlacTapeSink dropped-block accounting increments when queue is full"
     auto dir = makeTempTapesDir();
     {
         // Capacity 1 forces queue-full on any rapid burst from the producer thread.
-        sirius::FlacTapeSink sink (dir, 48000.0, 1);
+        ida::FlacTapeSink sink (dir, 48000.0, 1);
         std::vector<float> l (480, 0.2f), r (480, -0.2f);
         for (int i = 0; i < 5000; ++i)
-            sink.deliverTapeBlock (sirius::TapeId { 4 }, l.data(), r.data(), 480);
+            sink.deliverTapeBlock (ida::TapeId { 4 }, l.data(), r.data(), 480);
         CHECK (sink.droppedBlockCount() > 0);
     }
     dir.deleteRecursively();
@@ -126,12 +126,12 @@ TEST_CASE ("FlacTapeSink rate-0 safety net: no file created, blocks safely dropp
     // rate drops all blocks rather than creating a malformed writer.
     auto dir = makeTempTapesDir();
     {
-        sirius::FlacTapeSink sink (dir, 0.0, 256);
+        ida::FlacTapeSink sink (dir, 0.0, 256);
         std::vector<float> l (480, 0.3f), r (480, -0.3f);
 
         // Deliver 4 blocks — all silently dropped (writerFor returns nullptr, sr <= 0).
         for (int i = 0; i < 4; ++i)
-            sink.deliverTapeBlock (sirius::TapeId { 3 }, l.data(), r.data(), 480);
+            sink.deliverTapeBlock (ida::TapeId { 3 }, l.data(), r.data(), 480);
     } // RAII: destructor joins the worker, which drains and finds rate still 0.
 
     // No FLAC file should have been created.

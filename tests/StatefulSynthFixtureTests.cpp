@@ -12,11 +12,11 @@
 #include <cstring>
 #include <vector>
 
-#ifndef SIRIUS_STATEFUL_SYNTH_CLAP_PATH
-    #error "SIRIUS_STATEFUL_SYNTH_CLAP_PATH must be defined"
+#ifndef IDA_STATEFUL_SYNTH_CLAP_PATH
+    #error "IDA_STATEFUL_SYNTH_CLAP_PATH must be defined"
 #endif
 
-using sirius::ClapBundleLoader;
+using ida::ClapBundleLoader;
 
 namespace
 {
@@ -38,11 +38,11 @@ TEST_CASE ("StatefulSynthFixture exposes 2 parameters with documented metadata",
            "[stateful-synth-fixture]")
 {
     std::string err;
-    auto loader = ClapBundleLoader::load (SIRIUS_STATEFUL_SYNTH_CLAP_PATH, err);
+    auto loader = ClapBundleLoader::load (IDA_STATEFUL_SYNTH_CLAP_PATH, err);
     REQUIRE (loader.valid());
 
     auto host = makeHost();
-    const auto descs = loader.descriptors (SIRIUS_STATEFUL_SYNTH_CLAP_PATH);
+    const auto descs = loader.descriptors (IDA_STATEFUL_SYNTH_CLAP_PATH);
     REQUIRE (descs.size() == 1);
     const auto* plugin = loader.createPlugin (host, descs.front().uniqueId.c_str());
     REQUIRE (plugin != nullptr);
@@ -66,10 +66,10 @@ TEST_CASE ("StatefulSynthFixture state.save produces 16 bytes with documented la
            "[stateful-synth-fixture]")
 {
     std::string err;
-    auto loader = ClapBundleLoader::load (SIRIUS_STATEFUL_SYNTH_CLAP_PATH, err);
+    auto loader = ClapBundleLoader::load (IDA_STATEFUL_SYNTH_CLAP_PATH, err);
     REQUIRE (loader.valid());
     auto host = makeHost();
-    const auto descs = loader.descriptors (SIRIUS_STATEFUL_SYNTH_CLAP_PATH);
+    const auto descs = loader.descriptors (IDA_STATEFUL_SYNTH_CLAP_PATH);
     const auto* plugin = loader.createPlugin (host, descs.front().uniqueId.c_str());
     REQUIRE (plugin->init (plugin));
 
@@ -100,10 +100,10 @@ TEST_CASE ("StatefulSynthFixture state.load rejects mismatched magic",
            "[stateful-synth-fixture]")
 {
     std::string err;
-    auto loader = ClapBundleLoader::load (SIRIUS_STATEFUL_SYNTH_CLAP_PATH, err);
+    auto loader = ClapBundleLoader::load (IDA_STATEFUL_SYNTH_CLAP_PATH, err);
     REQUIRE (loader.valid());
     auto host = makeHost();
-    const auto descs = loader.descriptors (SIRIUS_STATEFUL_SYNTH_CLAP_PATH);
+    const auto descs = loader.descriptors (IDA_STATEFUL_SYNTH_CLAP_PATH);
     const auto* plugin = loader.createPlugin (host, descs.front().uniqueId.c_str());
     REQUIRE (plugin->init (plugin));
 

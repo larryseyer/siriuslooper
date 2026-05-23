@@ -2,7 +2,7 @@
 
 #include <stdexcept>
 
-namespace sirius::latency
+namespace ida::latency
 {
 
 Rational inboundCaptureTime (Rational lmcCallbackTime,
@@ -12,7 +12,7 @@ Rational inboundCaptureTime (Rational lmcCallbackTime,
                              const SampleClock& deviceClock)
 {
     if (sampleIndex < 0 || sampleIndex >= bufferSize)
-        throw std::out_of_range ("sirius::latency::inboundCaptureTime: sampleIndex out of range");
+        throw std::out_of_range ("ida::latency::inboundCaptureTime: sampleIndex out of range");
 
     // The newest sample (bufferSize - 1) was captured `inputLatencySeconds` ago.
     // Sample `sampleIndex` was captured this many samples earlier than that:
@@ -29,11 +29,11 @@ Rational outboundPresentTime (Rational lmcCallbackTime,
                               const SampleClock& deviceClock)
 {
     if (sampleIndex < 0)
-        throw std::out_of_range ("sirius::latency::outboundPresentTime: sampleIndex must be >= 0");
+        throw std::out_of_range ("ida::latency::outboundPresentTime: sampleIndex must be >= 0");
 
     return lmcCallbackTime
          + outputLatencySeconds
          + deviceClock.secondsForSamples (sampleIndex);
 }
 
-} // namespace sirius::latency
+} // namespace ida::latency

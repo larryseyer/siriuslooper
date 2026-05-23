@@ -1,4 +1,4 @@
-// Tests for sirius::Bus + sirius::BusConfig — M5 Session 2. The Bus is the
+// Tests for ida::Bus + ida::BusConfig — M5 Session 2. The Bus is the
 // session-level effect-bus data model behind V3 Step 7 / V7 alignment plan
 // M5 (lines 384-388). S2 establishes the configuration surfaces; S3 wires
 // the audio-thread mix pipeline that consumes Bus::process.
@@ -18,13 +18,13 @@
 #include <utility>
 #include <vector>
 
-using sirius::Bus;
-using sirius::BusConfig;
-using sirius::BusId;
-using sirius::EffectChain;
-using sirius::EffectChainEntry;
-using sirius::PluginDescriptor;
-using sirius::PluginFormat;
+using ida::Bus;
+using ida::BusConfig;
+using ida::BusId;
+using ida::EffectChain;
+using ida::EffectChainEntry;
+using ida::PluginDescriptor;
+using ida::PluginFormat;
 
 // Compile-time invariant — `Bus::process` MUST be noexcept (audio-thread
 // surface per docs/RT_SAFETY_CONTRACT.md §6). The header itself holds the
@@ -118,16 +118,16 @@ TEST_CASE ("Bus::process handles defensive guards without crashing",
 
 TEST_CASE ("LufsMeter is move-constructible and a moved meter still measures", "[lufs][move]")
 {
-    static_assert (std::is_move_constructible_v<sirius::LufsMeter>,
+    static_assert (std::is_move_constructible_v<ida::LufsMeter>,
                    "LufsMeter must be movable so Bus can live in std::vector<Bus>");
 
     constexpr double kSampleRate = 48000.0;
     constexpr int    kBlock      = 512;
 
-    sirius::LufsMeter source;
+    ida::LufsMeter source;
     source.prepare (kSampleRate, kBlock);
 
-    sirius::LufsMeter moved (std::move (source));   // move-construct after prepare()
+    ida::LufsMeter moved (std::move (source));   // move-construct after prepare()
     // `source` is now in a moved-from (unspecified) state — not used again below.
 
     // Feed a 1 kHz sine (NOT DC — K-weighting's high-pass would kill a constant);
@@ -152,10 +152,10 @@ TEST_CASE ("LufsMeter is move-constructible and a moved meter still measures", "
 TEST_CASE ("BusConfig defaults to BusKind::Bus and carries FxReturn through a Bus",
            "[bus][bus-kind]")
 {
-    using sirius::Bus;
-    using sirius::BusConfig;
-    using sirius::BusId;
-    using sirius::BusKind;
+    using ida::Bus;
+    using ida::BusConfig;
+    using ida::BusId;
+    using ida::BusKind;
 
     SECTION ("default kind is Bus")
     {
@@ -174,14 +174,14 @@ TEST_CASE ("BusConfig defaults to BusKind::Bus and carries FxReturn through a Bu
 TEST_CASE ("Bus is movable (std::vector<Bus> requirement) and move preserves gain/mute",
            "[bus][move]")
 {
-    static_assert (std::is_move_constructible_v<sirius::Bus>,
+    static_assert (std::is_move_constructible_v<ida::Bus>,
                    "Bus must be MoveInsertable for std::vector<Bus>");
 
-    sirius::Bus source (sirius::BusId { 7 }, sirius::BusConfig {});
+    ida::Bus source (ida::BusId { 7 }, ida::BusConfig {});
     source.setGain (0.25f);
     source.setMuted (true);
 
-    sirius::Bus moved (std::move (source));
+    ida::Bus moved (std::move (source));
     REQUIRE (moved.id().value() == 7);
     REQUIRE (moved.gain()  == 0.25f);
     REQUIRE (moved.muted() == true);
@@ -190,7 +190,7 @@ TEST_CASE ("Bus is movable (std::vector<Bus> requirement) and move preserves gai
 TEST_CASE ("Bus default gain is unity and unmuted (inline path stays bit-identical)",
            "[bus][gain]")
 {
-    sirius::Bus bus (sirius::BusId { 1 }, sirius::BusConfig {});
+    ida::Bus bus (ida::BusId { 1 }, ida::BusConfig {});
     REQUIRE (bus.gain()  == 1.0f);
     REQUIRE (bus.muted() == false);
 
@@ -207,7 +207,7 @@ TEST_CASE ("Bus default gain is unity and unmuted (inline path stays bit-identic
 
 TEST_CASE ("Bus::setGain scales the output (inline path)", "[bus][gain]")
 {
-    sirius::Bus bus (sirius::BusId { 1 }, sirius::BusConfig {});
+    ida::Bus bus (ida::BusId { 1 }, ida::BusConfig {});
     bus.setGain (0.5f);
 
     constexpr int kSamples = 4;
@@ -223,7 +223,7 @@ TEST_CASE ("Bus::setGain scales the output (inline path)", "[bus][gain]")
 
 TEST_CASE ("Bus::setMuted silences the output (inline path)", "[bus][mute]")
 {
-    sirius::Bus bus (sirius::BusId { 1 }, sirius::BusConfig {});
+    ida::Bus bus (ida::BusId { 1 }, ida::BusConfig {});
     bus.setMuted (true);
 
     constexpr int kSamples = 4;
@@ -239,7 +239,7 @@ TEST_CASE ("Bus::setMuted silences the output (inline path)", "[bus][mute]")
 
 TEST_CASE ("Bus peak reflects the post-fader signal (inline path)", "[bus][meter]")
 {
-    sirius::Bus bus (sirius::BusId { 1 }, sirius::BusConfig {});
+    ida::Bus bus (ida::BusId { 1 }, ida::BusConfig {});
     bus.setGain (0.5f);
 
     constexpr int kSamples = 8;
@@ -258,7 +258,7 @@ TEST_CASE ("Bus peak reflects the post-fader signal (inline path)", "[bus][meter
 
 TEST_CASE ("Bus peak reads silence when muted", "[bus][meter][mute]")
 {
-    sirius::Bus bus (sirius::BusId { 1 }, sirius::BusConfig {});
+    ida::Bus bus (ida::BusId { 1 }, ida::BusConfig {});
     constexpr int kSamples = 8;
     const auto fillMix = [&]
     {
@@ -289,7 +289,7 @@ TEST_CASE ("Bus peak reads silence when muted", "[bus][meter][mute]")
 
 TEST_CASE ("Bus LUFS reads silence floor before prepare()", "[bus][lufs]")
 {
-    sirius::Bus bus (sirius::BusId { 1 }, sirius::BusConfig {});
+    ida::Bus bus (ida::BusId { 1 }, ida::BusConfig {});
     constexpr int kSamples = 64;
     for (int s = 0; s < kSamples; ++s)
     {
@@ -306,7 +306,7 @@ TEST_CASE ("Bus LUFS reads silence floor before prepare()", "[bus][lufs]")
 
 TEST_CASE ("Bus LUFS rises with a 1 kHz post-fader signal after prepare()", "[bus][lufs]")
 {
-    sirius::Bus bus (sirius::BusId { 1 }, sirius::BusConfig {});
+    ida::Bus bus (ida::BusId { 1 }, ida::BusConfig {});
     constexpr double kSampleRate = 48000.0;
     constexpr int    kBlock      = 512;
     bus.prepare (kSampleRate, kBlock);

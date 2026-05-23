@@ -14,9 +14,9 @@
 
 ## File Structure
 
-- `engine/include/sirius/MixerGraph.h` — modify: enum rename, terminal-set members, new ctor + accessor, `isTerminal` helper decl.
+- `engine/include/ida/MixerGraph.h` — modify: enum rename, terminal-set members, new ctor + accessor, `isTerminal` helper decl.
 - `engine/src/MixerGraph.cpp` — modify: ctors, and generalize every `terminalId_`/`terminal_` use to the terminal set.
-- `engine/include/sirius/OutputMixer.h` — modify: line 184 enum spelling only.
+- `engine/include/ida/OutputMixer.h` — modify: line 184 enum spelling only.
 - `tests/MixerGraphTests.cpp` — modify: `Output` → `HardwareOutput` rename; add multi-terminal cases.
 
 `OutputMixer.cpp` lines 58 & 313 use the no-arg `terminalNode()` and need **no** change — it still resolves to the sole terminal. The `[output-mixer]` suite is the regression-equivalence proof.
@@ -28,13 +28,13 @@
 Mechanical, behavior-preserving rename to match the spec's vocabulary. Isolated from the logic change so the diff is reviewable.
 
 **Files:**
-- Modify: `engine/include/sirius/MixerGraph.h:16`
-- Modify: `engine/include/sirius/OutputMixer.h:184`
+- Modify: `engine/include/ida/MixerGraph.h:16`
+- Modify: `engine/include/ida/OutputMixer.h:184`
 - Modify: `tests/MixerGraphTests.cpp` (8 occurrences of `MixerTerminal::Output`)
 
 - [ ] **Step 1: Rename the enumerator**
 
-In `engine/include/sirius/MixerGraph.h:16` change:
+In `engine/include/ida/MixerGraph.h:16` change:
 
 ```cpp
 enum class MixerTerminal { Tape, Output };
@@ -46,7 +46,7 @@ enum class MixerTerminal { Tape, HardwareOutput };
 
 - [ ] **Step 2: Update the two consumers**
 
-In `engine/include/sirius/OutputMixer.h:184`:
+In `engine/include/ida/OutputMixer.h:184`:
 ```cpp
     MixerGraph                graph_ { MixerTerminal::HardwareOutput };
 ```
@@ -61,15 +61,15 @@ Expected: no output.
 Run:
 ```bash
 cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release   # if build/ absent
-cmake --build build --target SiriusTests
-./build/tests/SiriusTests "[mixer-graph]" "[output-mixer]"
+cmake --build build --target IdaTests
+./build/tests/IdaTests "[mixer-graph]" "[output-mixer]"
 ```
 Expected: PASS, all cases green (rename is behavior-preserving — the single-terminal path is unchanged).
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add engine/include/sirius/MixerGraph.h engine/include/sirius/OutputMixer.h tests/MixerGraphTests.cpp
+git add engine/include/ida/MixerGraph.h engine/include/ida/OutputMixer.h tests/MixerGraphTests.cpp
 git commit -m "refactor: rename MixerTerminal::Output -> HardwareOutput (spec vocabulary)"
 ```
 
@@ -78,7 +78,7 @@ git commit -m "refactor: rename MixerTerminal::Output -> HardwareOutput (spec vo
 ## Task 2: Generalize `MixerGraph` to a typed terminal set
 
 **Files:**
-- Modify: `engine/include/sirius/MixerGraph.h`
+- Modify: `engine/include/ida/MixerGraph.h`
 - Modify: `engine/src/MixerGraph.cpp`
 - Test: `tests/MixerGraphTests.cpp`
 
@@ -175,12 +175,12 @@ TEST_CASE ("MixerGraph evaluation order: every node precedes all terminals",
 
 - [ ] **Step 2: Verify the new tests fail to compile**
 
-Run: `cmake --build build --target SiriusTests`
+Run: `cmake --build build --target IdaTests`
 Expected: FAIL — `MixerGraph` has no `std::initializer_list` constructor and no `terminalNode(MixerTerminal)` overload.
 
 - [ ] **Step 3: Update the header**
 
-In `engine/include/sirius/MixerGraph.h`, add the include near the top (after `<cstdint>`):
+In `engine/include/ida/MixerGraph.h`, add the include near the top (after `<cstdint>`):
 
 ```cpp
 #include <initializer_list>
@@ -323,8 +323,8 @@ No change is needed in `reaches` (terminals are not in `nodes_`, so `find()` ret
 
 Run:
 ```bash
-cmake --build build --target SiriusTests
-./build/tests/SiriusTests "[mixer-graph]" "[output-mixer]"
+cmake --build build --target IdaTests
+./build/tests/IdaTests "[mixer-graph]" "[output-mixer]"
 ```
 Expected: PASS — the 4 new `[multi-terminal]` cases plus all pre-existing `[mixer-graph]` and `[output-mixer]` cases (OutputMixer behavior unchanged: it still constructs a single `HardwareOutput` terminal).
 
@@ -336,7 +336,7 @@ Expected: baseline **478/479** — the only non-pass is `MainComponentPluginEdit
 - [ ] **Step 7: Commit**
 
 ```bash
-git add engine/include/sirius/MixerGraph.h engine/src/MixerGraph.cpp tests/MixerGraphTests.cpp
+git add engine/include/ida/MixerGraph.h engine/src/MixerGraph.cpp tests/MixerGraphTests.cpp
 git commit -m "feat: MixerGraph supports a typed terminal set (Tape + HardwareOutput)"
 ```
 
@@ -345,9 +345,9 @@ git commit -m "feat: MixerGraph supports a typed terminal set (Tape + HardwareOu
 ## Verification (end-to-end)
 
 1. Clean configure not required (engine-only, no GUI bundle): `cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release`.
-2. `cmake --build build --target SiriusTests` — compiles clean under `-Werror`.
-3. `./build/tests/SiriusTests "[mixer-graph]"` — all single- and multi-terminal cases pass.
-4. `./build/tests/SiriusTests "[output-mixer]"` — regression-equivalence; OutputMixer behavior identical to pre-Phase-2.
+2. `cmake --build build --target IdaTests` — compiles clean under `-Werror`.
+3. `./build/tests/IdaTests "[mixer-graph]"` — all single- and multi-terminal cases pass.
+4. `./build/tests/IdaTests "[output-mixer]"` — regression-equivalence; OutputMixer behavior identical to pre-Phase-2.
 5. `ctest --test-dir build` — 478/479 (the 1 = `MainComponentPluginEditorTests_NOT_BUILT`).
 6. No operator eyes-on / `rm -rf build` needed — engine logic only, no GUI surface touched.
 

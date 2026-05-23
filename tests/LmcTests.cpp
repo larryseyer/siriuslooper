@@ -1,4 +1,4 @@
-// Tests for sirius::Lmc — the Logical Master Clock at its local-monotonic tier
+// Tests for ida::Lmc — the Logical Master Clock at its local-monotonic tier
 // (white paper Part IV). The clock source is injectable, so these tests drive a
 // controlled fake clock and confirm the LMC's epoch handling, its exact
 // rational time, and that it never runs backwards.
@@ -11,14 +11,14 @@
 #include <memory>
 #include <stdexcept>
 
-using sirius::DisciplineTier;
-using sirius::Lmc;
-using sirius::Rational;
+using ida::DisciplineTier;
+using ida::Lmc;
+using ida::Rational;
 
 namespace
 {
     /// A monotonic clock whose reading the test controls directly.
-    class FakeClock final : public sirius::MonotonicClock
+    class FakeClock final : public ida::MonotonicClock
     {
     public:
         std::int64_t nowNanos() const override { return value_; }

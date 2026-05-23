@@ -17,9 +17,9 @@ namespace std
 /// the validation map. Lives here (not in core's ConstituentId.h) to keep this
 /// the only file that depends on ConstituentId being hashable.
 template <>
-struct hash<sirius::ConstituentId>
+struct hash<ida::ConstituentId>
 {
-    std::size_t operator() (const sirius::ConstituentId& id) const noexcept
+    std::size_t operator() (const ida::ConstituentId& id) const noexcept
     {
         return std::hash<std::int64_t> {} (id.value());
     }

@@ -10,7 +10,7 @@ AudioDeviceCalibration::AudioDeviceCalibration (Rational rateFactor, Rational of
 {
     if (rateFactor_.isZero() || rateFactor_.isNegative())
         throw std::invalid_argument (
-            "sirius::AudioDeviceCalibration: rate factor must be positive");
+            "ida::AudioDeviceCalibration: rate factor must be positive");
 }
 
 AudioDeviceCalibration AudioDeviceCalibration::identity()

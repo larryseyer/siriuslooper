@@ -7,7 +7,7 @@
 # confirm parameter automation round-trips through a parameter tape.
 #
 # The structural side of M5 — PluginDescriptor, EffectChain, ParameterEvent —
-# is in core/, JUCE-free. This library depends on it via Sirius::Core.
+# is in core/, JUCE-free. This library depends on it via Ida::Core.
 # =============================================================================
 
 add_library(SiriusHost STATIC
@@ -19,19 +19,19 @@ add_library(SiriusHost STATIC
     src/OutOfProcessEffectChainHost.cpp)
 
 # P7 T3a-B: OutOfProcessEffectChainHost.cpp calls
-# `sirius::makeInternalFxAdapter` (declared in core/include/sirius/
+# `ida::makeInternalFxAdapter` (declared in core/include/ida/
 # InternalFxFactory.h, defined in engine/src/InternalFxFactory.cpp). We
-# deliberately DO NOT add Sirius::Engine to SiriusHost's link line — that
-# would cycle (engine already PRIVATE-links Sirius::Host via
+# deliberately DO NOT add Ida::Engine to SiriusHost's link line — that
+# would cycle (engine already PRIVATE-links Ida::Host via
 # SessionSnapshot). The unresolved symbol is fine in a static library;
 # it resolves at final link in every binary that already pulls both
-# Sirius::Host and Sirius::Engine (the SiriusLooper app + SiriusTests).
+# Ida::Host and Ida::Engine (the IDA app + IdaTests).
 # The factory header lives in core/ specifically so the host can include
 # it without taking the link edge.
 
 # M7 S9 (Reaper-style separate plug-in windows): the engine no longer
 # embeds the child's editor pixels via CARemoteLayer; each
-# sirius_plugin_host child opens its own top-level NSWindow. No
+# ida_plugin_host child opens its own top-level NSWindow. No
 # engine-side AppKit shim is needed — the entire cross-process editor
 # view scaffolding from M7 S5-S8 (OutOfProcessEditorView, PluginGuiBridge,
 # IGuiBridge, xpc_service/) is gone.
@@ -47,7 +47,7 @@ target_compile_definitions(SiriusHost PUBLIC
     $<$<PLATFORM_ID:Darwin>:JUCE_PLUGINHOST_AU=1>)
 
 target_link_libraries(SiriusHost
-    PUBLIC  Sirius::Core
+    PUBLIC  Ida::Core
             clap
             juce::juce_audio_processors
             juce::juce_gui_basics
@@ -64,4 +64,4 @@ if(APPLE)
         "-framework CoreAudioKit")
 endif()
 
-add_library(Sirius::Host ALIAS SiriusHost)
+add_library(Ida::Host ALIAS SiriusHost)

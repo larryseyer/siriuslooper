@@ -6,7 +6,7 @@
    "WITH_CR32S;NOT WITH_PFFFT" OFF)
 -cmake_dependent_option (BUILD_LSR_TESTS "Build LSR tests." OFF
 -  "UNIX;NOT CMAKE_CROSSCOMPILING;EXISTS ${PROJECT_SOURCE_DIR}/lsr-tests;WITH_LSR_BINDINGS" OFF)
-+set (BUILD_LSR_TESTS OFF)  # Sirius patch: the original cmake_dependent_option
++set (BUILD_LSR_TESTS OFF)  # IDA patch: the original cmake_dependent_option
 +                           # left ${PROJECT_SOURCE_DIR} unquoted, which breaks
 +                           # when the source path contains spaces.
  
@@ -17,7 +17,7 @@
  # Introspection:
  
 -list (APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake/Modules)
-+list (APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/Modules")  # Sirius patch: CMAKE_SOURCE_DIR is the parent project under add_subdirectory; quote for spaces
++list (APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/Modules")  # IDA patch: CMAKE_SOURCE_DIR is the parent project under add_subdirectory; quote for spaces
  
  include (CheckFunctionExists)
  include (CheckIncludeFiles)
@@ -28,7 +28,7 @@
  # Can generate vr-coefs.h but it complicates cross-compiling & non-cmake builds
  
 -if (NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/vr-coefs.h)
-+if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/vr-coefs.h")  # Sirius patch: quote the path (spaces)
++if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/vr-coefs.h")  # IDA patch: quote the path (spaces)
    include_directories(${CMAKE_CURRENT_BINARY_DIR})
    set_property(SOURCE vr32.c
        APPEND PROPERTY OBJECT_DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/vr-coefs.h)

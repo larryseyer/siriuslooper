@@ -1,5 +1,5 @@
 # =============================================================================
-# SiriusUi — the performer's instrument (white paper Part XIV)
+# IdaUi — the performer's instrument (white paper Part XIV)
 # =============================================================================
 # Two layers under one umbrella:
 #
@@ -15,17 +15,17 @@
 # =============================================================================
 
 # -----------------------------------------------------------------------------
-# SiriusLookAndFeel — OTTO's LookAndFeel, consumed from the OTTO submodule
+# IdaLookAndFeel — OTTO's LookAndFeel, consumed from the OTTO submodule
 # -----------------------------------------------------------------------------
 # Sources live in the OTTO git submodule at external/OTTO/src/otto-plugin/ui
-# (see .gitmodules). Sirius links these source files directly so that bug
+# (see .gitmodules). IDA links these source files directly so that bug
 # fixes in OTTO propagate via `git submodule update --remote external/OTTO`
-# without a byte-faithful copy to keep in sync. Sirius never edits OTTO
+# without a byte-faithful copy to keep in sync. IDA never edits OTTO
 # source — see project memory `project_otto_is_a_submodule_now`. Kept in its
 # own target and compiled WITHOUT Sirius's strict warning flags: this is
 # third-party code held byte-faithful to OTTO rather than reformatted to
-# Sirius conventions.
-juce_add_binary_data(SiriusBinaryData
+# IDA conventions.
+juce_add_binary_data(IdaBinaryData
     HEADER_NAME "OTTOBinaryData.h"
     NAMESPACE OTTOBinaryData
     SOURCES
@@ -50,33 +50,33 @@ juce_add_binary_data(SiriusBinaryData
 #
 # OTTO_OUTPUT_COMBO_AS_JUCE_COMBOBOX (defined below) tells OTTO's
 # CompactFaderStrip to substitute juce::ComboBox for OTTO's TouchComboBox
-# at compile time — Sirius is desktop-first and does not link OTTO's
+# at compile time — IDA is desktop-first and does not link OTTO's
 # iOS touch-menu stack. The default OTTO behavior is unchanged.
 set(OTTO_UI_DIR ${CMAKE_SOURCE_DIR}/external/OTTO/src/otto-plugin/ui)
 
-add_library(SiriusLookAndFeel STATIC
+add_library(IdaLookAndFeel STATIC
     ${OTTO_UI_DIR}/OTTOLookAndFeel.cpp
     ${OTTO_UI_DIR}/components/FaderMeter.cpp
     ${OTTO_UI_DIR}/components/CompactFaderStrip.cpp
     ${OTTO_UI_DIR}/components/ChannelDetailPanWidTab.cpp)
 
-target_include_directories(SiriusLookAndFeel PUBLIC
+target_include_directories(IdaLookAndFeel PUBLIC
     ${OTTO_UI_DIR}
     ${OTTO_UI_DIR}/components)
 
-target_compile_definitions(SiriusLookAndFeel PUBLIC
+target_compile_definitions(IdaLookAndFeel PUBLIC
     OTTO_OUTPUT_COMBO_AS_JUCE_COMBOBOX)
 
-target_compile_features(SiriusLookAndFeel PUBLIC cxx_std_20)
+target_compile_features(IdaLookAndFeel PUBLIC cxx_std_20)
 
-target_link_libraries(SiriusLookAndFeel
+target_link_libraries(IdaLookAndFeel
     PUBLIC  juce::juce_gui_basics
-    PRIVATE SiriusBinaryData
+    PRIVATE IdaBinaryData
             juce::juce_recommended_config_flags)
 
-add_library(Sirius::LookAndFeel ALIAS SiriusLookAndFeel)
+add_library(Ida::LookAndFeel ALIAS IdaLookAndFeel)
 
-add_library(SiriusUi STATIC
+add_library(IdaUi STATIC
     src/UndoStack.cpp
     src/LatencyBudget.cpp
     src/PerformanceViewState.cpp
@@ -86,15 +86,15 @@ add_library(SiriusUi STATIC
     src/PreparationView.cpp
     src/TimelineView.cpp)
 
-target_include_directories(SiriusUi PUBLIC include)
+target_include_directories(IdaUi PUBLIC include)
 
-target_compile_features(SiriusUi PUBLIC cxx_std_20)
+target_compile_features(IdaUi PUBLIC cxx_std_20)
 
-target_link_libraries(SiriusUi
-    PUBLIC  Sirius::Core
-            Sirius::LookAndFeel
+target_link_libraries(IdaUi
+    PUBLIC  Ida::Core
+            Ida::LookAndFeel
             juce::juce_gui_basics
             juce::juce_recommended_config_flags
             juce::juce_recommended_warning_flags)
 
-add_library(Sirius::Ui ALIAS SiriusUi)
+add_library(Ida::Ui ALIAS IdaUi)

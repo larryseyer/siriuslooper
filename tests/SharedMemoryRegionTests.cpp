@@ -1,4 +1,4 @@
-// Tests for sirius::SharedMemoryRegion — POSIX shm_open + mmap RAII.
+// Tests for ida::SharedMemoryRegion — POSIX shm_open + mmap RAII.
 
 #include "sirius/SharedMemoryRegion.h"
 
@@ -10,7 +10,7 @@
 #include <stdexcept>
 #include <string>
 
-using sirius::SharedMemoryRegion;
+using ida::SharedMemoryRegion;
 
 namespace
 {

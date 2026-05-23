@@ -25,7 +25,7 @@ struct TapeReference
     {
         if (! (tapeIn < tapeOut))
             throw std::invalid_argument (
-                "sirius::TapeReference: tapeOut must be strictly greater than tapeIn");
+                "ida::TapeReference: tapeOut must be strictly greater than tapeIn");
     }
 
     /// The slice length, in seconds — the loop's natural cycle length.

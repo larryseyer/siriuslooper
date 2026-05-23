@@ -5,14 +5,14 @@
 
 TEST_CASE ("mirrorTapePool registers every non-primary pool tape in the mixer", "[tape-pool][mirror]")
 {
-    sirius::TapePool pool;            // seeds TapeId{1} "Tape 1"
+    ida::TapePool pool;            // seeds TapeId{1} "Tape 1"
     const auto drums = pool.add ("Drums");
     const auto vox   = pool.add ("Vox");
 
-    sirius::InputMixer mixer;         // ctor seeds the primary tape terminal only
+    ida::InputMixer mixer;         // ctor seeds the primary tape terminal only
     REQUIRE (mixer.tapeCount() == 1);
 
-    sirius::mirrorTapePool (pool, mixer);
+    ida::mirrorTapePool (pool, mixer);
 
     CHECK (mixer.tapeCount() == 3);
     CHECK (mixer.hasTape (pool.primary()));
@@ -22,25 +22,25 @@ TEST_CASE ("mirrorTapePool registers every non-primary pool tape in the mixer", 
 
 TEST_CASE ("mirrorTapePool is idempotent — second call does not double-count", "[tape-pool][mirror]")
 {
-    sirius::TapePool pool;
+    ida::TapePool pool;
     pool.add ("A");
     pool.add ("B");
 
-    sirius::InputMixer mixer;
-    sirius::mirrorTapePool (pool, mixer);
+    ida::InputMixer mixer;
+    ida::mirrorTapePool (pool, mixer);
     const int afterFirst = mixer.tapeCount();
 
-    sirius::mirrorTapePool (pool, mixer); // second call — must be a no-op
+    ida::mirrorTapePool (pool, mixer); // second call — must be a no-op
     CHECK (mixer.tapeCount() == afterFirst);
 }
 
 TEST_CASE ("removing a pooled tape re-mirrors to a consistent mixer", "[tape-pool][mirror]")
 {
-    sirius::TapePool pool;
+    ida::TapePool pool;
     const auto drums = pool.add ("Drums");
-    sirius::InputMixer mixer;
-    sirius::mirrorTapePool (pool, mixer);
-    const auto ch = mixer.addChannel (sirius::InputId (0), sirius::SignalType::Audio);
+    ida::InputMixer mixer;
+    ida::mirrorTapePool (pool, mixer);
+    const auto ch = mixer.addChannel (ida::InputId (0), ida::SignalType::Audio);
     REQUIRE (mixer.setChannelMainOutToTape (ch, drums));
 
     // The MainComponent remove sequence, modelled headlessly: route dependents to
@@ -58,8 +58,8 @@ TEST_CASE ("removing a pooled tape re-mirrors to a consistent mixer", "[tape-poo
 
 TEST_CASE ("the pool floor and primary tape are protected", "[tape-pool][mirror]")
 {
-    sirius::TapePool pool;                 // one tape
-    CHECK_FALSE (pool.remove (sirius::TapeId { 1 })); // >=1 floor refuses
-    sirius::InputMixer mixer;
-    CHECK_FALSE (mixer.removeTape (sirius::TapeId { 1 })); // primary is permanent
+    ida::TapePool pool;                 // one tape
+    CHECK_FALSE (pool.remove (ida::TapeId { 1 })); // >=1 floor refuses
+    ida::InputMixer mixer;
+    CHECK_FALSE (mixer.removeTape (ida::TapeId { 1 })); // primary is permanent
 }

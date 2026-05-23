@@ -28,7 +28,7 @@ public:
         : buffer_ (capacity)
     {
         if (capacity == 0)
-            throw std::invalid_argument ("sirius::RetroactiveRing: capacity must be positive");
+            throw std::invalid_argument ("ida::RetroactiveRing: capacity must be positive");
     }
 
     /// Appends an event. When the ring is full, the oldest event is overwritten.

@@ -4,8 +4,8 @@
 
 Sirius's engine and persistence layers (M1–M8) are deep and tested, but the GUI
 lagged far behind: `MainComponent` surfaced almost none of the engine, and the
-app looked like stock grey JUCE. The operator's directive: Sirius and OTTO are
-sister apps and Sirius must **look and work like OTTO** — LookAndFeel, fonts,
+app looked like stock grey JUCE. The operator's directive: IDA and OTTO are
+sister apps and IDA must **look and work like OTTO** — LookAndFeel, fonts,
 mixer, meters, pills/phrases, tabs, transport, beat counter — everything.
 
 That is a multi-session program, decomposed into sub-projects:
@@ -19,11 +19,11 @@ That is a multi-session program, decomposed into sub-projects:
 
 ## Decision: copy (vendor), not alias
 
-OTTO and Sirius ship **separately**, so each must build and ship on its own. A
-cross-repo alias/symlink to OTTO's source would (a) make Sirius unbuildable when
+OTTO and IDA ship **separately**, so each must build and ship on its own. A
+cross-repo alias/symlink to OTTO's source would (a) make IDA unbuildable when
 OTTO is absent or when OTTO's L&F grows an OTTO-only dependency, and (b) mean
 changing Sirius's look requires editing OTTO — which the operator forbade.
-Copying keeps Sirius self-contained and leaves OTTO untouched. To keep drift
+Copying keeps IDA self-contained and leaves OTTO untouched. To keep drift
 near-zero, the files are copied **verbatim** with identical class names and an
 identical binary-data namespace, so re-syncing is a straight file copy and the
 `.cpp` needs zero edits. The proper long-term form is a shared **submodule** (a
@@ -42,17 +42,17 @@ one-time extraction out of OTTO), tracked as future work.
   JetBrains Mono (3 weights) — plus `assets/GUI/Fader Knob.png` and the SIL OFL
   license. (OTTO's logos and grain texture are deliberately NOT copied — the L&F
   never references them.)
-- **CMake** (`ui/CMakeLists.txt`): a `SiriusBinaryData` target via
+- **CMake** (`ui/CMakeLists.txt`): a `IdaBinaryData` target via
   `juce_add_binary_data` with `HEADER_NAME "OTTOBinaryData.h"` / `NAMESPACE
   OTTOBinaryData` (kept identical so the vendored `.cpp` compiles unchanged), and
-  a dedicated `SiriusLookAndFeel` static lib compiled **without** Sirius's strict
+  a dedicated `IdaLookAndFeel` static lib compiled **without** Sirius's strict
   `-Werror` warning flags (vendored third-party code, held byte-faithful rather
-  than reformatted). Exposed as `Sirius::LookAndFeel`.
+  than reformatted). Exposed as `Ida::LookAndFeel`.
 - **App wiring** (`app/Main.cpp`, `app/CMakeLists.txt`): the application owns an
   `otto::OTTOLookAndFeel` and installs it via
   `juce::LookAndFeel::setDefaultLookAndFeel` in `initialise()` **before** the
   main window is created (the window reads the default L&F for its background),
-  clearing it in `shutdown()`. Existing Sirius views use `getLookAndFeel()`, so
+  clearing it in `shutdown()`. Existing IDA views use `getLookAndFeel()`, so
   they re-skin automatically.
 
 ## Scope
@@ -64,10 +64,10 @@ extraction.
 
 ## Verification
 
-- Clean CMake/Ninja configure + `SiriusLookAndFeel` and `SiriusLooper` build
+- Clean CMake/Ninja configure + `IdaLookAndFeel` and `IDA` build
   green against Sirius's JUCE.
 - Operator eyes-on: launching the app (via a fresh Desktop alias to the canonical
-  `build/.../Release/Sirius Looper.app`) shows the whole UI in OTTO's dark theme
+  `build/.../Release/IDA.app`) shows the whole UI in OTTO's dark theme
   with OTTO's fonts — confirmed. (A stale Desktop Finder-alias to a deleted build
   was the cause of earlier "no visible change"; replaced with a symlink to the
   canonical build.)

@@ -5,7 +5,7 @@
 namespace sirius
 {
 
-/// The plugin formats Sirius hosts (white paper Part 5.5). VST3 is the only
+/// The plugin formats IDA hosts (white paper Part 5.5). VST3 is the only
 /// universal format; AU is the macOS native; AUv3 is the iOS/macOS sandboxed
 /// successor with desktop value but limited desktop adoption; CLAP is supported
 /// through a third-party `CLAPPluginFormat` on a best-effort basis.

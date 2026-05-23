@@ -6,7 +6,7 @@ namespace sirius
 /// The validity of a Constituent, derived from the graph at load and on edits
 /// (white paper §17.7). It is NEVER persisted and is NOT a field on Constituent
 /// — Constituents are immutable/structural; state is recomputed by a validation
-/// pass (sirius::validate). Broken and Invalid both render as silence; identity,
+/// pass (ida::validate). Broken and Invalid both render as silence; identity,
 /// metadata, and content survive so the performer can repair, not recreate.
 enum class ConstituentState
 {

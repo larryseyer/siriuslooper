@@ -3,7 +3,7 @@
 /// EBU R128 / ITU-R BS.1770 loudness meter (momentary, short-term, integrated,
 /// true peak). Algorithm adapted faithfully from OTTO's `otto::mixer::LUFSMeter`
 /// (the sister app's metering, which the operator confirms is correct) into the
-/// Sirius engine namespace and warning-clean form. K-weighting (a +4 dB
+/// IDA engine namespace and warning-clean form. K-weighting (a +4 dB
 /// high-shelf at 1681.97 Hz followed by an RLB high-pass at 38.13 Hz), a 3 s
 /// circular squared-sum buffer, a 400 ms momentary window, and a -70 LUFS
 /// absolute gate for the integrated measurement.

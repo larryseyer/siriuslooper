@@ -12,8 +12,8 @@ BRANCH=$(git rev-parse --abbrev-ref HEAD)
 git push origin "$BRANCH"
 
 # Backup
-SOURCE="/Users/larryseyer/SiriusLooper"
-DEST_DIR="/Users/larryseyer/Dropbox/Automagic Art/Source Backup/Sirius Looper Backup"
+SOURCE="/Users/larryseyer/IDA"
+DEST_DIR="/Users/larryseyer/Dropbox/Automagic Art/Source Backup/IDA Backup"
 TIMESTAMP=$(date +"%Y_%m_%d")
 MESSAGE=$(echo "$1" | sed 's/ /_/g')
 ZIP_FILE="$DEST_DIR/Sirius_${TIMESTAMP}_${MESSAGE}.zip"

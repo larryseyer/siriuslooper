@@ -1,4 +1,4 @@
-// Golden-value tests for sirius::Tape — the append-only, immutable source of
+// Golden-value tests for ida::Tape — the append-only, immutable source of
 // truth (white paper Part VI). These tests pin down the append-only contract:
 // events go on the end in non-decreasing LMC time, existing events are never
 // touched, and a tape only accepts events that belong to it.
@@ -8,11 +8,11 @@
 
 #include <stdexcept>
 
-using sirius::Position;
-using sirius::Rational;
-using sirius::Tape;
-using sirius::TapeEvent;
-using sirius::TapeId;
+using ida::Position;
+using ida::Rational;
+using ida::Tape;
+using ida::TapeEvent;
+using ida::TapeId;
 
 namespace
 {

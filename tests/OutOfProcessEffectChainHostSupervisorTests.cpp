@@ -1,6 +1,6 @@
 // Integration tests for the watchdog + supervisor pair in
 // `OutOfProcessEffectChainHost` (M7 S4). These cases SPAWN a real
-// `sirius_plugin_host` child process running the synthetic identity
+// `ida_plugin_host` child process running the synthetic identity
 // CLAP, then exercise three lifecycle shapes:
 //
 //   1. Healthy host stays healthy — driving repeated pumps does NOT
@@ -42,8 +42,8 @@ namespace
 {
     juce::File hostBinary()
     {
-       #ifdef SIRIUS_PLUGIN_HOST_PATH
-        return juce::File (SIRIUS_PLUGIN_HOST_PATH);
+       #ifdef IDA_PLUGIN_HOST_PATH
+        return juce::File (IDA_PLUGIN_HOST_PATH);
        #else
         return juce::File();
        #endif
@@ -51,8 +51,8 @@ namespace
 
     juce::File clapBundle()
     {
-       #ifdef SIRIUS_SYNTHETIC_CLAP_PATH
-        return juce::File (SIRIUS_SYNTHETIC_CLAP_PATH);
+       #ifdef IDA_SYNTHETIC_CLAP_PATH
+        return juce::File (IDA_SYNTHETIC_CLAP_PATH);
        #else
         return juce::File();
        #endif
@@ -63,13 +63,13 @@ namespace
     /// supervisor cycle completes. Implements `INotificationSink` (the
     /// core port) instead of constructing a real `NotificationBus`,
     /// keeping the test lean and engine-independent.
-    class RecordingSink : public sirius::INotificationSink
+    class RecordingSink : public ida::INotificationSink
     {
     public:
-        struct Entry { sirius::NotificationLevel level; std::string message; };
+        struct Entry { ida::NotificationLevel level; std::string message; };
 
-        bool post (sirius::NotificationLevel level,
-                   sirius::Category /*category*/,
+        bool post (ida::NotificationLevel level,
+                   ida::Category /*category*/,
                    const char* message) noexcept override
         {
             std::scoped_lock lk (mutex_);
@@ -83,7 +83,7 @@ namespace
             return entries_;
         }
 
-        std::size_t countAtLevel (sirius::NotificationLevel level) const
+        std::size_t countAtLevel (ida::NotificationLevel level) const
         {
             std::scoped_lock lk (mutex_);
             std::size_t n = 0;
@@ -99,7 +99,7 @@ namespace
     /// Drives one stereo pump through the host's pumpSlot. The caller
     /// usually doesn't care about the boolean return — the goal is to
     /// advance the watchdog counter, not to validate audio.
-    bool pumpOnce (sirius::OutOfProcessEffectChainHost& host,
+    bool pumpOnce (ida::OutOfProcessEffectChainHost& host,
                    std::int64_t busId,
                    std::size_t  slotIdx)
     {
@@ -122,21 +122,21 @@ namespace
     /// Configures a single-slot bus + waits a beat for the host to dlopen
     /// + activate the CLAP. Returns the resulting host wrapped in a
     /// unique_ptr so the caller can move it across the SKIP boundary.
-    void primeHost (sirius::OutOfProcessEffectChainHost& host,
+    void primeHost (ida::OutOfProcessEffectChainHost& host,
                     std::int64_t busId,
                     const juce::File& binary,
                     const juce::File& bundle)
     {
-        sirius::PluginDescriptor descriptor;
-        descriptor.format   = sirius::PluginFormat::Clap;
+        ida::PluginDescriptor descriptor;
+        descriptor.format   = ida::PluginFormat::Clap;
         descriptor.name     = "SyntheticTestPlugin";
         descriptor.filePath = bundle.getFullPathName().toStdString();
 
-        sirius::EffectChainEntry entry;
+        ida::EffectChainEntry entry;
         entry.descriptor  = descriptor;
         entry.displayName = "Identity";
 
-        sirius::EffectChain chain;
+        ida::EffectChain chain;
         chain = chain.withAppended (entry);
 
         host.configureBus (busId, chain, binary, bundle);
@@ -152,19 +152,19 @@ TEST_CASE ("healthy host: 50 pumps trigger zero restarts",
 {
     const auto binary = hostBinary();
     if (! binary.existsAsFile())
-        SKIP ("sirius_plugin_host binary not present at SIRIUS_PLUGIN_HOST_PATH");
+        SKIP ("ida_plugin_host binary not present at IDA_PLUGIN_HOST_PATH");
 
     const auto bundle = clapBundle();
    #ifdef __APPLE__
     if (! bundle.isDirectory())
-        SKIP ("SyntheticTestPlugin .clap bundle not present at SIRIUS_SYNTHETIC_CLAP_PATH");
+        SKIP ("SyntheticTestPlugin .clap bundle not present at IDA_SYNTHETIC_CLAP_PATH");
    #else
     if (! bundle.existsAsFile())
-        SKIP ("SyntheticTestPlugin .clap shared library not present at SIRIUS_SYNTHETIC_CLAP_PATH");
+        SKIP ("SyntheticTestPlugin .clap shared library not present at IDA_SYNTHETIC_CLAP_PATH");
    #endif
 
     RecordingSink sink;
-    sirius::OutOfProcessEffectChainHost host;
+    ida::OutOfProcessEffectChainHost host;
     host.setNotificationSink (&sink);
 
     primeHost (host, /* busId */ 1, binary, bundle);
@@ -181,12 +181,12 @@ TEST_CASE ("healthy host: 50 pumps trigger zero restarts",
     // Give the supervisor a couple of poll cycles to observe the
     // healthy state — if it WERE going to restart, it would have by now.
     std::this_thread::sleep_for (std::chrono::milliseconds (
-        sirius::OutOfProcessEffectChainHost::kSupervisorPollMs * 3));
+        ida::OutOfProcessEffectChainHost::kSupervisorPollMs * 3));
 
     CHECK (host.restartCountForTesting (1, 0) == 0u);
     CHECK_FALSE (host.permanentlyBypassedForTesting (1, 0));
-    CHECK (sink.countAtLevel (sirius::NotificationLevel::Info)  == 0);
-    CHECK (sink.countAtLevel (sirius::NotificationLevel::Error) == 0);
+    CHECK (sink.countAtLevel (ida::NotificationLevel::Info)  == 0);
+    CHECK (sink.countAtLevel (ida::NotificationLevel::Error) == 0);
 }
 
 TEST_CASE ("dead host: SIGKILL the child, supervisor restarts and posts an Info event",
@@ -194,19 +194,19 @@ TEST_CASE ("dead host: SIGKILL the child, supervisor restarts and posts an Info 
 {
     const auto binary = hostBinary();
     if (! binary.existsAsFile())
-        SKIP ("sirius_plugin_host binary not present at SIRIUS_PLUGIN_HOST_PATH");
+        SKIP ("ida_plugin_host binary not present at IDA_PLUGIN_HOST_PATH");
 
     const auto bundle = clapBundle();
    #ifdef __APPLE__
     if (! bundle.isDirectory())
-        SKIP ("SyntheticTestPlugin .clap bundle not present at SIRIUS_SYNTHETIC_CLAP_PATH");
+        SKIP ("SyntheticTestPlugin .clap bundle not present at IDA_SYNTHETIC_CLAP_PATH");
    #else
     if (! bundle.existsAsFile())
-        SKIP ("SyntheticTestPlugin .clap shared library not present at SIRIUS_SYNTHETIC_CLAP_PATH");
+        SKIP ("SyntheticTestPlugin .clap shared library not present at IDA_SYNTHETIC_CLAP_PATH");
    #endif
 
     RecordingSink sink;
-    sirius::OutOfProcessEffectChainHost host;
+    ida::OutOfProcessEffectChainHost host;
     host.setNotificationSink (&sink);
 
     primeHost (host, /* busId */ 2, binary, bundle);
@@ -251,15 +251,15 @@ TEST_CASE ("dead host: SIGKILL the child, supervisor restarts and posts an Info 
     CHECK (pidAfter != pidBefore);
 
     // Exactly one Info post, zero Error posts.
-    CHECK (sink.countAtLevel (sirius::NotificationLevel::Info)  == 1);
-    CHECK (sink.countAtLevel (sirius::NotificationLevel::Error) == 0);
+    CHECK (sink.countAtLevel (ida::NotificationLevel::Info)  == 1);
+    CHECK (sink.countAtLevel (ida::NotificationLevel::Error) == 0);
 
     // The Info message mentions "restarted".
     const auto entries = sink.snapshot();
     REQUIRE_FALSE (entries.empty());
     bool foundRestartMsg = false;
     for (const auto& e : entries)
-        if (e.level == sirius::NotificationLevel::Info
+        if (e.level == ida::NotificationLevel::Info
             && e.message.find ("restarted") != std::string::npos)
             foundRestartMsg = true;
     CHECK (foundRestartMsg);
@@ -270,19 +270,19 @@ TEST_CASE ("permanent bypass: kill every generation, slot bypasses after kMaxRes
 {
     const auto binary = hostBinary();
     if (! binary.existsAsFile())
-        SKIP ("sirius_plugin_host binary not present at SIRIUS_PLUGIN_HOST_PATH");
+        SKIP ("ida_plugin_host binary not present at IDA_PLUGIN_HOST_PATH");
 
     const auto bundle = clapBundle();
    #ifdef __APPLE__
     if (! bundle.isDirectory())
-        SKIP ("SyntheticTestPlugin .clap bundle not present at SIRIUS_SYNTHETIC_CLAP_PATH");
+        SKIP ("SyntheticTestPlugin .clap bundle not present at IDA_SYNTHETIC_CLAP_PATH");
    #else
     if (! bundle.existsAsFile())
-        SKIP ("SyntheticTestPlugin .clap shared library not present at SIRIUS_SYNTHETIC_CLAP_PATH");
+        SKIP ("SyntheticTestPlugin .clap shared library not present at IDA_SYNTHETIC_CLAP_PATH");
    #endif
 
     RecordingSink sink;
-    sirius::OutOfProcessEffectChainHost host;
+    ida::OutOfProcessEffectChainHost host;
     host.setNotificationSink (&sink);
 
     primeHost (host, /* busId */ 3, binary, bundle);
@@ -296,7 +296,7 @@ TEST_CASE ("permanent bypass: kill every generation, slot bypasses after kMaxRes
     // genuinely stalls; it doesn't fail quietly when CI happens to be
     // slow this minute.
     const auto kExpectedAttempts =
-        sirius::OutOfProcessEffectChainHost::kMaxRestartAttempts;
+        ida::OutOfProcessEffectChainHost::kMaxRestartAttempts;
 
     for (std::uint32_t attempt = 0; attempt < kExpectedAttempts; ++attempt)
     {
@@ -348,15 +348,15 @@ TEST_CASE ("permanent bypass: kill every generation, slot bypasses after kMaxRes
 
     // Exactly one Error post (the permanent-bypass announcement) and
     // kMaxRestartAttempts Info posts (one per successful restart).
-    CHECK (sink.countAtLevel (sirius::NotificationLevel::Error) == 1);
-    CHECK (sink.countAtLevel (sirius::NotificationLevel::Info)
-           == sirius::OutOfProcessEffectChainHost::kMaxRestartAttempts);
+    CHECK (sink.countAtLevel (ida::NotificationLevel::Error) == 1);
+    CHECK (sink.countAtLevel (ida::NotificationLevel::Info)
+           == ida::OutOfProcessEffectChainHost::kMaxRestartAttempts);
 
     // The Error message mentions "permanently bypassed".
     const auto entries = sink.snapshot();
     bool foundBypassMsg = false;
     for (const auto& e : entries)
-        if (e.level == sirius::NotificationLevel::Error
+        if (e.level == ida::NotificationLevel::Error
             && e.message.find ("permanently bypassed") != std::string::npos)
             foundBypassMsg = true;
     CHECK (foundBypassMsg);

@@ -27,8 +27,8 @@ namespace
 {
     juce::File hostBinaryForTesting()
     {
-       #ifdef SIRIUS_PLUGIN_HOST_PATH
-        return juce::File (juce::String (SIRIUS_PLUGIN_HOST_PATH));
+       #ifdef IDA_PLUGIN_HOST_PATH
+        return juce::File (juce::String (IDA_PLUGIN_HOST_PATH));
        #else
         return juce::File();
        #endif
@@ -36,8 +36,8 @@ namespace
 
     juce::File syntheticClapForTesting()
     {
-       #ifdef SIRIUS_SYNTHETIC_CLAP_PATH
-        return juce::File (juce::String (SIRIUS_SYNTHETIC_CLAP_PATH));
+       #ifdef IDA_SYNTHETIC_CLAP_PATH
+        return juce::File (juce::String (IDA_SYNTHETIC_CLAP_PATH));
        #else
         return juce::File();
        #endif
@@ -49,7 +49,7 @@ TEST_CASE ("MainComponent constructs + destructs cleanly with no editor windows"
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
     {
-        sirius::MainComponent component;
+        ida::MainComponent component;
         CHECK (true); // dtor about to run; assertion is "no crash"
     }
 }
@@ -59,25 +59,25 @@ TEST_CASE ("openPluginEditor on synthetic descriptor spawns a child + window",
 {
     const auto binary = hostBinaryForTesting();
     if (! binary.existsAsFile())
-        SKIP ("sirius_plugin_host binary not present at SIRIUS_PLUGIN_HOST_PATH");
+        SKIP ("ida_plugin_host binary not present at IDA_PLUGIN_HOST_PATH");
 
     const auto bundle = syntheticClapForTesting();
     if (! bundle.isDirectory())
-        SKIP ("SyntheticTestPlugin .clap bundle not present at SIRIUS_SYNTHETIC_CLAP_PATH");
+        SKIP ("SyntheticTestPlugin .clap bundle not present at IDA_SYNTHETIC_CLAP_PATH");
 
     juce::ScopedJuceInitialiser_GUI juceInit;
-    sirius::MainComponent component;
+    ida::MainComponent component;
 
-    sirius::PluginDescriptor descriptor;
-    descriptor.format       = sirius::PluginFormat::Clap;
+    ida::PluginDescriptor descriptor;
+    descriptor.format       = ida::PluginFormat::Clap;
     descriptor.uniqueId     = "com.sirius.synthetic.test";
     descriptor.name         = "Synthetic Test Plug-in";
-    descriptor.manufacturer = "Sirius";
+    descriptor.manufacturer = "IDA";
     descriptor.filePath     = bundle.getFullPathName().toStdString();
 
     // openPluginEditor uses MainComponent::hostBinaryPath() which resolves
     // from the running binary. If the test binary lives somewhere without
-    // sirius_plugin_host as a sibling, hostBinaryPath() returns invalid
+    // ida_plugin_host as a sibling, hostBinaryPath() returns invalid
     // and openPluginEditor bails silently — skip in that case.
     if (! component.hostBinaryPathForTesting().existsAsFile())
         SKIP ("hostBinaryPath() not resolvable from test binary location");
@@ -103,16 +103,16 @@ TEST_CASE ("closePluginEditor tears down child + window",
         SKIP ("synthetic test plug-in fixtures unavailable");
 
     juce::ScopedJuceInitialiser_GUI juceInit;
-    sirius::MainComponent component;
+    ida::MainComponent component;
 
     if (! component.hostBinaryPathForTesting().existsAsFile())
         SKIP ("hostBinaryPath() not resolvable from test binary location");
 
-    sirius::PluginDescriptor descriptor;
-    descriptor.format       = sirius::PluginFormat::Clap;
+    ida::PluginDescriptor descriptor;
+    descriptor.format       = ida::PluginFormat::Clap;
     descriptor.uniqueId     = "com.sirius.synthetic.test";
     descriptor.name         = "Synthetic Test Plug-in";
-    descriptor.manufacturer = "Sirius";
+    descriptor.manufacturer = "IDA";
     descriptor.filePath     = bundle.getFullPathName().toStdString();
 
     component.openPluginEditorForTesting (descriptor);

@@ -1,4 +1,4 @@
-// Tests for sirius::RenderPipeline — the outbound render pipeline (white paper
+// Tests for ida::RenderPipeline — the outbound render pipeline (white paper
 // Parts 3.6, 5.2). These build concrete Constituent trees and pin down what the
 // pipeline reports as sounding: placement spans, exact loop-cycle arithmetic,
 // cardinality bounds, dormant non-free-running triggers, and the composition of
@@ -17,14 +17,14 @@
 #include <memory>
 #include <stdexcept>
 
-using sirius::Constituent;
-using sirius::ConstituentId;
-using sirius::Position;
-using sirius::Rational;
-using sirius::RenderPipeline;
-using sirius::TapeId;
-using sirius::TapeReference;
-using sirius::TempoMap;
+using ida::Constituent;
+using ida::ConstituentId;
+using ida::Position;
+using ida::Rational;
+using ida::RenderPipeline;
+using ida::TapeId;
+using ida::TapeReference;
+using ida::TempoMap;
 
 namespace
 {

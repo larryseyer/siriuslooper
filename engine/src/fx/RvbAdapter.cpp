@@ -20,14 +20,14 @@ constexpr const char* kDefaultIRPresetName = "Plate Bright 1.13";
 constexpr const char* kIRFileExtension     = ".wav";
 
 /// Compose the absolute path to the default IR from the CMake-injected
-/// asset-bundle root. Returns empty when SIRIUS_OTTO_ASSETS_DIR is not
+/// asset-bundle root. Returns empty when IDA_OTTO_ASSETS_DIR is not
 /// defined; PlayerIRConvolution::loadIRFile gracefully fails on empty /
 /// non-existent paths so the adapter degrades to silent passthrough
 /// rather than crashing.
 std::string resolveDefaultIRPath()
 {
-#ifdef SIRIUS_OTTO_ASSETS_DIR
-    return std::string (SIRIUS_OTTO_ASSETS_DIR) + "/IR/"
+#ifdef IDA_OTTO_ASSETS_DIR
+    return std::string (IDA_OTTO_ASSETS_DIR) + "/IR/"
          + kDefaultIRPresetName + kIRFileExtension;
 #else
     return {};
@@ -101,7 +101,7 @@ bool RvbAdapter::process (const float* const* inChannels,
         || numChannels <= 0 || numSamples <= 0)
         return false;
 
-    // Sirius is stereo-only (hard invariant — CLAUDE.md). PlayerIRConvolution
+    // IDA is stereo-only (hard invariant — CLAUDE.md). PlayerIRConvolution
     // requires numChannels >= 2 (early-exits silently otherwise). Treat
     // anything narrower than stereo as a miss so the caller's dry
     // passthrough takes over instead of leaving outChannels in whatever

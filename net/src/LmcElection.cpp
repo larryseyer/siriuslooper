@@ -11,17 +11,17 @@ namespace
     void validate (const std::vector<NodeClockEstimate>& nodes)
     {
         if (nodes.empty())
-            throw std::invalid_argument ("sirius::electLmc: at least one node is required");
+            throw std::invalid_argument ("ida::electLmc: at least one node is required");
 
         int anchorCount = 0;
         for (const auto& n : nodes)
         {
             if (n.intervalMax < n.intervalMin)
-                throw std::invalid_argument ("sirius::electLmc: inverted interval");
+                throw std::invalid_argument ("ida::electLmc: inverted interval");
             if (n.isAnchor) ++anchorCount;
         }
         if (anchorCount > 1)
-            throw std::invalid_argument ("sirius::electLmc: at most one anchor node is allowed");
+            throw std::invalid_argument ("ida::electLmc: at most one anchor node is allowed");
     }
 
     ElectionResult anchorElection (const std::vector<NodeClockEstimate>& nodes)

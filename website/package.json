@@ -1,8 +1,8 @@
 {
-  "name": "siriuslooper-website",
+  "name": "ida-website",
   "version": "0.1.0",
   "private": true,
-  "description": "Marketing and documentation site for Sirius Looper (siriuslooper.com).",
+  "description": "Marketing and documentation site for IDA (automagicart.com/ida).",
   "scripts": {
     "build": "eleventy",
     "serve": "eleventy --serve --port=8080",

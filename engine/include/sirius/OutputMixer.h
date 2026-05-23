@@ -58,7 +58,7 @@ class OutputMixer
 {
 public:
     /// Hard ceiling for the pre-allocated send-level matrix. 32 channels
-    /// covers any realistic Sirius session; raises require re-auditing
+    /// covers any realistic IDA session; raises require re-auditing
     /// RT_SAFETY_CONTRACT §6 for OutputMixer::renderBuffer once S3 lands.
     static constexpr int kMaxOutputChannels = 32;
 

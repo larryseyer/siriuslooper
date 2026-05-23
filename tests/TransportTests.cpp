@@ -10,12 +10,12 @@
 
 #include <variant>
 
-using sirius::DisciplineTier;
-using sirius::EnsembleMessage;
-using sirius::LmcTimeAnnouncement;
-using sirius::MarkerEvent;
-using sirius::Rational;
-using sirius::TransportStateChange;
+using ida::DisciplineTier;
+using ida::EnsembleMessage;
+using ida::LmcTimeAnnouncement;
+using ida::MarkerEvent;
+using ida::Rational;
+using ida::TransportStateChange;
 
 TEST_CASE ("an LMC time announcement carries its node, tier, time, and width",
            "[transport]")
@@ -37,12 +37,12 @@ TEST_CASE ("a marker event correlates a Constituent identity with an LMC moment"
     // The marker carries a ConstituentId so the receiver can correlate it
     // with its own Constituent graph after a merge (Part 12.6 → 12.2 link).
     EnsembleMessage msg = MarkerEvent { 2,
-                                        sirius::ConstituentId (42),
+                                        ida::ConstituentId (42),
                                         Rational (5) };
     REQUIRE (std::holds_alternative<MarkerEvent> (msg));
     const auto& m = std::get<MarkerEvent> (msg);
     CHECK (m.sourceNodeId == 2);
-    CHECK (m.markerId == sirius::ConstituentId (42));
+    CHECK (m.markerId == ida::ConstituentId (42));
     CHECK (m.lmcTime == Rational (5));
 }
 
@@ -78,7 +78,7 @@ TEST_CASE ("ensemble messages are pattern-matched via std::visit", "[transport]"
     CHECK (std::string (kindOf (LmcTimeAnnouncement { 1, DisciplineTier::Ntp,
                                                       Rational (0), Rational (1) }))
            == "lmc");
-    CHECK (std::string (kindOf (MarkerEvent { 1, sirius::ConstituentId (0),
+    CHECK (std::string (kindOf (MarkerEvent { 1, ida::ConstituentId (0),
                                               Rational (0) }))
            == "marker");
     CHECK (std::string (kindOf (TransportStateChange { 1,

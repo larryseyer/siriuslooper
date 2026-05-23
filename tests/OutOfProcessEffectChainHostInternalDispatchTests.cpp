@@ -49,7 +49,7 @@ namespace
     }
 
     // Calls pumpSlot once with a stereo block. Returns the (bool) result.
-    bool pump (sirius::OutOfProcessEffectChainHost& host,
+    bool pump (ida::OutOfProcessEffectChainHost& host,
                std::int64_t                         nodeKey,
                std::size_t                          slotIdx,
                const float*                         lin,
@@ -69,7 +69,7 @@ namespace
 TEST_CASE ("pumpSlot on an unbound (nodeKey, slot) returns false — OOP miss path preserved",
            "[internal-fx-host]")
 {
-    sirius::OutOfProcessEffectChainHost host;
+    ida::OutOfProcessEffectChainHost host;
 
     // No setInternalFxAtSlot call, no configureBus call — both the
     // internal-FX table and the OOP instances_ table are empty. The new
@@ -100,14 +100,14 @@ TEST_CASE ("pumpSlot on an unbound (nodeKey, slot) returns false — OOP miss pa
 TEST_CASE ("setInternalFxAtSlot + prepare + pumpSlot — EQ adapter dispatch hits internal path",
            "[internal-fx-host]")
 {
-    sirius::OutOfProcessEffectChainHost host;
+    ida::OutOfProcessEffectChainHost host;
 
     // Prepare first, then bind — the bound adapter must be auto-prepared
     // so its first `process` call returns true (not the unprepared-miss
     // false). This is the "prepare-then-bind" leg of Case 5 in the
     // umbrella plan's Subagent B test matrix.
     host.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
-    host.setInternalFxAtSlot (42, 0, sirius::InternalFxId::kEq);
+    host.setInternalFxAtSlot (42, 0, ida::InternalFxId::kEq);
 
     std::array<float, kBlockSamples> lin {}, rin {}, lout {}, rout {};
     const float inputPeak = fillSine (lin, rin);
@@ -137,11 +137,11 @@ TEST_CASE ("setInternalFxAtSlot + prepare + pumpSlot — EQ adapter dispatch hit
 TEST_CASE ("setInternalFxAtSlot(nullopt) unbinds — subsequent pumpSlot misses through OOP path",
            "[internal-fx-host]")
 {
-    sirius::OutOfProcessEffectChainHost host;
+    ida::OutOfProcessEffectChainHost host;
     host.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
 
     // Bind, confirm the bind worked, then unbind.
-    host.setInternalFxAtSlot (42, 0, sirius::InternalFxId::kEq);
+    host.setInternalFxAtSlot (42, 0, ida::InternalFxId::kEq);
 
     std::array<float, kBlockSamples> lin {}, rin {}, lout {}, rout {};
     fillSine (lin, rin);
@@ -175,7 +175,7 @@ TEST_CASE ("setInternalFxAtSlot(nullopt) unbinds — subsequent pumpSlot misses 
 TEST_CASE ("two adapters at distinct (nodeKey, slot) keys do not cross-talk",
            "[internal-fx-host]")
 {
-    sirius::OutOfProcessEffectChainHost host;
+    ida::OutOfProcessEffectChainHost host;
     host.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
 
     // Bind two independent adapters at different keys. Each owns its own
@@ -183,8 +183,8 @@ TEST_CASE ("two adapters at distinct (nodeKey, slot) keys do not cross-talk",
     // (and vice versa). Easiest verification: drive each with a different
     // input pattern through a flat-default EQ and assert each output
     // matches its own input within IIR settling.
-    host.setInternalFxAtSlot (42, 0, sirius::InternalFxId::kEq);
-    host.setInternalFxAtSlot (99, 3, sirius::InternalFxId::kEq);
+    host.setInternalFxAtSlot (42, 0, ida::InternalFxId::kEq);
+    host.setInternalFxAtSlot (99, 3, ida::InternalFxId::kEq);
 
     std::array<float, kBlockSamples> lin1 {}, rin1 {}, lout1 {}, rout1 {};
     std::array<float, kBlockSamples> lin2 {}, rin2 {}, lout2 {}, rout2 {};
@@ -223,13 +223,13 @@ TEST_CASE ("two adapters at distinct (nodeKey, slot) keys do not cross-talk",
 TEST_CASE ("bind-then-prepare also auto-prepares — adapter is ready on first pumpSlot",
            "[internal-fx-host]")
 {
-    sirius::OutOfProcessEffectChainHost host;
+    ida::OutOfProcessEffectChainHost host;
 
     // Bind FIRST, then prepare — the prepare(...) sweep must walk the
     // already-bound adapter so its first pumpSlot returns true. This is
     // the "bind-then-prepare" leg of Case 5 in the umbrella plan's
     // Subagent B test matrix.
-    host.setInternalFxAtSlot (7, 1, sirius::InternalFxId::kEq);
+    host.setInternalFxAtSlot (7, 1, ida::InternalFxId::kEq);
     host.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
 
     std::array<float, kBlockSamples> lin {}, rin {}, lout {}, rout {};
@@ -250,7 +250,7 @@ namespace
     /// every call; `reset()` and `process()` are no-ops. The test asserts
     /// the prepare counter stays at 1 across a redundant `prepareInternalFx`
     /// call with unchanged sr/maxBlock.
-    class CountingMockAdapter : public sirius::IInternalFxAdapter
+    class CountingMockAdapter : public ida::IInternalFxAdapter
     {
     public:
         void prepare (double /*sampleRate*/, int /*maxBlockSize*/) override
@@ -283,7 +283,7 @@ TEST_CASE ("prepareInternalFx is idempotent — same sr+block calls adapter->pre
     // backed cascade) clears IIR state mid-buffer. This case pins the
     // early-return contract: a redundant `prepareInternalFx(sr, maxBlock)`
     // call with unchanged values does NOT re-prepare adapters.
-    sirius::OutOfProcessEffectChainHost host;
+    ida::OutOfProcessEffectChainHost host;
 
     auto mockOwned = std::make_unique<CountingMockAdapter>();
     auto* mock     = mockOwned.get(); // raw observer — host owns the unique_ptr
@@ -326,7 +326,7 @@ TEST_CASE ("prepareInternalFx — first call always proceeds even if sr/block de
     // before flipping `prepared_`), an adapter bound BEFORE the first
     // prepareInternalFx would never get prepared. Bind-then-prepare must
     // walk the table on the very first call regardless of stored values.
-    sirius::OutOfProcessEffectChainHost host;
+    ida::OutOfProcessEffectChainHost host;
 
     auto mockOwned = std::make_unique<CountingMockAdapter>();
     auto* mock     = mockOwned.get();
@@ -351,9 +351,9 @@ TEST_CASE ("setInternalFxBypassAtSlot true makes pumpSlot return false (bypass =
     // touching the output buffers (so the caller's pre-loaded dry signal
     // survives). Same observable contract as the unbound / unprepared
     // miss paths, but reached via a different code branch.
-    sirius::OutOfProcessEffectChainHost host;
+    ida::OutOfProcessEffectChainHost host;
     host.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
-    host.setInternalFxAtSlot (42, 0, sirius::InternalFxId::kEq);
+    host.setInternalFxAtSlot (42, 0, ida::InternalFxId::kEq);
 
     // Sanity: dispatch hits the adapter before bypass.
     std::array<float, kBlockSamples> lin {}, rin {}, lout {}, rout {};
@@ -388,9 +388,9 @@ TEST_CASE ("setInternalFxBypassAtSlot false restores pumpSlot dispatching to the
     // re-enable dispatch through the bound adapter on the very next
     // pumpSlot call. Verifies the atomic store + load pair handles the
     // false-then-true-then-false ping without state corruption.
-    sirius::OutOfProcessEffectChainHost host;
+    ida::OutOfProcessEffectChainHost host;
     host.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
-    host.setInternalFxAtSlot (42, 0, sirius::InternalFxId::kEq);
+    host.setInternalFxAtSlot (42, 0, ida::InternalFxId::kEq);
 
     // Bypass on → expect miss.
     host.setInternalFxBypassAtSlot (42, 0, true);
@@ -432,11 +432,11 @@ TEST_CASE ("setInternalFxAtSlot with a fresh id resets bypass to false even if p
     // inheriting the prior bypass state. (Symmetric: bypass off → fresh
     // bind also stays off, but that's the default.) This pins the
     // operator-intuitive contract that a re-added FX slot starts active.
-    sirius::OutOfProcessEffectChainHost host;
+    ida::OutOfProcessEffectChainHost host;
     host.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
 
     // Bind and bypass.
-    host.setInternalFxAtSlot      (42, 0, sirius::InternalFxId::kEq);
+    host.setInternalFxAtSlot      (42, 0, ida::InternalFxId::kEq);
     host.setInternalFxBypassAtSlot (42, 0, true);
 
     std::array<float, kBlockSamples> lin {}, rin {}, lout {}, rout {};
@@ -454,7 +454,7 @@ TEST_CASE ("setInternalFxAtSlot with a fresh id resets bypass to false even if p
     // "any non-null setInternalFxAtSlot call resets bypass"). Re-binding
     // through nullopt-then-id covers the unbind+rebind shape; this case
     // covers the direct id-then-id replace shape.
-    host.setInternalFxAtSlot (42, 0, sirius::InternalFxId::kEq);
+    host.setInternalFxAtSlot (42, 0, ida::InternalFxId::kEq);
 
     lout.fill (0.0f); rout.fill (0.0f);
     REQUIRE (pump (host, 42, 0,
@@ -478,10 +478,10 @@ TEST_CASE ("moveInternalFxSlot swaps two occupied slots — both adapters surviv
     // hits a real (prepared) adapter. The miss cases earlier in this file
     // pin "no adapter ⇒ false return"; this case pins "swap leaves both
     // entries populated".
-    sirius::OutOfProcessEffectChainHost host;
+    ida::OutOfProcessEffectChainHost host;
     host.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
-    host.setInternalFxAtSlot (42, 0, sirius::InternalFxId::kEq);
-    host.setInternalFxAtSlot (42, 5, sirius::InternalFxId::kEq);
+    host.setInternalFxAtSlot (42, 0, ida::InternalFxId::kEq);
+    host.setInternalFxAtSlot (42, 5, ida::InternalFxId::kEq);
 
     // Sanity: both slots dispatch before the swap.
     std::array<float, kBlockSamples> lin {}, rin {}, lout {}, rout {};
@@ -510,9 +510,9 @@ TEST_CASE ("moveInternalFxSlot into an empty destination leaves the source empty
     // (empty), and confirm slot 0 now misses while slot 7 dispatches.
     // This is the "one-sided move" shape — the most common operator
     // reorder gesture in a chain that isn't full.
-    sirius::OutOfProcessEffectChainHost host;
+    ida::OutOfProcessEffectChainHost host;
     host.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
-    host.setInternalFxAtSlot (42, 0, sirius::InternalFxId::kEq);
+    host.setInternalFxAtSlot (42, 0, ida::InternalFxId::kEq);
 
     host.moveInternalFxSlot (42, 0, 7);
 
@@ -548,9 +548,9 @@ TEST_CASE ("moveInternalFxSlot preserves the bypass flag with its adapter",
     // slot 0 must also return false (now empty). Pins the contract that
     // the operator's "bypass then drag" gesture lands the bypass on the
     // dragged adapter, not on the slot index it left behind.
-    sirius::OutOfProcessEffectChainHost host;
+    ida::OutOfProcessEffectChainHost host;
     host.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
-    host.setInternalFxAtSlot      (42, 0, sirius::InternalFxId::kEq);
+    host.setInternalFxAtSlot      (42, 0, ida::InternalFxId::kEq);
     host.setInternalFxBypassAtSlot (42, 0, true);
 
     host.moveInternalFxSlot (42, 0, 3);
@@ -594,15 +594,15 @@ TEST_CASE ("in-place aliasing through the host — inChannels == outChannels sur
     // aliasing, this case fails. Compares the aliased run against a
     // parallel non-aliased run with the same input to confirm the host
     // doesn't perturb the result either way.
-    sirius::OutOfProcessEffectChainHost host;
+    ida::OutOfProcessEffectChainHost host;
     host.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
-    host.setInternalFxAtSlot (42, 0, sirius::InternalFxId::kEq);
+    host.setInternalFxAtSlot (42, 0, ida::InternalFxId::kEq);
 
     // Reference (non-aliased) run on a freshly-bound second slot — gives
     // us an apples-to-apples baseline at the same point in adapter state.
-    sirius::OutOfProcessEffectChainHost refHost;
+    ida::OutOfProcessEffectChainHost refHost;
     refHost.prepareInternalFx (static_cast<double> (kSampleRate), kMaxBlock);
-    refHost.setInternalFxAtSlot (42, 0, sirius::InternalFxId::kEq);
+    refHost.setInternalFxAtSlot (42, 0, ida::InternalFxId::kEq);
 
     std::array<float, kBlockSamples> lin {}, rin {};
     const float inputPeak = fillSine (lin, rin);

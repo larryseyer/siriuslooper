@@ -10,14 +10,14 @@ namespace trigger
     EveryNBars::EveryNBars (int barsIn) : bars (barsIn)
     {
         if (bars < 1)
-            throw std::invalid_argument ("sirius::trigger::EveryNBars: bars must be >= 1");
+            throw std::invalid_argument ("ida::trigger::EveryNBars: bars must be >= 1");
     }
 
     Probabilistic::Probabilistic (Rational chanceIn) : chancePerCycle (chanceIn)
     {
         if (chancePerCycle < Rational (0) || chancePerCycle > Rational (1))
             throw std::invalid_argument (
-                "sirius::trigger::Probabilistic: chance per cycle must be in [0, 1]");
+                "ida::trigger::Probabilistic: chance per cycle must be in [0, 1]");
     }
 }
 
@@ -26,7 +26,7 @@ namespace cardinality
     NTimes::NTimes (int countIn) : count (countIn)
     {
         if (count < 1)
-            throw std::invalid_argument ("sirius::cardinality::NTimes: count must be >= 1");
+            throw std::invalid_argument ("ida::cardinality::NTimes: count must be >= 1");
     }
 }
 
@@ -36,7 +36,7 @@ namespace phase
     {
         if (division.isZero() || division.isNegative())
             throw std::invalid_argument (
-                "sirius::phase::QuantizedToGrid: division must be positive");
+                "ida::phase::QuantizedToGrid: division must be positive");
     }
 }
 
@@ -46,7 +46,7 @@ namespace termination
     {
         if (bars.isZero() || bars.isNegative())
             throw std::invalid_argument (
-                "sirius::termination::FadeOverBars: bars must be positive");
+                "ida::termination::FadeOverBars: bars must be positive");
     }
 }
 

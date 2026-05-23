@@ -8,11 +8,11 @@
 
 #include <algorithm>
 
-#ifndef SIRIUS_SYNTHETIC_CLAP_PATH
-    #error "SIRIUS_SYNTHETIC_CLAP_PATH must be defined for ClapScannerTests"
+#ifndef IDA_SYNTHETIC_CLAP_PATH
+    #error "IDA_SYNTHETIC_CLAP_PATH must be defined for ClapScannerTests"
 #endif
 
-using sirius::ClapScanner;
+using ida::ClapScanner;
 
 TEST_CASE ("ClapScanner::defaultSearchPaths returns macOS CLAP paths",
            "[clap-scanner]")
@@ -57,16 +57,16 @@ TEST_CASE ("ClapScanner::scan on empty directory returns empty result",
 TEST_CASE ("ClapScanner::scan finds the synthetic CLAP",
            "[clap-scanner]")
 {
-    // SIRIUS_SYNTHETIC_CLAP_PATH points at the bundle; its parent
+    // IDA_SYNTHETIC_CLAP_PATH points at the bundle; its parent
     // directory is what the scanner walks.
-    const juce::File bundle (SIRIUS_SYNTHETIC_CLAP_PATH);
+    const juce::File bundle (IDA_SYNTHETIC_CLAP_PATH);
     const auto parent = bundle.getParentDirectory();
 
     ClapScanner scanner;
     const auto result = scanner.scan (parent);
     const bool found = std::any_of (
         result.descriptors.begin(), result.descriptors.end(),
-        [] (const sirius::PluginDescriptor& d) {
+        [] (const ida::PluginDescriptor& d) {
             return d.uniqueId == "com.sirius.synthetic.identity";
         });
     CHECK (found);

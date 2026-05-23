@@ -1,11 +1,11 @@
-// Tests for sirius::EqAdapter — the first internal-FX adapter (T3a of the
+// Tests for ida::EqAdapter — the first internal-FX adapter (T3a of the
 // P7 umbrella). We do NOT test DSP correctness (PlayerEQ owns that); we
 // test the Sirius-side wrapper: prepare/process/reset state, the miss
 // contract on an un-prepared adapter, finite output on a known sine, and
 // in-place vs out-of-place equivalence.
 //
 // EqAdapter lives in engine/src/fx/ (private to the engine target). The
-// SiriusTests target adds engine/src to its PRIVATE include path so this
+// IdaTests target adds engine/src to its PRIVATE include path so this
 // test can reach the adapter header without exposing it on the engine's
 // public surface — see tests/CMakeLists.txt.
 #include "fx/EqAdapter.h"
@@ -17,7 +17,7 @@
 #include <cstring>
 #include <vector>
 
-using sirius::EqAdapter;
+using ida::EqAdapter;
 
 namespace
 {

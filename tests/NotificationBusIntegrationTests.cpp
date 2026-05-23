@@ -19,10 +19,10 @@
 #include <string>
 #include <vector>
 
-using sirius::Category;
-using sirius::Notification;
-using sirius::NotificationBus;
-using sirius::NotificationLevel;
+using ida::Category;
+using ida::Notification;
+using ida::NotificationBus;
+using ida::NotificationLevel;
 
 namespace
 {
@@ -53,7 +53,7 @@ TEST_CASE ("rolling history trims to most-recent kNotificationHistorySize",
 {
     NotificationBus bus;
     std::vector<Notification> drainBuffer;
-    drainBuffer.reserve (sirius::kCategoryCount * NotificationBus::kRingCapacity);
+    drainBuffer.reserve (ida::kCategoryCount * NotificationBus::kRingCapacity);
     std::deque<Notification> history;
 
     // Post 30 distinct notifications on a single category — overflow won't
@@ -91,7 +91,7 @@ TEST_CASE ("empty drain leaves the history empty for the empty-state UI",
 {
     NotificationBus bus;
     std::vector<Notification> drainBuffer;
-    drainBuffer.reserve (sirius::kCategoryCount * NotificationBus::kRingCapacity);
+    drainBuffer.reserve (ida::kCategoryCount * NotificationBus::kRingCapacity);
     std::deque<Notification> history;
 
     drainAndTrim (bus, drainBuffer, history);
@@ -105,7 +105,7 @@ TEST_CASE ("interleaved multi-category posts preserve per-category FIFO inside t
 {
     NotificationBus bus;
     std::vector<Notification> drainBuffer;
-    drainBuffer.reserve (sirius::kCategoryCount * NotificationBus::kRingCapacity);
+    drainBuffer.reserve (ida::kCategoryCount * NotificationBus::kRingCapacity);
     std::deque<Notification> history;
 
     // Post 15 entries each across two categories (30 total — same overflow
@@ -165,7 +165,7 @@ TEST_CASE ("multiple drain cycles roll the history as new posts arrive",
 {
     NotificationBus bus;
     std::vector<Notification> drainBuffer;
-    drainBuffer.reserve (sirius::kCategoryCount * NotificationBus::kRingCapacity);
+    drainBuffer.reserve (ida::kCategoryCount * NotificationBus::kRingCapacity);
     std::deque<Notification> history;
 
     // First batch: 5 posts → history holds 5 entries.

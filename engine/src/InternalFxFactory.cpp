@@ -30,7 +30,7 @@ std::unique_ptr<IInternalFxAdapter> makeInternalFxAdapter (InternalFxId id)
         // installs the IR, conv_.process early-exits and the adapter
         // produces silent pass-through; once installed, 100 % wet
         // convolution. Default IR path resolves through the CMake-injected
-        // SIRIUS_OTTO_ASSETS_DIR macro.
+        // IDA_OTTO_ASSETS_DIR macro.
         case InternalFxId::kRvb:
             return std::make_unique<RvbAdapter>();
 

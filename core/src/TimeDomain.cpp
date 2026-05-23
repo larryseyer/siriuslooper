@@ -27,7 +27,7 @@ std::shared_ptr<const TimeDomain> TimeDomain::createChild (
     TempoMap toParent)
 {
     if (parent == nullptr)
-        throw std::invalid_argument ("sirius::TimeDomain: child needs a non-null parent");
+        throw std::invalid_argument ("ida::TimeDomain: child needs a non-null parent");
 
     return std::shared_ptr<const TimeDomain> (
         new TimeDomain (std::move (parent), meter, std::move (toParent)));

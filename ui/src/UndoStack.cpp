@@ -15,9 +15,9 @@ UndoStack::UndoStack (RootPtr initial, std::size_t maxDepth)
     : maxDepth_ (maxDepth)
 {
     if (initial == nullptr)
-        throw std::invalid_argument ("sirius::UndoStack: initial root must not be null");
+        throw std::invalid_argument ("ida::UndoStack: initial root must not be null");
     if (maxDepth == 0)
-        throw std::invalid_argument ("sirius::UndoStack: maxDepth must be at least 1");
+        throw std::invalid_argument ("ida::UndoStack: maxDepth must be at least 1");
 
     entries_.push_back ({ std::move (initial), {}, std::nullopt });
 }
@@ -25,7 +25,7 @@ UndoStack::UndoStack (RootPtr initial, std::size_t maxDepth)
 void UndoStack::push (RootPtr nextRoot, std::string label)
 {
     if (nextRoot == nullptr)
-        throw std::invalid_argument ("sirius::UndoStack: pushed root must not be null");
+        throw std::invalid_argument ("ida::UndoStack: pushed root must not be null");
 
     // A fresh edit invalidates any alternate future.
     if (currentIndex_ + 1 < entries_.size())
@@ -47,7 +47,7 @@ void UndoStack::push (RootPtr nextRoot, std::string label)
 void UndoStack::push (RootPtr nextRoot, std::string label, CaptureRestorePoint restore)
 {
     if (nextRoot == nullptr)
-        throw std::invalid_argument ("sirius::UndoStack: pushed root must not be null");
+        throw std::invalid_argument ("ida::UndoStack: pushed root must not be null");
 
     // A fresh edit invalidates any alternate future.
     if (currentIndex_ + 1 < entries_.size())

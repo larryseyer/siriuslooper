@@ -14,12 +14,12 @@
 
 #include <memory>
 
-using sirius::Constituent;
-using sirius::ConstituentId;
-using sirius::ConstituentVersion;
-using sirius::MergeableSession;
-using sirius::Position;
-using sirius::Rational;
+using ida::Constituent;
+using ida::ConstituentId;
+using ida::ConstituentVersion;
+using ida::MergeableSession;
+using ida::Position;
+using ida::Rational;
 
 namespace
 {
@@ -57,7 +57,7 @@ TEST_CASE ("merge unions tape hashes — different content can never collide",
     bob.tapeHashes.insert ("hash-B");
     bob.tapeHashes.insert ("hash-shared");
 
-    const auto merged = sirius::merge (alice, bob);
+    const auto merged = ida::merge (alice, bob);
     CHECK (merged.tapeHashes.size() == 3);
     CHECK (merged.tapeHashes.count ("hash-A")      == 1);
     CHECK (merged.tapeHashes.count ("hash-B")      == 1);
@@ -78,10 +78,10 @@ TEST_CASE ("merge unions Constituent versions — immutability eliminates confli
     b.versions = { version (1, 100, "shared"),
                    version (42, 300, "bob-edit") };
 
-    const auto merged = sirius::merge (a, b);
+    const auto merged = ida::merge (a, b);
     CHECK (merged.versions.size() == 3); // shared was deduped; the two edits to 42 are both kept
 
-    const auto active = sirius::activeVersions (merged);
+    const auto active = ida::activeVersions (merged);
     REQUIRE (active.count (42) == 1);
     CHECK (active.at (42).editTimestamp == 300);
     CHECK (active.at (42).state->name() == "bob-edit");
@@ -98,7 +98,7 @@ TEST_CASE ("merge is commutative — order of partitions does not matter",
     b.tapeHashes = { "h2", "h3" };
     b.versions = { version (2, 30), version (3, 40) };
 
-    CHECK (sameVersions (sirius::merge (a, b), sirius::merge (b, a)));
+    CHECK (sameVersions (ida::merge (a, b), ida::merge (b, a)));
 }
 
 TEST_CASE ("merge is associative — three-way merge does not depend on grouping",
@@ -111,8 +111,8 @@ TEST_CASE ("merge is associative — three-way merge does not depend on grouping
     MergeableSession c;
     c.versions = { version (3, 30) };
 
-    const auto leftFirst  = sirius::merge (sirius::merge (a, b), c);
-    const auto rightFirst = sirius::merge (a, sirius::merge (b, c));
+    const auto leftFirst  = ida::merge (ida::merge (a, b), c);
+    const auto rightFirst = ida::merge (a, ida::merge (b, c));
     CHECK (sameVersions (leftFirst, rightFirst));
 }
 
@@ -122,7 +122,7 @@ TEST_CASE ("merge is idempotent — merging a session with itself changes nothin
     MergeableSession a;
     a.tapeHashes = { "h1" };
     a.versions = { version (1, 10), version (2, 20) };
-    CHECK (sameVersions (sirius::merge (a, a), a));
+    CHECK (sameVersions (ida::merge (a, a), a));
 }
 
 TEST_CASE ("active version uses last-writer-wins on timestamp",
@@ -132,7 +132,7 @@ TEST_CASE ("active version uses last-writer-wins on timestamp",
     s.versions = { version (1, 100, "old"),
                    version (1, 200, "newer"),
                    version (1, 150, "middle") };
-    const auto active = sirius::activeVersions (s);
+    const auto active = ida::activeVersions (s);
     REQUIRE (active.count (1) == 1);
     CHECK (active.at (1).editTimestamp == 200);
     CHECK (active.at (1).state->name() == "newer");

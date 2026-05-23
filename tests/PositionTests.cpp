@@ -1,4 +1,4 @@
-// Golden-value tests for sirius::Position — a symbolic point in conceptual
+// Golden-value tests for ida::Position — a symbolic point in conceptual
 // time, measured in whole notes. These tests pin down musical-coordinate
 // construction, including in odd meters, and confirm positions are exact.
 #include "sirius/Position.h"
@@ -7,9 +7,9 @@
 
 #include <stdexcept>
 
-using sirius::Meter;
-using sirius::Position;
-using sirius::Rational;
+using ida::Meter;
+using ida::Position;
+using ida::Rational;
 
 TEST_CASE ("a default position is the start of the domain", "[position]")
 {

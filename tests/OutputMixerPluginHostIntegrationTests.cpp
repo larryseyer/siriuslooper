@@ -1,5 +1,5 @@
 // M7 Session 3 integration test — `Bus::process` → `OutOfProcessEffectChainHost`
-// → real `sirius_plugin_host` CLAP child → `SyntheticTestPlugin` identity
+// → real `ida_plugin_host` CLAP child → `SyntheticTestPlugin` identity
 // plug-in → back through the SPSC rings → `Bus::process` writes the result
 // into `output`. This is the first session that puts the IPC layer on the
 // audio call chain; this test is the load-bearing audit of that wiring.
@@ -14,7 +14,7 @@
 //
 // Tag: `[output-mixer][plugin-host]`. The test SKIPs cleanly if either the
 // host binary or the .clap bundle is not built — the orchestrator's CMake
-// `add_dependencies(SiriusTests sirius_plugin_host SyntheticTestPlugin)`
+// `add_dependencies(IdaTests ida_plugin_host SyntheticTestPlugin)`
 // makes this path the norm rather than the exception, but the SKIP keeps
 // the suite green under partial-build configurations.
 
@@ -39,8 +39,8 @@ namespace
 {
     juce::File hostBinary()
     {
-       #ifdef SIRIUS_PLUGIN_HOST_PATH
-        return juce::File (SIRIUS_PLUGIN_HOST_PATH);
+       #ifdef IDA_PLUGIN_HOST_PATH
+        return juce::File (IDA_PLUGIN_HOST_PATH);
        #else
         return juce::File();
        #endif
@@ -48,8 +48,8 @@ namespace
 
     juce::File clapBundle()
     {
-       #ifdef SIRIUS_SYNTHETIC_CLAP_PATH
-        return juce::File (SIRIUS_SYNTHETIC_CLAP_PATH);
+       #ifdef IDA_SYNTHETIC_CLAP_PATH
+        return juce::File (IDA_SYNTHETIC_CLAP_PATH);
        #else
         return juce::File();
        #endif
@@ -61,40 +61,40 @@ TEST_CASE ("Bus::process pipelines stereo buffers through OutOfProcessEffectChai
 {
     const auto binary = hostBinary();
     if (! binary.existsAsFile())
-        SKIP ("sirius_plugin_host binary not present at SIRIUS_PLUGIN_HOST_PATH");
+        SKIP ("ida_plugin_host binary not present at IDA_PLUGIN_HOST_PATH");
 
     const auto bundle = clapBundle();
    #ifdef __APPLE__
     if (! bundle.isDirectory())
-        SKIP ("SyntheticTestPlugin .clap bundle not present at SIRIUS_SYNTHETIC_CLAP_PATH");
+        SKIP ("SyntheticTestPlugin .clap bundle not present at IDA_SYNTHETIC_CLAP_PATH");
    #else
     if (! bundle.existsAsFile())
-        SKIP ("SyntheticTestPlugin .clap shared library not present at SIRIUS_SYNTHETIC_CLAP_PATH");
+        SKIP ("SyntheticTestPlugin .clap shared library not present at IDA_SYNTHETIC_CLAP_PATH");
    #endif
 
     // Build a chain with one non-bypassed slot pointing at the synthetic
     // CLAP. The descriptor is illustrative — the host spawns the same
     // bundle for every active slot in S3 (single-plug-in simplification
     // per the OutOfProcessEffectChainHost docblock).
-    sirius::PluginDescriptor descriptor;
-    descriptor.format   = sirius::PluginFormat::Clap;
+    ida::PluginDescriptor descriptor;
+    descriptor.format   = ida::PluginFormat::Clap;
     descriptor.name     = "SyntheticTestPlugin";
     descriptor.filePath = bundle.getFullPathName().toStdString();
 
-    sirius::EffectChainEntry entry;
+    ida::EffectChainEntry entry;
     entry.descriptor  = descriptor;
     entry.displayName = "Identity";
 
-    sirius::EffectChain chain;
+    ida::EffectChain chain;
     chain = chain.withAppended (entry);
 
     // Wire the host + bus. configureBus is message-thread (matches the M5/
     // M6 collaborator contract — runs to completion before any audio-
     // thread call into pumpSlot).
-    sirius::OutOfProcessEffectChainHost host;
+    ida::OutOfProcessEffectChainHost host;
     host.configureBus (1, chain, binary, bundle);
 
-    sirius::Bus bus (sirius::BusId { 1 }, sirius::BusConfig { 2, "FxAux" });
+    ida::Bus bus (ida::BusId { 1 }, ida::BusConfig { 2, "FxAux" });
     bus.setEffectChain (chain);
     bus.setEffectChainHost (&host);
 

@@ -11,7 +11,7 @@ Constituent::Constituent (ConstituentId id, Position conceptualIn, Position conc
 {
     if (conceptualOut_ < conceptualIn_)
         throw std::invalid_argument (
-            "sirius::Constituent: conceptualOut must not precede conceptualIn");
+            "ida::Constituent: conceptualOut must not precede conceptualIn");
 }
 
 Rational Constituent::duration() const
@@ -23,7 +23,7 @@ Constituent Constituent::withBoundaries (Position conceptualIn, Position concept
 {
     if (conceptualOut < conceptualIn)
         throw std::invalid_argument (
-            "sirius::Constituent: conceptualOut must not precede conceptualIn");
+            "ida::Constituent: conceptualOut must not precede conceptualIn");
 
     Constituent next (*this);
     next.conceptualIn_ = conceptualIn;
@@ -125,7 +125,7 @@ Constituent Constituent::withoutEffectChain() const
 Constituent Constituent::withChildAdded (ChildPtr child) const
 {
     if (child == nullptr)
-        throw std::invalid_argument ("sirius::Constituent: cannot add a null child");
+        throw std::invalid_argument ("ida::Constituent: cannot add a null child");
 
     Constituent next (*this);
     next.children_.push_back (std::move (child));
@@ -135,9 +135,9 @@ Constituent Constituent::withChildAdded (ChildPtr child) const
 Constituent Constituent::withChildReplaced (std::size_t index, ChildPtr child) const
 {
     if (index >= children_.size())
-        throw std::out_of_range ("sirius::Constituent: child index out of range");
+        throw std::out_of_range ("ida::Constituent: child index out of range");
     if (child == nullptr)
-        throw std::invalid_argument ("sirius::Constituent: cannot replace with a null child");
+        throw std::invalid_argument ("ida::Constituent: cannot replace with a null child");
 
     Constituent next (*this);
     next.children_[index] = std::move (child);
@@ -147,7 +147,7 @@ Constituent Constituent::withChildReplaced (std::size_t index, ChildPtr child) c
 Constituent Constituent::withChildRemoved (std::size_t index) const
 {
     if (index >= children_.size())
-        throw std::out_of_range ("sirius::Constituent: child index out of range");
+        throw std::out_of_range ("ida::Constituent: child index out of range");
 
     Constituent next (*this);
     next.children_.erase (next.children_.begin()

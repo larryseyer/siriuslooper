@@ -9,7 +9,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace sirius::promotion
+namespace ida::promotion
 {
 
 namespace
@@ -29,7 +29,7 @@ namespace
         {
             if (it->second != cPtr.get())
                 throw std::logic_error (
-                    "sirius::promotion: ConstituentId aliased across distinct allocations "
+                    "ida::promotion: ConstituentId aliased across distinct allocations "
                     "(same id reached via different shared_ptr); shared placements must "
                     "share the same ChildPtr, not duplicate it");
             // Same id, same pointer → genuine sharing, already walked.
@@ -179,7 +179,7 @@ PromotionResult promote (const Constituent&   root,
 {
     if (! (region.outLmcSeconds > region.inLmcSeconds))
         throw std::invalid_argument (
-            "sirius::promotion::promote: region duration must be strictly positive");
+            "ida::promotion::promote: region duration must be strictly positive");
 
     enforceSharedInstancesAreShared (root);
 
@@ -351,4 +351,4 @@ PromotionResult promote (const Constituent&   root,
     };
 }
 
-} // namespace sirius::promotion
+} // namespace ida::promotion

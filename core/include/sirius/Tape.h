@@ -54,11 +54,11 @@ public:
     void append (Event event)
     {
         if (event.tapeId != id_)
-            throw std::invalid_argument ("sirius::Tape: event belongs to a different tape");
+            throw std::invalid_argument ("ida::Tape: event belongs to a different tape");
 
         if (! events_.empty() && event.lmcTimestamp < events_.back().lmcTimestamp)
             throw std::invalid_argument (
-                "sirius::Tape: events must be appended in non-decreasing LMC time");
+                "ida::Tape: events must be appended in non-decreasing LMC time");
 
         events_.push_back (std::move (event));
     }

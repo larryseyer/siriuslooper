@@ -1,4 +1,4 @@
-// Golden-value tests for sirius::TempoMap — the conceptual transformation
+// Golden-value tests for ida::TempoMap — the conceptual transformation
 // between two time domains (white paper Part 5.4). These tests pin down the
 // exact piecewise-linear mapping, including extrapolation past the breakpoints.
 #include "sirius/TempoMap.h"
@@ -8,8 +8,8 @@
 #include <stdexcept>
 #include <vector>
 
-using sirius::Rational;
-using sirius::TempoMap;
+using ida::Rational;
+using ida::TempoMap;
 
 TEST_CASE ("a constant map is a line through the origin", "[tempomap]")
 {

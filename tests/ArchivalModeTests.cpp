@@ -27,21 +27,21 @@
 #include <string>
 #include <vector>
 
-using sirius::ArchivalMode;
-using sirius::Category;
-using sirius::Constituent;
-using sirius::ConstituentId;
-using sirius::EffectChain;
-using sirius::EffectChainEntry;
-using sirius::makeVersionPinningRecord;
-using sirius::NotificationLevel;
-using sirius::PluginDescriptor;
-using sirius::PluginFormat;
-using sirius::populateVersionPinningRecords;
-using sirius::Position;
-using sirius::Rational;
-using sirius::sha256Hex;
-using sirius::verifyVersionPinningOnLoad;
+using ida::ArchivalMode;
+using ida::Category;
+using ida::Constituent;
+using ida::ConstituentId;
+using ida::EffectChain;
+using ida::EffectChainEntry;
+using ida::makeVersionPinningRecord;
+using ida::NotificationLevel;
+using ida::PluginDescriptor;
+using ida::PluginFormat;
+using ida::populateVersionPinningRecords;
+using ida::Position;
+using ida::Rational;
+using ida::sha256Hex;
+using ida::verifyVersionPinningOnLoad;
 
 TEST_CASE ("sha256Hex of zero bytes returns the canonical empty-input digest",
            "[sha256]")
@@ -91,8 +91,8 @@ TEST_CASE ("PluginDescriptor::version round-trips through SessionFormat",
         Position (Rational (1)));
     *leaf = leaf->withEffectChain (EffectChain().withAppended (entry));
 
-    const auto json   = sirius::persistence::serializeSession (*leaf);
-    const auto round  = sirius::persistence::deserializeSession (json);
+    const auto json   = ida::persistence::serializeSession (*leaf);
+    const auto round  = ida::persistence::deserializeSession (json);
     REQUIRE (round->effectChain().has_value());
     REQUIRE (round->effectChain()->size() == 1);
     CHECK (round->effectChain()->at (0).descriptor.version == "2.3.1");
@@ -136,7 +136,7 @@ namespace
         d.uniqueId     = "com.sirius.synthetic.test";
         d.version      = "1.0.0";
         d.name         = "Synthetic Test Plug-in";
-        d.manufacturer = "Sirius";
+        d.manufacturer = "IDA";
         d.filePath     = "/fixtures/SyntheticTestPlugin.clap";
         return d;
     }
@@ -144,7 +144,7 @@ namespace
     /// Recording sink — captures every post for later inspection by the
     /// verifier tests. Pattern matches the existing test helpers used in
     /// tests/OutOfProcessEffectChainHostSupervisorTests.cpp.
-    struct RecordingSink : sirius::INotificationSink
+    struct RecordingSink : ida::INotificationSink
     {
         struct Record { NotificationLevel level; Category category; std::string message; };
         std::vector<Record> records;
@@ -171,16 +171,16 @@ namespace
     // plus a nullopt-returning lookup drives the descriptor-only fallback —
     // which reproduces the M8 S1 behaviour (empty-state hash e3b0c4...b855)
     // and keeps every existing assertion below valid.
-    sirius::OutOfProcessEffectChainHost& stubHost()
+    ida::OutOfProcessEffectChainHost& stubHost()
     {
-        static sirius::OutOfProcessEffectChainHost host;
+        static ida::OutOfProcessEffectChainHost host;
         return host;
     }
 
-    sirius::SlotLookup noSlotLookup()
+    ida::SlotLookup noSlotLookup()
     {
         return [] (const Constituent&, std::size_t)
-            -> std::optional<sirius::SlotLocation> { return std::nullopt; };
+            -> std::optional<ida::SlotLocation> { return std::nullopt; };
     }
 }
 
@@ -289,8 +289,8 @@ TEST_CASE ("EffectChainEntry with persistedSnapshot round-trips through SessionF
         Position (Rational (1)));
     *leaf = leaf->withEffectChain (EffectChain().withAppended (entry));
 
-    const auto json  = sirius::persistence::serializeSession (*leaf);
-    const auto round = sirius::persistence::deserializeSession (json);
+    const auto json  = ida::persistence::serializeSession (*leaf);
+    const auto round = ida::persistence::deserializeSession (json);
     REQUIRE (round->effectChain().has_value());
     REQUIRE (round->effectChain()->size() == 1);
 
@@ -317,8 +317,8 @@ TEST_CASE ("EffectChainEntry without persistedSnapshot round-trips with no snaps
         Position (Rational (1)));
     *leaf = leaf->withEffectChain (EffectChain().withAppended (entry));
 
-    const auto json  = sirius::persistence::serializeSession (*leaf);
-    const auto round = sirius::persistence::deserializeSession (json);
+    const auto json  = ida::persistence::serializeSession (*leaf);
+    const auto round = ida::persistence::deserializeSession (json);
     REQUIRE (round->effectChain()->size() == 1);
     CHECK (round->effectChain()->at (0).archivalMode == ArchivalMode::DeterminismContract);
     CHECK_FALSE (round->effectChain()->at (0).persistedSnapshot.has_value());

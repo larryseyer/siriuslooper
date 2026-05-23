@@ -10,13 +10,13 @@ TempoMap::TempoMap (std::vector<Breakpoint> breakpoints)
     : breakpoints_ (std::move (breakpoints))
 {
     if (breakpoints_.size() < 2)
-        throw std::invalid_argument ("sirius::TempoMap: needs at least two breakpoints");
+        throw std::invalid_argument ("ida::TempoMap: needs at least two breakpoints");
 
     for (std::size_t i = 1; i < breakpoints_.size(); ++i)
     {
         if (! (breakpoints_[i - 1].input < breakpoints_[i].input))
             throw std::invalid_argument (
-                "sirius::TempoMap: breakpoint inputs must be strictly ascending");
+                "ida::TempoMap: breakpoint inputs must be strictly ascending");
     }
 }
 
@@ -30,7 +30,7 @@ TempoMap TempoMap::constant (Rational rate)
 TempoMap TempoMap::fromBpm (Rational quarterNotesPerMinute)
 {
     if (quarterNotesPerMinute.isZero() || quarterNotesPerMinute.isNegative())
-        throw std::invalid_argument ("sirius::TempoMap: tempo must be positive");
+        throw std::invalid_argument ("ida::TempoMap: tempo must be positive");
 
     // bpm quarter notes per 60 seconds => bpm/4 whole notes per 60 seconds
     // => one whole note lasts 60 / (bpm/4) = 240 / bpm seconds.

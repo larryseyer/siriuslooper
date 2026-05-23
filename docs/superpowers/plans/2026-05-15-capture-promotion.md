@@ -4,7 +4,7 @@
 
 **Goal:** Make Mark Out auto-promote captured regions into the session Constituent tree as Loops (and Phrase wrappers when needed), with non-destructive undo that restores the capture session to AwaitingOut on revert.
 
-**Architecture:** New pure-function module `core/sirius::promotion` mirrors the existing `core/sirius::arrangement` pattern. Promotion runs a multi-instance write-protect first, finds the deepest host Phrase whose LMC span contains Mark In (or mints one at the song root when none exists), and adds the Loop child via copy-on-write. UndoStack gains an optional `CaptureRestorePoint` per entry so MainComponent can restore `CaptureSession` state on undo. CaptureBanner becomes tappable for one-tap recovery.
+**Architecture:** New pure-function module `core/ida::promotion` mirrors the existing `core/ida::arrangement` pattern. Promotion runs a multi-instance write-protect first, finds the deepest host Phrase whose LMC span contains Mark In (or mints one at the song root when none exists), and adds the Loop child via copy-on-write. UndoStack gains an optional `CaptureRestorePoint` per entry so MainComponent can restore `CaptureSession` state on undo. CaptureBanner becomes tappable for one-tap recovery.
 
 **Tech Stack:** C++20, JUCE 7 (UI only — `core/` stays JUCE-free), Catch2 (existing test harness), CMake + Ninja, Release builds only on iOS.
 
@@ -18,12 +18,12 @@
 
 | File | Status | Responsibility |
 |---|---|---|
-| `core/include/sirius/Promotion.h` | NEW | `sirius::promotion` namespace: `PromotionResult`, `IdAllocator`, `promote()` declaration. |
+| `core/include/ida/Promotion.h` | NEW | `ida::promotion` namespace: `PromotionResult`, `IdAllocator`, `promote()` declaration. |
 | `core/src/Promotion.cpp` | NEW | `promote()` implementation: multi-instance guard, host-finding walk, mint vs join paths, boundary clamping. |
-| `core/CMakeLists.txt` | MODIFY | Add `src/Promotion.cpp` to `SiriusCore` sources. |
+| `core/CMakeLists.txt` | MODIFY | Add `src/Promotion.cpp` to `IdaCore` sources. |
 | `tests/PromotionTests.cpp` | NEW | Pure-function tests for `promote()`. Catch2. |
-| `tests/CMakeLists.txt` | MODIFY | Add `PromotionTests.cpp` to `SiriusTests` sources. |
-| `ui/include/sirius/UndoStack.h` | MODIFY | Add `CaptureRestorePoint` struct, new `push` overload, `currentEntryRestorePoint()` accessor. |
+| `tests/CMakeLists.txt` | MODIFY | Add `PromotionTests.cpp` to `IdaTests` sources. |
+| `ui/include/ida/UndoStack.h` | MODIFY | Add `CaptureRestorePoint` struct, new `push` overload, `currentEntryRestorePoint()` accessor. |
 | `ui/src/UndoStack.cpp` | MODIFY | Implement the overload + accessor; carry restore point on `Entry`. |
 | `tests/UndoStackTests.cpp` | MODIFY | Add tests for the restore-point round-trip. |
 | `app/MainComponent.h` | MODIFY | Add `nextConstituentId_` member; remove `capturedRegions_`. Adjust `announceCapture` signature. |
@@ -34,7 +34,7 @@
 ## Task 1: UndoStack — `CaptureRestorePoint` struct + push overload + accessor
 
 **Files:**
-- Modify: `ui/include/sirius/UndoStack.h`
+- Modify: `ui/include/ida/UndoStack.h`
 - Modify: `ui/src/UndoStack.cpp`
 - Test: `tests/UndoStackTests.cpp`
 
@@ -46,8 +46,8 @@ Append at the end of the file:
 TEST_CASE ("UndoStack carries an optional CaptureRestorePoint per entry",
            "[undo][promotion]")
 {
-    using sirius::CaptureRestorePoint;
-    using sirius::TapeId;
+    using ida::CaptureRestorePoint;
+    using ida::TapeId;
 
     UndoStack stack (makeRoot (1, "initial"));
 
@@ -83,13 +83,13 @@ Add the include at the top of the file with the other includes:
 - [ ] **Step 2: Run tests to verify the build fails (CaptureRestorePoint not defined)**
 
 ```bash
-cd /Users/larryseyer/SiriusLooper
-cmake --build build --target SiriusTests 2>&1 | tail -20
+cd /Users/larryseyer/IDA
+cmake --build build --target IdaTests 2>&1 | tail -20
 ```
 
 Expected: compile errors mentioning `CaptureRestorePoint`, `currentEntryRestorePoint`, the three-arg `push` overload — none of these exist yet.
 
-- [ ] **Step 3: Add `CaptureRestorePoint`, the new push overload, and the accessor to `ui/include/sirius/UndoStack.h`**
+- [ ] **Step 3: Add `CaptureRestorePoint`, the new push overload, and the accessor to `ui/include/ida/UndoStack.h`**
 
 Add `#include "sirius/TapeId.h"` to the existing includes (sirius/Constituent.h is already there). After the existing `using RootPtr = ...` line (around line 29), add the struct:
 
@@ -142,7 +142,7 @@ After the existing two-argument `push` implementation, add:
 void UndoStack::push (RootPtr nextRoot, std::string label, CaptureRestorePoint restore)
 {
     if (nextRoot == nullptr)
-        throw std::invalid_argument ("sirius::UndoStack::push: nextRoot must not be null");
+        throw std::invalid_argument ("ida::UndoStack::push: nextRoot must not be null");
 
     // Truncate redo branch: once a fresh edit lands, the alternate future is
     // gone (white paper 14.7). Same as the two-argument push.
@@ -168,9 +168,9 @@ If the existing two-arg `push` constructs an `Entry` literal, that line will nee
 - [ ] **Step 5: Build and run only the new tests**
 
 ```bash
-cd /Users/larryseyer/SiriusLooper
-cmake --build build --target SiriusTests 2>&1 | tail -5
-./build/tests/SiriusTests "[undo][promotion]"
+cd /Users/larryseyer/IDA
+cmake --build build --target IdaTests 2>&1 | tail -5
+./build/tests/IdaTests "[undo][promotion]"
 ```
 
 Expected: 1 test case, all assertions pass.
@@ -178,7 +178,7 @@ Expected: 1 test case, all assertions pass.
 - [ ] **Step 6: Run the full test suite to verify no regression**
 
 ```bash
-./build/tests/SiriusTests 2>&1 | tail -3
+./build/tests/IdaTests 2>&1 | tail -3
 ```
 
 Expected: 227 tests pass (was 226 + the new one), assertion count up by ~6.
@@ -186,7 +186,7 @@ Expected: 227 tests pass (was 226 + the new one), assertion count up by ~6.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add ui/include/sirius/UndoStack.h ui/src/UndoStack.cpp tests/UndoStackTests.cpp
+git add ui/include/ida/UndoStack.h ui/src/UndoStack.cpp tests/UndoStackTests.cpp
 git commit -m "feat: UndoStack — optional CaptureRestorePoint per entry for promotion undo"
 ```
 
@@ -195,7 +195,7 @@ git commit -m "feat: UndoStack — optional CaptureRestorePoint per entry for pr
 ## Task 2: Promotion module skeleton + multi-instance guard (TDD)
 
 **Files:**
-- Create: `core/include/sirius/Promotion.h`
+- Create: `core/include/ida/Promotion.h`
 - Create: `core/src/Promotion.cpp`
 - Modify: `core/CMakeLists.txt`
 - Create: `tests/PromotionTests.cpp`
@@ -206,7 +206,7 @@ git commit -m "feat: UndoStack — optional CaptureRestorePoint per entry for pr
 Create `tests/PromotionTests.cpp`:
 
 ```cpp
-// Tests for sirius::promotion::promote — the auto-promotion of CaptureRegions
+// Tests for ida::promotion::promote — the auto-promotion of CaptureRegions
 // into the session Constituent tree. Pure-function tests; no JUCE.
 //
 // Scope is single-instance promotion (see
@@ -229,16 +229,16 @@ Create `tests/PromotionTests.cpp`:
 #include <memory>
 #include <stdexcept>
 
-using sirius::CaptureRegion;
-using sirius::Constituent;
-using sirius::ConstituentId;
-using sirius::PhraseMetadata;
-using sirius::Position;
-using sirius::Rational;
-using sirius::TapeId;
-using sirius::TempoMap;
-using sirius::promotion::IdAllocator;
-using sirius::promotion::promote;
+using ida::CaptureRegion;
+using ida::Constituent;
+using ida::ConstituentId;
+using ida::PhraseMetadata;
+using ida::Position;
+using ida::Rational;
+using ida::TapeId;
+using ida::TempoMap;
+using ida::promotion::IdAllocator;
+using ida::promotion::promote;
 
 namespace
 {
@@ -272,7 +272,7 @@ TEST_CASE ("promote throws when any Constituent id appears more than once",
         Constituent (ConstituentId (42), Position(), Position (Rational (4)))
             .withPhraseMetadata (PhraseMetadata { "verse", "" }));
 
-    Constituent root = sirius::arrangement::sequence (emptyRoot(),
+    Constituent root = ida::arrangement::sequence (emptyRoot(),
                                                       { sharedPhrase, sharedPhrase });
 
     const CaptureRegion region { TapeId (200), Rational (1), Rational (3) };
@@ -285,7 +285,7 @@ TEST_CASE ("promote throws when any Constituent id appears more than once",
 }
 ```
 
-- [ ] **Step 2: Create `core/include/sirius/Promotion.h` with the public surface only**
+- [ ] **Step 2: Create `core/include/ida/Promotion.h` with the public surface only**
 
 ```cpp
 #pragma once
@@ -300,7 +300,7 @@ TEST_CASE ("promote throws when any Constituent id appears more than once",
 #include <optional>
 #include <string>
 
-namespace sirius::promotion
+namespace ida::promotion
 {
 
 /// The result of a successful promotion: the new session root, identity of
@@ -347,7 +347,7 @@ PromotionResult promote (const Constituent&   root,
                          Rational             lmcAtMarkIn,
                          const IdAllocator&   allocateId);
 
-} // namespace sirius::promotion
+} // namespace ida::promotion
 ```
 
 - [ ] **Step 3: Create `core/src/Promotion.cpp` with the multi-instance guard only (other paths still throw)**
@@ -358,7 +358,7 @@ PromotionResult promote (const Constituent&   root,
 #include <stdexcept>
 #include <unordered_set>
 
-namespace sirius::promotion
+namespace ida::promotion
 {
 
 namespace
@@ -373,7 +373,7 @@ namespace
         const auto rawId = c.id().value();
         if (! seen.insert (rawId).second)
             throw std::logic_error (
-                "sirius::promotion: shared-placement architecture not yet implemented; "
+                "ida::promotion: shared-placement architecture not yet implemented; "
                 "see todo.md \"Shared-placement-with-per-instance-overlays architecture\"");
         for (const auto& child : c.children())
             enforceSingleInstance (*child, seen);
@@ -388,7 +388,7 @@ PromotionResult promote (const Constituent&   root,
 {
     if (! (region.outLmcSeconds > region.inLmcSeconds))
         throw std::invalid_argument (
-            "sirius::promotion::promote: region duration must be strictly positive");
+            "ida::promotion::promote: region duration must be strictly positive");
 
     std::unordered_set<std::int64_t> seen;
     enforceSingleInstance (root, seen);
@@ -396,15 +396,15 @@ PromotionResult promote (const Constituent&   root,
     // TODO(Task 3+): host-finding, mint, attach. The remaining behaviour is
     // staged across follow-on tasks — every other call to promote() throws
     // until those land. This TODO is tracked in docs/superpowers/plans/.
-    throw std::logic_error ("sirius::promotion::promote: not yet implemented");
+    throw std::logic_error ("ida::promotion::promote: not yet implemented");
 }
 
-} // namespace sirius::promotion
+} // namespace ida::promotion
 ```
 
 - [ ] **Step 4: Wire the new sources into CMake**
 
-In `core/CMakeLists.txt`, locate the `add_library(SiriusCore STATIC ...)` block and add `src/Promotion.cpp` after `src/CaptureSession.cpp` (any position works; keep the existing alphabetical-ish order):
+In `core/CMakeLists.txt`, locate the `add_library(IdaCore STATIC ...)` block and add `src/Promotion.cpp` after `src/CaptureSession.cpp` (any position works; keep the existing alphabetical-ish order):
 
 ```cmake
     src/CaptureSession.cpp
@@ -412,7 +412,7 @@ In `core/CMakeLists.txt`, locate the `add_library(SiriusCore STATIC ...)` block 
     src/EffectChain.cpp)
 ```
 
-In `tests/CMakeLists.txt`, locate the `add_executable(SiriusTests ...)` block and add `PromotionTests.cpp` after `CaptureSessionTests.cpp`:
+In `tests/CMakeLists.txt`, locate the `add_executable(IdaTests ...)` block and add `PromotionTests.cpp` after `CaptureSessionTests.cpp`:
 
 ```cmake
     CaptureSessionTests.cpp
@@ -423,7 +423,7 @@ In `tests/CMakeLists.txt`, locate the `add_executable(SiriusTests ...)` block an
 - [ ] **Step 5: Build (clean rebuild — CMake source-list change requires reconfigure)**
 
 ```bash
-cd /Users/larryseyer/SiriusLooper
+cd /Users/larryseyer/IDA
 rm -rf build && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build 2>&1 | tail -5
 ```
 
@@ -432,7 +432,7 @@ Expected: build succeeds; new `Promotion.cpp` and `PromotionTests.cpp` are in th
 - [ ] **Step 6: Run the new test, expect it to pass (the guard is the only thing it exercises)**
 
 ```bash
-./build/tests/SiriusTests "[promotion][guard]"
+./build/tests/IdaTests "[promotion][guard]"
 ```
 
 Expected: 1 test case, 1 assertion, pass.
@@ -440,7 +440,7 @@ Expected: 1 test case, 1 assertion, pass.
 - [ ] **Step 7: Run the full suite — should be green**
 
 ```bash
-./build/tests/SiriusTests 2>&1 | tail -3
+./build/tests/IdaTests 2>&1 | tail -3
 ```
 
 Expected: 228 tests pass.
@@ -448,7 +448,7 @@ Expected: 228 tests pass.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add core/include/sirius/Promotion.h core/src/Promotion.cpp core/CMakeLists.txt tests/PromotionTests.cpp tests/CMakeLists.txt
+git add core/include/ida/Promotion.h core/src/Promotion.cpp core/CMakeLists.txt tests/PromotionTests.cpp tests/CMakeLists.txt
 git commit -m "feat: promotion module skeleton + multi-instance write-protect"
 ```
 
@@ -506,8 +506,8 @@ TEST_CASE ("promote into an existing Phrase adds a Loop child, no Phrase mint",
 - [ ] **Step 2: Run the test, verify it fails (still throws "not yet implemented")**
 
 ```bash
-cd /Users/larryseyer/SiriusLooper
-cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[promotion][host]"
+cd /Users/larryseyer/IDA
+cmake --build build --target IdaTests && ./build/tests/IdaTests "[promotion][host]"
 ```
 
 Expected: FAIL — the implementation throws `std::logic_error: not yet implemented`.
@@ -608,7 +608,7 @@ PromotionResult promote (const Constituent&   root,
 {
     if (! (region.outLmcSeconds > region.inLmcSeconds))
         throw std::invalid_argument (
-            "sirius::promotion::promote: region duration must be strictly positive");
+            "ida::promotion::promote: region duration must be strictly positive");
 
     std::unordered_set<std::int64_t> seen;
     enforceSingleInstance (root, seen);
@@ -638,7 +638,7 @@ PromotionResult promote (const Constituent&   root,
 
         Constituent loop (loopId, loopIn, loopOut);
         loop = loop.withTapeReference (
-            sirius::TapeReference (region.tape,
+            ida::TapeReference (region.tape,
                                    region.inLmcSeconds, region.outLmcSeconds));
 
         // Walk down the path again to splice the Loop into the host.
@@ -663,15 +663,15 @@ PromotionResult promote (const Constituent&   root,
     }
 
     // No host found — mint case is implemented in Task 4.
-    throw std::logic_error ("sirius::promotion::promote: mint path not yet implemented");
+    throw std::logic_error ("ida::promotion::promote: mint path not yet implemented");
 }
 ```
 
 - [ ] **Step 4: Run the test, verify it passes**
 
 ```bash
-cd /Users/larryseyer/SiriusLooper
-cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[promotion][host]"
+cd /Users/larryseyer/IDA
+cmake --build build --target IdaTests && ./build/tests/IdaTests "[promotion][host]"
 ```
 
 Expected: PASS.
@@ -679,7 +679,7 @@ Expected: PASS.
 - [ ] **Step 5: Run the full suite — guard test still passes; new host test passes; nothing else broken**
 
 ```bash
-./build/tests/SiriusTests 2>&1 | tail -3
+./build/tests/IdaTests 2>&1 | tail -3
 ```
 
 Expected: 229 tests pass.
@@ -766,14 +766,14 @@ TEST_CASE ("promote with playhead in a gap between Phrases mints a fresh Phrase"
 - [ ] **Step 2: Run the tests, verify failure (mint path throws)**
 
 ```bash
-cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[promotion][mint]"
+cmake --build build --target IdaTests && ./build/tests/IdaTests "[promotion][mint]"
 ```
 
 Expected: FAIL — `std::logic_error: mint path not yet implemented`.
 
 - [ ] **Step 3: Implement the mint path in `core/src/Promotion.cpp`**
 
-Replace the trailing `throw std::logic_error ("sirius::promotion::promote: mint path not yet implemented");` line with:
+Replace the trailing `throw std::logic_error ("ida::promotion::promote: mint path not yet implemented");` line with:
 
 ```cpp
     // Mint case — no Phrase contained Mark In. Create a fresh Phrase at the
@@ -790,7 +790,7 @@ Replace the trailing `throw std::logic_error ("sirius::promotion::promote: mint 
 
     Constituent loop (loopId, loopIn, loopOut);
     loop = loop.withTapeReference (
-        sirius::TapeReference (region.tape,
+        ida::TapeReference (region.tape,
                                region.inLmcSeconds, region.outLmcSeconds));
 
     Constituent newPhrase (phraseId, phraseIn, phraseOut);
@@ -818,7 +818,7 @@ newPhrase = newPhrase.withPhraseMetadata (std::move (pm))
 - [ ] **Step 4: Run mint tests, verify they pass**
 
 ```bash
-cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[promotion][mint]"
+cmake --build build --target IdaTests && ./build/tests/IdaTests "[promotion][mint]"
 ```
 
 Expected: 2 test cases, all assertions pass.
@@ -826,7 +826,7 @@ Expected: 2 test cases, all assertions pass.
 - [ ] **Step 5: Run full suite**
 
 ```bash
-./build/tests/SiriusTests 2>&1 | tail -3
+./build/tests/IdaTests 2>&1 | tail -3
 ```
 
 Expected: 231 tests pass.
@@ -892,7 +892,7 @@ TEST_CASE ("promote clamps Loop bounds to the host Phrase when region extends pa
 - [ ] **Step 2: Run the test, verify it passes (Task 3's implementation already clamps)**
 
 ```bash
-cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[promotion][straddle]"
+cmake --build build --target IdaTests && ./build/tests/IdaTests "[promotion][straddle]"
 ```
 
 Expected: PASS.
@@ -900,7 +900,7 @@ Expected: PASS.
 - [ ] **Step 3: Run full suite**
 
 ```bash
-./build/tests/SiriusTests 2>&1 | tail -3
+./build/tests/IdaTests 2>&1 | tail -3
 ```
 
 Expected: 232 tests pass.
@@ -955,7 +955,7 @@ TEST_CASE ("promote throws on a zero-duration or reversed region",
 - [ ] **Step 2: Run, verify pass**
 
 ```bash
-cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[promotion][defensive]"
+cmake --build build --target IdaTests && ./build/tests/IdaTests "[promotion][defensive]"
 ```
 
 Expected: PASS.
@@ -963,7 +963,7 @@ Expected: PASS.
 - [ ] **Step 3: Run full suite + commit**
 
 ```bash
-./build/tests/SiriusTests 2>&1 | tail -3
+./build/tests/IdaTests 2>&1 | tail -3
 git add tests/PromotionTests.cpp
 git commit -m "test: promotion — defensive throw on degenerate captured region"
 ```
@@ -1046,7 +1046,7 @@ void MainComponent::onMarkOut()
     const Rational t = playheadValueToLmc (playhead_.getValue());
     if (auto region = captureSession_.markOut (t))
     {
-        const sirius::CaptureRestorePoint restorePoint {
+        const ida::CaptureRestorePoint restorePoint {
             region->inLmcSeconds, region->tape };
 
         auto result = promotion::promote (
@@ -1161,9 +1161,9 @@ Locate the block around app/MainComponent.cpp:565 that builds the `Regions: ...`
 - [ ] **Step 7: Build and run the full test suite**
 
 ```bash
-cd /Users/larryseyer/SiriusLooper
+cd /Users/larryseyer/IDA
 rm -rf build && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build 2>&1 | tail -5
-./build/tests/SiriusTests 2>&1 | tail -3
+./build/tests/IdaTests 2>&1 | tail -3
 ```
 
 Expected: 233 tests pass (no UI tests broke; promotion tests still green).
@@ -1171,7 +1171,7 @@ Expected: 233 tests pass (no UI tests broke; promotion tests still green).
 - [ ] **Step 8: Operator-side verification — open the .app and capture**
 
 ```bash
-open "build/app/SiriusLooper_artefacts/Release/Sirius Looper.app"
+open "build/app/IDA_artefacts/Release/IDA.app"
 ```
 
 In the app:
@@ -1233,7 +1233,7 @@ void MainComponent::onUndo()
 - [ ] **Step 2: Build, run full tests**
 
 ```bash
-cmake --build build && ./build/tests/SiriusTests 2>&1 | tail -3
+cmake --build build && ./build/tests/IdaTests 2>&1 | tail -3
 ```
 
 Expected: 233 tests pass — no test regressions; this change is exercised manually.
@@ -1241,7 +1241,7 @@ Expected: 233 tests pass — no test regressions; this change is exercised manua
 - [ ] **Step 3: Operator-side verification**
 
 ```bash
-open "build/app/SiriusLooper_artefacts/Release/Sirius Looper.app"
+open "build/app/IDA_artefacts/Release/IDA.app"
 ```
 
 1. Arm. Mark In, Mark Out. Pill appears, banner shows.
@@ -1317,7 +1317,7 @@ Adjust colour and font to whatever the existing main label uses (read the file f
 
 ```bash
 cmake --build build
-open "build/app/SiriusLooper_artefacts/Release/Sirius Looper.app"
+open "build/app/IDA_artefacts/Release/IDA.app"
 ```
 
 1. Capture a phrase. Banner appears with text on the left and `↶ Undo` on the right.
@@ -1340,7 +1340,7 @@ git commit -m "feat: CaptureBanner — tap to undo within the visible window"
 - [ ] **Step 1: Clean build from scratch**
 
 ```bash
-cd /Users/larryseyer/SiriusLooper
+cd /Users/larryseyer/IDA
 rm -rf build
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build 2>&1 | tail -5
@@ -1351,7 +1351,7 @@ Expected: zero warnings from any source we control; build succeeds.
 - [ ] **Step 2: Full test suite**
 
 ```bash
-./build/tests/SiriusTests 2>&1 | tail -3
+./build/tests/IdaTests 2>&1 | tail -3
 ```
 
 Expected: 233 tests pass, ~4080+ assertions, no failures.
@@ -1359,7 +1359,7 @@ Expected: 233 tests pass, ~4080+ assertions, no failures.
 - [ ] **Step 3: Operator-side end-to-end script**
 
 ```bash
-open "build/app/SiriusLooper_artefacts/Release/Sirius Looper.app"
+open "build/app/IDA_artefacts/Release/IDA.app"
 ```
 
 Run through the user-guide chapter 1 workflow exactly:

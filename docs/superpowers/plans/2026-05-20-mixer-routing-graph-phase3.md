@@ -18,20 +18,20 @@
 
 ## Key references (read before starting)
 
-- `engine/include/sirius/OutputMixer.h` + `engine/src/OutputMixer.cpp` — the template: parallel `channelNodeIds_`/`busNodeIds_` vectors, `addBus`, `routeBusToBus`, the 4-step `renderBuffer`. **Mirror its structure; do not edit it.**
-- `engine/include/sirius/Bus.h` — `Bus(BusId, BusConfig)`, `BusConfig{ channelCount, name, BusKind kind }`, `BusKind { Bus, FxReturn }`, `process(float* const* output, int numChannels, int numSamples) const noexcept` (accumulates into output, zeros its own mix buffer), `mixBufferChannel(int)`, `kMaxBusMixSamples = 8192`, `kMaxBusChannelsHard = 2`.
-- `engine/include/sirius/MixerGraph.h` — multi-terminal graph (Phase 2): `MixerGraph(std::initializer_list<MixerTerminal>)`, `terminalNode(MixerTerminal)`, `addNode(MixerNodeKind)` (defaults main-out to primary terminal), `setMainOut`, `setSend`, `sendLevel`, `evaluationOrder()`, `mainOutOf`, `kindOf`, `wouldMainOutCycle`.
+- `engine/include/ida/OutputMixer.h` + `engine/src/OutputMixer.cpp` — the template: parallel `channelNodeIds_`/`busNodeIds_` vectors, `addBus`, `routeBusToBus`, the 4-step `renderBuffer`. **Mirror its structure; do not edit it.**
+- `engine/include/ida/Bus.h` — `Bus(BusId, BusConfig)`, `BusConfig{ channelCount, name, BusKind kind }`, `BusKind { Bus, FxReturn }`, `process(float* const* output, int numChannels, int numSamples) const noexcept` (accumulates into output, zeros its own mix buffer), `mixBufferChannel(int)`, `kMaxBusMixSamples = 8192`, `kMaxBusChannelsHard = 2`.
+- `engine/include/ida/MixerGraph.h` — multi-terminal graph (Phase 2): `MixerGraph(std::initializer_list<MixerTerminal>)`, `terminalNode(MixerTerminal)`, `addNode(MixerNodeKind)` (defaults main-out to primary terminal), `setMainOut`, `setSend`, `sendLevel`, `evaluationOrder()`, `mainOutOf`, `kindOf`, `wouldMainOutCycle`.
 - `engine/src/InputMixer.cpp` — current `processDeviceInputs` stereo-gather + `ChannelStrip<Audio>::process` pattern (reuse the gather logic), `processBuffer` tape enqueue, `addChannel`/`removeChannel`.
-- `engine/include/sirius/TapeWriter.h` — `TapeWriteMessage { ChannelId id; Rational lmcTime{0}; size_t payloadByteCount; std::array<std::byte, kMaxTapeWriteMessageBytes=32768> samples; }`; `bool tryEnqueue(const TapeWriteMessage&) noexcept`.
+- `engine/include/ida/TapeWriter.h` — `TapeWriteMessage { ChannelId id; Rational lmcTime{0}; size_t payloadByteCount; std::array<std::byte, kMaxTapeWriteMessageBytes=32768> samples; }`; `bool tryEnqueue(const TapeWriteMessage&) noexcept`.
 - `tests/InputMixerTests.cpp` — existing `[input-mixer]` harness (constructs `TapeWriter` with a temp dir, `OverloadProtection`, `NotificationBus`); reuse its fixtures.
 
 ---
 
 ## File Structure
 
-- `engine/include/sirius/InputMixer.h` — add graph/bus members, constants, `addBus`/`addFxReturn`, main-out + send API, `renderInputGraph`.
+- `engine/include/ida/InputMixer.h` — add graph/bus members, constants, `addBus`/`addFxReturn`, main-out + send API, `renderInputGraph`.
 - `engine/src/InputMixer.cpp` — implement the above; constructor auto-creates RVB + DLY returns.
-- `engine/include/sirius/MixerGraph.h` — add a public read accessor for send edges (audio-thread, const noexcept).
+- `engine/include/ida/MixerGraph.h` — add a public read accessor for send edges (audio-thread, const noexcept).
 - `tests/InputMixerTests.cpp` — add `[input-routing]` cases.
 
 ---
@@ -41,7 +41,7 @@
 The input traversal must read all send edges on the audio thread (to sum sources into FX returns). `MixerGraph` stores them privately. Expose a const-noexcept read view. Additive, behavior-preserving (`OutputMixer` ignores it).
 
 **Files:**
-- Modify: `engine/include/sirius/MixerGraph.h`
+- Modify: `engine/include/ida/MixerGraph.h`
 - Test: `tests/MixerGraphTests.cpp`
 
 - [ ] **Step 1: Write the failing test**
@@ -79,12 +79,12 @@ static_assert (noexcept (std::declval<const MixerGraph&>().sendEdges()),
 
 - [ ] **Step 2: Verify it fails to compile**
 
-Run: `cmake --build build --target SiriusTests`
+Run: `cmake --build build --target IdaTests`
 Expected: FAIL — no `sendEdges()`, `SendEdge` is private.
 
 - [ ] **Step 3: Implement**
 
-In `engine/include/sirius/MixerGraph.h`, move the `SendEdge` struct from `private:` to a public nested type and add the accessor. In the `public:` section (e.g. just after `evaluationOrder()`), add:
+In `engine/include/ida/MixerGraph.h`, move the `SendEdge` struct from `private:` to a public nested type and add the accessor. In the `public:` section (e.g. just after `evaluationOrder()`), add:
 
 ```cpp
     /// One leveled send edge (source -> FX return). Public so the owning mixer's
@@ -99,13 +99,13 @@ In `private:`, REMOVE the now-duplicated `struct SendEdge { ... };` line (keep `
 
 - [ ] **Step 4: Verify it passes**
 
-Run: `cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[mixer-graph]"`
+Run: `cmake --build build --target IdaTests && ./build/tests/IdaTests "[mixer-graph]"`
 Expected: PASS — all `[mixer-graph]` cases (was 12, now 13).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/include/sirius/MixerGraph.h tests/MixerGraphTests.cpp
+git add engine/include/ida/MixerGraph.h tests/MixerGraphTests.cpp
 git commit -m "feat: MixerGraph exposes sendEdges() for audio-thread send summing"
 ```
 
@@ -116,7 +116,7 @@ git commit -m "feat: MixerGraph exposes sendEdges() for audio-thread send summin
 Add the routing members and registration. The graph is multi-terminal; channels register as graph nodes (default main-out → Tape, the primary). The constructor auto-creates a default **RVB** and **DLY** FX return (empty chains — internal FX DSP is the follow-on).
 
 **Files:**
-- Modify: `engine/include/sirius/InputMixer.h`
+- Modify: `engine/include/ida/InputMixer.h`
 - Modify: `engine/src/InputMixer.cpp`
 - Test: `tests/InputMixerTests.cpp`
 
@@ -128,18 +128,18 @@ Append to `tests/InputMixerTests.cpp` (add `#include "sirius/Bus.h"`, `#include 
 TEST_CASE ("InputMixer constructs with Tape+HardwareOutput terminals and default RVB/DLY returns",
            "[input-routing]")
 {
-    sirius::InputMixer mixer;
+    ida::InputMixer mixer;
     // Two FX returns auto-created (RVB, DLY); both are FxReturn-kind buses.
     CHECK (mixer.busCount() == 2);
-    CHECK (mixer.busKindAt (0) == sirius::BusKind::FxReturn);
-    CHECK (mixer.busKindAt (1) == sirius::BusKind::FxReturn);
+    CHECK (mixer.busKindAt (0) == ida::BusKind::FxReturn);
+    CHECK (mixer.busKindAt (1) == ida::BusKind::FxReturn);
 }
 
 TEST_CASE ("InputMixer addBus registers a graph node defaulting its main-out to the tape terminal",
            "[input-routing]")
 {
-    sirius::InputMixer mixer;
-    const auto bus = mixer.addBus (sirius::BusConfig { 2, "Drums", sirius::BusKind::Bus });
+    ida::InputMixer mixer;
+    const auto bus = mixer.addBus (ida::BusConfig { 2, "Drums", ida::BusKind::Bus });
     CHECK (bus.value() != 0);
     CHECK (mixer.busCount() == 3); // RVB, DLY, Drums
     // A freshly added bus routes to the tape terminal by default.
@@ -149,8 +149,8 @@ TEST_CASE ("InputMixer addBus registers a graph node defaulting its main-out to 
 TEST_CASE ("InputMixer addChannel registers a Channel graph node; removeChannel drops it",
            "[input-routing]")
 {
-    sirius::InputMixer mixer;
-    const auto ch = mixer.addChannel (sirius::InputId { 0 }, sirius::SignalType::Audio);
+    ida::InputMixer mixer;
+    const auto ch = mixer.addChannel (ida::InputId { 0 }, ida::SignalType::Audio);
     CHECK (mixer.channelIsRegisteredInGraph (ch));
     mixer.removeChannel (ch);
     CHECK_FALSE (mixer.channelIsRegisteredInGraph (ch));
@@ -161,12 +161,12 @@ TEST_CASE ("InputMixer addChannel registers a Channel graph node; removeChannel 
 
 - [ ] **Step 2: Verify it fails to compile**
 
-Run: `cmake --build build --target SiriusTests`
+Run: `cmake --build build --target IdaTests`
 Expected: FAIL — none of the new methods/members exist.
 
 - [ ] **Step 3: Implement the header additions**
 
-In `engine/include/sirius/InputMixer.h`:
+In `engine/include/ida/InputMixer.h`:
 - Add includes: `#include "sirius/Bus.h"` and `#include "sirius/MixerGraph.h"`.
 - Add public constants and methods:
 
@@ -294,14 +294,14 @@ bool InputMixer::channelIsRegisteredInGraph (ChannelId id) const noexcept
 
 - [ ] **Step 5: Verify**
 
-Run: `cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[input-mixer],[input-routing]"`
+Run: `cmake --build build --target IdaTests && ./build/tests/IdaTests "[input-mixer],[input-routing]"`
 (Comma = OR in this Catch2 build; space-separated bracket args are ANDed and match nothing.)
 Expected: the 3 new `[input-routing]` cases PASS; all pre-existing `[input-mixer]` cases still PASS (the graph members are additive; `processBuffer`/`processDeviceInputs` are unchanged).
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add engine/include/sirius/InputMixer.h engine/src/InputMixer.cpp tests/InputMixerTests.cpp
+git add engine/include/ida/InputMixer.h engine/src/InputMixer.cpp tests/InputMixerTests.cpp
 git commit -m "feat: InputMixer gains a multi-terminal MixerGraph + bus/FX-return registry"
 ```
 
@@ -312,7 +312,7 @@ git commit -m "feat: InputMixer gains a multi-terminal MixerGraph + bus/FX-retur
 Expose the two signal movements: each channel/bus has one **main-out** (→ bus / tape terminal / hardware-output terminal); channels and buses have leveled **sends** (→ FX return). All delegate to `graph_` (which enforces acyclicity and rejects invalid destinations). Mutators are message-thread only.
 
 **Files:**
-- Modify: `engine/include/sirius/InputMixer.h`
+- Modify: `engine/include/ida/InputMixer.h`
 - Modify: `engine/src/InputMixer.cpp`
 - Test: `tests/InputMixerTests.cpp`
 
@@ -324,41 +324,41 @@ Append to `tests/InputMixerTests.cpp`:
 TEST_CASE ("InputMixer default RVB/DLY returns monitor the hardware output, not tape",
            "[input-routing]")
 {
-    sirius::InputMixer mixer;
+    ida::InputMixer mixer;
     // The two auto-created returns are buses_[0] (RVB) and buses_[1] (DLY).
-    CHECK (mixer.busMainOut (mixer.busIdAt (0)) == sirius::InputMixer::MainOutDest::HardwareOutput);
-    CHECK (mixer.busMainOut (mixer.busIdAt (1)) == sirius::InputMixer::MainOutDest::HardwareOutput);
+    CHECK (mixer.busMainOut (mixer.busIdAt (0)) == ida::InputMixer::MainOutDest::HardwareOutput);
+    CHECK (mixer.busMainOut (mixer.busIdAt (1)) == ida::InputMixer::MainOutDest::HardwareOutput);
 }
 
 TEST_CASE ("InputMixer routes a channel main-out to a bus, the tape, or a hardware output",
            "[input-routing]")
 {
-    sirius::InputMixer mixer;
-    const auto ch  = mixer.addChannel (sirius::InputId { 0 }, sirius::SignalType::Audio);
-    const auto bus = mixer.addBus (sirius::BusConfig { 2, "Drums", sirius::BusKind::Bus });
+    ida::InputMixer mixer;
+    const auto ch  = mixer.addChannel (ida::InputId { 0 }, ida::SignalType::Audio);
+    const auto bus = mixer.addBus (ida::BusConfig { 2, "Drums", ida::BusKind::Bus });
 
     SECTION ("default is the tape terminal")
     {
-        CHECK (mixer.channelMainOut (ch) == sirius::InputMixer::MainOutDest::Tape);
+        CHECK (mixer.channelMainOut (ch) == ida::InputMixer::MainOutDest::Tape);
     }
     SECTION ("to a bus")
     {
         CHECK (mixer.setChannelMainOutToBus (ch, bus));
-        CHECK (mixer.channelMainOut (ch) == sirius::InputMixer::MainOutDest::Bus);
+        CHECK (mixer.channelMainOut (ch) == ida::InputMixer::MainOutDest::Bus);
     }
     SECTION ("to the hardware output (RME direct-out monitoring)")
     {
         CHECK (mixer.setChannelMainOutToHardwareOutput (ch));
-        CHECK (mixer.channelMainOut (ch) == sirius::InputMixer::MainOutDest::HardwareOutput);
+        CHECK (mixer.channelMainOut (ch) == ida::InputMixer::MainOutDest::HardwareOutput);
     }
 }
 
 TEST_CASE ("InputMixer rejects a channel send to a non-FX-return and accepts one to an FX return",
            "[input-routing]")
 {
-    sirius::InputMixer mixer;
-    const auto ch  = mixer.addChannel (sirius::InputId { 0 }, sirius::SignalType::Audio);
-    const auto bus = mixer.addBus (sirius::BusConfig { 2, "Drums", sirius::BusKind::Bus });
+    ida::InputMixer mixer;
+    const auto ch  = mixer.addChannel (ida::InputId { 0 }, ida::SignalType::Audio);
+    const auto bus = mixer.addBus (ida::BusConfig { 2, "Drums", ida::BusKind::Bus });
     const auto rvb = mixer.addFxReturn ("RVB2");
 
     CHECK_FALSE (mixer.setChannelSend (ch, bus, 0.5f)); // a Bus is not an FX return
@@ -369,9 +369,9 @@ TEST_CASE ("InputMixer rejects a channel send to a non-FX-return and accepts one
 TEST_CASE ("InputMixer rejects a bus main-out assignment that would create a cycle",
            "[input-routing]")
 {
-    sirius::InputMixer mixer;
-    const auto a = mixer.addBus (sirius::BusConfig { 2, "A", sirius::BusKind::Bus });
-    const auto b = mixer.addBus (sirius::BusConfig { 2, "B", sirius::BusKind::Bus });
+    ida::InputMixer mixer;
+    const auto a = mixer.addBus (ida::BusConfig { 2, "A", ida::BusKind::Bus });
+    const auto b = mixer.addBus (ida::BusConfig { 2, "B", ida::BusKind::Bus });
     REQUIRE (mixer.setBusMainOutToBus (a, b)); // A -> B
     CHECK_FALSE (mixer.setBusMainOutToBus (b, a)); // closing the loop is refused
 }
@@ -379,12 +379,12 @@ TEST_CASE ("InputMixer rejects a bus main-out assignment that would create a cyc
 
 - [ ] **Step 2: Verify it fails to compile**
 
-Run: `cmake --build build --target SiriusTests`
+Run: `cmake --build build --target IdaTests`
 Expected: FAIL — `MainOutDest`, the setters, and the accessors don't exist.
 
 - [ ] **Step 3: Implement the header additions**
 
-In `engine/include/sirius/InputMixer.h`, add (public):
+In `engine/include/ida/InputMixer.h`, add (public):
 
 ```cpp
     /// Where a node's single full-level main-out goes. Tape = capture terminal
@@ -495,13 +495,13 @@ float InputMixer::channelSendLevel (ChannelId ch, BusId fxReturn) const noexcept
 
 - [ ] **Step 5: Verify**
 
-Run: `cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[input-routing]"`
+Run: `cmake --build build --target IdaTests && ./build/tests/IdaTests "[input-routing]"`
 Expected: the new cases PASS (`setChannelSend` to a Bus returns false because `graph_.setSend` rejects a non-FxReturn dest; the cycle case returns false because `graph_.setMainOut` rejects it).
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add engine/include/sirius/InputMixer.h engine/src/InputMixer.cpp tests/InputMixerTests.cpp
+git add engine/include/ida/InputMixer.h engine/src/InputMixer.cpp tests/InputMixerTests.cpp
 git commit -m "feat: InputMixer main-out (bus/tape/hardware-output) + send routing API"
 ```
 
@@ -512,7 +512,7 @@ git commit -m "feat: InputMixer main-out (bus/tape/hardware-output) + send routi
 The RT-safe traversal. This task delivers **channel** outputs: gather device inputs → `ChannelStrip<Audio>::process` → route the processed block to the channel's main-out destination (bus mix buffer / tape enqueue / direct-out accumulate) and accumulate its sends into FX-return mix buffers. (Bus/FX-return processing is Task 5.)
 
 **Files:**
-- Modify: `engine/include/sirius/InputMixer.h`
+- Modify: `engine/include/ida/InputMixer.h`
 - Modify: `engine/src/InputMixer.cpp`
 - Test: `tests/InputMixerTests.cpp`
 
@@ -526,13 +526,13 @@ TEST_CASE ("renderInputGraph: default-graph tape-routed channel enqueues its pro
 {
     // TapeWriter over a temp dir (mirror the existing [process-buffer] fixture).
     const auto dir = makeTempTapeDir(); // existing test helper / inline as in other cases
-    sirius::TapeWriter writer (dir, /*queueCapacity*/ 8);
-    sirius::InputMixer mixer;
+    ida::TapeWriter writer (dir, /*queueCapacity*/ 8);
+    ida::InputMixer mixer;
     mixer.setTapeWriter (&writer);
 
-    const auto ch = mixer.addChannel (sirius::InputId { 0 }, sirius::SignalType::Audio);
+    const auto ch = mixer.addChannel (ida::InputId { 0 }, ida::SignalType::Audio);
     mixer.setChannelInputSource (ch, 0, 1, /*stereo*/ true);
-    mixer.setChannelTapeMode (ch, sirius::TapeMode::CommitToTape);
+    mixer.setChannelTapeMode (ch, ida::TapeMode::CommitToTape);
     // Default main-out is the Tape terminal — no routing call needed.
 
     constexpr int n = 64;
@@ -551,13 +551,13 @@ TEST_CASE ("renderInputGraph: a channel routed to the hardware output sums into 
            "[input-routing][render]")
 {
     const auto dir = makeTempTapeDir();
-    sirius::TapeWriter writer (dir, 8);
-    sirius::InputMixer mixer;
+    ida::TapeWriter writer (dir, 8);
+    ida::InputMixer mixer;
     mixer.setTapeWriter (&writer);
 
-    const auto ch = mixer.addChannel (sirius::InputId { 0 }, sirius::SignalType::Audio);
+    const auto ch = mixer.addChannel (ida::InputId { 0 }, ida::SignalType::Audio);
     mixer.setChannelInputSource (ch, 0, 1, true);
-    mixer.setChannelTapeMode (ch, sirius::TapeMode::CommitToTape);
+    mixer.setChannelTapeMode (ch, ida::TapeMode::CommitToTape);
     REQUIRE (mixer.setChannelMainOutToHardwareOutput (ch)); // direct-out, NOT tape
 
     constexpr int n = 32;
@@ -582,12 +582,12 @@ TEST_CASE ("renderInputGraph: a channel routed to the hardware output sums into 
 
 - [ ] **Step 2: Verify it fails to compile**
 
-Run: `cmake --build build --target SiriusTests`
+Run: `cmake --build build --target IdaTests`
 Expected: FAIL — `renderInputGraph` doesn't exist.
 
 - [ ] **Step 3: Implement**
 
-In `engine/include/sirius/InputMixer.h` add (public, audio-thread):
+In `engine/include/ida/InputMixer.h` add (public, audio-thread):
 
 ```cpp
     /// Audio-thread render of the full input routing graph. Gathers each channel's
@@ -731,13 +731,13 @@ void InputMixer::accumulateIntoBus (MixerNodeId busNode, const float* left, cons
 
 - [ ] **Step 4: Verify**
 
-Run: `cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[input-routing]"`
+Run: `cmake --build build --target IdaTests && ./build/tests/IdaTests "[input-routing]"`
 Expected: the two `[render]` cases PASS (tape-routed channel → partial sized `n*2*sizeof(float)`; hardware-output-routed channel → direct-out carries the unity-strip signal, tape partial empty).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/include/sirius/InputMixer.h engine/src/InputMixer.cpp tests/InputMixerTests.cpp
+git add engine/include/ida/InputMixer.h engine/src/InputMixer.cpp tests/InputMixerTests.cpp
 git commit -m "feat: renderInputGraph channel main-out + send delivery (tape/hardware-output/bus)"
 ```
 
@@ -758,13 +758,13 @@ TEST_CASE ("renderInputGraph: channel -> bus -> tape delivers the bus output to 
            "[input-routing][render]")
 {
     const auto dir = makeTempTapeDir();
-    sirius::TapeWriter writer (dir, 8);
-    sirius::InputMixer mixer;
+    ida::TapeWriter writer (dir, 8);
+    ida::InputMixer mixer;
     mixer.setTapeWriter (&writer);
 
-    const auto ch  = mixer.addChannel (sirius::InputId { 0 }, sirius::SignalType::Audio);
+    const auto ch  = mixer.addChannel (ida::InputId { 0 }, ida::SignalType::Audio);
     mixer.setChannelInputSource (ch, 0, 1, true);
-    const auto bus = mixer.addBus (sirius::BusConfig { 2, "Drums", sirius::BusKind::Bus });
+    const auto bus = mixer.addBus (ida::BusConfig { 2, "Drums", ida::BusKind::Bus });
     // We need a tape ChannelId for the bus's tape delivery — buses enqueue under
     // their own BusId-derived ChannelId (see implementation note).
     REQUIRE (mixer.setChannelMainOutToBus (ch, bus));   // channel -> bus
@@ -777,15 +777,15 @@ TEST_CASE ("renderInputGraph: channel -> bus -> tape delivers the bus output to 
 
     mixer.renderInputGraph (deviceIn, 2, directOut, 0, n);
 
-    const auto partial = writer.flushChannel (sirius::ChannelId { bus.value() });
+    const auto partial = writer.flushChannel (ida::ChannelId { bus.value() });
     CHECK (std::filesystem::file_size (partial) == static_cast<std::uintmax_t> (n) * 2 * sizeof (float));
 }
 
 TEST_CASE ("renderInputGraph: a channel send reaches an FX return, which delivers to direct-out",
            "[input-routing][render]")
 {
-    sirius::InputMixer mixer;
-    const auto ch  = mixer.addChannel (sirius::InputId { 0 }, sirius::SignalType::Audio);
+    ida::InputMixer mixer;
+    const auto ch  = mixer.addChannel (ida::InputId { 0 }, ida::SignalType::Audio);
     mixer.setChannelInputSource (ch, 0, 1, true);
     const auto rvb = mixer.addFxReturn ("RVB2");
     // Isolate the SEND path: the channel's DRY main-out goes to the TAPE (so it
@@ -813,7 +813,7 @@ TEST_CASE ("renderInputGraph: a channel send reaches an FX return, which deliver
 
 - [ ] **Step 2: Verify it fails**
 
-Run: `cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[input-routing][render]"`
+Run: `cmake --build build --target IdaTests && ./build/tests/IdaTests "[input-routing][render]"`
 Expected: FAIL — the bus/FX-return outputs are never processed (Step 3 missing), so tape partial is empty and direct-out only has the dry 0.5.
 
 - [ ] **Step 3: Implement Step 3 in `renderInputGraph`**
@@ -871,14 +871,14 @@ Note: the scratch reuse in the tape branch is safe — by Step 3 all channel gat
 In `tests/InputMixerTests.cpp` near the top:
 
 ```cpp
-static_assert (noexcept (std::declval<sirius::InputMixer&>().renderInputGraph (
+static_assert (noexcept (std::declval<ida::InputMixer&>().renderInputGraph (
                    nullptr, 0, nullptr, 0, 0)),
                "InputMixer::renderInputGraph must be noexcept (RT-safety contract §6)");
 ```
 
 - [ ] **Step 5: Verify**
 
-Run: `cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[input-routing],[input-mixer]"`
+Run: `cmake --build build --target IdaTests && ./build/tests/IdaTests "[input-routing],[input-mixer]"`
 Expected: all `[input-routing]` cases PASS (bus→tape partial sized `n*2*sizeof(float)`; the send-isolated direct-out is non-zero); all pre-existing `[input-mixer]` cases still PASS.
 
 - [ ] **Step 6: Full suite + commit**
@@ -896,9 +896,9 @@ git commit -m "feat: renderInputGraph bus/FX-return processing into bus/tape/har
 ## Verification (end-to-end)
 
 1. `cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release` (engine-only; no GUI bundle).
-2. `cmake --build build --target SiriusTests` — compiles clean under `-Werror`.
-3. `./build/tests/SiriusTests "[input-routing]"` — all routing + render cases pass.
-4. `./build/tests/SiriusTests "[input-mixer]"` and `"[mixer-graph]"` and `"[output-mixer]"` — no regressions (OutputMixer untouched; InputMixer's existing tape/metering paths unchanged).
+2. `cmake --build build --target IdaTests` — compiles clean under `-Werror`.
+3. `./build/tests/IdaTests "[input-routing]"` — all routing + render cases pass.
+4. `./build/tests/IdaTests "[input-mixer]"` and `"[mixer-graph]"` and `"[output-mixer]"` — no regressions (OutputMixer untouched; InputMixer's existing tape/metering paths unchanged).
 5. `ctest --test-dir build` — full suite green except `MainComponentPluginEditorTests_NOT_BUILT`.
 6. No operator eyes-on / `rm -rf build` — engine logic only, no GUI surface touched.
 

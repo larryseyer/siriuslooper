@@ -1,4 +1,4 @@
-# Sirius Internal FX — Design
+# IDA Internal FX — Design
 
 Single source of truth for Sirius's built-in effects. The whitepaper
 (`docs/Sirius_Looper_Whitepaper_V7.md` §6.6) names the four built-in FX as

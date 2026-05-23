@@ -31,8 +31,8 @@ namespace
 {
     juce::File hostBinary()
     {
-       #ifdef SIRIUS_PLUGIN_HOST_PATH
-        return juce::File (SIRIUS_PLUGIN_HOST_PATH);
+       #ifdef IDA_PLUGIN_HOST_PATH
+        return juce::File (IDA_PLUGIN_HOST_PATH);
        #else
         return juce::File();
        #endif
@@ -44,9 +44,9 @@ TEST_CASE ("identity-mode round-trip latency stays under the observed dev-machin
 {
     const auto binary = hostBinary();
     if (! binary.existsAsFile())
-        SKIP ("sirius_plugin_host binary not present at SIRIUS_PLUGIN_HOST_PATH");
+        SKIP ("ida_plugin_host binary not present at IDA_PLUGIN_HOST_PATH");
 
-    sirius::OutOfProcessPluginInstance instance (binary, "ipc-latency");
+    ida::OutOfProcessPluginInstance instance (binary, "ipc-latency");
     REQUIRE (instance.isRunning());
 
     // Single 8-byte payload — small enough to fit in one PluginIpcMessage

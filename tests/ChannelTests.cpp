@@ -1,4 +1,4 @@
-// Tests for engine/include/sirius/Channel.h: the strong-typed InputId and
+// Tests for engine/include/ida/Channel.h: the strong-typed InputId and
 // ChannelId wrappers, and the Channel class with its ProcessingChain-building
 // constructor. Strong-typed IDs follow the house pattern set by TapeId /
 // ConstituentId: explicit constexpr ctor, value() accessor, ==/!= operators,
@@ -12,11 +12,11 @@
 
 #include <type_traits>
 
-using sirius::Channel;
-using sirius::ChannelId;
-using sirius::InputId;
-using sirius::SignalType;
-using sirius::TapeMode;
+using ida::Channel;
+using ida::ChannelId;
+using ida::InputId;
+using ida::SignalType;
+using ida::TapeMode;
 
 static_assert (! std::is_convertible_v<int, InputId>,
                "InputId must NOT be implicitly constructible from int — strong typing");

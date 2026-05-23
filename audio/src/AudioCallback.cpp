@@ -12,7 +12,7 @@
 namespace
 {
     // Maximum input/output channels supported by the scratch pre-allocation.
-    // 32 is generous — the largest realistic Sirius target (multitrack
+    // 32 is generous — the largest realistic IDA target (multitrack
     // recording interface) is well under this. If a device with more channels
     // ever shows up, the active-count clamp keeps us safe; the extra channels
     // are silently dropped, which is the same shape as the existing

@@ -8,7 +8,7 @@
 
 #include <memory>
 
-namespace sirius::persistence
+namespace ida::persistence
 {
 
 /// Serializes a Constituent graph — the entire structure layer of a session —
@@ -51,4 +51,4 @@ juce::String serializeTapePool (const TapePool& pool);
 /// convention).
 TapePool deserializeTapePool (const juce::String& json);
 
-} // namespace sirius::persistence
+} // namespace ida::persistence

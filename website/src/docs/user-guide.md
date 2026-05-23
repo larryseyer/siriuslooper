@@ -2,9 +2,9 @@
 layout: doc.njk
 title: User Guide
 subtitle: The operator's manual — workflow-first.
-description: Step-by-step workflows, gestures, and glossary for Sirius Looper. Read in order if you're new; jump to the chapter you need otherwise.
+description: Step-by-step workflows, gestures, and glossary for IDA. Read in order if you're new; jump to the chapter you need otherwise.
 permalink: /docs/user-guide/
-sourceFile: Sirius Looper User Guide.md
+sourceFile: IDA User Guide.md
 order: 1
 ---
 The operator's manual. Workflow-first: each chapter walks through
@@ -24,7 +24,7 @@ These terms appear throughout the guide. Pin them down once here.
 
 | Term            | Meaning                                                                                                       |
 |-----------------|---------------------------------------------------------------------------------------------------------------|
-| **Tape**        | The always-running recording of one input. Every audio input has a tape that is continuously capturing while Sirius is open. Tapes are infrastructure — you usually don't see them in the normal view. They make retroactive capture possible. |
+| **Tape**        | The always-running recording of one input. Every audio input has a tape that is continuously capturing while IDA is open. Tapes are infrastructure — you usually don't see them in the normal view. They make retroactive capture possible. |
 | **Input**       | One audio source. A guitar plugged into channel 1, a microphone, a synthesizer plugged into channel 2 — each is an input, and each input has its own tape. |
 | **Phrase**      | A musical thought you've captured. A verse, a chorus, an intro, a fill. A Phrase is a container; it holds Loops (and can hold sub-Phrases). Phrases carry musical meaning — role, intent, how they begin and end. |
 | **Loop**        | A specific slice of a tape that's part of a Phrase. The actual audio. Loops are leaves — they don't contain anything else; they point at a slice of audio on a specific tape. Every Loop lives inside a Phrase. |
@@ -46,7 +46,7 @@ Every capture is the same three-step sequence:
 
 1. **Arm** — tap the Arm button (or the per-input Arm in the Preparation
    tab). The button turns red. The system is now listening for capture
-   gestures. Until you arm, nothing captures — Sirius starts disarmed
+   gestures. Until you arm, nothing captures — IDA starts disarmed
    on purpose, so you never capture by surprise.
 
 2. **Mark In** — at the moment you want the captured region to start,
@@ -64,14 +64,14 @@ input's row.
 
 ### What Mark Out does — the auto-promotion rule
 
-When Mark Out fires, Sirius decides what to do with the captured region
+When Mark Out fires, IDA decides what to do with the captured region
 based on the playhead position at the moment of **Mark In**:
 
-- **Mark In was outside any existing Phrase** → Sirius mints a *new
+- **Mark In was outside any existing Phrase** → IDA mints a *new
   Phrase* containing the captured Loop, and adds it to the song. A
   new Pill appears on the timeline.
 
-- **Mark In was inside an existing Phrase's span** → Sirius adds the
+- **Mark In was inside an existing Phrase's span** → IDA adds the
   captured Loop *as a child of that Phrase*. No new Pill — the existing
   Pill quietly gains another layer.
 
@@ -139,7 +139,7 @@ undo:
 
 - **Tap the bottom-bar Undo button**. Always works.
 
-After undoing a promotion, Sirius restores the capture session to its
+After undoing a promotion, IDA restores the capture session to its
 state *before* Mark Out: your Mark In is intact, the system is armed and
 awaiting an out-point. The tape never stopped recording — it has all the
 samples between Mark In and where you (mistakenly) marked out, and

@@ -10,10 +10,10 @@
 // Multi-instance safe: per-`clap_plugin_t` state, no globals. Audio
 // processing is a simple low-pass filter so the parameter changes
 // produce audible (and assertable) output differences. MIT-licensed
-// under Sirius — no third-party dependency.
+// under IDA — no third-party dependency.
 //
 // Built as a .clap bundle by tests/fixtures/CMakeLists.txt; tests find
-// it via the SIRIUS_STATEFUL_SYNTH_CLAP_PATH generator-expression
+// it via the IDA_STATEFUL_SYNTH_CLAP_PATH generator-expression
 // define.
 // =============================================================================
 
@@ -41,7 +41,7 @@ const clap_plugin_descriptor_t kDescriptor = {
     CLAP_VERSION_INIT,
     "com.sirius.synthetic.statefulsynth",
     "Sirius Stateful Synth Fixture",
-    "Sirius Looper Tests",
+    "IDA Tests",
     "https://example.invalid/sirius",
     "https://example.invalid/sirius",
     "https://example.invalid/sirius",

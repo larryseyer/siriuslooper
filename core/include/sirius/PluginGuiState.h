@@ -36,7 +36,7 @@ namespace sirius
 /// **Wire safety.** All fields are `std::atomic` of standard integer types
 /// for which the standard guarantees standard-layout + lock-free behaviour
 /// (`std::atomic_is_lock_free` of `uint32_t` / `uint64_t` returns true on
-/// every platform Sirius supports). Zero-initialization (which is what
+/// every platform IDA supports). Zero-initialization (which is what
 /// `SharedMemoryRegion::CreateExclusive` gives us after `ftruncate`)
 /// matches the in-class initializers, so no explicit placement-new is
 /// strictly required; the `initInPlace` helper exists to make the

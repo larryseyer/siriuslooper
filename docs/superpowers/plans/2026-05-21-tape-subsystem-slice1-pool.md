@@ -6,7 +6,7 @@
 
 **Architecture:** Mirrors the established `MixerGraphState` (core POD type) + `serializeMixerGraphState` (persistence serializer) layering. `TapePool` is the single source of truth for which tapes exist; later slices (multi-tape routing engine, capture wiring, Tapes UI) read it. This slice ships the tested type + serializer only — no `MixerGraph`, `TapeWriter`, UI, or `MainComponent` wiring (those are slices 2–4 per `docs/superpowers/specs/2026-05-21-tape-subsystem-design.md`).
 
-**Tech Stack:** C++20, Catch2 (`SiriusTests`), JUCE `juce_core` (`juce::var`/`juce::JSON`, persistence target only), CMake + Ninja.
+**Tech Stack:** C++20, Catch2 (`IdaTests`), JUCE `juce_core` (`juce::var`/`juce::JSON`, persistence target only), CMake + Ninja.
 
 **Design doc:** `docs/superpowers/specs/2026-05-21-tape-subsystem-design.md` (read "Slice 1 detail").
 
@@ -14,27 +14,27 @@
 
 ## File Structure
 
-- **Create** `core/include/sirius/TapeDescriptor.h` — value-typed pool entry `{ TapeId id; std::string name; }` + `operator==`. JUCE-free.
-- **Create** `core/include/sirius/TapePool.h` — the `TapePool` class declaration.
+- **Create** `core/include/ida/TapeDescriptor.h` — value-typed pool entry `{ TapeId id; std::string name; }` + `operator==`. JUCE-free.
+- **Create** `core/include/ida/TapePool.h` — the `TapePool` class declaration.
 - **Create** `core/src/TapePool.cpp` — its implementation.
-- **Modify** `core/CMakeLists.txt:25` — add `src/TapePool.cpp` to the `SiriusCore` source list.
-- **Modify** `persistence/include/sirius/SessionFormat.h` — declare `serializeTapePool` / `deserializeTapePool`.
+- **Modify** `core/CMakeLists.txt:25` — add `src/TapePool.cpp` to the `IdaCore` source list.
+- **Modify** `persistence/include/ida/SessionFormat.h` — declare `serializeTapePool` / `deserializeTapePool`.
 - **Modify** `persistence/src/SessionFormat.cpp` — define them, reusing the file's anon-namespace helpers.
-- **Create** `tests/TapePoolTests.cpp` — `[tape-pool]` logic cases + `[tape-pool][sessionformat]` round-trip cases (SiriusTests links both `Sirius::Core` and `Sirius::Persistence`, so both live in one file).
-- **Modify** `tests/CMakeLists.txt` — add `TapePoolTests.cpp` to the `SiriusTests` source list.
+- **Create** `tests/TapePoolTests.cpp` — `[tape-pool]` logic cases + `[tape-pool][sessionformat]` round-trip cases (IdaTests links both `Ida::Core` and `Ida::Persistence`, so both live in one file).
+- **Modify** `tests/CMakeLists.txt` — add `TapePoolTests.cpp` to the `IdaTests` source list.
 
 Established idioms confirmed in the tree (use these verbatim):
 - Catch2 header: `#include <catch2/catch_test_macros.hpp>`; macros `TEST_CASE`, `SECTION`, `CHECK`, `REQUIRE`, `CHECK_FALSE`, `REQUIRE_THROWS_AS`.
 - `TapeId` is `explicit constexpr TapeId(std::int64_t)`, `.value()`, `operator==`/`!=`.
-- SessionFormat.cpp anon-namespace helpers: `fail(msg)` (throws `std::runtime_error` prefixed `sirius::persistence::SessionFormat: `), `makeObject()` → `juce::DynamicObject::Ptr`, `objectVar(ptr)`, `requireProperty(var,name)`, `optionalProperty(var,name)`, `requireInt64(var,context)`, `requireString`/`.toString()`, `juce::Array<juce::var>`, `juce::JSON::toString(objectVar(root))`, `juce::JSON::parse(json, out)`.
+- SessionFormat.cpp anon-namespace helpers: `fail(msg)` (throws `std::runtime_error` prefixed `ida::persistence::SessionFormat: `), `makeObject()` → `juce::DynamicObject::Ptr`, `objectVar(ptr)`, `requireProperty(var,name)`, `optionalProperty(var,name)`, `requireInt64(var,context)`, `requireString`/`.toString()`, `juce::Array<juce::var>`, `juce::JSON::toString(objectVar(root))`, `juce::JSON::parse(json, out)`.
 
 ---
 
 ## Task 1: TapePool default construction + accessors
 
 **Files:**
-- Create: `core/include/sirius/TapeDescriptor.h`
-- Create: `core/include/sirius/TapePool.h`
+- Create: `core/include/ida/TapeDescriptor.h`
+- Create: `core/include/ida/TapePool.h`
 - Create: `core/src/TapePool.cpp`
 - Modify: `core/CMakeLists.txt:25`
 - Create: `tests/TapePoolTests.cpp`
@@ -45,7 +45,7 @@ Established idioms confirmed in the tree (use these verbatim):
 Create `tests/TapePoolTests.cpp`:
 
 ```cpp
-// Tests for sirius::TapePool — the project's pool of tapes (tape subsystem
+// Tests for ida::TapePool — the project's pool of tapes (tape subsystem
 // slice 1). Pins the >=1 invariant, monotonic id allocation, add/remove/rename,
 // the explicit-list ctor's validation, and the SessionFormat round-trip.
 #include "sirius/TapePool.h"
@@ -58,9 +58,9 @@ Create `tests/TapePoolTests.cpp`:
 
 #include <stdexcept>
 
-using sirius::TapeDescriptor;
-using sirius::TapeId;
-using sirius::TapePool;
+using ida::TapeDescriptor;
+using ida::TapeId;
+using ida::TapePool;
 
 TEST_CASE ("default TapePool holds exactly one primary tape", "[tape-pool]")
 {
@@ -77,7 +77,7 @@ TEST_CASE ("default TapePool holds exactly one primary tape", "[tape-pool]")
 
 - [ ] **Step 2: Add the new test source to CMake**
 
-In `tests/CMakeLists.txt`, add `TapePoolTests.cpp` to the `SiriusTests` source list (the `add_executable(SiriusTests ...)` block beginning at line 1). Insert it alphabetically near the other core tests, e.g. directly after the line `CaptureSessionTests.cpp`:
+In `tests/CMakeLists.txt`, add `TapePoolTests.cpp` to the `IdaTests` source list (the `add_executable(IdaTests ...)` block beginning at line 1). Insert it alphabetically near the other core tests, e.g. directly after the line `CaptureSessionTests.cpp`:
 
 ```cmake
     CaptureSessionTests.cpp
@@ -86,12 +86,12 @@ In `tests/CMakeLists.txt`, add `TapePoolTests.cpp` to the `SiriusTests` source l
 
 - [ ] **Step 3: Run test to verify it fails (no TapePool yet)**
 
-Run: `cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build --target SiriusTests`
+Run: `cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build --target IdaTests`
 Expected: FAIL — compile error, `sirius/TapePool.h` not found / `TapePool` undefined.
 
 - [ ] **Step 4: Create `TapeDescriptor.h`**
 
-Create `core/include/sirius/TapeDescriptor.h`:
+Create `core/include/ida/TapeDescriptor.h`:
 
 ```cpp
 #pragma once
@@ -124,7 +124,7 @@ struct TapeDescriptor
 
 - [ ] **Step 5: Create `TapePool.h`**
 
-Create `core/include/sirius/TapePool.h`:
+Create `core/include/ida/TapePool.h`:
 
 ```cpp
 #pragma once
@@ -236,13 +236,13 @@ Modify line 25 of `core/CMakeLists.txt` — change `src/VersionPinningRecord.cpp
 
 - [ ] **Step 8: Run test to verify it passes**
 
-Run: `cmake --build build --target SiriusTests && build/tests/SiriusTests "[tape-pool]"`
+Run: `cmake --build build --target IdaTests && build/tests/IdaTests "[tape-pool]"`
 Expected: PASS — 1 test case, all assertions pass.
 
 - [ ] **Step 9: Commit**
 
 ```bash
-git add core/include/sirius/TapeDescriptor.h core/include/sirius/TapePool.h core/src/TapePool.cpp core/CMakeLists.txt tests/TapePoolTests.cpp tests/CMakeLists.txt
+git add core/include/ida/TapeDescriptor.h core/include/ida/TapePool.h core/src/TapePool.cpp core/CMakeLists.txt tests/TapePoolTests.cpp tests/CMakeLists.txt
 git commit -m "feat: TapePool default construction + accessors (tape subsystem slice 1)"
 ```
 
@@ -278,7 +278,7 @@ TEST_CASE ("TapePool::add appends a tape with a fresh monotonic id", "[tape-pool
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cmake --build build --target SiriusTests`
+Run: `cmake --build build --target IdaTests`
 Expected: FAIL — link error, `TapePool::add` undefined.
 
 - [ ] **Step 3: Implement `add`**
@@ -296,7 +296,7 @@ TapeId TapePool::add (std::string name)
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cmake --build build --target SiriusTests && build/tests/SiriusTests "[tape-pool]"`
+Run: `cmake --build build --target IdaTests && build/tests/IdaTests "[tape-pool]"`
 Expected: PASS — 2 test cases.
 
 - [ ] **Step 5: Commit**
@@ -361,7 +361,7 @@ TEST_CASE ("TapePool::add after remove never reuses an id", "[tape-pool]")
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cmake --build build --target SiriusTests`
+Run: `cmake --build build --target IdaTests`
 Expected: FAIL — link error, `TapePool::remove` undefined.
 
 - [ ] **Step 3: Implement `remove`**
@@ -388,7 +388,7 @@ Note: `nextId_` is never decremented, so ids are never reused (proven by the sec
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cmake --build build --target SiriusTests && build/tests/SiriusTests "[tape-pool]"`
+Run: `cmake --build build --target IdaTests && build/tests/IdaTests "[tape-pool]"`
 Expected: PASS — 4 test cases.
 
 - [ ] **Step 5: Commit**
@@ -425,7 +425,7 @@ TEST_CASE ("TapePool::rename changes a tape's name", "[tape-pool]")
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cmake --build build --target SiriusTests`
+Run: `cmake --build build --target IdaTests`
 Expected: FAIL — link error, `TapePool::rename` undefined.
 
 - [ ] **Step 3: Implement `rename`**
@@ -449,7 +449,7 @@ bool TapePool::rename (TapeId id, std::string name)
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cmake --build build --target SiriusTests && build/tests/SiriusTests "[tape-pool]"`
+Run: `cmake --build build --target IdaTests && build/tests/IdaTests "[tape-pool]"`
 Expected: PASS — 5 test cases.
 
 - [ ] **Step 5: Commit**
@@ -501,7 +501,7 @@ TEST_CASE ("TapePool explicit-list ctor rejects empty and duplicate ids", "[tape
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cmake --build build --target SiriusTests`
+Run: `cmake --build build --target IdaTests`
 Expected: FAIL — link error, the explicit-list `TapePool` ctor is undefined.
 
 - [ ] **Step 3: Implement the explicit-list ctor**
@@ -513,14 +513,14 @@ TapePool::TapePool (std::vector<TapeDescriptor> tapes)
     : tapes_ (std::move (tapes))
 {
     if (tapes_.empty())
-        throw std::invalid_argument ("sirius::TapePool: tape list must be non-empty (>=1 invariant)");
+        throw std::invalid_argument ("ida::TapePool: tape list must be non-empty (>=1 invariant)");
 
     std::unordered_set<std::int64_t> seen;
     std::int64_t maxId = 0;
     for (const auto& t : tapes_)
     {
         if (! seen.insert (t.id.value()).second)
-            throw std::invalid_argument ("sirius::TapePool: duplicate tape id");
+            throw std::invalid_argument ("ida::TapePool: duplicate tape id");
         maxId = std::max (maxId, t.id.value());
     }
     nextId_ = maxId + 1;
@@ -529,7 +529,7 @@ TapePool::TapePool (std::vector<TapeDescriptor> tapes)
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cmake --build build --target SiriusTests && build/tests/SiriusTests "[tape-pool]"`
+Run: `cmake --build build --target IdaTests && build/tests/IdaTests "[tape-pool]"`
 Expected: PASS — 7 test cases.
 
 - [ ] **Step 5: Commit**
@@ -544,7 +544,7 @@ git commit -m "feat: TapePool explicit-list ctor with validation + nextId seedin
 ## Task 6: SessionFormat tape-pool round-trip
 
 **Files:**
-- Modify: `persistence/include/sirius/SessionFormat.h`
+- Modify: `persistence/include/ida/SessionFormat.h`
 - Modify: `persistence/src/SessionFormat.cpp`
 - Test: `tests/TapePoolTests.cpp`
 
@@ -560,8 +560,8 @@ TEST_CASE ("TapePool round-trips through SessionFormat", "[tape-pool][sessionfor
         TapeDescriptor { TapeId (5), "Drums" },
         TapeDescriptor { TapeId (9), "Bass" } });
 
-    const auto json   = sirius::persistence::serializeTapePool (original);
-    const auto loaded = sirius::persistence::deserializeTapePool (json);
+    const auto json   = ida::persistence::serializeTapePool (original);
+    const auto loaded = ida::persistence::deserializeTapePool (json);
 
     REQUIRE (loaded.count() == original.count());
     for (int i = 0; i < original.count(); ++i)
@@ -575,31 +575,31 @@ TEST_CASE ("TapePool round-trips through SessionFormat", "[tape-pool][sessionfor
 TEST_CASE ("deserializeTapePool rejects empty and malformed documents", "[tape-pool][sessionformat]")
 {
     // Present-but-empty tapes array violates the >=1 on-disk contract.
-    REQUIRE_THROWS_AS (sirius::persistence::deserializeTapePool ("{ \"tapes\": [] }"),
+    REQUIRE_THROWS_AS (ida::persistence::deserializeTapePool ("{ \"tapes\": [] }"),
                        std::runtime_error);
     // Not valid JSON.
-    REQUIRE_THROWS_AS (sirius::persistence::deserializeTapePool ("{ not json"),
+    REQUIRE_THROWS_AS (ida::persistence::deserializeTapePool ("{ not json"),
                        std::runtime_error);
     // Object without a tapes array.
-    REQUIRE_THROWS_AS (sirius::persistence::deserializeTapePool ("{}"),
+    REQUIRE_THROWS_AS (ida::persistence::deserializeTapePool ("{}"),
                        std::runtime_error);
 }
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cmake --build build --target SiriusTests`
+Run: `cmake --build build --target IdaTests`
 Expected: FAIL — compile/link error, `serializeTapePool` / `deserializeTapePool` undefined.
 
 - [ ] **Step 3: Declare the functions in `SessionFormat.h`**
 
-In `persistence/include/sirius/SessionFormat.h`, add the include and declarations. After the existing `#include "sirius/MixerGraphState.h"` line, add:
+In `persistence/include/ida/SessionFormat.h`, add the include and declarations. After the existing `#include "sirius/MixerGraphState.h"` line, add:
 
 ```cpp
 #include "sirius/TapePool.h"
 ```
 
-Then, before the closing `} // namespace sirius::persistence` (after the `deserializeOutputMixerGraphState` declaration), add:
+Then, before the closing `} // namespace ida::persistence` (after the `deserializeOutputMixerGraphState` declaration), add:
 
 ```cpp
 /// Serializes the project tape pool to a self-contained JSON document. Round-
@@ -624,7 +624,7 @@ In `persistence/src/SessionFormat.cpp`, add the include near the top with the ot
 #include "sirius/TapePool.h"
 ```
 
-Then add the two function definitions inside `namespace sirius::persistence`, immediately before the closing `} // namespace sirius::persistence` (after `deserializeOutputMixerGraphState`). These reuse the file's existing anon-namespace helpers (`makeObject`, `objectVar`, `requireProperty`, `requireInt64`, `fail`):
+Then add the two function definitions inside `namespace ida::persistence`, immediately before the closing `} // namespace ida::persistence` (after `deserializeOutputMixerGraphState`). These reuse the file's existing anon-namespace helpers (`makeObject`, `objectVar`, `requireProperty`, `requireInt64`, `fail`):
 
 ```cpp
 juce::String serializeTapePool (const TapePool& pool)
@@ -672,13 +672,13 @@ Note: `requireProperty` throws (via `fail`) on a missing key, and the `TapePool`
 
 - [ ] **Step 5: Run test to verify it passes**
 
-Run: `cmake --build build --target SiriusTests && build/tests/SiriusTests "[tape-pool]"`
+Run: `cmake --build build --target IdaTests && build/tests/IdaTests "[tape-pool]"`
 Expected: PASS — 9 test cases total (`[tape-pool]` 7 + `[tape-pool][sessionformat]` 2).
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add persistence/include/sirius/SessionFormat.h persistence/src/SessionFormat.cpp tests/TapePoolTests.cpp
+git add persistence/include/ida/SessionFormat.h persistence/src/SessionFormat.cpp tests/TapePoolTests.cpp
 git commit -m "feat: SessionFormat tape-pool round-trip (serialize/deserialize)"
 ```
 
@@ -690,7 +690,7 @@ git commit -m "feat: SessionFormat tape-pool round-trip (serialize/deserialize)"
 
 - [ ] **Step 1: Clean rebuild to catch CMake/stale-config issues**
 
-Run: `rm -rf build && cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build --target SiriusTests`
+Run: `rm -rf build && cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build --target IdaTests`
 Expected: builds clean, no warnings-as-errors.
 
 - [ ] **Step 2: Run the full test suite**

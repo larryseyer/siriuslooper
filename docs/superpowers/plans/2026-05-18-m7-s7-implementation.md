@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Wire `MainComponent` so the operator can open a scanned CLAP plug-in's editor in a floating `juce::DocumentWindow`, exercising the S3–S6 out-of-process plug-in stack end-to-end. Each "Open editor" click spawns a `sirius_plugin_host` child on a scratch busId, brings up `OutOfProcessEditorView` inside a `DocumentWindow`, and close-box tears the slot down. Multiple plug-ins loadable simultaneously. No audio routing.
+**Goal:** Wire `MainComponent` so the operator can open a scanned CLAP plug-in's editor in a floating `juce::DocumentWindow`, exercising the S3–S6 out-of-process plug-in stack end-to-end. Each "Open editor" click spawns a `ida_plugin_host` child on a scratch busId, brings up `OutOfProcessEditorView` inside a `DocumentWindow`, and close-box tears the slot down. Multiple plug-ins loadable simultaneously. No audio routing.
 
 **Architecture:** `OutOfProcessEffectChainHost` lives as a `MainComponent` member; `PluginsPane` swaps its read-only `juce::TextEditor` for a `juce::ListBox` with per-row "Open editor" buttons; each click allocates a fresh scratch busId (1000+), calls `configureBus`, and floats a `PluginEditorWindow` (new `juce::DocumentWindow` subclass) owning an `OutOfProcessEditorView`. Close-button tears down. Engine audio output unaffected (scratch chains aren't in the OutputMixer graph).
 
-**Tech Stack:** C++20, JUCE (`juce::DocumentWindow`, `juce::ListBox`, `juce::ListBoxModel`, `juce::NSViewComponent`), `Sirius::Host` library (existing), `Sirius::Core` (existing). No new external deps.
+**Tech Stack:** C++20, JUCE (`juce::DocumentWindow`, `juce::ListBox`, `juce::ListBoxModel`, `juce::NSViewComponent`), `Ida::Host` library (existing), `Ida::Core` (existing). No new external deps.
 
 **Spec:** `docs/superpowers/specs/2026-05-18-m7-s7-design.md` (commit `5c94bd5`).
 
@@ -22,14 +22,14 @@
 **Modified files:**
 - `app/MainComponent.h` — add OutOfProcessEffectChainHost + editorWindows_ + openPluginEditor/closePluginEditor + kScratchBusIdBase
 - `app/MainComponent.cpp` — PluginListBox inner class, PluginEditorWindow inner class, openPluginEditor / closePluginEditor bodies, PluginsPane TextEditor → ListBox swap, ctor wiring + dtor teardown, hostBinary() resolver
-- `tests/CMakeLists.txt` — register MainComponentPluginEditorTests.cpp into SiriusTests
+- `tests/CMakeLists.txt` — register MainComponentPluginEditorTests.cpp into IdaTests
 - `docs/operator/m7-eyes-on.md` — replace the "M20+ debug menu" paragraph with the actual S7 workflow
 - `continue.md` — S7 close-out + S8 handoff at session end
 
 **Unchanged (re-verified during execution):**
-- `host/include/sirius/OutOfProcessEffectChainHost.h` — public API consumed as-is
-- `host/include/sirius/OutOfProcessEditorView.h` — same
-- `app/CMakeLists.txt` — `Sirius::Host` already linked from S6
+- `host/include/ida/OutOfProcessEffectChainHost.h` — public API consumed as-is
+- `host/include/ida/OutOfProcessEditorView.h` — same
+- `app/CMakeLists.txt` — `Ida::Host` already linked from S6
 - All S6 XPC / CARemoteLayer code — unchanged
 - `RT_SAFETY_CONTRACT.md` — unchanged
 
@@ -72,18 +72,18 @@ In the private section after `std::unique_ptr<juce::FileChooser> pluginFolderCho
     // per-bus chain integration is a later session.
     static constexpr std::int64_t kScratchBusIdBase = 1000;
 
-    sirius::OutOfProcessEffectChainHost effectChainHost_;
+    ida::OutOfProcessEffectChainHost effectChainHost_;
     std::int64_t                        nextScratchBusId_ { kScratchBusIdBase };
 
     class PluginEditorWindow;
     std::vector<std::unique_ptr<PluginEditorWindow>> editorWindows_;
 
-    /// Resolves Contents/MacOS/sirius_plugin_host alongside the running app
+    /// Resolves Contents/MacOS/ida_plugin_host alongside the running app
     /// binary. Returns an invalid juce::File outside a .app bundle (dev-loop
     /// runs from build/...); callers must check `existsAsFile()` before use.
     juce::File hostBinaryPath() const;
 
-    /// Spawns a sirius_plugin_host child via configureBus on a fresh scratch
+    /// Spawns a ida_plugin_host child via configureBus on a fresh scratch
     /// busId, and floats a PluginEditorWindow showing the editor.
     /// Message-thread only.
     void openPluginEditor (const PluginDescriptor& descriptor);
@@ -101,12 +101,12 @@ Find a quiet spot in `app/MainComponent.cpp` (after the existing helper function
 ```cpp
 juce::File MainComponent::hostBinaryPath() const
 {
-    // Inside a .app bundle this is Contents/MacOS/Sirius Looper; the helper
+    // Inside a .app bundle this is Contents/MacOS/IDA; the helper
     // sits in the same MacOS directory. Outside a bundle (dev-loop test
     // runs from build/...), the sibling doesn't exist and the returned
     // juce::File reports existsAsFile() == false — callers must check.
     const auto self = juce::File::getSpecialLocation (juce::File::currentExecutableFile);
-    const auto sibling = self.getParentDirectory().getChildFile ("sirius_plugin_host");
+    const auto sibling = self.getParentDirectory().getChildFile ("ida_plugin_host");
     return sibling;
 }
 ```
@@ -146,7 +146,7 @@ If the build fails with "undefined reference to MainComponent::openPluginEditor"
 - [ ] **Step 7: Run full test suite**
 
 Run: `ctest --test-dir build --output-on-failure 2>&1 | tail -5`
-Expected: 384/384 pass. Adding a chain host as a MainComponent member shouldn't affect any existing test (MainComponent isn't constructed by ctest directly — it's only via the SiriusLooper.app's `juce_add_gui_app`).
+Expected: 384/384 pass. Adding a chain host as a MainComponent member shouldn't affect any existing test (MainComponent isn't constructed by ctest directly — it's only via the IDA.app's `juce_add_gui_app`).
 
 - [ ] **Step 8: Commit**
 
@@ -166,7 +166,7 @@ Wire the chain host's `configureBus` lifecycle through the new methods. The wind
 
 - [ ] **Step 1: Read OutOfProcessEffectChainHost::configureBus signature**
 
-Run: `sed -n '125,142p' host/include/sirius/OutOfProcessEffectChainHost.h`
+Run: `sed -n '125,142p' host/include/ida/OutOfProcessEffectChainHost.h`
 
 Expected signature:
 ```cpp
@@ -211,11 +211,11 @@ void MainComponent::openPluginEditor (const PluginDescriptor& descriptor)
 
     const auto busId = nextScratchBusId_++;
 
-    sirius::EffectChainEntry entry;
+    ida::EffectChainEntry entry;
     entry.descriptor  = descriptor;
     entry.displayName = descriptor.name;
     entry.bypassed    = false;
-    sirius::EffectChain chain;
+    ida::EffectChain chain;
     chain = chain.withAppended (entry);
 
     effectChainHost_.configureBus (busId, chain, hostBinary, clapBundle);
@@ -237,7 +237,7 @@ void MainComponent::closePluginEditor (std::int64_t busId)
     // Empty chain → host's stale-slot eraser removes the slot in
     // configureBus, supervisor reaps the child.
     const auto hostBinary = hostBinaryPath();
-    effectChainHost_.configureBus (busId, sirius::EffectChain{}, hostBinary, juce::File{});
+    effectChainHost_.configureBus (busId, ida::EffectChain{}, hostBinary, juce::File{});
 
     // Task 4 will tag each PluginEditorWindow with its busId so we can
     // find + remove the matching one. For Task 2's stub, we just clear
@@ -539,7 +539,7 @@ class MainComponent::PluginEditorWindow final : public juce::DocumentWindow
 public:
     PluginEditorWindow (const juce::String&                  title,
                         std::int64_t                          busId,
-                        sirius::OutOfProcessEffectChainHost&  host,
+                        ida::OutOfProcessEffectChainHost&  host,
                         std::function<void(std::int64_t)>     onClose)
         : juce::DocumentWindow (title,
                                 juce::Colours::black,
@@ -553,7 +553,7 @@ public:
         // Initial size — replaced by the plug-in's preferred size once the
         // editor view's polling timer detects the child's first contextId
         // publish (typically <100 ms after spawn).
-        auto* view = new sirius::OutOfProcessEditorView (host, busId, /*slot*/ 0);
+        auto* view = new ida::OutOfProcessEditorView (host, busId, /*slot*/ 0);
         view->setSize (600, 400);
         setContentOwned (view, /*resizeToFitContent*/ true);
         centreWithSize (getWidth(), getHeight());
@@ -610,7 +610,7 @@ Replace the Task 2 `editorWindows_.clear()` with targeted removal:
 void MainComponent::closePluginEditor (std::int64_t busId)
 {
     const auto hostBinary = hostBinaryPath();
-    effectChainHost_.configureBus (busId, sirius::EffectChain{}, hostBinary, juce::File{});
+    effectChainHost_.configureBus (busId, ida::EffectChain{}, hostBinary, juce::File{});
 
     editorWindows_.erase (
         std::remove_if (editorWindows_.begin(), editorWindows_.end(),
@@ -697,24 +697,24 @@ Expected: 384/384 pass.
 
 - [ ] **Step 5: Launch the .app for a sanity smoke**
 
-The dev-loop runs from `build/app/SiriusLooper_artefacts/Release/Sirius Looper.app` (or `Debug/` depending on generator). Per memory `feedback_can_launch_app`, Claude is authorized to launch:
+The dev-loop runs from `build/app/IDA_artefacts/Release/IDA.app` (or `Debug/` depending on generator). Per memory `feedback_can_launch_app`, Claude is authorized to launch:
 
 ```bash
-open "build/app/SiriusLooper_artefacts/Release/Sirius Looper.app"
+open "build/app/IDA_artefacts/Release/IDA.app"
 ```
 
 Wait 3 seconds, then verify no orphan processes from previous tests:
 
 ```bash
-ps -A | grep -E "Sirius Looper|sirius_(plugin_host|gui_bridge)" | grep -v grep
+ps -A | grep -E "IDA|sirius_(plugin_host|gui_bridge)" | grep -v grep
 ```
 
-Expected: ONLY `Sirius Looper` running (no plug-in spawned yet because no descriptor has been clicked). Quit:
+Expected: ONLY `IDA` running (no plug-in spawned yet because no descriptor has been clicked). Quit:
 
 ```bash
-osascript -e 'quit app "Sirius Looper"'
+osascript -e 'quit app "IDA"'
 sleep 1
-ps -A | grep -E "Sirius Looper|sirius_(plugin_host|gui_bridge)" | grep -v grep
+ps -A | grep -E "IDA|sirius_(plugin_host|gui_bridge)" | grep -v grep
 ```
 
 Expected: nothing returned (clean shutdown). If `sirius_gui_bridge` lingers, that's a launchd-managed XPC service that may persist for a few seconds — re-check after 5 seconds.
@@ -773,14 +773,14 @@ namespace
 {
     juce::File hostBinaryForTesting()
     {
-        if (auto* envPath = std::getenv ("SIRIUS_PLUGIN_HOST_PATH"))
+        if (auto* envPath = std::getenv ("IDA_PLUGIN_HOST_PATH"))
             return juce::File (juce::String (envPath));
         return juce::File();
     }
 
     juce::File syntheticClapForTesting()
     {
-        if (auto* envPath = std::getenv ("SIRIUS_SYNTHETIC_CLAP_PATH"))
+        if (auto* envPath = std::getenv ("IDA_SYNTHETIC_CLAP_PATH"))
             return juce::File (juce::String (envPath));
         return juce::File();
     }
@@ -802,21 +802,21 @@ TEST_CASE ("openPluginEditor on synthetic descriptor spawns a child + window",
 {
     const auto binary = hostBinaryForTesting();
     if (! binary.existsAsFile())
-        SKIP ("sirius_plugin_host binary not present at SIRIUS_PLUGIN_HOST_PATH");
+        SKIP ("ida_plugin_host binary not present at IDA_PLUGIN_HOST_PATH");
 
     const auto bundle = syntheticClapForTesting();
     if (! bundle.isDirectory())
-        SKIP ("SyntheticTestPlugin .clap bundle not present at SIRIUS_SYNTHETIC_CLAP_PATH");
+        SKIP ("SyntheticTestPlugin .clap bundle not present at IDA_SYNTHETIC_CLAP_PATH");
 
     juce::ScopedJuceInitialiser_GUI juceInit;
     juce::AudioDeviceManager dm;
     MainComponent component (dm);
 
-    sirius::PluginDescriptor descriptor;
-    descriptor.format       = sirius::PluginFormat::CLAP;
+    ida::PluginDescriptor descriptor;
+    descriptor.format       = ida::PluginFormat::CLAP;
     descriptor.uniqueId     = "com.sirius.synthetic.test";
     descriptor.name         = "Synthetic Test Plug-in";
-    descriptor.manufacturer = "Sirius";
+    descriptor.manufacturer = "IDA";
     descriptor.filePath     = bundle.getFullPathName().toStdString();
 
     // openPluginEditor uses MainComponent::hostBinaryPath() which resolves
@@ -851,11 +851,11 @@ TEST_CASE ("closePluginEditor tears down child + window",
     if (! component.hostBinaryPathForTesting().existsAsFile())
         SKIP ("hostBinaryPath() not resolvable from test binary location");
 
-    sirius::PluginDescriptor descriptor;
-    descriptor.format       = sirius::PluginFormat::CLAP;
+    ida::PluginDescriptor descriptor;
+    descriptor.format       = ida::PluginFormat::CLAP;
     descriptor.uniqueId     = "com.sirius.synthetic.test";
     descriptor.name         = "Synthetic Test Plug-in";
-    descriptor.manufacturer = "Sirius";
+    descriptor.manufacturer = "IDA";
     descriptor.filePath     = bundle.getFullPathName().toStdString();
 
     component.openPluginEditorForTesting (descriptor);
@@ -912,16 +912,16 @@ std::int64_t MainComponent::childPidForTestingAtBusId (std::int64_t busId) const
 
 - [ ] **Step 4: Register the test in tests/CMakeLists.txt**
 
-Read `tests/CMakeLists.txt` and find the SiriusTests source list. Add `MainComponentPluginEditorTests.cpp` to it, following the existing pattern. The test file uses JUCE GUI symbols (juce::ScopedJuceInitialiser_GUI, juce::AudioDeviceManager, MainComponent) — the test link line must include the JUCE modules MainComponent depends on.
+Read `tests/CMakeLists.txt` and find the IdaTests source list. Add `MainComponentPluginEditorTests.cpp` to it, following the existing pattern. The test file uses JUCE GUI symbols (juce::ScopedJuceInitialiser_GUI, juce::AudioDeviceManager, MainComponent) — the test link line must include the JUCE modules MainComponent depends on.
 
-Check via `grep -n "MainComponent\|juce_gui_basics\|juce_audio_devices" tests/CMakeLists.txt`. If SiriusTests doesn't currently link the JUCE modules MainComponent needs, the safest path is to add the new test file as its own executable:
+Check via `grep -n "MainComponent\|juce_gui_basics\|juce_audio_devices" tests/CMakeLists.txt`. If IdaTests doesn't currently link the JUCE modules MainComponent needs, the safest path is to add the new test file as its own executable:
 
 ```cmake
 if(APPLE)
     sirius_add_catch2_test (MainComponentPluginEditorTests
                             MainComponentPluginEditorTests.cpp)
     target_link_libraries (MainComponentPluginEditorTests PRIVATE
-        Sirius::Host
+        Ida::Host
         SiriusAppCore
         juce::juce_audio_devices
         juce::juce_audio_utils
@@ -931,11 +931,11 @@ if(APPLE)
 endif()
 ```
 
-(Use whatever macro `tests/CMakeLists.txt` uses for Catch2 test registration — likely a project-local helper. If the existing pattern is a single SiriusTests mega-executable that already links everything, just append the source file.)
+(Use whatever macro `tests/CMakeLists.txt` uses for Catch2 test registration — likely a project-local helper. If the existing pattern is a single IdaTests mega-executable that already links everything, just append the source file.)
 
 - [ ] **Step 5: Pass test environment paths via ctest**
 
-Existing `OutOfProcessEditorTests.cpp` uses `SIRIUS_PLUGIN_HOST_PATH` and `SIRIUS_SYNTHETIC_CLAP_PATH` env vars set by CMake. Verify these are already set for SiriusTests via `grep -n "SIRIUS_PLUGIN_HOST_PATH\|SIRIUS_SYNTHETIC_CLAP_PATH" tests/CMakeLists.txt`. If yes, the new file inherits them. If no, the new test gracefully SKIPs.
+Existing `OutOfProcessEditorTests.cpp` uses `IDA_PLUGIN_HOST_PATH` and `IDA_SYNTHETIC_CLAP_PATH` env vars set by CMake. Verify these are already set for IdaTests via `grep -n "IDA_PLUGIN_HOST_PATH\|IDA_SYNTHETIC_CLAP_PATH" tests/CMakeLists.txt`. If yes, the new file inherits them. If no, the new test gracefully SKIPs.
 
 - [ ] **Step 6: Build + run new tests**
 
@@ -955,7 +955,7 @@ Read the current file. Find the step that says "M20+ adds a 'Add plug-in' UI". R
 
 5. Click the **Open editor** button on a descriptor row. A floating window appears with the plug-in's editor. The colour the operator sees tells the story:
 
-   - **A flat coloured rectangle (purple-ish, hue shifts per restart)** — bridge is missing, child fell back to the S5 placeholder. Open Console.app and filter for `sirius_plugin_host` — the line `XPC bridge timeout (250 ms); falling back to S5 placeholder editor surface` should be visible.
+   - **A flat coloured rectangle (purple-ish, hue shifts per restart)** — bridge is missing, child fell back to the S5 placeholder. Open Console.app and filter for `ida_plugin_host` — the line `XPC bridge timeout (250 ms); falling back to S5 placeholder editor surface` should be visible.
    - **The synthetic plug-in's actual NSView contents** — success. CARemoteLayer is composing the child's CALayer tree into the engine's window via the window-server.
 
 6. Verify the supervisor-restart re-publication path (optional):
@@ -1010,8 +1010,8 @@ Expected: **387/387** pass. If the count differs, investigate before continuing.
 - [ ] **Step 3: Verify bundle layout still intact**
 
 ```bash
-find "build/app/SiriusLooper_artefacts" -path "*Sirius Looper.app/Contents/*" \
-    \( -name "sirius_plugin_host" -o -name "*.xpc" \) | sort
+find "build/app/IDA_artefacts" -path "*IDA.app/Contents/*" \
+    \( -name "ida_plugin_host" -o -name "*.xpc" \) | sort
 ```
 
 Expected: both helpers still present (S6 wiring preserved).
@@ -1019,17 +1019,17 @@ Expected: both helpers still present (S6 wiring preserved).
 - [ ] **Step 4: Launch the app + sanity check**
 
 ```bash
-open "build/app/SiriusLooper_artefacts/Release/Sirius Looper.app"
+open "build/app/IDA_artefacts/Release/IDA.app"
 sleep 3
-ps -A | grep -E "Sirius Looper|sirius_(plugin_host|gui_bridge)" | grep -v grep
+ps -A | grep -E "IDA|sirius_(plugin_host|gui_bridge)" | grep -v grep
 ```
 
-Expected: only `Sirius Looper` (no plug-in spawned yet). Quit:
+Expected: only `IDA` (no plug-in spawned yet). Quit:
 
 ```bash
-osascript -e 'quit app "Sirius Looper"'
+osascript -e 'quit app "IDA"'
 sleep 2
-ps -A | grep -E "Sirius Looper|sirius_(plugin_host|gui_bridge)" | grep -v grep
+ps -A | grep -E "IDA|sirius_(plugin_host|gui_bridge)" | grep -v grep
 ```
 
 Expected: nothing returned. If `sirius_gui_bridge` lingers > 5 seconds, that's a launchd-managed XPC service that may persist briefly — acceptable.
@@ -1059,7 +1059,7 @@ Test count: **387/387** green (was 384 at S6; +3 in S7 — three
 
 **S7 made S6's cross-process compositing operator-visible.** The Plugins
 tab now shows each scanned descriptor in a `juce::ListBox` with a
-per-row "Open editor" button. Clicking spawns a `sirius_plugin_host`
+per-row "Open editor" button. Clicking spawns a `ida_plugin_host`
 child on a scratch busId (1000+) and floats a `juce::DocumentWindow`
 containing an `OutOfProcessEditorView`. The close-button tears down the
 slot. Multiple plug-ins loadable simultaneously. No audio routes through

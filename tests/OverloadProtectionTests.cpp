@@ -7,8 +7,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using sirius::OverloadProtection;
-using sirius::Workload;
+using ida::OverloadProtection;
+using ida::Workload;
 
 TEST_CASE ("nothing is shed at start", "[overload]")
 {

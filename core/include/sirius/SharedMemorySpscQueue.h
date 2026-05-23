@@ -61,9 +61,9 @@ public:
     static SharedMemorySpscQueue create (void* base, std::size_t capacity)
     {
         if (capacity == 0)
-            throw std::invalid_argument ("sirius::SharedMemorySpscQueue: capacity must be positive");
+            throw std::invalid_argument ("ida::SharedMemorySpscQueue: capacity must be positive");
         if (base == nullptr)
-            throw std::invalid_argument ("sirius::SharedMemorySpscQueue: base must be non-null");
+            throw std::invalid_argument ("ida::SharedMemorySpscQueue: base must be non-null");
 
         auto* layout = new (base) Layout;
         layout->capacityPlusOne = capacity + 1;
@@ -80,9 +80,9 @@ public:
     static SharedMemorySpscQueue attach (void* base, std::size_t capacity)
     {
         if (capacity == 0)
-            throw std::invalid_argument ("sirius::SharedMemorySpscQueue: capacity must be positive");
+            throw std::invalid_argument ("ida::SharedMemorySpscQueue: capacity must be positive");
         if (base == nullptr)
-            throw std::invalid_argument ("sirius::SharedMemorySpscQueue: base must be non-null");
+            throw std::invalid_argument ("ida::SharedMemorySpscQueue: base must be non-null");
 
         auto* layout = static_cast<Layout*> (base);
         // Sanity-check that the producer wrote a matching capacity. A
@@ -90,7 +90,7 @@ public:
         // probably a stale segment from a previous instance.
         if (layout->capacityPlusOne != capacity + 1)
             throw std::invalid_argument (
-                "sirius::SharedMemorySpscQueue: attach capacity mismatch with producer-written layout");
+                "ida::SharedMemorySpscQueue: attach capacity mismatch with producer-written layout");
         return SharedMemorySpscQueue (layout);
     }
 

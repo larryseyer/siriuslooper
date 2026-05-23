@@ -1,5 +1,5 @@
 # =============================================================================
-# sirius_plugin_host — the out-of-process plug-in host executable (M7 S1+)
+# ida_plugin_host — the out-of-process plug-in host executable (M7 S1+)
 # =============================================================================
 # A standalone POSIX binary the engine spawns once per plug-in instance.
 # Deliberately JUCE-free so its startup cost stays low and its link-time
@@ -20,12 +20,12 @@
 set(sirius_clap_loader_src ${CMAKE_SOURCE_DIR}/host/src/ClapBundleLoader.cpp)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-    add_executable(sirius_plugin_host
+    add_executable(ida_plugin_host
         main.cpp
         ${sirius_clap_loader_src}
         gui_cocoa.mm)
-    target_link_libraries(sirius_plugin_host PRIVATE
-        Sirius::Core
+    target_link_libraries(ida_plugin_host PRIVATE
+        Ida::Core
         clap
         "-framework AppKit"
         "-framework Foundation")
@@ -35,19 +35,19 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     set_source_files_properties(gui_cocoa.mm PROPERTIES
         COMPILE_FLAGS "-fno-objc-arc")
 else()
-    add_executable(sirius_plugin_host
+    add_executable(ida_plugin_host
         main.cpp
         ${sirius_clap_loader_src})
-    target_link_libraries(sirius_plugin_host PRIVATE Sirius::Core clap)
+    target_link_libraries(ida_plugin_host PRIVATE Ida::Core clap)
 endif()
 
 # ClapBundleLoader.h lives under host/include; the child needs it on the
-# include path (Sirius::Core supplies PluginDescriptor.h transitively).
-target_include_directories(sirius_plugin_host PRIVATE
+# include path (Ida::Core supplies PluginDescriptor.h transitively).
+target_include_directories(ida_plugin_host PRIVATE
     ${CMAKE_SOURCE_DIR}/host/include)
 
-target_compile_features(sirius_plugin_host PRIVATE cxx_std_20)
+target_compile_features(ida_plugin_host PRIVATE cxx_std_20)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    target_link_libraries(sirius_plugin_host PRIVATE dl)
+    target_link_libraries(ida_plugin_host PRIVATE dl)
 endif()

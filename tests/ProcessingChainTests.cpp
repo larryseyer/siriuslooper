@@ -11,13 +11,13 @@
 
 #include <memory>
 
-using sirius::ChannelStrip;
-using sirius::FileChain;
-using sirius::MidiChain;
-using sirius::ProcessingChain;
-using sirius::SignalType;
-using sirius::VideoChain;
-using sirius::makeProcessingChain;
+using ida::ChannelStrip;
+using ida::FileChain;
+using ida::MidiChain;
+using ida::ProcessingChain;
+using ida::SignalType;
+using ida::VideoChain;
+using ida::makeProcessingChain;
 
 TEST_CASE ("each concrete chain reports its SignalType via the virtual interface",
            "[processing-chain]")

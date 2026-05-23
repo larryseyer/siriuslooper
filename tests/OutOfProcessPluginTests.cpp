@@ -1,10 +1,10 @@
-// Tests for sirius::OutOfProcessPluginInstance (M7 Session 1).
+// Tests for ida::OutOfProcessPluginInstance (M7 Session 1).
 //
 // These exercise the message-thread plumbing — process spawn, byte-stream
 // round-trip over stdin/stdout (the S1 transport before shared memory),
 // and clean shutdown / no-zombie behaviour. The child binary is the
-// `sirius_plugin_host` executable built by the host_process target; its
-// path is plumbed in via SIRIUS_PLUGIN_HOST_PATH (a CMake-side
+// `ida_plugin_host` executable built by the host_process target; its
+// path is plumbed in via IDA_PLUGIN_HOST_PATH (a CMake-side
 // generator-expression define so the tests don't have to guess where the
 // build dropped the binary).
 //
@@ -34,8 +34,8 @@ namespace
 {
     juce::File hostBinaryFile()
     {
-       #ifdef SIRIUS_PLUGIN_HOST_PATH
-        return juce::File (SIRIUS_PLUGIN_HOST_PATH);
+       #ifdef IDA_PLUGIN_HOST_PATH
+        return juce::File (IDA_PLUGIN_HOST_PATH);
        #else
         return juce::File();
        #endif
@@ -43,8 +43,8 @@ namespace
 
     juce::File syntheticClapFile()
     {
-       #ifdef SIRIUS_SYNTHETIC_CLAP_PATH
-        return juce::File (SIRIUS_SYNTHETIC_CLAP_PATH);
+       #ifdef IDA_SYNTHETIC_CLAP_PATH
+        return juce::File (IDA_SYNTHETIC_CLAP_PATH);
        #else
         return juce::File();
        #endif
@@ -54,7 +54,7 @@ namespace
     /// reads as needed until either the deadline elapses or EOF is hit.
     /// readBytes() returns after the first non-empty read, so this helper
     /// loops to bridge the gap when the pipe arrives in multiple chunks.
-    std::vector<std::byte> readExact (sirius::OutOfProcessPluginInstance& instance,
+    std::vector<std::byte> readExact (ida::OutOfProcessPluginInstance& instance,
                                       std::size_t expected,
                                       int totalTimeoutMs)
     {
@@ -87,9 +87,9 @@ TEST_CASE ("OutOfProcessPluginInstance round-trips bytes through the identity ho
 {
     const auto binary = hostBinaryFile();
     if (! binary.existsAsFile())
-        SKIP ("sirius_plugin_host binary not present at SIRIUS_PLUGIN_HOST_PATH");
+        SKIP ("ida_plugin_host binary not present at IDA_PLUGIN_HOST_PATH");
 
-    sirius::OutOfProcessPluginInstance instance (binary, "identity-roundtrip");
+    ida::OutOfProcessPluginInstance instance (binary, "identity-roundtrip");
     REQUIRE (instance.isRunning());
 
     constexpr std::size_t kPayloadBytes = 1024;
@@ -115,9 +115,9 @@ TEST_CASE ("OutOfProcessPluginInstance shutdown without any I/O exits cleanly",
 {
     const auto binary = hostBinaryFile();
     if (! binary.existsAsFile())
-        SKIP ("sirius_plugin_host binary not present at SIRIUS_PLUGIN_HOST_PATH");
+        SKIP ("ida_plugin_host binary not present at IDA_PLUGIN_HOST_PATH");
 
-    sirius::OutOfProcessPluginInstance instance (binary, "shutdown-no-io");
+    ida::OutOfProcessPluginInstance instance (binary, "shutdown-no-io");
     REQUIRE (instance.isRunning());
 
     instance.shutdown();
@@ -129,9 +129,9 @@ TEST_CASE ("OutOfProcessPluginInstance closing stdin lets the host exit on EOF",
 {
     const auto binary = hostBinaryFile();
     if (! binary.existsAsFile())
-        SKIP ("sirius_plugin_host binary not present at SIRIUS_PLUGIN_HOST_PATH");
+        SKIP ("ida_plugin_host binary not present at IDA_PLUGIN_HOST_PATH");
 
-    sirius::OutOfProcessPluginInstance instance (binary, "shutdown-on-eof");
+    ida::OutOfProcessPluginInstance instance (binary, "shutdown-on-eof");
     REQUIRE (instance.isRunning());
 
     // shutdown() closes our write end of the child's stdin first, which
@@ -146,11 +146,11 @@ TEST_CASE ("OutOfProcessPluginInstance destructor reaps the child (no zombie)",
 {
     const auto binary = hostBinaryFile();
     if (! binary.existsAsFile())
-        SKIP ("sirius_plugin_host binary not present at SIRIUS_PLUGIN_HOST_PATH");
+        SKIP ("ida_plugin_host binary not present at IDA_PLUGIN_HOST_PATH");
 
     long pidWhileAlive = -1;
     {
-        sirius::OutOfProcessPluginInstance instance (binary, "no-zombie");
+        ida::OutOfProcessPluginInstance instance (binary, "no-zombie");
         REQUIRE (instance.isRunning());
         pidWhileAlive = instance.childPidForTesting();
         REQUIRE (pidWhileAlive > 0);
@@ -178,18 +178,18 @@ TEST_CASE ("OutOfProcessPluginInstance round-trips stereo audio through the synt
 {
     const auto binary = hostBinaryFile();
     if (! binary.existsAsFile())
-        SKIP ("sirius_plugin_host binary not present at SIRIUS_PLUGIN_HOST_PATH");
+        SKIP ("ida_plugin_host binary not present at IDA_PLUGIN_HOST_PATH");
 
     const auto clapBundle = syntheticClapFile();
    #ifdef __APPLE__
     if (! clapBundle.isDirectory())
-        SKIP ("SyntheticTestPlugin .clap bundle not present at SIRIUS_SYNTHETIC_CLAP_PATH");
+        SKIP ("SyntheticTestPlugin .clap bundle not present at IDA_SYNTHETIC_CLAP_PATH");
    #else
     if (! clapBundle.existsAsFile())
-        SKIP ("SyntheticTestPlugin .clap shared library not present at SIRIUS_SYNTHETIC_CLAP_PATH");
+        SKIP ("SyntheticTestPlugin .clap shared library not present at IDA_SYNTHETIC_CLAP_PATH");
    #endif
 
-    sirius::OutOfProcessPluginInstance instance (binary, "clap-identity", clapBundle);
+    ida::OutOfProcessPluginInstance instance (binary, "clap-identity", clapBundle);
     REQUIRE (instance.isRunning());
 
     // Wire format the CLAP-mode pump expects: uint32 frameCount followed
@@ -229,10 +229,10 @@ TEST_CASE ("two OutOfProcessPluginInstances do not cross-talk on stdin/stdout",
 {
     const auto binary = hostBinaryFile();
     if (! binary.existsAsFile())
-        SKIP ("sirius_plugin_host binary not present at SIRIUS_PLUGIN_HOST_PATH");
+        SKIP ("ida_plugin_host binary not present at IDA_PLUGIN_HOST_PATH");
 
-    sirius::OutOfProcessPluginInstance a (binary, "concurrent-a");
-    sirius::OutOfProcessPluginInstance b (binary, "concurrent-b");
+    ida::OutOfProcessPluginInstance a (binary, "concurrent-a");
+    ida::OutOfProcessPluginInstance b (binary, "concurrent-b");
     REQUIRE (a.isRunning());
     REQUIRE (b.isRunning());
 

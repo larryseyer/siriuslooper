@@ -19,7 +19,7 @@
 #include <unordered_map>
 #include <variant>
 
-namespace sirius::persistence
+namespace ida::persistence
 {
 
 namespace
@@ -37,7 +37,7 @@ namespace
 
     [[noreturn]] void fail (const std::string& message)
     {
-        throw std::runtime_error ("sirius::persistence::SessionFormat: " + message);
+        throw std::runtime_error ("ida::persistence::SessionFormat: " + message);
     }
 
     juce::DynamicObject::Ptr makeObject() { return new juce::DynamicObject(); }
@@ -1137,4 +1137,4 @@ TapePool deserializeTapePool (const juce::String& json)
     return TapePool (std::move (descriptors));
 }
 
-} // namespace sirius::persistence
+} // namespace ida::persistence

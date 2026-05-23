@@ -1,5 +1,5 @@
 # =============================================================================
-# SiriusNet — the ensemble layer (white paper Part XII)
+# IdaNet — the ensemble layer (white paper Part XII)
 # =============================================================================
 # Three components, all JUCE-free, headless-testable, no real networking — the
 # actual sockets/transport are operator-deferred per project conventions:
@@ -16,14 +16,14 @@
 #     announcements, marker events, transport-state changes (Part 12.2).
 # =============================================================================
 
-add_library(SiriusNet STATIC
+add_library(IdaNet STATIC
     src/LmcElection.cpp
     src/SessionMerge.cpp)
 
-target_include_directories(SiriusNet PUBLIC include)
+target_include_directories(IdaNet PUBLIC include)
 
-target_compile_features(SiriusNet PUBLIC cxx_std_20)
+target_compile_features(IdaNet PUBLIC cxx_std_20)
 
-target_link_libraries(SiriusNet PUBLIC Sirius::Core)
+target_link_libraries(IdaNet PUBLIC Ida::Core)
 
-add_library(Sirius::Net ALIAS SiriusNet)
+add_library(Ida::Net ALIAS IdaNet)

@@ -1,4 +1,4 @@
-Sirius Looper - A Reference Architecture for Time-Domain Audio/Video Looping
+IDA - A Reference Architecture for Time-Domain Audio/Video Looping
 Copyright (C) 2026 Larry Seyer
 
 This program is free software: you can redistribute it and/or modify
@@ -41,20 +41,20 @@ Looper distributions is NOT covered by this license.
 The Larry Seyer Acoustic Drum Library is proprietary content:
 Copyright (C) 1999 Larry Seyer. All Rights Reserved.
 
-Sirius Looper ships with a selection from this library, played by an embedded
+IDA ships with a selection from this library, played by an embedded
 sampler engine derived from the sister application OTTO. The selection is
 smaller than the library distributed with OTTO, but is governed by the same
 terms. See SAMPLE-LICENSE.md for the terms governing use of the drum sample
 library.
 
-The AGPLv3 license applies only to the Sirius Looper software source code, not
+The AGPLv3 license applies only to the IDA software source code, not
 to any bundled audio content or sample libraries.
 
 ================================================================================
 THIRD-PARTY COMPONENTS
 ================================================================================
 
-Sirius Looper includes third-party open source components under various
+IDA includes third-party open source components under various
 licenses. See LICENSE-THIRD-PARTY.md for complete details.
 
 ================================================================================

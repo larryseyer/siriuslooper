@@ -4,9 +4,9 @@
 
 **Goal:** Make routing an input node to tape X *actually record* — wire the existing `ITapeSink` seam to a real append-only **FLAC** recorder per `TapeId`, and put `renderInputGraph` on the live audio path.
 
-**Architecture:** A new `Sirius::Audio`-layer `FlacTapeSink : sirius::ITapeSink`. The audio thread's `deliverTapeBlock` only copies the stereo block into a fixed-size POD message and `push`es it onto **one** lock-free SPSC queue (RT-safe: no alloc/lock/I/O). A single worker thread is the sole consumer; it **exclusively owns** the `TapeId → juce::AudioFormatWriter (FLAC)` map, lazily creating a `<tapesDir>/tape-<id>.flac` writer on the first block for a tape, encoding via `writeFromFloatArrays`, and flushing the underlying `FileOutputStream` each drain pass. Tape lifecycle (close) is an ordered control message through the same queue, so the map needs no lock. `MainComponent` constructs the sink, points `InputMixer::setTapeSink` at it, and `AudioCallback` calls `renderInputGraph` in place of the legacy `processBuffer` + `processDeviceInputs` pair.
+**Architecture:** A new `Ida::Audio`-layer `FlacTapeSink : ida::ITapeSink`. The audio thread's `deliverTapeBlock` only copies the stereo block into a fixed-size POD message and `push`es it onto **one** lock-free SPSC queue (RT-safe: no alloc/lock/I/O). A single worker thread is the sole consumer; it **exclusively owns** the `TapeId → juce::AudioFormatWriter (FLAC)` map, lazily creating a `<tapesDir>/tape-<id>.flac` writer on the first block for a tape, encoding via `writeFromFloatArrays`, and flushing the underlying `FileOutputStream` each drain pass. Tape lifecycle (close) is an ordered control message through the same queue, so the map needs no lock. `MainComponent` constructs the sink, points `InputMixer::setTapeSink` at it, and `AudioCallback` calls `renderInputGraph` in place of the legacy `processBuffer` + `processDeviceInputs` pair.
 
-**Tech Stack:** C++20, JUCE (`juce_audio_formats` — newly linked into `Sirius::Audio`), `sirius::LockFreeSpscQueue` (header-only), Catch2 (`SiriusTests`), CMake/Ninja.
+**Tech Stack:** C++20, JUCE (`juce_audio_formats` — newly linked into `Ida::Audio`), `ida::LockFreeSpscQueue` (header-only), Catch2 (`IdaTests`), CMake/Ninja.
 
 **Format decision (locked — spec `2026-05-21-tape-subsystem-design.md` Slice 3, whitepaper §8.5/§8.3/§17.8):** RAM ring stays uncompressed PCM; the **live disk tape is append-only FLAC per `TapeId`**; the tape is immutable from the instant bytes flow (no "finalize the take" event). **SHA-256 content-addressing + the `TapeId → contentHash` manifest are a session-close archival step and are OUT OF SCOPE here** — live tapes are identified on disk by `TapeId` (filename `tape-<id>.flac`).
 
@@ -16,11 +16,11 @@
 
 ## File Structure
 
-- **Create** `audio/include/sirius/FlacTapeSink.h` — the sink class (public API: ctor, `setSampleRate`, `closeTape`, `deliverTapeBlock` override; RT-safe message POD).
+- **Create** `audio/include/ida/FlacTapeSink.h` — the sink class (public API: ctor, `setSampleRate`, `closeTape`, `deliverTapeBlock` override; RT-safe message POD).
 - **Create** `audio/src/FlacTapeSink.cpp` — SPSC queue + worker thread + per-tape FLAC writers.
 - **Modify** `audio/CMakeLists.txt` — link `juce::juce_audio_formats`.
 - **Create** `tests/FlacTapeSinkTests.cpp` — `[flac-tape-sink]` headless TDD.
-- **Modify** `tests/CMakeLists.txt` — add `FlacTapeSinkTests.cpp` to `SiriusTests` sources.
+- **Modify** `tests/CMakeLists.txt` — add `FlacTapeSinkTests.cpp` to `IdaTests` sources.
 - **Modify** `audio/src/AudioCallback.cpp` — replace Step 2 (`dispatchInputMixer`) + Step 2b (`processDeviceInputs`) with a single `renderInputGraph` call.
 - **Modify** `tests/AudioCallbackTests.cpp` (or the existing audio-callback test file) — prove the callback drives `renderInputGraph` → sink.
 - **Modify** `app/MainComponent.h` / `app/MainComponent.cpp` — construct + own `FlacTapeSink`, `setTapeSink`, set sample rate, tapes dir under app-data. (Operator-verified; compile-checked.)
@@ -28,7 +28,7 @@
 
 ---
 
-## Task 1: Link juce_audio_formats into Sirius::Audio
+## Task 1: Link juce_audio_formats into Ida::Audio
 
 **Files:**
 - Modify: `audio/CMakeLists.txt:25-27`
@@ -39,13 +39,13 @@ In `audio/CMakeLists.txt`, change:
 
 ```cmake
 target_link_libraries(SiriusAudio
-    PUBLIC  Sirius::Engine
+    PUBLIC  Ida::Engine
             juce::juce_audio_devices)
 ```
 to:
 ```cmake
 target_link_libraries(SiriusAudio
-    PUBLIC  Sirius::Engine
+    PUBLIC  Ida::Engine
             juce::juce_audio_devices
             juce::juce_audio_formats)
 ```
@@ -59,7 +59,7 @@ Expected: configures with no error about `juce_audio_formats`.
 
 ```bash
 git add audio/CMakeLists.txt
-git commit -m "build: link juce_audio_formats into Sirius::Audio (tape slice 3)"
+git commit -m "build: link juce_audio_formats into Ida::Audio (tape slice 3)"
 ```
 
 ---
@@ -67,14 +67,14 @@ git commit -m "build: link juce_audio_formats into Sirius::Audio (tape slice 3)"
 ## Task 2: FlacTapeSink — header + RT-safe message + lazy per-tape FLAC write
 
 **Files:**
-- Create: `audio/include/sirius/FlacTapeSink.h`
+- Create: `audio/include/ida/FlacTapeSink.h`
 - Create: `audio/src/FlacTapeSink.cpp`
 - Create: `tests/FlacTapeSinkTests.cpp`
 - Modify: `tests/CMakeLists.txt` (add the test source)
 
 - [ ] **Step 1: Write the header**
 
-Create `audio/include/sirius/FlacTapeSink.h`:
+Create `audio/include/ida/FlacTapeSink.h`:
 
 ```cpp
 #pragma once
@@ -192,7 +192,7 @@ private:
 
 - [ ] **Step 2: Add the test source to CMake**
 
-In `tests/CMakeLists.txt`, add `FlacTapeSinkTests.cpp` to the `SiriusTests` source list (alongside the other `*Tests.cpp` entries — match the existing `target_sources`/`add_executable` form used in that file).
+In `tests/CMakeLists.txt`, add `FlacTapeSinkTests.cpp` to the `IdaTests` source list (alongside the other `*Tests.cpp` entries — match the existing `target_sources`/`add_executable` form used in that file).
 
 - [ ] **Step 3: Write the failing test**
 
@@ -247,7 +247,7 @@ TEST_CASE ("FlacTapeSink writes one growing FLAC per delivered tape", "[flac-tap
 {
     auto dir = makeTempTapesDir();
     {
-        sirius::FlacTapeSink sink (dir, 48000.0, 256);
+        ida::FlacTapeSink sink (dir, 48000.0, 256);
 
         // A recognizable ramp so we can verify content survived encode/decode.
         std::vector<float> l (480), r (480);
@@ -255,7 +255,7 @@ TEST_CASE ("FlacTapeSink writes one growing FLAC per delivered tape", "[flac-tap
                                         r[i] = -l[i]; }
 
         for (int block = 0; block < 4; ++block)
-            sink.deliverTapeBlock (sirius::TapeId { 1 }, l.data(), r.data(), 480);
+            sink.deliverTapeBlock (ida::TapeId { 1 }, l.data(), r.data(), 480);
         // sink destructor finalizes the writer.
     }
 
@@ -276,10 +276,10 @@ TEST_CASE ("FlacTapeSink writes distinct tapes to distinct files in parallel", "
 {
     auto dir = makeTempTapesDir();
     {
-        sirius::FlacTapeSink sink (dir, 44100.0, 256);
+        ida::FlacTapeSink sink (dir, 44100.0, 256);
         std::vector<float> a (256, 0.25f), b (256, -0.25f);
-        sink.deliverTapeBlock (sirius::TapeId { 1 }, a.data(), a.data(), 256);
-        sink.deliverTapeBlock (sirius::TapeId { 7 }, b.data(), b.data(), 256);
+        sink.deliverTapeBlock (ida::TapeId { 1 }, a.data(), a.data(), 256);
+        sink.deliverTapeBlock (ida::TapeId { 7 }, b.data(), b.data(), 256);
     }
     CHECK (dir.getChildFile ("tape-1.flac").existsAsFile());
     CHECK (dir.getChildFile ("tape-7.flac").existsAsFile());
@@ -290,7 +290,7 @@ TEST_CASE ("FlacTapeSink writes distinct tapes to distinct files in parallel", "
 
 - [ ] **Step 4: Run the test to verify it fails (no implementation)**
 
-Run: `cmake --build build --target SiriusTests 2>&1 | tail -20`
+Run: `cmake --build build --target IdaTests 2>&1 | tail -20`
 Expected: FAIL — link/compile error (`FlacTapeSink.cpp` missing / undefined symbols).
 
 - [ ] **Step 5: Write the implementation**
@@ -459,13 +459,13 @@ void FlacTapeSink::finalizeTape (std::int64_t tapeId)
 
 - [ ] **Step 6: Build and run the test to verify it passes**
 
-Run: `cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[flac-tape-sink]"`
+Run: `cmake --build build --target IdaTests && ./build/tests/IdaTests "[flac-tape-sink]"`
 Expected: PASS (2 test cases).
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add audio/include/sirius/FlacTapeSink.h audio/src/FlacTapeSink.cpp tests/FlacTapeSinkTests.cpp tests/CMakeLists.txt
+git add audio/include/ida/FlacTapeSink.h audio/src/FlacTapeSink.cpp tests/FlacTapeSinkTests.cpp tests/CMakeLists.txt
 git commit -m "feat: FlacTapeSink — RT-safe per-tape append-only FLAC recorder (tape slice 3)"
 ```
 
@@ -484,12 +484,12 @@ Append to `tests/FlacTapeSinkTests.cpp`:
 TEST_CASE ("FlacTapeSink closeTape finalizes a complete, re-readable file mid-session", "[flac-tape-sink]")
 {
     auto dir = makeTempTapesDir();
-    sirius::FlacTapeSink sink (dir, 48000.0, 256);
+    ida::FlacTapeSink sink (dir, 48000.0, 256);
     std::vector<float> s (480, 0.1f);
     for (int b = 0; b < 3; ++b)
-        sink.deliverTapeBlock (sirius::TapeId { 2 }, s.data(), s.data(), 480);
+        sink.deliverTapeBlock (ida::TapeId { 2 }, s.data(), s.data(), 480);
 
-    sink.closeTape (sirius::TapeId { 2 });
+    sink.closeTape (ida::TapeId { 2 });
 
     // Poll briefly for the worker to finalize (no production polling — test only).
     const auto f = dir.getChildFile ("tape-2.flac");
@@ -506,10 +506,10 @@ TEST_CASE ("FlacTapeSink counts dropped blocks when the queue is full", "[flac-t
     auto dir = makeTempTapesDir();
     // Capacity 1 + flooding from this (producer) thread guarantees overflow
     // before the worker can drain.
-    sirius::FlacTapeSink sink (dir, 48000.0, 1);
+    ida::FlacTapeSink sink (dir, 48000.0, 1);
     std::vector<float> s (480, 0.2f);
     for (int b = 0; b < 5000; ++b)
-        sink.deliverTapeBlock (sirius::TapeId { 1 }, s.data(), s.data(), 480);
+        sink.deliverTapeBlock (ida::TapeId { 1 }, s.data(), s.data(), 480);
     CHECK (sink.droppedBlockCount() > 0);
     dir.deleteRecursively();
 }
@@ -517,7 +517,7 @@ TEST_CASE ("FlacTapeSink counts dropped blocks when the queue is full", "[flac-t
 
 - [ ] **Step 2: Run to verify behavior**
 
-Run: `cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[flac-tape-sink]"`
+Run: `cmake --build build --target IdaTests && ./build/tests/IdaTests "[flac-tape-sink]"`
 Expected: PASS (4 cases). `closeTape` + `droppedBlockCount` already exist from Task 2, so these tests verify the worker's ordered close path and overflow accounting; if the close test flakes on timing, raise the poll bound — do not weaken the sample-count assert.
 
 - [ ] **Step 3: Commit**
@@ -544,19 +544,19 @@ Add to the audio-callback test file a case that builds an `InputMixer` with one 
 ```cpp
 TEST_CASE ("AudioCallback drives renderInputGraph: a tape-routed channel reaches the sink", "[audio-callback][render]")
 {
-    sirius::InputMixer mixer;
-    const auto ch = mixer.addChannel (sirius::InputId { 0 }, sirius::SignalType::Audio);
+    ida::InputMixer mixer;
+    const auto ch = mixer.addChannel (ida::InputId { 0 }, ida::SignalType::Audio);
     mixer.setChannelInputSource (ch, 0, 1, true);   // stereo from device ch 0/1
-    REQUIRE (mixer.channelMainOut (ch) == sirius::InputMixer::MainOutDest::Tape); // default → primary tape
+    REQUIRE (mixer.channelMainOut (ch) == ida::InputMixer::MainOutDest::Tape); // default → primary tape
 
-    struct Sink : sirius::ITapeSink {
+    struct Sink : ida::ITapeSink {
         bool got = false; std::int64_t tapeId = 0;
-        void deliverTapeBlock (sirius::TapeId t, const float*, const float*, int n) noexcept override
+        void deliverTapeBlock (ida::TapeId t, const float*, const float*, int n) noexcept override
         { got = (n > 0); tapeId = t.value(); }
     } sink;
     mixer.setTapeSink (&sink);
 
-    sirius::AudioCallback cb { sirius::EngineConfig {} };
+    ida::AudioCallback cb { ida::EngineConfig {} };
     cb.setInputMixer (&mixer);
 
     const int n = 64;
@@ -575,7 +575,7 @@ TEST_CASE ("AudioCallback drives renderInputGraph: a tape-routed channel reaches
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[audio-callback][render]"`
+Run: `cmake --build build --target IdaTests && ./build/tests/IdaTests "[audio-callback][render]"`
 Expected: FAIL — `sink.got` is false (the callback still calls the legacy `processBuffer`/`processDeviceInputs`, which do not deliver to `tapeSink_`).
 
 - [ ] **Step 3: Make the change**
@@ -612,7 +612,7 @@ Then delete the now-unused `dispatchInputMixer` anonymous-namespace function (li
 
 - [ ] **Step 4: Run the new test + the full suite**
 
-Run: `cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[audio-callback]"`
+Run: `cmake --build build --target IdaTests && ./build/tests/IdaTests "[audio-callback]"`
 Expected: PASS, including the new `[render]` case.
 
 Run: `ctest --test-dir build`
@@ -643,7 +643,7 @@ In `app/MainComponent.h`, near the `notificationBus_` members (around line 184),
     // Tape subsystem slice 3 — the live per-tape FLAC recorder behind ITapeSink.
     // Declared after notificationBus_ and before inputMixer_ is given the sink,
     // so it outlives every audio callback that can deliver to it.
-    std::unique_ptr<sirius::FlacTapeSink> flacTapeSink_;
+    std::unique_ptr<ida::FlacTapeSink> flacTapeSink_;
 ```
 
 And declare a private helper:
@@ -660,7 +660,7 @@ In `app/MainComponent.cpp`, beside `calibrationSidecarFile()` (around line 48):
 juce::File MainComponent::tapesDirectory()
 {
     return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-        .getChildFile ("Sirius Looper")
+        .getChildFile ("IDA")
         .getChildFile ("tapes");
 }
 ```
@@ -675,7 +675,7 @@ In the `MainComponent` constructor, immediately after `inputMixer_->setNotificat
     // Tape subsystem slice 3 — bind the live FLAC recorder. Sample rate is set
     // from the device setup just below (and re-set on device change); 256 queue
     // slots cover the worst-case touched-tapes-per-block burst with headroom.
-    flacTapeSink_ = std::make_unique<sirius::FlacTapeSink> (
+    flacTapeSink_ = std::make_unique<ida::FlacTapeSink> (
         tapesDirectory(),
         audioDeviceManager_.getAudioDeviceSetup().sampleRate,
         256);
@@ -702,7 +702,7 @@ Confirm in `app/MainComponent.h` that `flacTapeSink_` is declared **before** `au
 Run:
 ```bash
 rm -rf build && cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release \
-  && cmake --build build --target SiriusLooper && cmake --build build --target SiriusTests
+  && cmake --build build --target IDA && cmake --build build --target IdaTests
 ```
 Expected: both targets build clean.
 
@@ -736,7 +736,7 @@ Append a `### 2026-05-21 — tape slice 3` entry:
 
 - [ ] **Step 2: Operator eyes-on (manual — the agent cannot confirm GUI/audio)**
 
-Build + launch (authorized): `cmake --build build --target SiriusLooper && open "build/app/SiriusLooper_artefacts/Release/Sirius Looper.app"`. Operator confirms: with live input on a strip routed to the primary tape, `~/Library/Application Support/Sirius Looper/tapes/tape-1.flac` appears and grows, and decodes/plays externally (e.g. `afplay` or import into a DAW). Record the operator's verdict in the commit / continue.md.
+Build + launch (authorized): `cmake --build build --target IDA && open "build/app/IDA_artefacts/Release/IDA.app"`. Operator confirms: with live input on a strip routed to the primary tape, `~/Library/Application Support/IDA/tapes/tape-1.flac` appears and grows, and decodes/plays externally (e.g. `afplay` or import into a DAW). Record the operator's verdict in the commit / continue.md.
 
 - [ ] **Step 3: Update continue.md**
 
@@ -755,7 +755,7 @@ git push origin master
 ## Self-Review
 
 - **Spec coverage:** Slice-3 spec requires (a) route→tape actually records [Tasks 2,4,5], (b) per-tape append-only FLAC under `<Sirius>/tapes` [Task 2 + Task 5 tapes dir], (c) RT-safe `ITapeSink` over a worker [Task 2], (d) SHA-256/manifest deferred [documented Task 6]. Covered.
-- **Type consistency:** `FlacTapeSink` ctor `(juce::File, double, std::size_t)`, `setSampleRate(double)`, `closeTape(TapeId)`, `deliverTapeBlock(TapeId,const float*,const float*,int)` — identical across header (Task 2), tests (Tasks 2,3), and MainComponent (Task 5). `TapeId::value()` used for all int64 keys (matches `core/include/sirius/TapeId.h`).
+- **Type consistency:** `FlacTapeSink` ctor `(juce::File, double, std::size_t)`, `setSampleRate(double)`, `closeTape(TapeId)`, `deliverTapeBlock(TapeId,const float*,const float*,int)` — identical across header (Task 2), tests (Tasks 2,3), and MainComponent (Task 5). `TapeId::value()` used for all int64 keys (matches `core/include/ida/TapeId.h`).
 - **Placeholder scan:** every code step shows full code; no TBD/TODO in code (the deferrals live in `todo.md`, per project rule).
 - **RT-safety:** `deliverTapeBlock` does only stack-POD construction + one wait-free `queue_.push` + a relaxed atomic increment; no alloc/lock/I/O/notify on the audio thread. Worker owns all FLAC state; no shared-state lock. Matches `docs/RT_SAFETY_CONTRACT.md`.
 - **Risk flagged:** Task 4 is the operator-visible behavior change (metering + capture now flow through `renderInputGraph`); Task 5/6 are operator-verified. The `juce_audio_formats` raw-stream-flush idiom (Task 2) is the one fragile JUCE-ownership detail — keep the `rawStream` pointer non-owning and never touch it after the writer is erased.

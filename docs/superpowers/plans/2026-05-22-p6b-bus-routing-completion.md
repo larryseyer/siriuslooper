@@ -25,7 +25,7 @@
 ### Task A: Engine — main-out "which bus" accessors + cycle-precheck (TDD)
 
 **Files:**
-- Modify: `engine/include/sirius/InputMixer.h`, `engine/src/InputMixer.cpp`
+- Modify: `engine/include/ida/InputMixer.h`, `engine/src/InputMixer.cpp`
 - Test: `tests/InputMixerTests.cpp`
 
 Add three message-thread const methods to `InputMixer` (declare near the existing `channelMainOut`/`busMainOut` at InputMixer.h:67-68):
@@ -50,10 +50,10 @@ Implementation notes (InputMixer.cpp): reverse-map the graph destination node ba
 ```cpp
 TEST_CASE ("InputMixer reports which bus a node's main-out targets", "[input-mixer]")
 {
-    sirius::InputMixer mixer;
-    const auto a = mixer.addBus (sirius::BusConfig { 2, "A", sirius::BusKind::Bus });
-    const auto b = mixer.addBus (sirius::BusConfig { 2, "B", sirius::BusKind::Bus });
-    const auto ch = mixer.addChannel (sirius::InputId (0), sirius::SignalType::Audio);
+    ida::InputMixer mixer;
+    const auto a = mixer.addBus (ida::BusConfig { 2, "A", ida::BusKind::Bus });
+    const auto b = mixer.addBus (ida::BusConfig { 2, "B", ida::BusKind::Bus });
+    const auto ch = mixer.addChannel (ida::InputId (0), ida::SignalType::Audio);
 
     REQUIRE (mixer.setChannelMainOutToBus (ch, a));
     REQUIRE (mixer.channelMainOutBus (ch).value() == a.value());
@@ -69,17 +69,17 @@ TEST_CASE ("InputMixer reports which bus a node's main-out targets", "[input-mix
 
 TEST_CASE ("InputMixer flags bus main-out routes that would cycle", "[input-mixer]")
 {
-    sirius::InputMixer mixer;
-    const auto a = mixer.addBus (sirius::BusConfig { 2, "A", sirius::BusKind::Bus });
-    const auto b = mixer.addBus (sirius::BusConfig { 2, "B", sirius::BusKind::Bus });
+    ida::InputMixer mixer;
+    const auto a = mixer.addBus (ida::BusConfig { 2, "A", ida::BusKind::Bus });
+    const auto b = mixer.addBus (ida::BusConfig { 2, "B", ida::BusKind::Bus });
     REQUIRE (mixer.setBusMainOutToBus (a, b));        // a -> b
     REQUIRE (mixer.busMainOutToBusWouldCycle (b, a)); // b -> a would close the loop
     REQUIRE_FALSE (mixer.busMainOutToBusWouldCycle (a, b)); // already the live edge, no NEW cycle
 }
 ```
-- [ ] **Step 2: Run, confirm they fail to compile** (methods undeclared): `cmake --build build --target SiriusTests` → FAIL.
+- [ ] **Step 2: Run, confirm they fail to compile** (methods undeclared): `cmake --build build --target IdaTests` → FAIL.
 - [ ] **Step 3: Implement** the three methods in InputMixer.h/.cpp per the notes above.
-- [ ] **Step 4: Build + run** `cmake --build build --target SiriusTests && ctest --test-dir build` → the two new cases pass; full baseline still green (was 567 pass / 1 Not-Run; now +2 cases pass).
+- [ ] **Step 4: Build + run** `cmake --build build --target IdaTests && ctest --test-dir build` → the two new cases pass; full baseline still green (was 567 pass / 1 Not-Run; now +2 cases pass).
 - [ ] **Step 5: Commit + push** (`feat: P6b — InputMixer channelMainOutBus/busMainOutBus + bus-cycle precheck`).
 
 ### Task B: UI — bus-row destination pickers + specific tick-back
@@ -96,7 +96,7 @@ Pattern to mirror: the channel destination picker (`destButtons_`, `stripDests_`
   - push to the pane via `setBusDestinations`.
   Also FIX the channel tick-back: in the `MainOutDest::Bus` case of the per-channel loop, replace the generic "Bus" label with the specific bus via `channelMainOutBus(chId)` (set `currentId = thatBus.value()`, `currentName = busForId(thatBus)->config().name`). Remove the now-obsolete "no which-bus accessor" comment.
 - [ ] **Step 4:** Wire `onBusDestinationChosen` in the relay block: bracket with remove/addAudioCallback, switch on `dest.kind` → `setBusMainOutToTape(busId, TapeId(dest.id))` / `setBusMainOutToBus(busId, BusId(dest.id))` / `setBusMainOutToHardwareOutput(busId)`, then `refreshInputMixer()`. (busId = busStripIds_[busIdx].)
-- [ ] **Step 5:** Build `cmake --build build --target SiriusLooper` clean; `ctest --test-dir build` baseline holds.
+- [ ] **Step 5:** Build `cmake --build build --target IDA` clean; `ctest --test-dir build` baseline holds.
 - [ ] **Step 6:** Commit + push (`feat: P6b — bus-row destination pickers + specific bus tick-back on both rows`).
 
 ## Verification

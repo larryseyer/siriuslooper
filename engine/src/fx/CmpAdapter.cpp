@@ -62,7 +62,7 @@ bool CmpAdapter::process (const float* const* inChannels,
         || numChannels <= 0 || numSamples <= 0)
         return false;
 
-    // Sirius is stereo-only (hard invariant — CLAUDE.md). PlayerCompressor
+    // IDA is stereo-only (hard invariant — CLAUDE.md). PlayerCompressor
     // requires numChannels >= 2 (it returns early on a mono buffer,
     // leaving the output unchanged). Treat anything narrower than stereo
     // as a miss so the caller's dry passthrough takes over instead of

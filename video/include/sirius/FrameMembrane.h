@@ -10,7 +10,7 @@ namespace sirius
 
 /// The video membrane (white paper Part 5.3): the boundary at which a video
 /// source's natural frame rate meets whatever rate is needed for storage,
-/// processing, or display. The minimal strategy — the one Sirius commits to
+/// processing, or display. The minimal strategy — the one IDA commits to
 /// at M6 — is nearest-frame selection: at each query moment, the source
 /// frame whose presentation time is closest is shown. Motion-compensated
 /// frame interpolation is a deliberate later refinement; the architecture

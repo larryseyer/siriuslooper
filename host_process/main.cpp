@@ -1,5 +1,5 @@
 // =============================================================================
-// sirius_plugin_host — standalone child-process binary (M7 S1–S2c)
+// ida_plugin_host — standalone child-process binary (M7 S1–S2c)
 // =============================================================================
 // V7 alignment plan Milestone 7. The engine launches one of these per hosted
 // plug-in instance; this binary loads the plug-in into its own address space
@@ -98,7 +98,7 @@ namespace
         shouldExit = 1;
     }
 
-    using IpcQueue = sirius::SharedMemorySpscQueue<sirius::PluginIpcMessage>;
+    using IpcQueue = ida::SharedMemorySpscQueue<ida::PluginIpcMessage>;
 
    #ifdef __APPLE__
     extern "C" std::uint32_t sirius_gui_show   (const clap_plugin_t*,
@@ -114,7 +114,7 @@ namespace
     /// engine without going through the request/response IPC path.
     extern "C" void sirius_appkit_init         (void);
     extern "C" void sirius_appkit_drain_events (void);
-    extern "C" void sirius_gui_set_state       (sirius::PluginGuiState* state);
+    extern "C" void sirius_gui_set_state       (ida::PluginGuiState* state);
    #endif
 
     /// State the CLAP-mode pump carries for the M7 S5 GUI-control region.
@@ -124,7 +124,7 @@ namespace
     /// child-private cursor, not shared state.
     struct GuiServicingState
     {
-        sirius::PluginGuiState* state           { nullptr };
+        ida::PluginGuiState* state           { nullptr };
         std::uint64_t           lastServicedSeq { 0 };
     };
 
@@ -151,19 +151,19 @@ namespace
        #ifdef __APPLE__
         switch (kind)
         {
-            case sirius::PluginGuiState::Show:
+            case ida::PluginGuiState::Show:
                 contextId = sirius_gui_show (plugin, width, height);
                 break;
-            case sirius::PluginGuiState::Hide:
+            case ida::PluginGuiState::Hide:
                 sirius_gui_hide (plugin);
                 contextId = 0;
                 outWidth  = 0;
                 outHeight = 0;
                 break;
-            case sirius::PluginGuiState::Resize:
+            case ida::PluginGuiState::Resize:
                 contextId = sirius_gui_resize (plugin, width, height);
                 break;
-            case sirius::PluginGuiState::None:
+            case ida::PluginGuiState::None:
             default:
                 break;
         }
@@ -188,7 +188,7 @@ namespace
     /// not shared state — mirrors GuiServicingState.
     struct StateServicingState
     {
-        sirius::PluginStateState* state           { nullptr };
+        ida::PluginStateState* state           { nullptr };
         std::uint64_t             lastServicedSeq { 0 };
     };
 
@@ -244,7 +244,7 @@ namespace
         const auto kind = state.state->requestKind.load (std::memory_order_relaxed);
 
         state.state->responseBytes.store (0, std::memory_order_relaxed);
-        state.state->responseStatus.store (sirius::PluginStateState::Ok,
+        state.state->responseStatus.store (ida::PluginStateState::Ok,
                                            std::memory_order_relaxed);
 
         const auto* ext = static_cast<const clap_plugin_state_t*> (
@@ -252,24 +252,24 @@ namespace
         if (ext == nullptr)
         {
             state.state->responseStatus.store (
-                sirius::PluginStateState::ErrorNotSupported,
+                ida::PluginStateState::ErrorNotSupported,
                 std::memory_order_relaxed);
             state.state->responseSeq.store (current, std::memory_order_release);
             state.lastServicedSeq = current;
             return;
         }
 
-        if (kind == sirius::PluginStateState::Save)
+        if (kind == ida::PluginStateState::Save)
         {
             OstreamBuf out { state.state->responsePayload,
-                             sirius::PluginStateState::kMaxStateBytes,
+                             ida::PluginStateState::kMaxStateBytes,
                              0 };
             clap_ostream_t stream { &out, ostreamWrite };
             const bool ok = ext->save (plugin, &stream);
             if (! ok)
             {
                 state.state->responseStatus.store (
-                    sirius::PluginStateState::ErrorGeneric,
+                    ida::PluginStateState::ErrorGeneric,
                     std::memory_order_relaxed);
                 state.state->responseBytes.store (0, std::memory_order_relaxed);
             }
@@ -280,13 +280,13 @@ namespace
                     std::memory_order_relaxed);
             }
         }
-        else if (kind == sirius::PluginStateState::Load)
+        else if (kind == ida::PluginStateState::Load)
         {
             const auto n = state.state->requestBytes.load (std::memory_order_relaxed);
-            if (n > sirius::PluginStateState::kMaxStateBytes)
+            if (n > ida::PluginStateState::kMaxStateBytes)
             {
                 state.state->responseStatus.store (
-                    sirius::PluginStateState::ErrorTooLarge,
+                    ida::PluginStateState::ErrorTooLarge,
                     std::memory_order_relaxed);
             }
             else
@@ -295,8 +295,8 @@ namespace
                 clap_istream_t stream { &in, istreamRead };
                 const bool ok = ext->load (plugin, &stream);
                 state.state->responseStatus.store (
-                    ok ? sirius::PluginStateState::Ok
-                       : sirius::PluginStateState::ErrorGeneric,
+                    ok ? ida::PluginStateState::Ok
+                       : ida::PluginStateState::ErrorGeneric,
                     std::memory_order_relaxed);
             }
         }
@@ -312,7 +312,7 @@ namespace
     /// "no more work, time to leave."
     template <typename OnSleep>
     bool popMessageBlocking (IpcQueue& q,
-                             sirius::PluginIpcMessage& out,
+                             ida::PluginIpcMessage& out,
                              OnSleep&& onSleep)
     {
         while (shouldExit == 0)
@@ -329,14 +329,14 @@ namespace
     }
 
     /// No-op overload for the identity mode that has no GUI side work.
-    bool popMessageBlocking (IpcQueue& q, sirius::PluginIpcMessage& out)
+    bool popMessageBlocking (IpcQueue& q, ida::PluginIpcMessage& out)
     {
         return popMessageBlocking (q, out, [] {});
     }
 
     /// Pushes one PluginIpcMessage onto `q`, retrying briefly if the ring
     /// is full. Returns false on shutdown or sustained full-ring stall.
-    bool pushMessageBlocking (IpcQueue& q, const sirius::PluginIpcMessage& msg)
+    bool pushMessageBlocking (IpcQueue& q, const ida::PluginIpcMessage& msg)
     {
         using clock = std::chrono::steady_clock;
         const auto deadline = clock::now() + std::chrono::milliseconds (kRingPushTimeoutMs);
@@ -403,11 +403,11 @@ namespace
         {
             while (count > 0)
             {
-                if (pendingWrite_.payloadBytes >= sirius::PluginIpcMessage::kMaxPayloadBytes)
+                if (pendingWrite_.payloadBytes >= ida::PluginIpcMessage::kMaxPayloadBytes)
                     if (! flush())
                         return false;
 
-                const std::size_t room = sirius::PluginIpcMessage::kMaxPayloadBytes
+                const std::size_t room = ida::PluginIpcMessage::kMaxPayloadBytes
                                        - pendingWrite_.payloadBytes;
                 const std::size_t take = std::min (count, room);
                 std::memcpy (pendingWrite_.payload + pendingWrite_.payloadBytes,
@@ -425,7 +425,7 @@ namespace
             if (pendingWrite_.payloadBytes == 0)
                 return true;
 
-            pendingWrite_.kind        = sirius::PluginIpcMessage::Bytes;
+            pendingWrite_.kind        = ida::PluginIpcMessage::Bytes;
             pendingWrite_.monotonicNs = std::chrono::duration_cast<std::chrono::nanoseconds> (
                 std::chrono::steady_clock::now().time_since_epoch()).count();
 
@@ -438,9 +438,9 @@ namespace
         IpcQueue& inRing_;
         IpcQueue& outRing_;
         OnIdle    onIdle_;
-        sirius::PluginIpcMessage pendingRead_  {};
+        ida::PluginIpcMessage pendingRead_  {};
         std::size_t              readCursor_   { 0 };
-        sirius::PluginIpcMessage pendingWrite_ {};
+        ida::PluginIpcMessage pendingWrite_ {};
     };
 
     // -------------------------------------------------------------------------
@@ -448,7 +448,7 @@ namespace
     // -------------------------------------------------------------------------
     int runIdentityMode (IpcQueue& inRing, IpcQueue& outRing)
     {
-        sirius::PluginIpcMessage msg {};
+        ida::PluginIpcMessage msg {};
         while (shouldExit == 0)
         {
             if (! popMessageBlocking (inRing, msg))
@@ -482,8 +482,8 @@ namespace
         clap_host_t host {};
         host.clap_version    = CLAP_VERSION_INIT;
         host.host_data       = nullptr;
-        host.name            = "sirius_plugin_host";
-        host.vendor          = "Sirius Looper";
+        host.name            = "ida_plugin_host";
+        host.vendor          = "IDA";
         host.url             = "https://example.invalid/sirius";
         host.version         = "0.1.0";
         host.get_extension   = hostGetExtension;
@@ -495,15 +495,15 @@ namespace
 
     int runClapMode (const std::string& pluginPath,
                      IpcQueue& inRing, IpcQueue& outRing,
-                     sirius::PluginGuiState* guiState,
-                     sirius::PluginStateState* stateState)
+                     ida::PluginGuiState* guiState,
+                     ida::PluginStateState* stateState)
     {
         std::string loadErr;
-        auto loader = sirius::ClapBundleLoader::load (pluginPath, loadErr);
+        auto loader = ida::ClapBundleLoader::load (pluginPath, loadErr);
         if (! loader.valid())
         {
             std::fprintf (stderr,
-                          "sirius_plugin_host: %s\n",
+                          "ida_plugin_host: %s\n",
                           loadErr.c_str());
             return kExitClapLoadErr;
         }
@@ -515,18 +515,18 @@ namespace
         const auto descriptors = loader.descriptors (pluginPath);
         if (descriptors.empty())
         {
-            std::fprintf (stderr, "sirius_plugin_host: bundle exports no plug-ins\n");
+            std::fprintf (stderr, "ida_plugin_host: bundle exports no plug-ins\n");
             return kExitClapLoadErr;
         }
         const auto* plugin = loader.createPlugin (host, descriptors.front().uniqueId.c_str());
         if (plugin == nullptr || ! plugin->init (plugin))
         {
-            std::fprintf (stderr, "sirius_plugin_host: create_plugin/init failed\n");
+            std::fprintf (stderr, "ida_plugin_host: create_plugin/init failed\n");
             return kExitClapLoadErr;
         }
         if (! plugin->activate (plugin, kSampleRate, 1, kInitialMaxFrames))
         {
-            std::fprintf (stderr, "sirius_plugin_host: plugin->activate failed\n");
+            std::fprintf (stderr, "ida_plugin_host: plugin->activate failed\n");
             plugin->destroy (plugin);
             return kExitClapLoadErr;
         }
@@ -694,9 +694,9 @@ int main (int argc, char** argv)
     if (! parseArgs (argc, argv, instanceId, mode, pluginPath))
     {
         std::fprintf (stderr,
-                      "sirius_plugin_host: required args missing\n"
-                      "  usage: sirius_plugin_host --instance-id <id> --mode identity\n"
-                      "         sirius_plugin_host --instance-id <id> --mode clap --plugin-path <bundle>\n");
+                      "ida_plugin_host: required args missing\n"
+                      "  usage: ida_plugin_host --instance-id <id> --mode identity\n"
+                      "         ida_plugin_host --instance-id <id> --mode clap --plugin-path <bundle>\n");
         return kExitBadArgs;
     }
 
@@ -719,35 +719,35 @@ int main (int argc, char** argv)
     std::signal (SIGPIPE, SIG_IGN);
 
     // Attach to the rings the engine created before forking us.
-    std::unique_ptr<sirius::SharedMemoryRegion> e2hRegion;
-    std::unique_ptr<sirius::SharedMemoryRegion> h2eRegion;
-    std::unique_ptr<sirius::SharedMemoryRegion> guiRegion;
+    std::unique_ptr<ida::SharedMemoryRegion> e2hRegion;
+    std::unique_ptr<ida::SharedMemoryRegion> h2eRegion;
+    std::unique_ptr<ida::SharedMemoryRegion> guiRegion;
     std::unique_ptr<IpcQueue> e2hQueue;
     std::unique_ptr<IpcQueue> h2eQueue;
-    sirius::PluginGuiState*   guiState = nullptr;
+    ida::PluginGuiState*   guiState = nullptr;
     try
     {
-        e2hRegion = std::make_unique<sirius::SharedMemoryRegion> (
-            sirius::makeEngineToHostRingName (instanceId), 0,
-            sirius::SharedMemoryRegion::Mode::OpenExisting);
-        h2eRegion = std::make_unique<sirius::SharedMemoryRegion> (
-            sirius::makeHostToEngineRingName (instanceId), 0,
-            sirius::SharedMemoryRegion::Mode::OpenExisting);
+        e2hRegion = std::make_unique<ida::SharedMemoryRegion> (
+            ida::makeEngineToHostRingName (instanceId), 0,
+            ida::SharedMemoryRegion::Mode::OpenExisting);
+        h2eRegion = std::make_unique<ida::SharedMemoryRegion> (
+            ida::makeHostToEngineRingName (instanceId), 0,
+            ida::SharedMemoryRegion::Mode::OpenExisting);
         e2hQueue = std::make_unique<IpcQueue> (
-            IpcQueue::attach (e2hRegion->data(), sirius::kPluginIpcRingCapacity));
+            IpcQueue::attach (e2hRegion->data(), ida::kPluginIpcRingCapacity));
         h2eQueue = std::make_unique<IpcQueue> (
-            IpcQueue::attach (h2eRegion->data(), sirius::kPluginIpcRingCapacity));
+            IpcQueue::attach (h2eRegion->data(), ida::kPluginIpcRingCapacity));
 
         // M7 S5 — open the GUI state region. The engine created it
         // alongside the audio rings before fork; this is OpenExisting.
-        guiRegion = std::make_unique<sirius::SharedMemoryRegion> (
-            sirius::makeGuiStateRegionName (instanceId), 0,
-            sirius::SharedMemoryRegion::Mode::OpenExisting);
-        guiState = sirius::PluginGuiState::view (guiRegion->data());
+        guiRegion = std::make_unique<ida::SharedMemoryRegion> (
+            ida::makeGuiStateRegionName (instanceId), 0,
+            ida::SharedMemoryRegion::Mode::OpenExisting);
+        guiState = ida::PluginGuiState::view (guiRegion->data());
     }
     catch (const std::exception& e)
     {
-        std::fprintf (stderr, "sirius_plugin_host: shm attach failed: %s\n", e.what());
+        std::fprintf (stderr, "ida_plugin_host: shm attach failed: %s\n", e.what());
         return kExitShmErr;
     }
 
@@ -755,14 +755,14 @@ int main (int argc, char** argv)
     // alongside the audio rings before fork (Task 7); engine versions
     // before that don't create it, so tolerate absence — state IPC is
     // opt-in for forward compat. Every current spawn hits this branch.
-    std::unique_ptr<sirius::SharedMemoryRegion> stateRegion;
-    sirius::PluginStateState* stateState = nullptr;
+    std::unique_ptr<ida::SharedMemoryRegion> stateRegion;
+    ida::PluginStateState* stateState = nullptr;
     try
     {
-        stateRegion = std::make_unique<sirius::SharedMemoryRegion> (
-            sirius::makeStateRegionName (instanceId), 0,
-            sirius::SharedMemoryRegion::Mode::OpenExisting);
-        stateState = sirius::PluginStateState::view (stateRegion->data());
+        stateRegion = std::make_unique<ida::SharedMemoryRegion> (
+            ida::makeStateRegionName (instanceId), 0,
+            ida::SharedMemoryRegion::Mode::OpenExisting);
+        stateState = ida::PluginStateState::view (stateRegion->data());
     }
     catch (const std::exception&)
     {
@@ -778,14 +778,14 @@ int main (int argc, char** argv)
         if (pluginPath.empty())
         {
             std::fprintf (stderr,
-                          "sirius_plugin_host: --mode clap requires --plugin-path <bundle>\n");
+                          "ida_plugin_host: --mode clap requires --plugin-path <bundle>\n");
             return kExitBadArgs;
         }
         return runClapMode (pluginPath, *e2hQueue, *h2eQueue, guiState, stateState);
     }
 
     std::fprintf (stderr,
-                  "sirius_plugin_host: unknown --mode '%s' (supported: identity, clap)\n",
+                  "ida_plugin_host: unknown --mode '%s' (supported: identity, clap)\n",
                   mode.c_str());
     return kExitUnknownMode;
 }

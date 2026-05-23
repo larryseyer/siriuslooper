@@ -27,7 +27,7 @@ namespace sirius
 ///
 /// Sidechain is derived internally from the input (input → optional 4-
 /// stage Butterworth HPF at 100 Hz → peak detector → envelope follower
-/// → gain calculation). No external sidechain bus required. Sirius has
+/// → gain calculation). No external sidechain bus required. IDA has
 /// no sidechain-bus routing concept today; if the operator later asks
 /// for external sidechain, a separate slice will widen the adapter
 /// contract to accept a second input pointer.

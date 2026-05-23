@@ -46,21 +46,21 @@ TEST_CASE ("DemoSession top-level children are all Phrase shells, never hybrids"
         REQUIRE (intro.isPhrase());
         REQUIRE_FALSE (isHybrid (intro));
         REQUIRE (hasLoopChild (intro));
-        CHECK (intro.conceptualIn()  == sirius::Position (sirius::Rational (0)));
-        CHECK (intro.conceptualOut() == sirius::Position (sirius::Rational (3)));
+        CHECK (intro.conceptualIn()  == ida::Position (ida::Rational (0)));
+        CHECK (intro.conceptualOut() == ida::Position (ida::Rational (3)));
     }
 
     // Three verse wrappers at [3,9), [9,15), [15,21).
     for (std::size_t i = 1; i <= 3; ++i)
     {
         const auto& wrapper = *demo.root->children()[i];
-        REQUIRE (sirius::isPlacementWrapper (wrapper));
+        REQUIRE (ida::isPlacementWrapper (wrapper));
         REQUIRE_FALSE (isHybrid (wrapper));
         // Wrapper itself has no direct Loop child (the shared verse does).
         CHECK (wrapper.conceptualIn()  ==
-               sirius::Position (sirius::Rational (3 + static_cast<int> (i - 1) * 6)));
+               ida::Position (ida::Rational (3 + static_cast<int> (i - 1) * 6)));
         CHECK (wrapper.conceptualOut() ==
-               sirius::Position (sirius::Rational (3 + static_cast<int> (i) * 6)));
+               ida::Position (ida::Rational (3 + static_cast<int> (i) * 6)));
     }
 
     // Outro [21,24) — bare Phrase, has a Loop descendant.
@@ -69,12 +69,12 @@ TEST_CASE ("DemoSession top-level children are all Phrase shells, never hybrids"
         REQUIRE (outro.isPhrase());
         REQUIRE_FALSE (isHybrid (outro));
         REQUIRE (hasLoopChild (outro));
-        CHECK (outro.conceptualIn()  == sirius::Position (sirius::Rational (21)));
-        CHECK (outro.conceptualOut() == sirius::Position (sirius::Rational (24)));
+        CHECK (outro.conceptualIn()  == ida::Position (ida::Rational (21)));
+        CHECK (outro.conceptualOut() == ida::Position (ida::Rational (24)));
     }
 
     // Total span: 24 whole notes.
-    CHECK (demo.root->conceptualOut() == sirius::Position (sirius::Rational (24)));
+    CHECK (demo.root->conceptualOut() == ida::Position (ida::Rational (24)));
 }
 
 TEST_CASE ("DemoSession's three verse wrappers share one Phrase ChildPtr",

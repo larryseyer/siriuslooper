@@ -41,7 +41,7 @@ jobs:
     name: macOS signed build + smoke
     runs-on: macos-latest
     env:
-      APP_BUNDLE: build-xcode/app/SiriusLooper_artefacts/Release/Sirius Looper.app
+      APP_BUNDLE: build-xcode/app/IDA_artefacts/Release/IDA.app
     steps:
       - uses: actions/checkout@v5
 
@@ -70,7 +70,7 @@ jobs:
         run: cmake -B build-xcode -G Xcode
 
       - name: Build signed bundle
-        run: cmake --build build-xcode --config Release --target SiriusLooper
+        run: cmake --build build-xcode --config Release --target IDA
 
       - name: Verify signing
         run: |

@@ -9,9 +9,9 @@
 
 #include <stdexcept>
 
-using sirius::bandOf;
-using sirius::LatencyBand;
-using sirius::LatencyBudget;
+using ida::bandOf;
+using ida::LatencyBand;
+using ida::LatencyBudget;
 
 TEST_CASE ("perceptual bands match white paper 14.8 thresholds", "[latency]")
 {

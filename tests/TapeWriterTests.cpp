@@ -23,11 +23,11 @@
 #include <filesystem>
 #include <thread>
 
-using sirius::ChannelId;
-using sirius::kMaxTapeWriteMessageBytes;
-using sirius::Rational;
-using sirius::TapeWriteMessage;
-using sirius::TapeWriter;
+using ida::ChannelId;
+using ida::kMaxTapeWriteMessageBytes;
+using ida::Rational;
+using ida::TapeWriteMessage;
+using ida::TapeWriter;
 
 namespace
 {
@@ -157,11 +157,11 @@ TEST_CASE ("flushChannel returns promptly even on Survival-tier flush intervals"
 
     // Survival-tier interval is 1000 ms; an empty-queue flush must still
     // return well under that (the wait predicate flips on the atomic flag).
-    sirius::TapeWriter writer (std::filesystem::path (tempDir.getFullPathName().toStdString()),
+    ida::TapeWriter writer (std::filesystem::path (tempDir.getFullPathName().toStdString()),
                                std::chrono::milliseconds (1000), 16);
 
     const auto start = std::chrono::steady_clock::now();
-    (void) writer.flushChannel (sirius::ChannelId (7));
+    (void) writer.flushChannel (ida::ChannelId (7));
     const auto elapsed = std::chrono::steady_clock::now() - start;
 
     // Allow generous slack for CI runners; the bug case is ~1000 ms.

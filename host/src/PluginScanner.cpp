@@ -8,7 +8,7 @@ namespace sirius
 
 namespace
 {
-    /// Maps the JUCE format-name string to the Sirius enum. JUCE uses
+    /// Maps the JUCE format-name string to the IDA enum. JUCE uses
     /// human-readable names ("VST3", "AudioUnit", "AudioUnit v3"); the
     /// descriptors that hold them are produced by JUCE itself.
     PluginFormat formatFromJuce (const juce::String& formatName)

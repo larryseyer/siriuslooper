@@ -8,7 +8,7 @@
 
 **Architecture:** A JUCE-free plain-data snapshot type lives in `core/` (`MixerGraphState.h`). The engine gets member functions `exportGraphState()` / `importGraphState()` on `InputMixer` and `OutputMixer` that translate live mixer state ↔ the snapshot (members, so they read/write private state directly — no bulk accessor surface). Persistence gets `serializeMixerGraphState()` / `deserializeMixerGraphState()` in `SessionFormat.cpp` that translate the snapshot ↔ JSON, reusing the existing anonymous-namespace helpers. The existing `serializeSession(const Constituent&)` API is untouched.
 
-**Tech stack:** C++17, JUCE (`juce::var`/`juce::JSON` in persistence only), Catch2 tests, CMake/Ninja. Layering: `SiriusPersistence` links only `Sirius::Core` (JUCE-free core); `SiriusEngine` links `Sirius::Persistence` privately. So the snapshot MUST live in core and carry only JUCE-free, engine-free types — persistence cannot include engine headers (cycle).
+**Tech stack:** C++17, JUCE (`juce::var`/`juce::JSON` in persistence only), Catch2 tests, CMake/Ninja. Layering: `SiriusPersistence` links only `Ida::Core` (JUCE-free core); `IdaEngine` links `Ida::Persistence` privately. So the snapshot MUST live in core and carry only JUCE-free, engine-free types — persistence cannot include engine headers (cycle).
 
 **Scope note:** This ships **apparatus + tests**, not `MainComponent` wiring. Writing/reading the graph sections into the on-disk session file on actual save/load lands with the UI phases (P6/P7), matching Phase 4's posture. Record that deferral in `todo.md`.
 
@@ -16,10 +16,10 @@
 
 ## File structure
 
-- **Create** `core/include/sirius/MixerGraphState.h` — the snapshot value types + `operator==`. Header-only POD. JUCE-free, engine-free. Includes only `EffectChain.h`, `SignalType.h`, `TapeMode.h` (all already in core).
-- **Modify** `engine/include/sirius/InputMixer.h` / `engine/src/InputMixer.cpp` — add `setBusEffectChain`, `exportGraphState`, `importGraphState` + private helpers.
-- **Modify** `engine/include/sirius/OutputMixer.h` / `engine/src/OutputMixer.cpp` — add `exportGraphState`, `importGraphState` + private helpers.
-- **Modify** `persistence/include/sirius/SessionFormat.h` / `persistence/src/SessionFormat.cpp` — add the four serialize/deserialize free functions + their `ToVar`/`FromVar` helpers.
+- **Create** `core/include/ida/MixerGraphState.h` — the snapshot value types + `operator==`. Header-only POD. JUCE-free, engine-free. Includes only `EffectChain.h`, `SignalType.h`, `TapeMode.h` (all already in core).
+- **Modify** `engine/include/ida/InputMixer.h` / `engine/src/InputMixer.cpp` — add `setBusEffectChain`, `exportGraphState`, `importGraphState` + private helpers.
+- **Modify** `engine/include/ida/OutputMixer.h` / `engine/src/OutputMixer.cpp` — add `exportGraphState`, `importGraphState` + private helpers.
+- **Modify** `persistence/include/ida/SessionFormat.h` / `persistence/src/SessionFormat.cpp` — add the four serialize/deserialize free functions + their `ToVar`/`FromVar` helpers.
 - **Create** `tests/MixerGraphStateTests.cpp` — snapshot equality (`[mixergraphstate]`).
 - **Modify** `tests/InputMixerTests.cpp`, `tests/OutputMixerTests.cpp` — engine export/import round-trip.
 - **Modify** `tests/SessionFormatTests.cpp` — snapshot serialize/deserialize round-trip + forward-compat + malformed (`[sessionformat]`).
@@ -30,8 +30,8 @@
 
 **Build/run after each task:**
 ```bash
-cmake --build build --target SiriusTests
-./build/tests/SiriusTests "[mixergraphstate]"   # (substitute the task's tag)
+cmake --build build --target IdaTests
+./build/tests/IdaTests "[mixergraphstate]"   # (substitute the task's tag)
 ```
 If `build/` does not exist: `cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release` first.
 
@@ -40,13 +40,13 @@ If `build/` does not exist: `cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Rel
 ## Task 0: Core snapshot value type + equality
 
 **Files:**
-- Create: `core/include/sirius/MixerGraphState.h`
+- Create: `core/include/ida/MixerGraphState.h`
 - Create test: `tests/MixerGraphStateTests.cpp`
 - Modify: `tests/CMakeLists.txt`
 
 - [ ] **Step 1: Write the snapshot header**
 
-Create `core/include/sirius/MixerGraphState.h`:
+Create `core/include/ida/MixerGraphState.h`:
 
 ```cpp
 #pragma once
@@ -288,7 +288,7 @@ TEST_CASE ("OutputMixerGraphState equality and per-field inequality", "[mixergra
 
 - [ ] **Step 3: Register the test file**
 
-In `tests/CMakeLists.txt`, add `MixerGraphStateTests.cpp` to the `add_executable(SiriusTests ...)` source list (alongside `EffectChainTests.cpp` at line 33):
+In `tests/CMakeLists.txt`, add `MixerGraphStateTests.cpp` to the `add_executable(IdaTests ...)` source list (alongside `EffectChainTests.cpp` at line 33):
 
 ```cmake
     EffectChainTests.cpp
@@ -297,13 +297,13 @@ In `tests/CMakeLists.txt`, add `MixerGraphStateTests.cpp` to the `add_executable
 
 - [ ] **Step 4: Run the test — verify it passes**
 
-Run: `cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[mixergraphstate]"`
+Run: `cmake --build build --target IdaTests && ./build/tests/IdaTests "[mixergraphstate]"`
 Expected: PASS (all sections).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add core/include/sirius/MixerGraphState.h tests/MixerGraphStateTests.cpp tests/CMakeLists.txt
+git add core/include/ida/MixerGraphState.h tests/MixerGraphStateTests.cpp tests/CMakeLists.txt
 git commit -m "feat: core MixerGraphState snapshot type + equality"
 ```
 
@@ -312,7 +312,7 @@ git commit -m "feat: core MixerGraphState snapshot type + equality"
 ## Task 1: InputMixer export
 
 **Files:**
-- Modify: `engine/include/sirius/InputMixer.h`
+- Modify: `engine/include/ida/InputMixer.h`
 - Modify: `engine/src/InputMixer.cpp`
 - Test: `tests/InputMixerTests.cpp`
 
@@ -323,26 +323,26 @@ Add to `tests/InputMixerTests.cpp` (include `"sirius/MixerGraphState.h"` and `"s
 ```cpp
 TEST_CASE ("InputMixer exportGraphState reflects buses, routing, sends, inserts", "[input-mixer][persistence]")
 {
-    sirius::InputMixer mixer;
-    mixer.registerInput (sirius::InputId (1), sirius::InputDescriptor{});
+    ida::InputMixer mixer;
+    mixer.registerInput (ida::InputId (1), ida::InputDescriptor{});
 
-    const auto drums = mixer.addBus (sirius::BusConfig { 2, "Drums", sirius::BusKind::Bus });
+    const auto drums = mixer.addBus (ida::BusConfig { 2, "Drums", ida::BusKind::Bus });
     const auto reverb = mixer.addFxReturn ("Reverb");
 
-    sirius::EffectChainEntry comp; comp.displayName = "comp";
-    mixer.setBusEffectChain (drums, sirius::EffectChain{}.withAppended (comp));
+    ida::EffectChainEntry comp; comp.displayName = "comp";
+    mixer.setBusEffectChain (drums, ida::EffectChain{}.withAppended (comp));
 
-    const auto ch = mixer.addChannel (sirius::InputId (1), sirius::SignalType::Audio);
+    const auto ch = mixer.addChannel (ida::InputId (1), ida::SignalType::Audio);
     mixer.setChannelInputSource (ch, 2, 3, true);
-    mixer.setChannelTapeMode (ch, sirius::TapeMode::CommitToTape);
+    mixer.setChannelTapeMode (ch, ida::TapeMode::CommitToTape);
     mixer.setChannelMainOutToBus (ch, drums);
     mixer.setChannelSend (ch, reverb, 0.5f);
 
     auto* chain = mixer.processingChainFor (ch);
     REQUIRE (chain != nullptr);
-    auto* strip = static_cast<sirius::ChannelStrip<sirius::SignalType::Audio>*> (chain);
-    sirius::EffectChainEntry eq; eq.displayName = "eq";
-    strip->setEffectChain (sirius::EffectChain{}.withAppended (eq));
+    auto* strip = static_cast<ida::ChannelStrip<ida::SignalType::Audio>*> (chain);
+    ida::EffectChainEntry eq; eq.displayName = "eq";
+    strip->setEffectChain (ida::EffectChain{}.withAppended (eq));
 
     const auto state = mixer.exportGraphState();
 
@@ -350,17 +350,17 @@ TEST_CASE ("InputMixer exportGraphState reflects buses, routing, sends, inserts"
     // Buses are exported in registration order: drums then reverb.
     CHECK (state.buses[0].busId == drums.value());
     CHECK (state.buses[0].name == "Drums");
-    CHECK (state.buses[0].kind == sirius::MixerBusKind::Bus);
+    CHECK (state.buses[0].kind == ida::MixerBusKind::Bus);
     CHECK (state.buses[0].inserts.size() == 1);
-    CHECK (state.buses[1].kind == sirius::MixerBusKind::FxReturn);
+    CHECK (state.buses[1].kind == ida::MixerBusKind::FxReturn);
 
     REQUIRE (state.channels.size() == 1);
     const auto& c = state.channels[0];
     CHECK (c.channelId == ch.value());
     CHECK (c.inputSourceId == 1);
-    CHECK (c.source == sirius::MixerChannelSource { 2, 3, true });
-    CHECK (c.tapeMode == sirius::TapeMode::CommitToTape);
-    CHECK (c.mainOut.kind == sirius::MixerMainOut::Kind::Bus);
+    CHECK (c.source == ida::MixerChannelSource { 2, 3, true });
+    CHECK (c.tapeMode == ida::TapeMode::CommitToTape);
+    CHECK (c.mainOut.kind == ida::MixerMainOut::Kind::Bus);
     CHECK (c.mainOut.busId == drums.value());
     REQUIRE (c.sends.size() == 1);
     CHECK (c.sends[0].busId == reverb.value());
@@ -371,12 +371,12 @@ TEST_CASE ("InputMixer exportGraphState reflects buses, routing, sends, inserts"
 
 - [ ] **Step 2: Run it — verify it fails**
 
-Run: `cmake --build build --target SiriusTests`
+Run: `cmake --build build --target IdaTests`
 Expected: FAIL to compile — `setBusEffectChain` and `exportGraphState` are not members of `InputMixer`.
 
 - [ ] **Step 3: Declare the new members**
 
-In `engine/include/sirius/InputMixer.h`, add `#include "sirius/MixerGraphState.h"` to the include block, and in the public section (after `setBusSend`, near line 67):
+In `engine/include/ida/InputMixer.h`, add `#include "sirius/MixerGraphState.h"` to the include block, and in the public section (after `setBusSend`, near line 67):
 
 ```cpp
     /// Message-thread setter — copies the chain into the named bus (parity
@@ -523,13 +523,13 @@ Add `#include <algorithm>` to `InputMixer.cpp` if not present (for `std::sort`).
 
 - [ ] **Step 5: Run the test — verify it passes**
 
-Run: `cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[input-mixer]"`
+Run: `cmake --build build --target IdaTests && ./build/tests/IdaTests "[input-mixer]"`
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add engine/include/sirius/InputMixer.h engine/src/InputMixer.cpp tests/InputMixerTests.cpp
+git add engine/include/ida/InputMixer.h engine/src/InputMixer.cpp tests/InputMixerTests.cpp
 git commit -m "feat: InputMixer exportGraphState + setBusEffectChain"
 ```
 
@@ -548,21 +548,21 @@ Add to `tests/InputMixerTests.cpp`:
 ```cpp
 TEST_CASE ("InputMixer importGraphState round-trips an exported graph", "[input-mixer][persistence]")
 {
-    sirius::InputMixer source;
-    source.registerInput (sirius::InputId (1), sirius::InputDescriptor{});
-    const auto drums  = source.addBus (sirius::BusConfig { 2, "Drums", sirius::BusKind::Bus });
+    ida::InputMixer source;
+    source.registerInput (ida::InputId (1), ida::InputDescriptor{});
+    const auto drums  = source.addBus (ida::BusConfig { 2, "Drums", ida::BusKind::Bus });
     const auto reverb = source.addFxReturn ("Reverb");
-    sirius::EffectChainEntry comp; comp.displayName = "comp";
-    source.setBusEffectChain (drums, sirius::EffectChain{}.withAppended (comp));
-    const auto ch = source.addChannel (sirius::InputId (1), sirius::SignalType::Audio);
+    ida::EffectChainEntry comp; comp.displayName = "comp";
+    source.setBusEffectChain (drums, ida::EffectChain{}.withAppended (comp));
+    const auto ch = source.addChannel (ida::InputId (1), ida::SignalType::Audio);
     source.setChannelInputSource (ch, 2, 3, true);
-    source.setChannelTapeMode (ch, sirius::TapeMode::CommitToTape);
+    source.setChannelTapeMode (ch, ida::TapeMode::CommitToTape);
     source.setChannelMainOutToBus (ch, drums);
     source.setChannelSend (ch, reverb, 0.5f);
 
     const auto exported = source.exportGraphState();
 
-    sirius::InputMixer loaded;
+    ida::InputMixer loaded;
     loaded.importGraphState (exported);
 
     CHECK (loaded.exportGraphState() == exported);
@@ -570,8 +570,8 @@ TEST_CASE ("InputMixer importGraphState round-trips an exported graph", "[input-
 
 TEST_CASE ("InputMixer importGraphState of an empty snapshot keeps only the ctor FX returns", "[input-mixer][persistence]")
 {
-    sirius::InputMixer mixer;
-    mixer.importGraphState (sirius::InputMixerGraphState{});
+    ida::InputMixer mixer;
+    mixer.importGraphState (ida::InputMixerGraphState{});
 
     // The ctor seeds RVB (busId 1) + DLY (busId 2); an empty import adds no user
     // buses and must not duplicate or rewind them. This is the pre-graph
@@ -579,15 +579,15 @@ TEST_CASE ("InputMixer importGraphState of an empty snapshot keeps only the ctor
     CHECK (mixer.busCount() == 2);
 
     // A channel added after a clean import default-routes to the Tape terminal.
-    mixer.registerInput (sirius::InputId (1), sirius::InputDescriptor{});
-    const auto ch = mixer.addChannel (sirius::InputId (1), sirius::SignalType::Audio);
-    CHECK (mixer.channelMainOut (ch) == sirius::InputMixer::MainOutDest::Tape);
+    mixer.registerInput (ida::InputId (1), ida::InputDescriptor{});
+    const auto ch = mixer.addChannel (ida::InputId (1), ida::SignalType::Audio);
+    CHECK (mixer.channelMainOut (ch) == ida::InputMixer::MainOutDest::Tape);
 }
 ```
 
-> **Note for the round-trip test above:** use a non-default `sirius::InputDescriptor`
+> **Note for the round-trip test above:** use a non-default `ida::InputDescriptor`
 > if the default constructor is unavailable (Task 1 found `InputDescriptor` has a
-> non-default-constructible `TapeId`; build one e.g. `sirius::InputDescriptor{ sirius::TapeId (1), ... }`
+> non-default-constructible `TapeId`; build one e.g. `ida::InputDescriptor{ ida::TapeId (1), ... }`
 > matching the constructor — read `InputDescriptor.h`). The `source` mixer's
 > `addBus("Drums")` will mint busId 3 (after ctor RVB=1/DLY=2), and `addFxReturn("Reverb")`
 > busId 4 — the channel's send target is `reverb` (busId 4), its main-out is `drums`
@@ -596,7 +596,7 @@ TEST_CASE ("InputMixer importGraphState of an empty snapshot keeps only the ctor
 
 - [ ] **Step 2: Run it — verify it fails**
 
-Run: `cmake --build build --target SiriusTests`
+Run: `cmake --build build --target IdaTests`
 Expected: FAIL to compile — `importGraphState` is not a member.
 
 - [ ] **Step 3: Implement import**
@@ -704,13 +704,13 @@ void InputMixer::applyBusMainOut (BusId id, const MixerMainOut& m)
 
 - [ ] **Step 4: Run the test — verify it passes**
 
-Run: `cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[input-mixer]"`
+Run: `cmake --build build --target IdaTests && ./build/tests/IdaTests "[input-mixer]"`
 Expected: PASS. If round-trip equality fails, diff the exported-vs-reexported snapshot field by field; the usual culprit is a main-out classification or send ordering mismatch (sends are exported in `sendEdges()` order — if equality is order-sensitive and the graph reorders edges, sort `sends` by `busId` in both `sendSnapshot` and the test setup).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/include/sirius/InputMixer.h engine/src/InputMixer.cpp tests/InputMixerTests.cpp
+git add engine/include/ida/InputMixer.h engine/src/InputMixer.cpp tests/InputMixerTests.cpp
 git commit -m "feat: InputMixer importGraphState — engine round-trip"
 ```
 
@@ -719,7 +719,7 @@ git commit -m "feat: InputMixer importGraphState — engine round-trip"
 ## Task 3: OutputMixer export + import
 
 **Files:**
-- Modify: `engine/include/sirius/OutputMixer.h`, `engine/src/OutputMixer.cpp`
+- Modify: `engine/include/ida/OutputMixer.h`, `engine/src/OutputMixer.cpp`
 - Test: `tests/OutputMixerTests.cpp`
 
 > Mirrors Tasks 1–2 for the output side. Differences: a single terminal (`HardwareOutput`); the master bus is `BusId{0}`, auto-created in the ctor (do NOT re-add on import — apply only its insert chain + main-out); output channels route through the dense `sendMatrix_` (no single main-out), exported as a `sends` list via `sendLevelFor`. `channels_`/`buses_` are dense vectors with sequential ids, so import replays in order; still restore the id counters to be safe.
@@ -731,34 +731,34 @@ Add to `tests/OutputMixerTests.cpp` (include `"sirius/MixerGraphState.h"`):
 ```cpp
 TEST_CASE ("OutputMixer export/import round-trips buses, sends, subgroups, inserts", "[output-mixer][persistence]")
 {
-    sirius::OutputMixer source;
-    const auto aux = source.addBus (sirius::BusConfig { 2, "Aux", sirius::BusKind::Bus });
-    REQUIRE (source.routeBusToBus (aux, sirius::BusId (0)));   // aux -> master
+    ida::OutputMixer source;
+    const auto aux = source.addBus (ida::BusConfig { 2, "Aux", ida::BusKind::Bus });
+    REQUIRE (source.routeBusToBus (aux, ida::BusId (0)));   // aux -> master
 
-    sirius::EffectChainEntry comp; comp.displayName = "comp";
-    source.setBusEffectChain (aux, sirius::EffectChain{}.withAppended (comp));
+    ida::EffectChainEntry comp; comp.displayName = "comp";
+    source.setBusEffectChain (aux, ida::EffectChain{}.withAppended (comp));
 
-    const auto ch = source.addChannel (sirius::SignalType::Audio);
-    auto strip = std::make_unique<sirius::ChannelStrip<sirius::SignalType::Audio>>();
-    sirius::EffectChainEntry eq; eq.displayName = "eq";
-    strip->setEffectChain (sirius::EffectChain{}.withAppended (eq));
+    const auto ch = source.addChannel (ida::SignalType::Audio);
+    auto strip = std::make_unique<ida::ChannelStrip<ida::SignalType::Audio>>();
+    ida::EffectChainEntry eq; eq.displayName = "eq";
+    strip->setEffectChain (ida::EffectChain{}.withAppended (eq));
     source.setChannelStrip (ch, std::move (strip));
-    source.routeChannelToBus (ch, sirius::BusId (0), 0.7f);    // non-default master level
+    source.routeChannelToBus (ch, ida::BusId (0), 0.7f);    // non-default master level
     source.routeChannelToBus (ch, aux, 0.4f);                 // send to aux
 
     const auto exported = source.exportGraphState();
     REQUIRE (exported.buses.size() == 2);              // master (0) + aux
     CHECK (exported.buses[0].busId == 0);              // master first
 
-    sirius::OutputMixer loaded;
+    ida::OutputMixer loaded;
     loaded.importGraphState (exported);
     CHECK (loaded.exportGraphState() == exported);
 }
 
 TEST_CASE ("OutputMixer import of an empty snapshot keeps only the master bus", "[output-mixer][persistence]")
 {
-    sirius::OutputMixer mixer;
-    mixer.importGraphState (sirius::OutputMixerGraphState{});
+    ida::OutputMixer mixer;
+    mixer.importGraphState (ida::OutputMixerGraphState{});
     const auto state = mixer.exportGraphState();
     REQUIRE (state.buses.size() == 1);
     CHECK (state.buses[0].busId == 0);
@@ -768,12 +768,12 @@ TEST_CASE ("OutputMixer import of an empty snapshot keeps only the master bus", 
 
 - [ ] **Step 2: Run it — verify it fails**
 
-Run: `cmake --build build --target SiriusTests`
+Run: `cmake --build build --target IdaTests`
 Expected: FAIL to compile — `exportGraphState` / `importGraphState` not members of `OutputMixer`.
 
 - [ ] **Step 3: Declare + implement**
 
-In `engine/include/sirius/OutputMixer.h` add `#include "sirius/MixerGraphState.h"` and, in the public section:
+In `engine/include/ida/OutputMixer.h` add `#include "sirius/MixerGraphState.h"` and, in the public section:
 
 ```cpp
     /// Message-thread snapshot of the routing graph for persistence (Phase 5).
@@ -791,10 +791,10 @@ In `engine/src/OutputMixer.cpp` (add `#include "sirius/MixerGraphState.h"`, `#in
 ```cpp
 namespace
 {
-    sirius::MixerMainOut busMainOutSnapshot (const sirius::MixerGraph& graph,
-                                             sirius::MixerNodeId node,
-                                             const std::vector<sirius::MixerNodeId>& busNodeIds,
-                                             const std::vector<sirius::Bus>& buses)
+    ida::MixerMainOut busMainOutSnapshot (const ida::MixerGraph& graph,
+                                             ida::MixerNodeId node,
+                                             const std::vector<ida::MixerNodeId>& busNodeIds,
+                                             const std::vector<ida::Bus>& buses)
     {
         using namespace sirius;
         const auto dest = graph.mainOutOf (node);
@@ -895,13 +895,13 @@ void OutputMixer::importGraphState (const OutputMixerGraphState& state)
 
 - [ ] **Step 4: Run the test — verify it passes**
 
-Run: `cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[output-mixer]"`
+Run: `cmake --build build --target IdaTests && ./build/tests/IdaTests "[output-mixer]"`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/include/sirius/OutputMixer.h engine/src/OutputMixer.cpp tests/OutputMixerTests.cpp
+git add engine/include/ida/OutputMixer.h engine/src/OutputMixer.cpp tests/OutputMixerTests.cpp
 git commit -m "feat: OutputMixer export/import graph state"
 ```
 
@@ -910,7 +910,7 @@ git commit -m "feat: OutputMixer export/import graph state"
 ## Task 4: Persistence serialize/deserialize of the snapshot
 
 **Files:**
-- Modify: `persistence/include/sirius/SessionFormat.h`, `persistence/src/SessionFormat.cpp`
+- Modify: `persistence/include/ida/SessionFormat.h`, `persistence/src/SessionFormat.cpp`
 - Test: `tests/SessionFormatTests.cpp`
 
 - [ ] **Step 1: Write the failing serialize/deserialize tests**
@@ -920,7 +920,7 @@ Add to `tests/SessionFormatTests.cpp` (include `"sirius/MixerGraphState.h"`):
 ```cpp
 namespace
 {
-    sirius::InputMixerGraphState sampleInputState()
+    ida::InputMixerGraphState sampleInputState()
     {
         using namespace sirius;
         InputMixerGraphState s;
@@ -948,11 +948,11 @@ namespace
 TEST_CASE ("InputMixerGraphState round-trips through JSON", "[sessionformat]")
 {
     const auto original = sampleInputState();
-    const auto json     = sirius::persistence::serializeMixerGraphState (original);
-    const auto restored = sirius::persistence::deserializeInputMixerGraphState (json);
+    const auto json     = ida::persistence::serializeMixerGraphState (original);
+    const auto restored = ida::persistence::deserializeInputMixerGraphState (json);
     CHECK (restored == original);
     // Byte-stable: serialize -> deserialize -> serialize yields identical JSON.
-    CHECK (sirius::persistence::serializeMixerGraphState (restored) == json);
+    CHECK (ida::persistence::serializeMixerGraphState (restored) == json);
 }
 
 TEST_CASE ("OutputMixerGraphState round-trips through JSON", "[sessionformat]")
@@ -966,8 +966,8 @@ TEST_CASE ("OutputMixerGraphState round-trips through JSON", "[sessionformat]")
     s.channels.push_back (ch);
     s.nextBusId = 1; s.nextChannelId = 2;
 
-    const auto json     = sirius::persistence::serializeMixerGraphState (s);
-    const auto restored = sirius::persistence::deserializeOutputMixerGraphState (json);
+    const auto json     = ida::persistence::serializeMixerGraphState (s);
+    const auto restored = ida::persistence::deserializeOutputMixerGraphState (json);
     CHECK (restored == s);
 }
 
@@ -975,9 +975,9 @@ TEST_CASE ("a pre-graph (empty) mixer document deserializes to defaults", "[sess
 {
     // A document carrying only a version and empty arrays — what a forward
     // session that never populated the graph would write.
-    const sirius::InputMixerGraphState empty;
-    const auto json     = sirius::persistence::serializeMixerGraphState (empty);
-    const auto restored = sirius::persistence::deserializeInputMixerGraphState (json);
+    const ida::InputMixerGraphState empty;
+    const auto json     = ida::persistence::serializeMixerGraphState (empty);
+    const auto restored = ida::persistence::deserializeInputMixerGraphState (json);
     CHECK (restored.buses.empty());
     CHECK (restored.channels.empty());
     CHECK (restored.nextBusId == 1);
@@ -986,21 +986,21 @@ TEST_CASE ("a pre-graph (empty) mixer document deserializes to defaults", "[sess
 
 TEST_CASE ("malformed mixer-graph JSON is rejected with a hard error", "[sessionformat]")
 {
-    CHECK_THROWS_AS (sirius::persistence::deserializeInputMixerGraphState ("{not json}"),
+    CHECK_THROWS_AS (ida::persistence::deserializeInputMixerGraphState ("{not json}"),
                      std::runtime_error);
-    CHECK_THROWS_AS (sirius::persistence::deserializeInputMixerGraphState ("[1,2,3]"),
+    CHECK_THROWS_AS (ida::persistence::deserializeInputMixerGraphState ("[1,2,3]"),
                      std::runtime_error);
 }
 ```
 
 - [ ] **Step 2: Run it — verify it fails**
 
-Run: `cmake --build build --target SiriusTests`
+Run: `cmake --build build --target IdaTests`
 Expected: FAIL to compile — the four `serialize/deserialize*MixerGraphState` functions don't exist.
 
 - [ ] **Step 3: Declare the functions**
 
-In `persistence/include/sirius/SessionFormat.h`, add `#include "sirius/MixerGraphState.h"` and:
+In `persistence/include/ida/SessionFormat.h`, add `#include "sirius/MixerGraphState.h"` and:
 
 ```cpp
 /// Serializes one mixer's routing-graph snapshot (routing-graph Phase 5) to a
@@ -1291,13 +1291,13 @@ Confirm `<juce_core/juce_core.h>` (for `juce::JSON`, already used by `serializeS
 
 - [ ] **Step 5: Run the tests — verify they pass**
 
-Run: `cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[sessionformat]"`
+Run: `cmake --build build --target IdaTests && ./build/tests/IdaTests "[sessionformat]"`
 Expected: PASS (new cases + the existing `[sessionformat]` cases still green).
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add persistence/include/sirius/SessionFormat.h persistence/src/SessionFormat.cpp tests/SessionFormatTests.cpp
+git add persistence/include/ida/SessionFormat.h persistence/src/SessionFormat.cpp tests/SessionFormatTests.cpp
 git commit -m "feat: SessionFormat serialize/deserialize mixer graph state"
 ```
 
@@ -1409,7 +1409,7 @@ TEST_CASE ("a pre-graph session (no mixer-graph JSON) loads as empty mixers", "[
 
 - [ ] **Step 2: Register the test file**
 
-In `tests/CMakeLists.txt`, add to the `add_executable(SiriusTests ...)` source list:
+In `tests/CMakeLists.txt`, add to the `add_executable(IdaTests ...)` source list:
 
 ```cmake
     MixerGraphStateTests.cpp
@@ -1420,7 +1420,7 @@ In `tests/CMakeLists.txt`, add to the `add_executable(SiriusTests ...)` source l
 
 - [ ] **Step 3: Run it — verify it passes**
 
-Run: `cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[mixer]"`
+Run: `cmake --build build --target IdaTests && ./build/tests/IdaTests "[mixer]"`
 Expected: PASS.
 
 - [ ] **Step 4: Full suite + clean-rebuild gate**
@@ -1428,7 +1428,7 @@ Expected: PASS.
 ```bash
 rm -rf build
 cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target SiriusTests
+cmake --build build --target IdaTests
 ctest --test-dir build
 ```
 Expected: green at the documented baseline (506/506; #506 is the `MainComponentPluginEditorTests_NOT_BUILT` placeholder run separately by `bash/test-s7.sh`; #281 is the known transient SIGTERM flake — rerun if it trips).
@@ -1455,7 +1455,7 @@ git commit -m "feat: end-to-end mixer routing-graph persistence round-trip"
 
 - `MainComponent` session-file wiring (writing/reading these JSON sections on actual save/load) — UI phases P6/P7.
 - Input registration registry (`InputState`/`InputDescriptor`) is NOT persisted — only the channel's `InputId` value is, enough to reconstruct the `Channel`. Device-registration persistence is a separate device-config concern.
-- Built-in Sirius FX / union slot model — separate follow-on spec.
+- Built-in IDA FX / union slot model — separate follow-on spec.
 
 ## Post-completion
 

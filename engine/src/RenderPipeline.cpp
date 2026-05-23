@@ -116,7 +116,7 @@ RenderPipeline::RenderPipeline (std::shared_ptr<const Constituent> root,
       validation_ (std::move (validation))
 {
     if (root_ == nullptr)
-        throw std::invalid_argument ("sirius::RenderPipeline: root must not be null");
+        throw std::invalid_argument ("ida::RenderPipeline: root must not be null");
 }
 
 std::vector<ActiveRead> RenderPipeline::activeReadsAt (Rational lmcTime) const

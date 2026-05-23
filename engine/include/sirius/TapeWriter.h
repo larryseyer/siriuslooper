@@ -15,7 +15,7 @@
 #include <thread>
 #include <unordered_map>
 
-namespace sirius::persistence { class TapeStore; }
+namespace ida::persistence { class TapeStore; }
 
 namespace sirius
 {

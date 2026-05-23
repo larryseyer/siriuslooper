@@ -1,4 +1,4 @@
-add_executable(SiriusTests
+add_executable(IdaTests
     RationalTests.cpp
     MeterTests.cpp
     TempoMapTests.cpp
@@ -106,23 +106,23 @@ add_executable(SiriusTests
 # EqAdapter.h transitively includes <otto/effects/PlayerEQ.h>. Both paths
 # stay PRIVATE — the engine's public include surface remains JUCE-free /
 # OTTO-free, and only the test target reaches into the engine internals.
-target_include_directories(SiriusTests PRIVATE
+target_include_directories(IdaTests PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/src
     ${CMAKE_SOURCE_DIR}/external/OTTO/src/otto-core/include)
 
-target_compile_features(SiriusTests PRIVATE cxx_std_20)
+target_compile_features(IdaTests PRIVATE cxx_std_20)
 
-# Sirius::Engine links Sirius::Core publicly, so linking Engine here brings
+# Ida::Engine links Ida::Core publicly, so linking Engine here brings
 # Core's headers and library along transitively — no need to list it twice.
-target_link_libraries(SiriusTests PRIVATE
-    Sirius::Engine
-    Sirius::Audio
-    Sirius::AppCore
-    Sirius::Persistence
-    Sirius::Host
-    Sirius::Ui
-    Sirius::Net
-    Sirius::Video
+target_link_libraries(IdaTests PRIVATE
+    Ida::Engine
+    Ida::Audio
+    Ida::AppCore
+    Ida::Persistence
+    Ida::Host
+    Ida::Ui
+    Ida::Net
+    Ida::Video
     # T3a: EqAdapterTests transitively includes <otto/effects/PlayerEQ.h>
     # through "fx/EqAdapter.h", which pulls juce_dsp + juce_audio_basics.
     # Engine links them PRIVATE so they don't propagate; the test target
@@ -133,10 +133,10 @@ target_link_libraries(SiriusTests PRIVATE
     Threads::Threads)
 
 # Test fixtures — the SyntheticTestPlugin CLAP bundle that the M7 S2+
-# round-trip tests load through sirius_plugin_host.
+# round-trip tests load through ida_plugin_host.
 add_subdirectory(fixtures)
 
-# M7 S1: OutOfProcessPluginTests needs the path of the sirius_plugin_host
+# M7 S1: OutOfProcessPluginTests needs the path of the ida_plugin_host
 # binary. CMake's $<TARGET_FILE:...> generator expression resolves to the
 # binary's full path after the build configures it, so the test can find
 # the binary regardless of multi-config-generator output-dir variation.
@@ -148,44 +148,44 @@ add_subdirectory(fixtures)
 # bundle. On macOS the target is a bundle ($<TARGET_BUNDLE_DIR:...> resolves
 # to the .clap directory); on Linux $<TARGET_FILE:...> resolves to the
 # SyntheticTestPlugin.clap shared library file.
-target_compile_definitions(SiriusTests PRIVATE
-    SIRIUS_PLUGIN_HOST_PATH="$<TARGET_FILE:sirius_plugin_host>"
+target_compile_definitions(IdaTests PRIVATE
+    IDA_PLUGIN_HOST_PATH="$<TARGET_FILE:ida_plugin_host>"
     # M8 S2: ClapBundleLoaderTests' malformed-bundle case dlopens a real
-    # Mach-O that lacks a `clap_entry` symbol. The bare sirius_plugin_host
+    # Mach-O that lacks a `clap_entry` symbol. The bare ida_plugin_host
     # executable ($<TARGET_FILE:...>) is exactly that — not the .app copy.
-    SIRIUS_HOST_BINARY_PATH="$<TARGET_FILE:sirius_plugin_host>"
-    $<$<PLATFORM_ID:Darwin>:SIRIUS_SYNTHETIC_CLAP_PATH="$<TARGET_BUNDLE_DIR:SyntheticTestPlugin>">
-    $<$<NOT:$<PLATFORM_ID:Darwin>>:SIRIUS_SYNTHETIC_CLAP_PATH="$<TARGET_FILE:SyntheticTestPlugin>">
+    IDA_HOST_BINARY_PATH="$<TARGET_FILE:ida_plugin_host>"
+    $<$<PLATFORM_ID:Darwin>:IDA_SYNTHETIC_CLAP_PATH="$<TARGET_BUNDLE_DIR:SyntheticTestPlugin>">
+    $<$<NOT:$<PLATFORM_ID:Darwin>>:IDA_SYNTHETIC_CLAP_PATH="$<TARGET_FILE:SyntheticTestPlugin>">
     # M8 S2: StatefulSynthFixture — second synthetic CLAP shaped like a real
     # third-party plug-in (params + real clap_plugin_state). Same generator-
     # expression trick: bundle dir on macOS, shared library file elsewhere.
-    $<$<PLATFORM_ID:Darwin>:SIRIUS_STATEFUL_SYNTH_CLAP_PATH="$<TARGET_BUNDLE_DIR:StatefulSynthFixture>">
-    $<$<NOT:$<PLATFORM_ID:Darwin>>:SIRIUS_STATEFUL_SYNTH_CLAP_PATH="$<TARGET_FILE:StatefulSynthFixture>">)
-add_dependencies(SiriusTests sirius_plugin_host SyntheticTestPlugin StatefulSynthFixture)
+    $<$<PLATFORM_ID:Darwin>:IDA_STATEFUL_SYNTH_CLAP_PATH="$<TARGET_BUNDLE_DIR:StatefulSynthFixture>">
+    $<$<NOT:$<PLATFORM_ID:Darwin>>:IDA_STATEFUL_SYNTH_CLAP_PATH="$<TARGET_FILE:StatefulSynthFixture>">)
+add_dependencies(IdaTests ida_plugin_host SyntheticTestPlugin StatefulSynthFixture)
 
 # M8 S2: optional third-party CLAP integration test. Compiled into
-# SiriusTests only when the operator supplies a real CLAP bundle path
+# IdaTests only when the operator supplies a real CLAP bundle path
 # (FabFilter, Surge XT, etc.) at configure time. When unset (CI, default
 # dev builds) the source is not compiled and the [third-party-clap] cases
-# do not exist — silently absent. Mirrors the SIRIUS_SYNTHETIC_CLAP_PATH
+# do not exist — silently absent. Mirrors the IDA_SYNTHETIC_CLAP_PATH
 # fixture convention above.
-if(DEFINED SIRIUS_THIRDPARTY_CLAP_PATH)
-    target_sources(SiriusTests PRIVATE
+if(DEFINED IDA_THIRDPARTY_CLAP_PATH)
+    target_sources(IdaTests PRIVATE
         ThirdPartyClapIntegrationTests.cpp)
-    target_compile_definitions(SiriusTests PRIVATE
-        SIRIUS_THIRDPARTY_CLAP_PATH="${SIRIUS_THIRDPARTY_CLAP_PATH}")
+    target_compile_definitions(IdaTests PRIVATE
+        IDA_THIRDPARTY_CLAP_PATH="${IDA_THIRDPARTY_CLAP_PATH}")
 endif()
 
 include(Catch)
-catch_discover_tests(SiriusTests)
+catch_discover_tests(IdaTests)
 
 # =============================================================================
 # MainComponentPluginEditorTests — separate executable (M7 S7)
 # =============================================================================
-# MainComponent.cpp is only compiled into the SiriusLooper GUI app target.
+# MainComponent.cpp is only compiled into the IDA GUI app target.
 # Testing the MainComponent ↔ OutOfProcessEffectChainHost lifecycle requires
 # compiling MainComponent.cpp again in a dedicated headless test binary so
-# the test can construct a MainComponent without linking against SiriusLooper.
+# the test can construct a MainComponent without linking against IDA.
 if(APPLE)
     add_executable(MainComponentPluginEditorTests
         MainComponentPluginEditorTests.cpp
@@ -196,28 +196,28 @@ if(APPLE)
     target_compile_definitions(MainComponentPluginEditorTests PRIVATE
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
-        SIRIUS_PLUGIN_HOST_PATH="$<TARGET_FILE:sirius_plugin_host>"
-        SIRIUS_SYNTHETIC_CLAP_PATH="$<TARGET_BUNDLE_DIR:SyntheticTestPlugin>")
+        IDA_PLUGIN_HOST_PATH="$<TARGET_FILE:ida_plugin_host>"
+        IDA_SYNTHETIC_CLAP_PATH="$<TARGET_BUNDLE_DIR:SyntheticTestPlugin>")
 
     target_include_directories(MainComponentPluginEditorTests PRIVATE
         ${CMAKE_SOURCE_DIR}/app)
 
     target_link_libraries(MainComponentPluginEditorTests PRIVATE
-        Sirius::Engine
-        Sirius::Audio
-        Sirius::AppCore
-        Sirius::Persistence
-        Sirius::Host
-        Sirius::Ui
-        Sirius::Net
-        Sirius::Video
+        Ida::Engine
+        Ida::Audio
+        Ida::AppCore
+        Ida::Persistence
+        Ida::Host
+        Ida::Ui
+        Ida::Net
+        Ida::Video
         juce::juce_audio_utils
         juce::juce_gui_extra
         Catch2::Catch2WithMain
         Threads::Threads)
 
     add_dependencies(MainComponentPluginEditorTests
-        sirius_plugin_host SyntheticTestPlugin)
+        ida_plugin_host SyntheticTestPlugin)
 
     catch_discover_tests(MainComponentPluginEditorTests)
 endif()

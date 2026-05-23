@@ -24,18 +24,18 @@
 
 #include <memory>
 
-using sirius::Constituent;
-using sirius::ConstituentId;
-using sirius::EntranceCharacter;
-using sirius::ExitCharacter;
-using sirius::InputDescriptor;
-using sirius::InputKind;
-using sirius::PhraseMetadata;
-using sirius::Position;
-using sirius::Rational;
-using sirius::TapeId;
-using sirius::TapeReference;
-using sirius::TempoMap;
+using ida::Constituent;
+using ida::ConstituentId;
+using ida::EntranceCharacter;
+using ida::ExitCharacter;
+using ida::InputDescriptor;
+using ida::InputKind;
+using ida::PhraseMetadata;
+using ida::Position;
+using ida::Rational;
+using ida::TapeId;
+using ida::TapeReference;
+using ida::TempoMap;
 
 namespace
 {
@@ -63,7 +63,7 @@ TEST_CASE ("empty session yields a timeline with the session's LMC bounds and "
            "no Pills", "[timelineview]")
 {
     const Constituent session (ConstituentId (1), Position(), Position (Rational (4)));
-    const auto state = sirius::selectTimelineView (
+    const auto state = ida::selectTimelineView (
         session, TempoMap::fromBpm (Rational (120)), {}, {}, TapeId (0));
 
     CHECK (state.startLmcSeconds == Rational (0));
@@ -84,7 +84,7 @@ TEST_CASE ("each InputDescriptor produces a row even when nothing references "
         audioInput (10, "Vocals"),
         audioInput (20, "Guitar")
     };
-    const auto state = sirius::selectTimelineView (
+    const auto state = ida::selectTimelineView (
         session, TempoMap::fromBpm (Rational (120)), inputs, {}, TapeId (0));
 
     REQUIRE (state.rows.size() == 2);
@@ -117,7 +117,7 @@ TEST_CASE ("a single-tape Phrase becomes one Pill anchored to its lone tape",
             .withName ("session")
             .withChildAdded (verse);
 
-    const auto state = sirius::selectTimelineView (
+    const auto state = ida::selectTimelineView (
         session, TempoMap::fromBpm (Rational (120)),
         { audioInput (200, "Vocals") }, {}, TapeId (0));
 
@@ -150,7 +150,7 @@ TEST_CASE ("a multi-tape Phrase picks the most-referenced tape as primary and "
             .withPhraseMetadata (pm);
 
     const auto chorus = std::make_shared<const Constituent> (
-        sirius::arrangement::layer (chorusShell, {
+        ida::arrangement::layer (chorusShell, {
             makeLoop (41, "chorus: vocals", Rational (4), 100),
             makeLoop (42, "chorus: gtr1",   Rational (4), 200),
             makeLoop (43, "chorus: gtr2",   Rational (4), 200)
@@ -161,7 +161,7 @@ TEST_CASE ("a multi-tape Phrase picks the most-referenced tape as primary and "
             .withName ("session")
             .withChildAdded (chorus);
 
-    const auto state = sirius::selectTimelineView (
+    const auto state = ida::selectTimelineView (
         session, TempoMap::fromBpm (Rational (120)),
         { audioInput (100, "Vocals"), audioInput (200, "Guitar") },
         {}, TapeId (0));
@@ -188,7 +188,7 @@ TEST_CASE ("armed and focused tapes propagate to their rows", "[timelineview]")
     };
     const std::vector<TapeId> armed { TapeId (10), TapeId (30) };
 
-    const auto state = sirius::selectTimelineView (
+    const auto state = ida::selectTimelineView (
         session, TempoMap::fromBpm (Rational (120)),
         inputs, armed, TapeId (30));
 
@@ -223,12 +223,12 @@ TEST_CASE ("a Phrase's span is its parent-conceptual position through the "
                                                            Rational (5),
                                                            Rational (7))))));
 
-    const Constituent session = sirius::arrangement::sequence (
+    const Constituent session = ida::arrangement::sequence (
         Constituent (ConstituentId (1), Position(), Position (Rational (6)))
             .withName ("session"),
         { makeLoop (10, "intro", Rational (4), 100), verse });
 
-    const auto state = sirius::selectTimelineView (
+    const auto state = ida::selectTimelineView (
         session, TempoMap::fromBpm (Rational (120)),
         { audioInput (100, "A"), audioInput (200, "B") },
         {}, TapeId (0));
@@ -247,8 +247,8 @@ TEST_CASE ("a Phrase with cardinality::Once reports phraseLoopActive = false",
     // play (off), everything else (Forever, NTimes, Until*) is some flavour
     // of looping (on). Verifies the cardinality → UI mapping is honest.
     PhraseMetadata pm;
-    sirius::RepetitionRules once;
-    once.cardinality = sirius::cardinality::Once{};
+    ida::RepetitionRules once;
+    once.cardinality = ida::cardinality::Once{};
 
     const auto phraseOnce = std::make_shared<const Constituent> (
         Constituent (ConstituentId (20), Position(), Position (Rational (2)))
@@ -260,7 +260,7 @@ TEST_CASE ("a Phrase with cardinality::Once reports phraseLoopActive = false",
         Constituent (ConstituentId (1), Position(), Position (Rational (2)))
             .withChildAdded (phraseOnce);
 
-    const auto state = sirius::selectTimelineView (
+    const auto state = ida::selectTimelineView (
         session, TempoMap::fromBpm (Rational (120)), {}, {}, TapeId (0));
 
     REQUIRE (state.pills.size() == 1);
@@ -271,7 +271,7 @@ TEST_CASE ("selectTimelineView emits one Pill per wrapper, content delegated to 
            "[timelineView][shared]")
 {
     auto verse = std::make_shared<const Constituent> (
-        sirius::arrangement::layer (
+        ida::arrangement::layer (
             Constituent (ConstituentId (20), Position(), Position (Rational (4)))
                 .withName ("verse")
                 .withPhraseMetadata (PhraseMetadata { .role = "verse",
@@ -283,7 +283,7 @@ TEST_CASE ("selectTimelineView emits one Pill per wrapper, content delegated to 
     auto allocateWrapper = [&nextWrapperId] { return ConstituentId (nextWrapperId++); };
 
     const Constituent shell (ConstituentId (1), Position(), Position (Rational (12)));
-    const Constituent root = sirius::arrangement::sequenceShared (
+    const Constituent root = ida::arrangement::sequenceShared (
         shell, verse,
         { Position (Rational (0)), Position (Rational (4)), Position (Rational (8)) },
         allocateWrapper);
@@ -292,7 +292,7 @@ TEST_CASE ("selectTimelineView emits one Pill per wrapper, content delegated to 
     const std::vector<InputDescriptor> inputs {
         { TapeId (200), InputKind::Audio, "Rhythm", 0 } };
 
-    const auto state = sirius::selectTimelineView (
+    const auto state = ida::selectTimelineView (
         root, identity, inputs, /*armed*/ {}, /*focused*/ TapeId (200));
 
     // Three Pills, one per wrapper. Shared verse itself is suppressed.
@@ -324,13 +324,13 @@ TEST_CASE ("selectTimelineView populates sharedSiblings via pointer-identity gro
     auto allocateWrapper = [&nextWrapperId] { return ConstituentId (nextWrapperId++); };
 
     const Constituent shell (ConstituentId (1), Position(), Position (Rational (12)));
-    const Constituent root = sirius::arrangement::sequenceShared (
+    const Constituent root = ida::arrangement::sequenceShared (
         shell, verse,
         { Position (Rational (0)), Position (Rational (4)), Position (Rational (8)) },
         allocateWrapper);
 
     const TempoMap identity = TempoMap::fromBpm (Rational (120));
-    const auto state = sirius::selectTimelineView (
+    const auto state = ida::selectTimelineView (
         root, identity, /*inputs*/ {}, /*armed*/ {}, /*focused*/ TapeId (0));
 
     REQUIRE (state.pills.size() == 3);
@@ -360,7 +360,7 @@ TEST_CASE ("selectTimelineView leaves sharedSiblings empty for bare Phrases",
     const Constituent root = shell.withChildAdded (intro);
 
     const TempoMap identity = TempoMap::fromBpm (Rational (120));
-    const auto state = sirius::selectTimelineView (
+    const auto state = ida::selectTimelineView (
         root, identity, /*inputs*/ {}, /*armed*/ {}, /*focused*/ TapeId (0));
 
     REQUIRE (state.pills.size() == 1);
@@ -393,7 +393,7 @@ TEST_CASE ("selectTimelineView sets hasOverlays when a wrapper has overlay Loops
     const Constituent root = shell.withChildAdded (wrapper);
 
     const TempoMap identity = TempoMap::fromBpm (Rational (120));
-    const auto state = sirius::selectTimelineView (
+    const auto state = ida::selectTimelineView (
         root, identity, /*inputs*/ {}, /*armed*/ {}, /*focused*/ TapeId (0));
 
     REQUIRE (state.pills.size() == 1);
@@ -420,7 +420,7 @@ TEST_CASE ("selectTimelineView sets isForked when wrapper role is 'forked-placem
     const Constituent root = shell.withChildAdded (forked);
 
     const TempoMap identity = TempoMap::fromBpm (Rational (120));
-    const auto state = sirius::selectTimelineView (
+    const auto state = ida::selectTimelineView (
         root, identity, /*inputs*/ {}, /*armed*/ {}, /*focused*/ TapeId (0));
 
     REQUIRE (state.pills.size() == 1);

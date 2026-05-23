@@ -22,10 +22,10 @@
 
 ## File Structure
 
-- **Create** `engine/include/sirius/ITapeSink.h` — the per-tape capture-sink interface (audio-thread delivery contract). JUCE-free.
-- **Modify** `engine/include/sirius/MixerGraph.h` — declare `addTerminal` / `removeTerminal`; relax the "set at construction" comment.
+- **Create** `engine/include/ida/ITapeSink.h` — the per-tape capture-sink interface (audio-thread delivery contract). JUCE-free.
+- **Modify** `engine/include/ida/MixerGraph.h` — declare `addTerminal` / `removeTerminal`; relax the "set at construction" comment.
 - **Modify** `engine/src/MixerGraph.cpp` — implement `addTerminal` / `removeTerminal`.
-- **Modify** `engine/include/sirius/InputMixer.h` — include `TapeId.h` + `ITapeSink.h`; add the tape-terminal registry, the multi-tape main-out API, per-tape query helpers, `setTapeSink`, and per-tape mix-buffer scratch.
+- **Modify** `engine/include/ida/InputMixer.h` — include `TapeId.h` + `ITapeSink.h`; add the tape-terminal registry, the multi-tape main-out API, per-tape query helpers, `setTapeSink`, and per-tape mix-buffer scratch.
 - **Modify** `engine/src/InputMixer.cpp` — implement all of the above; rewrite `renderInputGraph`'s tape delivery to sum-per-tape-then-sink; remove the now-dead `enqueueToTape`.
 - **Modify** `tests/MixerGraphTests.cpp` — dynamic-terminal cases.
 - **Modify** `tests/InputMixerTests.cpp` — multi-tape routing + the recording-fake-sink delivery cases; migrate the four existing `renderInputGraph` tape cases off `TapeWriter` onto the fake sink.
@@ -37,7 +37,7 @@ No CMake changes — every modified/created file is already inside a target (`IT
 ### Task 1: MixerGraph dynamic terminal add/remove
 
 **Files:**
-- Modify: `engine/include/sirius/MixerGraph.h` (the terminal-kind comment at line 17; new declarations after `addNode`/`removeNode` block, ~line 75)
+- Modify: `engine/include/ida/MixerGraph.h` (the terminal-kind comment at line 17; new declarations after `addNode`/`removeNode` block, ~line 75)
 - Modify: `engine/src/MixerGraph.cpp` (new methods)
 - Test: `tests/MixerGraphTests.cpp`
 
@@ -116,7 +116,7 @@ TEST_CASE ("MixerGraph::removeTerminal reassigns orphaned main-outs to the prima
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cmake --build build --target SiriusTests 2>&1 | head -30`
+Run: `cmake --build build --target IdaTests 2>&1 | head -30`
 Expected: COMPILE FAILURE — `addTerminal` / `removeTerminal` are not members of `MixerGraph`.
 
 - [ ] **Step 3: Declare the new API in `MixerGraph.h`**
@@ -189,13 +189,13 @@ bool MixerGraph::removeTerminal (MixerNodeId node)
 
 - [ ] **Step 5: Run tests to verify they pass**
 
-Run: `cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[mixer-graph][terminal]"`
-Expected: PASS (3 cases). Then `./build/tests/SiriusTests "[mixer-graph]"` — all prior mixer-graph cases still PASS (no regression).
+Run: `cmake --build build --target IdaTests && ./build/tests/IdaTests "[mixer-graph][terminal]"`
+Expected: PASS (3 cases). Then `./build/tests/IdaTests "[mixer-graph]"` — all prior mixer-graph cases still PASS (no regression).
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add engine/include/sirius/MixerGraph.h engine/src/MixerGraph.cpp tests/MixerGraphTests.cpp
+git add engine/include/ida/MixerGraph.h engine/src/MixerGraph.cpp tests/MixerGraphTests.cpp
 git commit -m "feat: MixerGraph dynamic terminal add/remove (tape subsystem slice 2)"
 ```
 
@@ -204,7 +204,7 @@ git commit -m "feat: MixerGraph dynamic terminal add/remove (tape subsystem slic
 ### Task 2: InputMixer tape-terminal registry + multi-tape main-out API
 
 **Files:**
-- Modify: `engine/include/sirius/InputMixer.h`
+- Modify: `engine/include/ida/InputMixer.h`
 - Modify: `engine/src/InputMixer.cpp`
 - Test: `tests/InputMixerTests.cpp`
 
@@ -216,7 +216,7 @@ Append to `tests/InputMixerTests.cpp` (free `TEST_CASE`s at end of file). They u
 TEST_CASE ("InputMixer: a freshly constructed mixer has exactly the primary tape (TapeId 1)",
            "[input-mixer][multi-tape]")
 {
-    using sirius::InputMixer; using sirius::TapeId;
+    using ida::InputMixer; using ida::TapeId;
     InputMixer mixer;
     CHECK (mixer.tapeCount() == 1);
     CHECK (mixer.hasTape (TapeId { 1 }));
@@ -226,7 +226,7 @@ TEST_CASE ("InputMixer: a freshly constructed mixer has exactly the primary tape
 TEST_CASE ("InputMixer: addTape registers a routable terminal; removeTape unregisters it; primary is permanent",
            "[input-mixer][multi-tape]")
 {
-    using sirius::InputMixer; using sirius::TapeId;
+    using ida::InputMixer; using ida::TapeId;
     InputMixer mixer;
 
     CHECK (mixer.addTape (TapeId { 2 }));
@@ -244,7 +244,7 @@ TEST_CASE ("InputMixer: addTape registers a routable terminal; removeTape unregi
 TEST_CASE ("InputMixer: a channel routes to a chosen tape; the no-arg overload targets the primary",
            "[input-mixer][multi-tape]")
 {
-    using sirius::InputMixer; using sirius::InputId; using sirius::SignalType; using sirius::TapeId;
+    using ida::InputMixer; using ida::InputId; using ida::SignalType; using ida::TapeId;
     InputMixer mixer;
     REQUIRE (mixer.addTape (TapeId { 2 }));
     const auto ch = mixer.addChannel (InputId { 1 }, SignalType::Audio);
@@ -263,10 +263,10 @@ TEST_CASE ("InputMixer: a channel routes to a chosen tape; the no-arg overload t
 TEST_CASE ("InputMixer: a bus routes to a chosen tape via setBusMainOutToTape(BusId, TapeId)",
            "[input-mixer][multi-tape]")
 {
-    using sirius::InputMixer; using sirius::BusId; using sirius::BusConfig; using sirius::TapeId;
+    using ida::InputMixer; using ida::BusId; using ida::BusConfig; using ida::TapeId;
     InputMixer mixer;
     REQUIRE (mixer.addTape (TapeId { 2 }));
-    const auto bus = mixer.addBus (BusConfig { 2, "Sub", sirius::BusKind::Bus });
+    const auto bus = mixer.addBus (BusConfig { 2, "Sub", ida::BusKind::Bus });
 
     REQUIRE (mixer.setBusMainOutToTape (bus, TapeId { 2 }));
     CHECK (mixer.busMainOut (bus) == InputMixer::MainOutDest::Tape);
@@ -278,7 +278,7 @@ TEST_CASE ("InputMixer: a bus routes to a chosen tape via setBusMainOutToTape(Bu
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cmake --build build --target SiriusTests 2>&1 | head -30`
+Run: `cmake --build build --target IdaTests 2>&1 | head -30`
 Expected: COMPILE FAILURE — `tapeCount` / `hasTape` / `addTape` / `removeTape` / the new overloads / `channelMainOutIsTape` are not members.
 
 - [ ] **Step 3: Declare the new API in `InputMixer.h`**
@@ -437,8 +437,8 @@ InputMixer::MainOutDest InputMixer::classifyMainOut (MixerNodeId dest) const noe
 
 - [ ] **Step 6: Run tests to verify they pass**
 
-Run: `cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[input-mixer][multi-tape]"`
-Expected: PASS (4 cases). Then `./build/tests/SiriusTests "[input-mixer]"` and `"[sessionformat][mixer]"` — no regression (the export/import + persistence suites still pass; `mainOutSnapshot` still classifies the primary tape as `Terminal/Tape` because it compares against `terminalNode (MixerTerminal::Tape)` = primary).
+Run: `cmake --build build --target IdaTests && ./build/tests/IdaTests "[input-mixer][multi-tape]"`
+Expected: PASS (4 cases). Then `./build/tests/IdaTests "[input-mixer]"` and `"[sessionformat][mixer]"` — no regression (the export/import + persistence suites still pass; `mainOutSnapshot` still classifies the primary tape as `Terminal/Tape` because it compares against `terminalNode (MixerTerminal::Tape)` = primary).
 
 > ⚠ Carry-forward note for slice 5: `mainOutSnapshot` (line 156-181) records a tape main-out as `MixerTerminalKind::Tape` without the specific `TapeId`. A node routed to a *non-primary* tape currently round-trips through persistence as the primary tape. Recording the `TapeId` is routing-spec slice 5's job (out of scope here). Add a `todo.md` entry for it in this task's commit.
 
@@ -448,7 +448,7 @@ Append to `todo.md`:
 
 ```
 ### 2026-05-21 - Tape subsystem slice 2 carry-forward
-- Files: engine/src/InputMixer.cpp (mainOutSnapshot), core/include/sirius/MixerGraphState.h
+- Files: engine/src/InputMixer.cpp (mainOutSnapshot), core/include/ida/MixerGraphState.h
 - What was deferred: persisting WHICH tape a node's main-out targets. mainOutSnapshot
   records only MixerTerminalKind::Tape (no TapeId); a non-primary tape route round-trips
   as the primary on load.
@@ -458,7 +458,7 @@ Append to `todo.md`:
 ```
 
 ```bash
-git add engine/include/sirius/InputMixer.h engine/src/InputMixer.cpp tests/InputMixerTests.cpp todo.md
+git add engine/include/ida/InputMixer.h engine/src/InputMixer.cpp tests/InputMixerTests.cpp todo.md
 git commit -m "feat: InputMixer multi-tape terminal registry + per-tape routing API (tape subsystem slice 2)"
 ```
 
@@ -467,14 +467,14 @@ git commit -m "feat: InputMixer multi-tape terminal registry + per-tape routing 
 ### Task 3: Per-tape summing + capture-sink delivery in renderInputGraph
 
 **Files:**
-- Create: `engine/include/sirius/ITapeSink.h`
-- Modify: `engine/include/sirius/InputMixer.h` (include, `setTapeSink`, sink member, per-tape scratch)
+- Create: `engine/include/ida/ITapeSink.h`
+- Modify: `engine/include/ida/InputMixer.h` (include, `setTapeSink`, sink member, per-tape scratch)
 - Modify: `engine/src/InputMixer.cpp` (rewrite tape delivery in `renderInputGraph`; remove `enqueueToTape`)
 - Test: `tests/InputMixerTests.cpp`
 
 - [ ] **Step 1: Create the sink interface**
 
-`engine/include/sirius/ITapeSink.h`:
+`engine/include/ida/ITapeSink.h`:
 
 ```cpp
 #pragma once
@@ -519,12 +519,12 @@ Add a recording fake + the delivery cases (free `TEST_CASE`s at end of file). Th
 ```cpp
 namespace
 {
-    struct RecordingTapeSink : sirius::ITapeSink
+    struct RecordingTapeSink : ida::ITapeSink
     {
         struct Block { std::int64_t tapeId; std::vector<float> left, right; };
         std::vector<Block> blocks;
 
-        void deliverTapeBlock (sirius::TapeId tape, const float* l, const float* r,
+        void deliverTapeBlock (ida::TapeId tape, const float* l, const float* r,
                                int n) noexcept override
         {
             // Test-only: vector ops here are NOT on a real audio thread.
@@ -541,11 +541,11 @@ namespace
     };
 
     // Builds a mixer with one stereo channel sourcing device ch 0/1, returns its id.
-    sirius::ChannelId addStereoChannel (sirius::InputMixer& mixer, int leftDev, int rightDev)
+    ida::ChannelId addStereoChannel (ida::InputMixer& mixer, int leftDev, int rightDev)
     {
-        using sirius::InputId; using sirius::SignalType;
+        using ida::InputId; using ida::SignalType;
         const auto ch = mixer.addChannel (InputId { 1 }, SignalType::Audio);
-        mixer.setChannelTapeMode (ch, sirius::TapeMode::CommitToTape);
+        mixer.setChannelTapeMode (ch, ida::TapeMode::CommitToTape);
         mixer.setChannelInputSource (ch, leftDev, rightDev, true);
         return ch;
     }
@@ -554,7 +554,7 @@ namespace
 TEST_CASE ("renderInputGraph: a tape-routed channel is delivered to that tape via the sink",
            "[input-mixer][multi-tape][render]")
 {
-    using sirius::InputMixer; using sirius::TapeId;
+    using ida::InputMixer; using ida::TapeId;
     InputMixer mixer;
     RecordingTapeSink sink;
     mixer.setTapeSink (&sink);
@@ -578,7 +578,7 @@ TEST_CASE ("renderInputGraph: a tape-routed channel is delivered to that tape vi
 TEST_CASE ("renderInputGraph: two channels on one tape SUM into a single delivery",
            "[input-mixer][multi-tape][render]")
 {
-    using sirius::InputMixer;
+    using ida::InputMixer;
     InputMixer mixer;
     RecordingTapeSink sink;
     mixer.setTapeSink (&sink);
@@ -603,7 +603,7 @@ TEST_CASE ("renderInputGraph: two channels on one tape SUM into a single deliver
 TEST_CASE ("renderInputGraph: channels on distinct tapes record in parallel",
            "[input-mixer][multi-tape][render]")
 {
-    using sirius::InputMixer; using sirius::TapeId;
+    using ida::InputMixer; using ida::TapeId;
     InputMixer mixer;
     RecordingTapeSink sink;
     mixer.setTapeSink (&sink);
@@ -629,12 +629,12 @@ TEST_CASE ("renderInputGraph: channels on distinct tapes record in parallel",
 TEST_CASE ("renderInputGraph: channel -> bus -> tape delivers the bus output to the chosen tape",
            "[input-mixer][multi-tape][render]")
 {
-    using sirius::InputMixer; using sirius::BusId; using sirius::BusConfig; using sirius::TapeId;
+    using ida::InputMixer; using ida::BusId; using ida::BusConfig; using ida::TapeId;
     InputMixer mixer;
     RecordingTapeSink sink;
     mixer.setTapeSink (&sink);
 
-    const auto bus = mixer.addBus (BusConfig { 2, "Sub", sirius::BusKind::Bus });
+    const auto bus = mixer.addBus (BusConfig { 2, "Sub", ida::BusKind::Bus });
     const auto ch  = addStereoChannel (mixer, 0, 1);
     REQUIRE (mixer.setChannelMainOutToBus (ch, bus));
     REQUIRE (mixer.setBusMainOutToTape (bus)); // bus → primary tape
@@ -652,7 +652,7 @@ TEST_CASE ("renderInputGraph: channel -> bus -> tape delivers the bus output to 
 TEST_CASE ("renderInputGraph: with no sink bound, tape-routed signal is dropped without crashing",
            "[input-mixer][multi-tape][render]")
 {
-    using sirius::InputMixer;
+    using ida::InputMixer;
     InputMixer mixer; // no setTapeSink
     const auto ch = addStereoChannel (mixer, 0, 1);
     REQUIRE (mixer.setChannelMainOutToTape (ch));
@@ -669,7 +669,7 @@ TEST_CASE ("renderInputGraph: with no sink bound, tape-routed signal is dropped 
 
 - [ ] **Step 3: Run tests to verify they fail**
 
-Run: `cmake --build build --target SiriusTests 2>&1 | head -30`
+Run: `cmake --build build --target IdaTests 2>&1 | head -30`
 Expected: COMPILE FAILURE — `setTapeSink` is not a member of `InputMixer`.
 
 - [ ] **Step 4: Declare the sink + per-tape scratch in `InputMixer.h`**
@@ -889,7 +889,7 @@ Delete the `enqueueToTape` definition (lines 527-549) entirely — it is now unu
 
 - [ ] **Step 7: Run the new tests + the noexcept static_assert + full input-mixer suite**
 
-Run: `cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[input-mixer][multi-tape][render]"`
+Run: `cmake --build build --target IdaTests && ./build/tests/IdaTests "[input-mixer][multi-tape][render]"`
 Expected: PASS (6 cases). The existing `renderInputGraph must be noexcept` static_assert (InputMixerTests.cpp:36) still compiles — `accumulateIntoTape` and `deliverTapeBlock` are both `noexcept`.
 
 > ⚠ Compile guard: `enqueueToTape` removal must not leave a dangling declaration — confirm it was removed from BOTH `InputMixer.h` (Step 4) and `InputMixer.cpp` (Step 6). `grep -rn enqueueToTape engine/ tests/` must return zero hits.
@@ -914,13 +914,13 @@ The pre-slice-2 cases at `tests/InputMixerTests.cpp` lines ~599, 634, 673, 708 a
 
 `"renderInputGraph: a channel send reaches an FX return, which delivers to direct-out"` (~708) → this case routes the channel to tape (`setChannelMainOutToTape (ch)`) only as a side condition; its real assertion is on direct-out from the FX-return send. It uses no `TapeWriter`/sink for the tape leg, so leave its assertions intact — just confirm it still passes (no sink bound means the tape leg is a harmless drop).
 
-Run: `cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[input-routing][render]" "[input-mixer]"`
+Run: `cmake --build build --target IdaTests && ./build/tests/IdaTests "[input-routing][render]" "[input-mixer]"`
 Expected: PASS — all render cases green, no `TapeWriter`-backed tape assertions remain on the render path.
 
 - [ ] **Step 9: Commit**
 
 ```bash
-git add engine/include/sirius/ITapeSink.h engine/include/sirius/InputMixer.h engine/src/InputMixer.cpp tests/InputMixerTests.cpp
+git add engine/include/ida/ITapeSink.h engine/include/ida/InputMixer.h engine/src/InputMixer.cpp tests/InputMixerTests.cpp
 git commit -m "feat: per-tape summing + ITapeSink delivery in renderInputGraph (tape subsystem slice 2)"
 ```
 
@@ -937,7 +937,7 @@ Per project rule (CLAUDE.md), a clean rebuild catches stale CMake config:
 ```bash
 rm -rf build
 cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target SiriusTests
+cmake --build build --target IdaTests
 ```
 
 Expected: builds clean, no warnings (engine is `-Werror`).
@@ -949,7 +949,7 @@ Expected: all pass except the one documented Not-Run sentinel (`MainComponentPlu
 
 - [ ] **Step 3: Deferral grep**
 
-Run: `grep -rnE "TODO|FIXME|XXX|stub|placeholder" engine/include/sirius/ITapeSink.h engine/include/sirius/MixerGraph.h engine/src/MixerGraph.cpp engine/include/sirius/InputMixer.h engine/src/InputMixer.cpp`
+Run: `grep -rnE "TODO|FIXME|XXX|stub|placeholder" engine/include/ida/ITapeSink.h engine/include/ida/MixerGraph.h engine/src/MixerGraph.cpp engine/include/ida/InputMixer.h engine/src/InputMixer.cpp`
 Expected: zero hits (or every hit accounted for in `todo.md`).
 
 - [ ] **Step 4: Push (authorized per memory)**

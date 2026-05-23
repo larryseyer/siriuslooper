@@ -1,6 +1,6 @@
-# Sirius Looper — Website
+# IDA — Website
 
-Static marketing + documentation site for [siriuslooper.com](https://siriuslooper.com).
+Static marketing + documentation site for [automagicart.com/ida](https://automagicart.com/ida).
 Built with [Eleventy](https://www.11ty.dev/) (11ty). Published to the `gh-pages`
 branch by the GitHub Action at `.github/workflows/pages.yml`.
 
@@ -47,7 +47,7 @@ src/
 ├── about.njk             Project + sister-app story
 ├── 404.njk               Branded 404
 ├── sitemap.njk           sitemap.xml
-├── CNAME                 siriuslooper.com
+├── CNAME                 automagicart.com/ida
 └── robots.txt
 ```
 
@@ -68,7 +68,7 @@ stabilizes.
 
 CSS custom properties in `src/assets/css/site.css` mirror OTTO's palette
 from `/Users/larryseyer/AudioDevelopment/OTTO/Source/OTTOColours.h`. When
-the shared L&F submodule lands across Sirius and OTTO, this file is the
+the shared L&F submodule lands across IDA and OTTO, this file is the
 propagation point until that wiring is complete.
 
 Fonts are loaded from Google Fonts in `base.njk` (Orbitron + Inter +
@@ -88,12 +88,12 @@ provider's form-action URL into `signupEndpoint`, redeploy, done.
 
 Push to `master` (or `main`) with a change under `website/**`. The Action
 runs and publishes to `gh-pages`. GitHub Pages settings should point at
-`gh-pages` branch, `/` folder, custom domain `siriuslooper.com`, Enforce
+`gh-pages` branch, `/` folder, custom domain `automagicart.com/ida`, Enforce
 HTTPS on.
 
 ## License
 
 Marketing copy on this site is released under the same AGPLv3 + App Store
-exception that covers the rest of the Sirius Looper source tree. The
+exception that covers the rest of the IDA source tree. The
 bundled Larry Seyer Acoustic Drum Library is separately licensed (see
 `/docs/SAMPLE-LICENSE.md`).

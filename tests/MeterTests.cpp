@@ -1,4 +1,4 @@
-// Golden-value tests for sirius::Meter. Meter is a property of a Constituent,
+// Golden-value tests for ida::Meter. Meter is a property of a Constituent,
 // not a global constraint (white paper Part 9.6); these tests pin down the
 // bar/beat lengths it derives, as exact rationals.
 #include "sirius/Meter.h"
@@ -7,8 +7,8 @@
 
 #include <stdexcept>
 
-using sirius::Meter;
-using sirius::Rational;
+using ida::Meter;
+using ida::Rational;
 
 TEST_CASE ("common-practice meter has the expected bar and beat lengths", "[meter]")
 {

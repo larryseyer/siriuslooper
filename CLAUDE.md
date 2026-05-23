@@ -1,6 +1,6 @@
-# CLAUDE.md — Sirius Looper (project instructions)
+# CLAUDE.md — IDA (project instructions)
 
-Project-specific rules for Sirius Looper. The user-level `~/.claude/CLAUDE.md`
+Project-specific rules for IDA. The user-level `~/.claude/CLAUDE.md`
 (commit discipline, hard-stops, code standards, iOS/JUCE platform rules) applies
 everywhere and is NOT repeated here. **Always read `continue.md` first** — it is
 the live session handoff (what just shipped, what's queued).
@@ -21,9 +21,9 @@ built-in FX) is the established sister-app product intent. Engine milestones
 
 - OTTO is consumed as a **git submodule** at `external/OTTO/`. Single source
   of truth: bug fix in OTTO → `git submodule update --remote external/OTTO`
-  → SHA bump in Sirius → done. (The older byte-faithful vendored copy under
+  → SHA bump in IDA → done. (The older byte-faithful vendored copy under
   `ui/lookandfeel/` was deleted in T0b on 2026-05-22.)
-- Sirius and OTTO ship together but are sold separately and must each build
+- IDA and OTTO ship together but are sold separately and must each build
   independently. Sirius's installer bundles a FULL copy of OTTO; OTTO's
   paywalled features are runtime-gated. Licensing is **identical** between
   the two products.
@@ -32,11 +32,11 @@ built-in FX) is the established sister-app product intent. Engine milestones
   OTTO checkout at `/Users/larryseyer/AudioDevelopment/OTTO/assets/` via the
   `OTTO_ASSETS_DIR` CMake variable. Customer install time: the bundling
   pipeline copies OTTO's assets into the install bundle once; bundled-OTTO
-  and Sirius both read from the same path at runtime.
+  and IDA both read from the same path at runtime.
 
 ## Cross-Project Inbox Protocol (Sirius ⇄ OTTO)
 
-Sirius's Claude has **full edit autonomy** on OTTO source. Sirius and OTTO
+Sirius's Claude has **full edit autonomy** on OTTO source. IDA and OTTO
 communicate **AI-to-AI** via `external/OTTO/CROSS_PROJECT_INBOX.md`. The
 operator is **NOT** a required reviewer of the back-and-forth.
 
@@ -56,16 +56,16 @@ Sirius's session has full edit autonomy on OTTO, with mandatory awareness
 propagation:
 
 1. Make the OTTO change with a focused commit in `external/OTTO/`. Trailer:
-   `Sirius-Origin: <sirius-sha>` (or `bootstrap` for the first protocol
+   `Ida-Origin: <sirius-sha>` (or `bootstrap` for the first protocol
    commit). For protocol commits where the SHA chicken-and-eggs, reference
-   the most-recently-landed Sirius commit.
+   the most-recently-landed IDA commit.
 2. Append a new entry under `[FROM SIRIUS → OTTO]` in
    `CROSS_PROJECT_INBOX.md` describing the change, files touched, why,
    and what OTTO's Claude must do/avoid.
 3. Push OTTO (`origin/main`).
 4. Back in Sirius: bump the submodule SHA, commit, push Sirius.
 
-### When OTTO needs Sirius to act
+### When OTTO needs IDA to act
 
 OTTO's Claude can append entries under `[FROM OTTO → SIRIUS]`. You'll see
 them at session start and act (bump submodule, adapt callers, etc.) per
@@ -91,7 +91,7 @@ Sirius-originated OTTO commit forever, even after inbox entries are pruned.
 
 ## Architecture (non-negotiable)
 
-- Canonical design doc: **`docs/Sirius Looper Whitepaper V7.md`** (the "why").
+- Canonical design doc: **`docs/IDA Whitepaper V7.md`** (the "why").
   `docs/design/` + `docs/superpowers/specs/` hold feature designs.
 - Signal path: **input mixer → tape → output mixer**, with a direct layer for
   sub-ms monitoring. The tape is the always-running source of truth.
@@ -104,8 +104,8 @@ Sirius-originated OTTO commit forever, even after inbox entries are pruned.
 - Library layers (each its own CMake target): `core` (JUCE-free pure C++),
   `engine` (RT engine; juce_core is a PRIVATE .cpp detail, public headers
   JUCE-free), `audio`, `host` (out-of-process plugin hosting), `persistence`,
-  `ui` (`SiriusUi` + vendored `SiriusLookAndFeel`), `app` (the `SiriusLooper`
-  GUI app). `tests` builds `SiriusTests` (Catch2).
+  `ui` (`IdaUi` + vendored `IdaLookAndFeel`), `app` (the `IDA`
+  GUI app). `tests` builds `IdaTests` (Catch2).
 
 ## ⛔ HARD INVARIANT: stereo only
 
@@ -127,8 +127,8 @@ Lock-free SPSC queues hand work to worker threads (see `TapeWriter`,
 ```bash
 # Configure + build (Ninja is the dev-loop generator; same path every build)
 cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target SiriusTests      # unit tests
-cmake --build build --target SiriusLooper      # the macOS standalone app
+cmake --build build --target IdaTests      # unit tests
+cmake --build build --target IDA      # the macOS standalone app
 ctest --test-dir build                         # full suite (baseline 449/450; the
                                                # 1 non-pass is the separately-run
                                                # MainComponentPluginEditorTests exe)
@@ -136,8 +136,8 @@ bash bash/test-s7.sh                           # plugin-editor lifecycle (operat
 ```
 
 - **Canonical app (only copy on disk):**
-  `build/app/SiriusLooper_artefacts/Release/Sirius Looper.app`. A Desktop alias
-  **`Sirius Looper`** points at it — the operator launches via that alias. Do NOT
+  `build/app/IDA_artefacts/Release/IDA.app`. A Desktop alias
+  **`IDA`** points at it — the operator launches via that alias. Do NOT
   create other build copies (a stale Finder alias to a deleted build once caused
   "no visible changes"). `build-xcode/` is intentionally gone.
 - **Clean rebuild (`rm -rf build`) before asking the operator to eyes-on a GUI
@@ -155,6 +155,6 @@ bash bash/test-s7.sh                           # plugin-editor lifecycle (operat
   it compiles without Sirius's strict `-Werror` flags for that reason.
 - Colour method (tapes/phrases/loops/pills) is documented in
   `docs/design/sirius-colour-method.md` — one source of truth in
-  `ui/include/sirius/SiriusPalette.h`.
+  `ui/include/ida/IdaPalette.h`.
 - Deferrals live in `todo.md`; the session handoff lives in `continue.md`
   (refresh it every session).

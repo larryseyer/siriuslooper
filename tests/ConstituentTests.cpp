@@ -1,4 +1,4 @@
-// Golden-value tests for sirius::Constituent — the unifying abstraction for
+// Golden-value tests for ida::Constituent — the unifying abstraction for
 // every musical object (white paper Part VII). These tests encode the two
 // claims that make the data model tractable: identity persists across every
 // content revision (Part 7.6), and edits are copy-on-write with untouched
@@ -14,12 +14,12 @@
 #include <stdexcept>
 #include <variant>
 
-using sirius::AnchorToParent;
-using sirius::Constituent;
-using sirius::ConstituentId;
-using sirius::Meter;
-using sirius::Position;
-using sirius::Rational;
+using ida::AnchorToParent;
+using ida::Constituent;
+using ida::ConstituentId;
+using ida::Meter;
+using ida::Position;
+using ida::Rational;
 
 namespace
 {
@@ -88,7 +88,7 @@ TEST_CASE ("local meter and tempo map can be set and cleared", "[constituent]")
     CHECK (withMeter.localMeter() == Meter (3, 4));
     CHECK (withMeter.withoutLocalMeter().localMeter().has_value() == false);
 
-    const Constituent withTempo = c.withLocalTempoMap (sirius::TempoMap::fromBpm (Rational (90)));
+    const Constituent withTempo = c.withLocalTempoMap (ida::TempoMap::fromBpm (Rational (90)));
     CHECK (withTempo.localTempoMap().has_value());
     CHECK (withTempo.withoutLocalTempoMap().localTempoMap().has_value() == false);
 }
@@ -147,23 +147,23 @@ TEST_CASE ("a fresh Constituent carries the default loop repetition rules", "[co
 {
     const Constituent c (ConstituentId (1), Position(), Position (Rational (4)));
     // White paper Part 10.2: the default rules are the system's best guess.
-    CHECK (std::holds_alternative<sirius::trigger::FreeRunning> (c.repetitionRules().trigger));
-    CHECK (std::holds_alternative<sirius::cardinality::Forever> (c.repetitionRules().cardinality));
+    CHECK (std::holds_alternative<ida::trigger::FreeRunning> (c.repetitionRules().trigger));
+    CHECK (std::holds_alternative<ida::cardinality::Forever> (c.repetitionRules().cardinality));
 }
 
 TEST_CASE ("repetition rules are editable copy-on-write, identity preserved", "[constituent][repetition]")
 {
     const Constituent original (ConstituentId (7), Position(), Position (Rational (4)));
 
-    sirius::RepetitionRules rules;
-    rules.cardinality = sirius::cardinality::NTimes (8);
-    rules.termination = sirius::termination::HandOff { ConstituentId (8) };
+    ida::RepetitionRules rules;
+    rules.cardinality = ida::cardinality::NTimes (8);
+    rules.termination = ida::termination::HandOff { ConstituentId (8) };
     const Constituent edited = original.withRepetitionRules (rules);
 
     CHECK (edited.id() == ConstituentId (7)); // identity survives the edit
-    CHECK (std::get<sirius::cardinality::NTimes> (edited.repetitionRules().cardinality).count == 8);
+    CHECK (std::get<ida::cardinality::NTimes> (edited.repetitionRules().cardinality).count == 8);
     // The original is untouched.
-    CHECK (std::holds_alternative<sirius::cardinality::Forever> (
+    CHECK (std::holds_alternative<ida::cardinality::Forever> (
                original.repetitionRules().cardinality));
 }
 
@@ -174,7 +174,7 @@ TEST_CASE ("a Constituent becomes a phrase when it carries phrase metadata",
     CHECK_FALSE (loop.isPhrase());
     CHECK_FALSE (loop.phraseMetadata().has_value());
 
-    sirius::PhraseMetadata meta;
+    ida::PhraseMetadata meta;
     meta.role = "verse";
     meta.isRoleFillable = true;
     const Constituent phrase = loop.withPhraseMetadata (meta);
@@ -194,13 +194,13 @@ TEST_CASE ("a Constituent becomes a phrase when it carries phrase metadata",
 TEST_CASE ("isPlacementWrapper recognises wrappers and rejects non-wrappers",
            "[constituent][placementWrapper]")
 {
-    using sirius::Constituent;
-    using sirius::ConstituentId;
-    using sirius::PhraseMetadata;
-    using sirius::Position;
-    using sirius::Rational;
-    using sirius::TapeId;
-    using sirius::TapeReference;
+    using ida::Constituent;
+    using ida::ConstituentId;
+    using ida::PhraseMetadata;
+    using ida::Position;
+    using ida::Rational;
+    using ida::TapeId;
+    using ida::TapeReference;
 
     const Constituent emptyShell (ConstituentId (1), Position(),
                                   Position (Rational (4)));
@@ -209,14 +209,14 @@ TEST_CASE ("isPlacementWrapper recognises wrappers and rejects non-wrappers",
     {
         const auto bare = emptyShell.withPhraseMetadata (
             PhraseMetadata { .role = "verse" });
-        CHECK_FALSE (sirius::isPlacementWrapper (bare));
+        CHECK_FALSE (ida::isPlacementWrapper (bare));
     }
 
     SECTION ("Loop is NOT a wrapper")
     {
         const auto leaf = emptyShell.withTapeReference (
             TapeReference (TapeId (1), Rational (0), Rational (4)));
-        CHECK_FALSE (sirius::isPlacementWrapper (leaf));
+        CHECK_FALSE (ida::isPlacementWrapper (leaf));
     }
 
     SECTION ("Phrase whose role is not 'placement' is NOT a wrapper, even with a Phrase child")
@@ -225,7 +225,7 @@ TEST_CASE ("isPlacementWrapper recognises wrappers and rejects non-wrappers",
             emptyShell.withPhraseMetadata (PhraseMetadata { .role = "verse" }));
         const auto outer = emptyShell.withPhraseMetadata (
             PhraseMetadata { .role = "verse" }).withChildAdded (child);
-        CHECK_FALSE (sirius::isPlacementWrapper (outer));
+        CHECK_FALSE (ida::isPlacementWrapper (outer));
     }
 
     SECTION ("role=='placement' Phrase whose first child is a Phrase IS a wrapper")
@@ -234,7 +234,7 @@ TEST_CASE ("isPlacementWrapper recognises wrappers and rejects non-wrappers",
             emptyShell.withPhraseMetadata (PhraseMetadata { .role = "verse" }));
         const auto wrapper = emptyShell.withPhraseMetadata (
             PhraseMetadata { .role = "placement" }).withChildAdded (sharedPhrase);
-        CHECK (sirius::isPlacementWrapper (wrapper));
+        CHECK (ida::isPlacementWrapper (wrapper));
     }
 
     SECTION ("role=='placement' Phrase whose first child is a Loop is NOT a wrapper")
@@ -244,6 +244,6 @@ TEST_CASE ("isPlacementWrapper recognises wrappers and rejects non-wrappers",
                 TapeReference (TapeId (1), Rational (0), Rational (4))));
         const auto bogus = emptyShell.withPhraseMetadata (
             PhraseMetadata { .role = "placement" }).withChildAdded (leaf);
-        CHECK_FALSE (sirius::isPlacementWrapper (bogus));
+        CHECK_FALSE (ida::isPlacementWrapper (bogus));
     }
 }

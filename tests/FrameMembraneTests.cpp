@@ -10,9 +10,9 @@
 
 #include <stdexcept>
 
-using sirius::convertFrameRate;
-using sirius::FrameMembrane;
-using sirius::Rational;
+using ida::convertFrameRate;
+using ida::FrameMembrane;
+using ida::Rational;
 
 TEST_CASE ("the membrane rejects non-positive frame rates", "[membrane]")
 {

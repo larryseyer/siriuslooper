@@ -1,4 +1,4 @@
-// Tests for sirius::promotion::promote — the auto-promotion of CaptureRegions
+// Tests for ida::promotion::promote — the auto-promotion of CaptureRegions
 // into the session Constituent tree. Pure-function tests; no JUCE.
 //
 // Scope is single-instance promotion (see
@@ -22,18 +22,18 @@
 #include <memory>
 #include <stdexcept>
 
-using sirius::CaptureRegion;
-using sirius::Constituent;
-using sirius::ConstituentId;
-using sirius::PhraseMetadata;
-using sirius::Position;
-using sirius::Rational;
-using sirius::TapeId;
-using sirius::TapeReference;
-using sirius::TempoMap;
-using sirius::promotion::AttachmentMode;
-using sirius::promotion::IdAllocator;
-using sirius::promotion::promote;
+using ida::CaptureRegion;
+using ida::Constituent;
+using ida::ConstituentId;
+using ida::PhraseMetadata;
+using ida::Position;
+using ida::Rational;
+using ida::TapeId;
+using ida::TapeReference;
+using ida::TempoMap;
+using ida::promotion::AttachmentMode;
+using ida::promotion::IdAllocator;
+using ida::promotion::promote;
 
 namespace
 {
@@ -70,7 +70,7 @@ TEST_CASE ("promote accepts a tree containing shared placements (pointer-aware g
     std::int64_t nextWrapperId = 50;
     auto allocateWrapper = [&nextWrapperId] { return ConstituentId (nextWrapperId++); };
 
-    Constituent root = sirius::arrangement::sequenceShared (
+    Constituent root = ida::arrangement::sequenceShared (
         emptyRoot(), verse,
         { Position (Rational (0)), Position (Rational (4)), Position (Rational (8)) },
         allocateWrapper);
@@ -84,7 +84,7 @@ TEST_CASE ("promote accepts a tree containing shared placements (pointer-aware g
 
     CHECK_NOTHROW (
         promote (root, identityMap(), region, /*lmcAtMarkIn*/ Rational (1),
-                 sirius::promotion::AttachmentMode::Shared,
+                 ida::promotion::AttachmentMode::Shared,
                  IdAllocator (std::ref (counter))));
 }
 
@@ -109,7 +109,7 @@ TEST_CASE ("promote rejects aliased-id-by-mistake (pointer-distinct, same id)",
 
     CHECK_THROWS_AS (
         promote (root, identityMap(), region, /*lmcAtMarkIn*/ Rational (1),
-                 sirius::promotion::AttachmentMode::Shared,
+                 ida::promotion::AttachmentMode::Shared,
                  IdAllocator (std::ref (counter))),
         std::logic_error);
 }
@@ -331,7 +331,7 @@ TEST_CASE ("promote with Shared and a wrapper covering Mark In adds the Loop to 
     std::int64_t nextWrapperId = 50;
     auto allocateWrapper = [&nextWrapperId] { return ConstituentId (nextWrapperId++); };
 
-    Constituent root = sirius::arrangement::sequenceShared (
+    Constituent root = ida::arrangement::sequenceShared (
         emptyRoot(), verse,
         { Position (Rational (0)), Position (Rational (4)), Position (Rational (8)) },
         allocateWrapper);
@@ -373,7 +373,7 @@ TEST_CASE ("promote with Overlay attaches the Loop to the specific wrapper, othe
     std::int64_t nextWrapperId = 50;
     auto allocateWrapper = [&nextWrapperId] { return ConstituentId (nextWrapperId++); };
 
-    Constituent root = sirius::arrangement::sequenceShared (
+    Constituent root = ida::arrangement::sequenceShared (
         emptyRoot(), verse,
         { Position (Rational (0)), Position (Rational (4)), Position (Rational (8)) },
         allocateWrapper);

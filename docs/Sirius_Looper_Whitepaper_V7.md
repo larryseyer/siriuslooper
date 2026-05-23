@@ -1,4 +1,4 @@
-# Sirius Looper
+# IDA
 
 ### A Reference Architecture for Time-Domain Audio/Video Looping
 
@@ -7,7 +7,7 @@
 ---
 
 **Status:** Implementation reference
-**License:** The Sirius Looper software is licensed under AGPLv3 with an Apple App Store distribution exception. The bundled Larry Seyer Acoustic Drum Library selection is proprietary and separately licensed. See `../LICENSE`, `LICENSE-THIRD-PARTY.md`, and `SAMPLE-LICENSE.md`. This document — the white paper — is offered for permissive public release.
+**License:** The IDA software is licensed under AGPLv3 with an Apple App Store distribution exception. The bundled Larry Seyer Acoustic Drum Library selection is proprietary and separately licensed. See `../LICENSE`, `LICENSE-THIRD-PARTY.md`, and `SAMPLE-LICENSE.md`. This document — the white paper — is offered for permissive public release.
 
 ---
 
@@ -125,7 +125,7 @@ What a DAW does that this architecture does not: stitching unrelated takes into 
 
 The boundary is most legible in comparison. On the axes that matter to a performer:
 
-| Axis | Typical Looper | Sirius Looper |
+| Axis | Typical Looper | IDA |
 | --- | --- | --- |
 | Pre-declaration of loop length | Required before recording starts | Not required; tape is always running |
 | Punishment for imprecise timing | In-points and out-points commit at the footswitch press | Boundaries refined retroactively from the tape |
@@ -552,7 +552,7 @@ The output mixer receives the Constituent hierarchy's rendered output and direct
 
 - **Per-Constituent channel strips.** Each active Constituent — loop, phrase, section — gets its own channel strip with gain, pan, EQ, dynamics. This is where the performer makes the moment-to-moment level and tonal decisions that constitute "the mix." **Every parameter on the strip is automatable** — gain, pan, width, EQ, dynamics, send levels, and the parameters of any hosted plugin or built-in insert on the strip's insert chain. For a per-phrase channel, that automation is **bound to the phrase** (§6.8): it travels with the phrase Constituent through copies and arrangement, exactly as local effects do (§6.7).
 - **Direct-layer channels.** Signals routed via the direct layer arrive at their own channels in the output mixer, just like Constituent-rendered signals, and can be processed and routed alongside them.
-- **Bundled-OTTO channels.** Sirius's installer always bundles OTTO (paywalled OTTO features are runtime-gated, not asset-gated), so OTTO is always present whenever Sirius is running. Each of OTTO's 32 stereo outputs (matching OTTO's per-instrument fanout: 24 instruments + 4 FX returns + 4 player buses) arrives at its own channel strip in the output mixer, placed alongside the Constituent-rendered and direct-layer channels. OTTO does **not** own physical-output routing inside Sirius — **the output mixer alone decides which physical outputs each OTTO channel reaches** via the same per-channel main-out destination picker every other strip uses (§5.2 / §7.1). With a 2-output interface, OTTO's 32 channels sum to outs 1–2; with a larger interface, the performer parks each OTTO channel on any available output pair in any combination. The tape path **excludes** OTTO (tapes record the performer, not the bundled-instrument accompaniment); the render/export path (§6.11) **includes** OTTO automatically, since OTTO is an output-mixer source and export bounces the output mixer.
+- **Bundled-OTTO channels.** Sirius's installer always bundles OTTO (paywalled OTTO features are runtime-gated, not asset-gated), so OTTO is always present whenever IDA is running. Each of OTTO's 32 stereo outputs (matching OTTO's per-instrument fanout: 24 instruments + 4 FX returns + 4 player buses) arrives at its own channel strip in the output mixer, placed alongside the Constituent-rendered and direct-layer channels. OTTO does **not** own physical-output routing inside IDA — **the output mixer alone decides which physical outputs each OTTO channel reaches** via the same per-channel main-out destination picker every other strip uses (§5.2 / §7.1). With a 2-output interface, OTTO's 32 channels sum to outs 1–2; with a larger interface, the performer parks each OTTO channel on any available output pair in any combination. The tape path **excludes** OTTO (tapes record the performer, not the bundled-instrument accompaniment); the render/export path (§6.11) **includes** OTTO automatically, since OTTO is an output-mixer source and export bounces the output mixer.
 - **Buses and FX returns are distinct nodes, separated by what feeds them.** A **bus** (subgroup — drum bus, vocal bus) is fed by **channel outputs** and carries insert processing on the summed group, like a hardware console subgroup. An **FX return** is fed by **sends only** — never a direct route — and hosts the wet effects (reverb, delay, parallel compression) that channels and buses send to. The distinction is architectural: routed signal makes a bus, sent signal makes a return.
 - **Both mixers carry this, and the performer builds it live.** The same bus/FX-return/send structure exists on the input mixer too — there its outputs terminate at tape (monitoring reaches the physical outputs via the direct layer to an output-mixer channel, never by the input mixer writing outputs directly) rather than only at the master — and buses and FX returns **appear because the performer creates them on demand**, the same principle by which tapes appear because channels demand them. Each mixer carries any returns the performer adds; **nothing is seeded by default** (see §6.1.1). The interaction model and engine design live in the mixer design docs.
 - **Minimal defaults (§6.1.1).** A fresh session's input mixer contains **only** channels matching the active physical inputs; the output mixer contains **only** channels matching the active physical outputs. **No buses, no FX returns, no reverb or delay are pre-placed.** The performer adds what they want via the blank-area create gesture, and the upcoming **preset** system will recall common configurations (e.g. a band-style template with RVB+DLY returns and a drum bus) in one gesture. This honours the rule that the software does not assume which signal-flow the performer wants.
@@ -648,7 +648,7 @@ This is a deliberate refusal to chase the moving target of DAW interoperability.
 
 A forward direction under exploration extends rendering beyond export-to-file. Recording everything is not the same as keeping everything: the always-on tapes are the raw substrate, and the creative act is selecting from it and committing. Defined phrases are rendered into keepable **parts** ("pills") that the performer arranges on a timeline, which is in turn rendered into a finished song — an arrangement environment reached from the capture-and-loop foundation rather than a linear-DAW one. In this sense render becomes a *mode* that stops the always-on capture tapes and commits a selection of them to durable, arrangeable assets.
 
-This direction must be reconciled with the export philosophy above. Section 6.11 today frames render as "just playback aimed at a file" and rejects the fixed clip-timeline assumptions of DAW project-exchange. Whether a Sirius timeline-of-parts preserves those same principles — phrase identity, role substitution, polymetric coexistence — or revises them is an open question reserved for a dedicated design pass. The working record of the direction and its open questions lives in `docs/design/render-and-arrangement-vision.md`.
+This direction must be reconciled with the export philosophy above. Section 6.11 today frames render as "just playback aimed at a file" and rejects the fixed clip-timeline assumptions of DAW project-exchange. Whether a IDA timeline-of-parts preserves those same principles — phrase identity, role substitution, polymetric coexistence — or revises them is an open question reserved for a dedicated design pass. The working record of the direction and its open questions lives in `docs/design/render-and-arrangement-vision.md`.
 
 ## 6.12 MIDI 2.0 integration
 
@@ -1448,9 +1448,9 @@ The cost of out-of-process hosting is implementation complexity: the host must m
 
 This is well-trodden ground in modern audio software: out-of-process plug-in hosting and sandboxed extension models are an established discipline across the field. The architecture commits to that discipline.
 
-### 15.7 Sirius Archive Format
+### 15.7 IDA Archive Format
 
-The session file is the durable artifact of a Sirius Looper session. It must be readable across decades, portable across machines, and complete enough that a session captured today can be reopened, edited, and re-rendered indefinitely. This section specifies that format.
+The session file is the durable artifact of a IDA session. It must be readable across decades, portable across machines, and complete enough that a session captured today can be reopened, edited, and re-rendered indefinitely. This section specifies that format.
 
 **Container.** The session is a single directory tree wrapped in an uncompressed `.saf` container (effectively a ZIP archive with no compression, for tooling compatibility, but treated as a directory by the engine). The top-level layout:
 
@@ -1515,7 +1515,7 @@ The performer always sees what the migration policy decided and can override per
 
 **Asset preservation.** Tapes, parameter tapes, and wet captures are stored in the archive itself, never as external references. A session is a single self-contained artifact; moving it between machines requires moving exactly one directory. Plug-in state is also in the archive; only the plug-in *binary* must be available at the destination, and the version-migration policy above handles binary availability.
 
-**Forward compatibility.** A Sirius Archive Format 1.0.0 session must remain openable for the lifetime of the architecture. New versions of the format add fields and modalities; they never silently change the meaning of existing fields. A reader that encounters a session at a MINOR version higher than its own opens the file and uses the fields it understands, ignoring those it does not, after notifying the performer.
+**Forward compatibility.** A IDA Archive Format 1.0.0 session must remain openable for the lifetime of the architecture. New versions of the format add fields and modalities; they never silently change the meaning of existing fields. A reader that encounters a session at a MINOR version higher than its own opens the file and uses the fields it understands, ignoring those it does not, after notifying the performer.
 
 **The archive is the durable artifact.** The engine, the plug-ins, the operating system, even the hardware will change. The archive — symbolic content, parameter tapes, dry tapes, calibration history, and the format version that describes how to read all of it — is what survives. Symbolic fidelity (§15.6) is preserved unconditionally; re-render fidelity is preserved to the extent that plug-ins are still loadable and their state migrates cleanly.
 
@@ -1919,7 +1919,7 @@ The hope is that other developers — those building loopers as commercial produ
 
 **Role** — A phrase's structural function (verse, chorus, response, fill, etc.). Makes phrases interchangeable by role for structured improvisation.
 
-**Sirius Archive Format (SAF)** — The versioned container format for Sirius Looper sessions. A single self-contained directory tree (uncompressed ZIP container) holding tapes, the Constituent graph, mix snapshots, calibration history, plug-in state, and permissions. SemVer-versioned for forward and backward read compatibility within a major version. See §15.7.
+**Sirius Archive Format (SAF)** — The versioned container format for IDA sessions. A single self-contained directory tree (uncompressed ZIP container) holding tapes, the Constituent graph, mix snapshots, calibration history, plug-in state, and permissions. SemVer-versioned for forward and backward read compatibility within a major version. See §15.7.
 
 **Tape** — An append-only, immutable stream of timestamped events from a single input source. The source of truth.
 
@@ -2023,7 +2023,7 @@ The following decisions, taken together, are the architecture. Each is stated wi
 78. **Archival fidelity is split into symbolic and re-render.** Symbolic fidelity (the saved session is a complete description) is unconditional. Re-render fidelity (the same session produces the same audio) is conditional on a deterministic DSP chain. Three implementation strategies — determinism contract, wet capture, version pinning — satisfy re-render fidelity per the performer's choice (§15.6).
 79. **"Constituent" is the correct term and is justified.** Borrowed from grammar, it carries the recursive-containment-at-any-scale meaning the architecture requires; no more familiar alternative does (Part IX preamble).
 80. **Export targets the simplest universally-portable formats.** Audio renders to WAV/FLAC/AIFF; MIDI renders to Type 0/1 standard MIDI files; video renders to a chosen intra-frame codec. Stems and standard files are first-class output destinations of the output mixer (§6.11). DAW project-exchange formats (AAF, OMF, proprietary DAW project formats, and successors) are explicitly out of scope; translating a Constituent graph into them would either lose architectural information or produce unusable artifacts in the receiving DAW.
-81. **The session file is the high-fidelity exchange format for the Sirius Looper ecosystem.** Stems are the high-portability exchange format for everyone else. Two complementary contracts, both lossless in the sense that matters.
+81. **The session file is the high-fidelity exchange format for the IDA ecosystem.** Stems are the high-portability exchange format for everyone else. Two complementary contracts, both lossless in the sense that matters.
 82. **Security defaults are safe-by-inaction.** Coordination messages are end-to-end encrypted; air-gapped solo is the default; sharing a Constituent across the ensemble requires explicit consent; identity is per-session by default (§14.10). The performer who does nothing extra is in the most private state available.
 83. **Inclusive design is symmetric across senses.** Every audible cue has a vibrotactile and visual counterpart; every visual cue has a text and audible counterpart (§16.10). No information reaches the performer through exactly one channel, ever.
 84. **Plug-ins are hosted out-of-process.** Each plug-in instance runs in its own host process; communication with the engine uses lock-free shared-memory ring buffers timestamped against the LMC. A plug-in crash, hang, or memory leak terminates only its own host process; the engine substitutes a bypass node and continues without an audio-thread glitch. This is what makes the "audio never glitches" invariant load-bearing rather than aspirational (§5.6, §15.6, §17.4).
@@ -2032,7 +2032,7 @@ The following decisions, taken together, are the architecture. Each is stated wi
 87. **Edit conflicts on shared Constituents are structurally impossible for content; semantic for arrangement.** Because Constituents are immutable and copy-on-write, two concurrent "edits" produce two new Constituents — both survive. Only arrangement-level decisions (which Constituent occupies a slot, which mix snapshot is active) can truly conflict, and those resolve by causal-time last-writer-wins with anchor-node override (§14.9).
 88. **Replication granularity is split.** Constituent graph metadata replicates wholesale (it is kilobytes); tape media replicates on-demand by reference (it is gigabytes). A peer joining mid-session has the full structural view immediately and pulls media as needed for playback (§14.9).
 89. **Ensemble permissions are owner-writable, ensemble-readable, with explicit grant for write-sharing.** A Constituent's owner is the node that created it. Others may read by default within the ensemble; write access is granted explicitly per-Constituent or per-namespace. Revocation is symmetric and immediate (§14.9).
-90. **The session file format is the Sirius Archive Format (SAF), a versioned container.** Tapes are stored in their captured format; the Constituent graph, calibration history, plug-in state hashes, and parameter tapes live in JSON within the container. The format version is in the manifest; readers reject formats they don't understand and offer to migrate where migration is possible (§15.7).
+90. **The session file format is the IDA Archive Format (SAF), a versioned container.** Tapes are stored in their captured format; the Constituent graph, calibration history, plug-in state hashes, and parameter tapes live in JSON within the container. The format version is in the manifest; readers reject formats they don't understand and offer to migrate where migration is possible (§15.7).
 91. **Plug-in state migration on version mismatch is opt-in, never silent.** The session manifest records each plug-in's version and state hash at save time. On reopen with a different version, the performer chooses among load-current/bypass/substitute/refuse, with the wet-capture parallel parameter tape available as fallback (§15.7).
 92. **Tape flush intervals are committed per capability tier.** Lavish flushes per audio buffer (~1–3 ms); Comfortable every 50 ms; Tight every 200 ms; Survival every 1000 ms. The performer may override (§17.8).
 93. **MIDI 2.0 integration is fully specified.** UMP storage on tape, MIDI 1.0 upcasting at the membrane, MPE channel allocation, per-note expression as parameter tapes, MIDI-CI capability inquiry at device attach, and 1.0↔2.0 negotiation at the device level are committed (§6.12).
@@ -2162,4 +2162,4 @@ That is the architecture executing as a story. Every part has appeared. No part 
 
 ---
 
-*End of Sirius Looper Architecture.*
+*End of IDA Architecture.*

@@ -60,7 +60,7 @@ return — carries an insert chain of **up to 8 inserts**. This is NOT bus-only:
 every channel hosts inserts too. Each slot holds **either** a third-party
 **VST/CLAP plugin** (the existing M7 out-of-process host) **or** one of Sirius's
 **own built-in FX** (EQ, Compressor, Reverb, Delay, …). The insert-slot model is
-therefore a union — external hosted plugin OR internal Sirius effect — so an
+therefore a union — external hosted plugin OR internal IDA effect — so an
 `EffectChainEntry` must be able to name an internal effect, not only a
 `PluginDescriptor`. Buses already own an `EffectChain` + `IEffectChainHost`;
 channels gain the same. The 8-slot cap is a deliberate, reasonable ceiling
@@ -105,7 +105,7 @@ The Output Mixer **already has most of this**; the Input Mixer has **none of it*
 
 ### What exists (reuse, do not reinvent)
 
-`engine/include/sirius/OutputMixer.h` + `.cpp`:
+`engine/include/ida/OutputMixer.h` + `.cpp`:
 - `BusId addBus(BusConfig)`, master auto-created at `BusId{0}`, `nextBusId_`.
 - `void routeChannelToBus(OutputChannelId, BusId, float sendLevel)` +
   `sendLevelFor(...)` — a **dense send-level matrix** (32 channels × 64 buses).
@@ -114,14 +114,14 @@ The Output Mixer **already has most of this**; the Input Mixer has **none of it*
   buses → master → outputs.
 - Caps: `kMaxOutputChannels = 32`, `kMaxBuses = 64` (includes master).
 
-`engine/include/sirius/Bus.h` + `.cpp`:
+`engine/include/ida/Bus.h` + `.cpp`:
 - A summing node with a pre-allocated mix buffer, an `EffectChain`, an
   `IEffectChainHost*` dispatch seam (M7 S3), and an `IWetCaptureSink` tap (M8 S4).
 - `process(output, numChannels, numSamples) const noexcept` — RT-safe, runs the
   effect chain in-place via `host_->pumpSlot(...)`, accumulates to output.
 - Stereo only (`kMaxBusChannelsHard = 2`) — matches the stereo hard invariant.
 
-`engine/include/sirius/ChannelStrip.h` — per-strip gain/pan/width/mute + dual
+`engine/include/ida/ChannelStrip.h` — per-strip gain/pan/width/mute + dual
 peak+LUFS metering (Audio specialization). Used by every node's strip.
 
 ### What this spec adds
@@ -213,7 +213,7 @@ already covers.
   strips; the main-out routing picker; the Sends detail tab; persistence. The
   **8-slot insert chain on every node** (channels, buses, returns) and its
   **union slot model** (external VST/CLAP via the existing M7 host **or** an
-  internal Sirius effect). Any reverb/delay plugin — internal-or-3rd-party — can
+  internal IDA effect). Any reverb/delay plugin — internal-or-3rd-party — can
   be loaded immediately via the M7 host.
 - **Out of scope (own spec, "right behind"):** integrating **OTTO's reverb +
   delay** (`effects::PlayerIRConvolution`, `effects::PlayerDelay`) as Sirius's
@@ -278,7 +278,7 @@ write.
 gain an `EffectChain` + `IEffectChainHost` dispatch exactly as `Bus` already has,
 so inserts run on **every** node, capped at **8 slots** (the cap applies to buses
 and returns too; `EffectChain` has no cap today). External **VST/CLAP** via the
-existing M7 out-of-process host. (Built-in Sirius FX as slot contents arrive in
+existing M7 out-of-process host. (Built-in IDA FX as slot contents arrive in
 the follow-on — see below — so this phase ships no selectable-but-dead effects.)
 Cover: per-channel chain dispatch, 8-slot enforcement, bypass/reorder, RT-safety,
 behavior-equivalence for empty chains.
@@ -321,7 +321,7 @@ Mixer surface existing** (per the operator's input-first roadmap). Reuses the
 shared engine model + the same strips / creation gesture / detail tabs / picker
 (destinations: bus / hardware output).
 
-**Follow-on (its own spec, "right behind"): internal Sirius FX.** EQ, Compressor,
+**Follow-on (its own spec, "right behind"): internal IDA FX.** EQ, Compressor,
 Reverb, Delay — seeded by OTTO's `effects::PlayerIRConvolution` +
 `effects::PlayerDelay` — as **built-in effects**. Adds the **union insert-slot
 model** (an `EffectChainEntry` slot holds an external plugin **or** a built-in

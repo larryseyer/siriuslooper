@@ -1,6 +1,6 @@
-# Sirius colour method
+# IDA colour method
 
-How Sirius assigns colours to tapes, phrases, loops, and timeline pills. The goal
+How IDA assigns colours to tapes, phrases, loops, and timeline pills. The goal
 is sister-app parity with OTTO and a single, predictable rule the operator can
 rely on at a glance.
 
@@ -9,9 +9,9 @@ rely on at a glance.
 All colours come from **OTTO's eight player hues** (`otto::Colours::getPlayerColour`,
 vendored in `ui/lookandfeel/OTTOColours.h`): orange, magenta, purple, green,
 orange, lavender, leaf-green, sky-blue. This is the shared palette both apps draw
-from, so Sirius and OTTO feel like one family.
+from, so IDA and OTTO feel like one family.
 
-The single source of truth for the rule is `ui/include/sirius/SiriusPalette.h`.
+The single source of truth for the rule is `ui/include/ida/IdaPalette.h`.
 
 ## Keying: stable id, not screen position
 

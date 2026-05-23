@@ -9,9 +9,9 @@ Meter::Meter (int beatsPerBar, int beatUnit)
     : beatsPerBar_ (beatsPerBar), beatUnit_ (beatUnit)
 {
     if (beatsPerBar_ <= 0)
-        throw std::invalid_argument ("sirius::Meter: beatsPerBar must be positive");
+        throw std::invalid_argument ("ida::Meter: beatsPerBar must be positive");
     if (beatUnit_ <= 0)
-        throw std::invalid_argument ("sirius::Meter: beatUnit must be positive");
+        throw std::invalid_argument ("ida::Meter: beatUnit must be positive");
 }
 
 Rational Meter::beatLength() const

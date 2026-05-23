@@ -19,13 +19,13 @@
 
 #include <memory>
 
-using sirius::Constituent;
-using sirius::ConstituentId;
-using sirius::Position;
-using sirius::Rational;
-using sirius::TapeId;
-using sirius::TapeReference;
-using sirius::TempoMap;
+using ida::Constituent;
+using ida::ConstituentId;
+using ida::Position;
+using ida::Rational;
+using ida::TapeId;
+using ida::TapeReference;
+using ida::TempoMap;
 
 namespace
 {
@@ -44,7 +44,7 @@ TEST_CASE ("when the playhead is before the first phrase, the view is silent",
 {
     Constituent session (ConstituentId (1), Position(), Position (Rational (4)));
     session = session.withName ("session");
-    const auto state = sirius::selectPerformanceView (
+    const auto state = ida::selectPerformanceView (
         session, TempoMap::fromBpm (Rational (120)), Rational (-1));
     CHECK (state.isSilent);
     CHECK (state.currentPhraseName.empty());
@@ -62,14 +62,14 @@ TEST_CASE ("the deepest named ancestor wins as the foreground phrase",
 
     Constituent verse (ConstituentId (20), Position(), Position (Rational (8)));
     verse = verse.withName ("verse");
-    verse = sirius::arrangement::layer (verse, { loop });
+    verse = ida::arrangement::layer (verse, { loop });
     const auto verseShared = std::make_shared<const Constituent> (verse);
 
     Constituent session (ConstituentId (1), Position(), Position (Rational (8)));
     session = session.withName ("session");
     session = session.withChildAdded (verseShared);
 
-    const auto state = sirius::selectPerformanceView (
+    const auto state = ida::selectPerformanceView (
         session, TempoMap::fromBpm (Rational (120)), Rational (2));
     CHECK_FALSE (state.isSilent);
     CHECK (state.currentPhraseName == "verse");
@@ -94,22 +94,22 @@ TEST_CASE ("cycle status shows 'N of M' for NTimes and 'loop K' for Forever",
 
     SECTION ("Forever defaults: 'loop K'")
     {
-        const auto state = sirius::selectPerformanceView (
+        const auto state = ida::selectPerformanceView (
             session, TempoMap::fromBpm (Rational (120)), Rational (5, 2));
         CHECK (state.cycleStatus == "loop 3");
     }
 
     SECTION ("NTimes: 'N of M'")
     {
-        sirius::RepetitionRules rules;
-        rules.cardinality = sirius::cardinality::NTimes (4);
+        ida::RepetitionRules rules;
+        rules.cardinality = ida::cardinality::NTimes (4);
         auto loopBounded = std::make_shared<const Constituent> (
             loop->withRepetitionRules (rules));
 
         Constituent session2 (ConstituentId (1), Position(), Position (Rational (4)));
         session2 = session2.withChildAdded (loopBounded);
 
-        const auto state = sirius::selectPerformanceView (
+        const auto state = ida::selectPerformanceView (
             session2, TempoMap::fromBpm (Rational (120)), Rational (5, 2));
         CHECK (state.cycleStatus == "3 of 4");
     }

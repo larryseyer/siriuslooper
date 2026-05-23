@@ -48,7 +48,7 @@ TEST_CASE ("InputMixer survives export -> serialize -> deserialize -> import", "
     CHECK (reexported == original);
     // Insert chains specifically survived end-to-end (the user bus + the channel).
     const auto drumsIt = std::find_if (reexported.buses.begin(), reexported.buses.end(),
-        [&] (const sirius::MixerBusState& b) { return b.busId == drums.value(); });
+        [&] (const ida::MixerBusState& b) { return b.busId == drums.value(); });
     REQUIRE (drumsIt != reexported.buses.end());   // the user bus must survive
     CHECK (drumsIt->inserts.size() == 1);          // its insert chain must survive
     REQUIRE (reexported.channels.size() == 1);
@@ -101,29 +101,29 @@ TEST_CASE ("a pre-graph session (no mixer-graph JSON) loads as ctor-default mixe
 
 TEST_CASE ("input mixer graph serializes a non-primary tape route", "[sessionformat][mixer][tape]")
 {
-    sirius::InputMixer mixer;
-    const auto ch = mixer.addChannel (sirius::InputId (0), sirius::SignalType::Audio);
-    REQUIRE (mixer.addTape (sirius::TapeId { 3 }));
-    REQUIRE (mixer.setChannelMainOutToTape (ch, sirius::TapeId { 3 }));
+    ida::InputMixer mixer;
+    const auto ch = mixer.addChannel (ida::InputId (0), ida::SignalType::Audio);
+    REQUIRE (mixer.addTape (ida::TapeId { 3 }));
+    REQUIRE (mixer.setChannelMainOutToTape (ch, ida::TapeId { 3 }));
 
-    const auto json    = sirius::persistence::serializeMixerGraphState (mixer.exportGraphState());
-    const auto decoded = sirius::persistence::deserializeInputMixerGraphState (json);
+    const auto json    = ida::persistence::serializeMixerGraphState (mixer.exportGraphState());
+    const auto decoded = ida::persistence::deserializeInputMixerGraphState (json);
     CHECK (decoded.channels.size() == 1);
-    CHECK (decoded.channels[0].mainOut.terminal == sirius::MixerTerminalKind::Tape);
+    CHECK (decoded.channels[0].mainOut.terminal == ida::MixerTerminalKind::Tape);
     CHECK (decoded.channels[0].mainOut.tapeId   == 3);
 }
 
 TEST_CASE ("InputMixer survives serialize -> deserialize with an Internal-FX insert chain",
            "[sessionformat][mixer][union-slot]")
 {
-    using sirius::EffectChainEntry;
-    using sirius::InternalFxId;
+    using ida::EffectChainEntry;
+    using ida::InternalFxId;
 
     InputMixer source;
     // Seed an FX return bus with an Internal-EQ insert.
     const auto busId = source.addFxReturn ("drums");
     source.setBusEffectChain (busId,
-        sirius::EffectChain{}.withAppended (EffectChainEntry::makeInternal (InternalFxId::kEq)));
+        ida::EffectChain{}.withAppended (EffectChainEntry::makeInternal (InternalFxId::kEq)));
 
     // Seed a channel with an Internal-CMP insert.
     source.registerInput (InputId (1), makeInputDescriptor());
@@ -131,27 +131,27 @@ TEST_CASE ("InputMixer survives serialize -> deserialize with an Internal-FX ins
     auto* strip = static_cast<ChannelStrip<SignalType::Audio>*> (source.processingChainFor (ch));
     REQUIRE (strip != nullptr);
     strip->setEffectChain (
-        sirius::EffectChain{}.withAppended (EffectChainEntry::makeInternal (InternalFxId::kCmp)));
+        ida::EffectChain{}.withAppended (EffectChainEntry::makeInternal (InternalFxId::kCmp)));
 
     const auto json  = persistence::serializeMixerGraphState (source.exportGraphState());
     const auto round = persistence::deserializeInputMixerGraphState (json);
 
     REQUIRE (round.buses.size() == 1);
     REQUIRE (round.buses[0].inserts.size() == 1);
-    CHECK (round.buses[0].inserts.entries()[0].kind == sirius::EffectChainSlotKind::Internal);
+    CHECK (round.buses[0].inserts.entries()[0].kind == ida::EffectChainSlotKind::Internal);
     CHECK (round.buses[0].inserts.entries()[0].internalId == InternalFxId::kEq);
 
     REQUIRE (round.channels.size() == 1);
     REQUIRE (round.channels[0].inserts.size() == 1);
-    CHECK (round.channels[0].inserts.entries()[0].kind == sirius::EffectChainSlotKind::Internal);
+    CHECK (round.channels[0].inserts.entries()[0].kind == ida::EffectChainSlotKind::Internal);
     CHECK (round.channels[0].inserts.entries()[0].internalId == InternalFxId::kCmp);
 }
 
 TEST_CASE ("OutputMixer survives serialize -> deserialize with an Internal-FX insert chain",
            "[sessionformat][mixer][union-slot]")
 {
-    using sirius::EffectChainEntry;
-    using sirius::InternalFxId;
+    using ida::EffectChainEntry;
+    using ida::InternalFxId;
 
     OutputMixer source;
     // OutputMixer has no addFxReturn; use addBus + routeBusToBus (same shape as
@@ -161,13 +161,13 @@ TEST_CASE ("OutputMixer survives serialize -> deserialize with an Internal-FX in
     const auto auxId = source.addBus (BusConfig { 2, "Aux", BusKind::Bus });
     REQUIRE (source.routeBusToBus (auxId, BusId (0)));
     source.setBusEffectChain (auxId,
-        sirius::EffectChain{}.withAppended (EffectChainEntry::makeInternal (InternalFxId::kRvb)));
+        ida::EffectChain{}.withAppended (EffectChainEntry::makeInternal (InternalFxId::kRvb)));
 
     // Seed a channel with an Internal-DLY insert.
     const auto ch = source.addChannel (SignalType::Audio);
     auto strip = std::make_unique<ChannelStrip<SignalType::Audio>>();
     strip->setEffectChain (
-        sirius::EffectChain{}.withAppended (EffectChainEntry::makeInternal (InternalFxId::kDly)));
+        ida::EffectChain{}.withAppended (EffectChainEntry::makeInternal (InternalFxId::kDly)));
     // No routeChannelToBus — this test covers insert-chain persistence only,
     // not the routing matrix (already covered by the test at line 58 above).
     source.setChannelStrip (ch, std::move (strip));
@@ -178,18 +178,18 @@ TEST_CASE ("OutputMixer survives serialize -> deserialize with an Internal-FX in
     // buses[0] is master (BusId 0); buses[1] is the aux we added.
     REQUIRE (round.buses.size() == 2);
     const auto auxIt = std::find_if (round.buses.begin(), round.buses.end(),
-        [&] (const sirius::MixerBusState& b) { return b.busId == auxId.value(); });
+        [&] (const ida::MixerBusState& b) { return b.busId == auxId.value(); });
     REQUIRE (auxIt != round.buses.end());
     const auto masterIt = std::find_if (round.buses.begin(), round.buses.end(),
-        [&] (const sirius::MixerBusState& b) { return b.busId != auxId.value(); });
+        [&] (const ida::MixerBusState& b) { return b.busId != auxId.value(); });
     REQUIRE (masterIt != round.buses.end());
     CHECK (masterIt->inserts.empty()); // inserts must not bleed onto the master bus
     REQUIRE (auxIt->inserts.size() == 1);
-    CHECK (auxIt->inserts.entries()[0].kind == sirius::EffectChainSlotKind::Internal);
+    CHECK (auxIt->inserts.entries()[0].kind == ida::EffectChainSlotKind::Internal);
     CHECK (auxIt->inserts.entries()[0].internalId == InternalFxId::kRvb);
 
     REQUIRE (round.channels.size() == 1);
     REQUIRE (round.channels[0].inserts.size() == 1);
-    CHECK (round.channels[0].inserts.entries()[0].kind == sirius::EffectChainSlotKind::Internal);
+    CHECK (round.channels[0].inserts.entries()[0].kind == ida::EffectChainSlotKind::Internal);
     CHECK (round.channels[0].inserts.entries()[0].internalId == InternalFxId::kDly);
 }

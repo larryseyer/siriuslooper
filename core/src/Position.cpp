@@ -16,9 +16,9 @@ Position Position::fromBarBeat (const Meter& meter,
                                 Rational offsetInBeat)
 {
     if (bar < 1)
-        throw std::invalid_argument ("sirius::Position: bar is 1-based, must be >= 1");
+        throw std::invalid_argument ("ida::Position: bar is 1-based, must be >= 1");
     if (beat < 1)
-        throw std::invalid_argument ("sirius::Position: beat is 1-based, must be >= 1");
+        throw std::invalid_argument ("ida::Position: beat is 1-based, must be >= 1");
 
     const Rational fromBars  = Rational (bar - 1)  * meter.barLength();
     const Rational fromBeats = Rational (beat - 1) * meter.beatLength();

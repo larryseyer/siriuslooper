@@ -1,4 +1,4 @@
-# Sirius Looper
+# IDA
 
 **A reference architecture for time-domain audio/video looping.**
 Capture continuously. Compose retroactively. Never miss a take.
@@ -9,7 +9,7 @@ Capture continuously. Compose retroactively. Never miss a take.
 
 ## What it is
 
-Sirius Looper is a performance looper for live and studio musicians. Every input
+IDA is a performance looper for live and studio musicians. Every input
 is captured to a continuously-running tape — whether or not the performer
 intends to use it — so the moment is already recorded by the time the gesture
 to keep it arrives. The performer composes phrases *retroactively*, marking in
@@ -40,7 +40,7 @@ context and the UI follows.
 | Term | Meaning |
 | --- | --- |
 | **Always-running tape** | Every input is being recorded, all the time, for the life of the session. |
-| **Arm / Disarm** | Stands the capture gestures up (red) or stands them down. Sirius boots disarmed on purpose. |
+| **Arm / Disarm** | Stands the capture gestures up (red) or stands them down. IDA boots disarmed on purpose. |
 | **Mark In** | Stamps the start of a captured region at the playhead. Re-tappable without losing armed state. |
 | **Mark Out** | Stamps the end of the region and auto-promotes it into the song immediately. |
 | **Phrase / Pill** | An auto-promoted captured region. Pills are the rounded rectangles on the timeline. |
@@ -56,11 +56,11 @@ For the full glossary and step-by-step workflows, read the
 ## Build (macOS)
 
 ```bash
-cd /Users/larryseyer/SiriusLooper
+cd /Users/larryseyer/IDA
 rm -rf build && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
-./build/tests/SiriusTests
-open "build/app/SiriusLooper_artefacts/Release/Sirius Looper.app"
+./build/tests/IdaTests
+open "build/app/IDA_artefacts/Release/IDA.app"
 ```
 
 Requires CMake 3.22+, a C++20 toolchain, and Ninja. Vendored dependencies
@@ -73,8 +73,8 @@ Requires CMake 3.22+, a C++20 toolchain, and Ninja. Vendored dependencies
 
 | File | Purpose |
 | --- | --- |
-| [`docs/Sirius Looper Whitepaper V7.md`](docs/Sirius%20Looper%20Whitepaper%20V7.md) | Canonical "why": architecture, conceptual time, design philosophy. **Start here.** |
-| [`docs/Sirius Looper User Guide.md`](docs/Sirius%20Looper%20User%20Guide.md) | Operator-facing "how": gestures, workflows, glossary. |
+| [`docs/IDA Whitepaper V7.md`](docs/Sirius%20Looper%20Whitepaper%20V7.md) | Canonical "why": architecture, conceptual time, design philosophy. **Start here.** |
+| [`docs/IDA User Guide.md`](docs/Sirius%20Looper%20User%20Guide.md) | Operator-facing "how": gestures, workflows, glossary. |
 | [`docs/archive/`](docs/archive/) | Superseded whitepaper drafts (V1–V6), kept for history; not maintained. |
 | [`continue.md`](continue.md) | Rolling session handoff: what's working, what's next. |
 | [`todo.md`](todo.md) | Permanent design backlog and deferred work. |
@@ -83,7 +83,7 @@ Requires CMake 3.22+, a C++20 toolchain, and Ninja. Vendored dependencies
 
 ## License
 
-Sirius Looper is licensed under the **GNU Affero General Public License v3
+IDA is licensed under the **GNU Affero General Public License v3
 (AGPLv3)** with an **Apple App Store distribution exception** and a **sample
 library exclusion**. The licensing model is identical to the sister application
 OTTO.
@@ -106,7 +106,7 @@ available under AGPLv3.
 
 ## Sister project
 
-Sirius Looper is a companion to [**OTTO**](https://github.com/larryseyer/OTTO),
+IDA is a companion to [**OTTO**](https://github.com/larryseyer/OTTO),
 a drum machine and groove engine. Both apps share the same audio architecture,
 the same look-and-feel system, and identical licensing terms.
 
@@ -125,6 +125,6 @@ the same look-and-feel system, and identical licensing terms.
   TBD); plugin scanner crash investigation; video pipeline (M6); ensemble
   networking (M8); CI matrix push; Windows and Linux build verification.
 
-Tests: see `./build/tests/SiriusTests`. CMake-based build, macOS-only as of
+Tests: see `./build/tests/IdaTests`. CMake-based build, macOS-only as of
 this writing. Project memory and ongoing work are tracked in `continue.md` and
 `todo.md`.

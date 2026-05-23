@@ -1,14 +1,14 @@
 {
-  "project": "Sirius Looper",
+  "project": "IDA",
   "generated_at": "2026-05-23T00:00:00Z",
   "description": "P7 umbrella T3b/T3c internal-FX adapters + T3a follow-up debts (I-1/I-2/M-2) + three loop-eligible code-review follow-ups from 2026-05-16. All tasks are engine-side or headless and verified by ctest. After T3c the work pivots to GUI (T4/T5) which ralph cannot verify; the loop must exit before then.",
-  "verification_command": "cmake --build build --target SiriusTests && ctest --test-dir build --output-on-failure",
+  "verification_command": "cmake --build build --target IdaTests && ctest --test-dir build --output-on-failure",
   "tasks": [
     {
       "id": "T01",
       "priority": 1,
       "title": "T3b-CMP — wrap otto::effects::PlayerCompressor as CmpAdapter",
-      "goal": "Mirror EqAdapter.{h,cpp} line-for-line, wrapping PlayerCompressor as a member with a defaulted PlayerEffectsConfig and compEnabled=true in the ctor. Flip InternalFxFactory's kCmp case from nullptr to std::make_unique<CmpAdapter>(). Pre-flight: read external/OTTO/src/otto-core/include/otto/effects/PlayerCompressor.h and verify process() derives sidechain internally from the input. If it expects a separate sidechain bus, emit <promise>HALTED</promise> — Sirius has no external-sidechain routing yet. Tests mirror EqAdapterTests.cpp (unprepared/prepared/reset/in-place) plus a DC-pulse/brick-wall case asserting peak reduction when input crosses threshold. Update tests/InternalFxFactoryTests.cpp: the kCmp-returns-nullptr case flips to kCmp-returns-valid-adapter.",
+      "goal": "Mirror EqAdapter.{h,cpp} line-for-line, wrapping PlayerCompressor as a member with a defaulted PlayerEffectsConfig and compEnabled=true in the ctor. Flip InternalFxFactory's kCmp case from nullptr to std::make_unique<CmpAdapter>(). Pre-flight: read external/OTTO/src/otto-core/include/otto/effects/PlayerCompressor.h and verify process() derives sidechain internally from the input. If it expects a separate sidechain bus, emit <promise>HALTED</promise> — IDA has no external-sidechain routing yet. Tests mirror EqAdapterTests.cpp (unprepared/prepared/reset/in-place) plus a DC-pulse/brick-wall case asserting peak reduction when input crosses threshold. Update tests/InternalFxFactoryTests.cpp: the kCmp-returns-nullptr case flips to kCmp-returns-valid-adapter.",
       "primary_files": [
         "engine/src/fx/CmpAdapter.h",
         "engine/src/fx/CmpAdapter.cpp",
@@ -21,7 +21,7 @@
         "InternalFxFactory returns a valid adapter for InternalFxId::kCmp",
         "tests/CmpAdapterTests.cpp exists with at least: unprepared-no-op, prepared-process-finite, reset-clears-state, in-place-aliasing, and DC-pulse-gain-reduction cases tagged [internal-fx][cmp-adapter]",
         "tests/InternalFxFactoryTests.cpp updated: kCmp now asserted valid",
-        "cmake --build build --target SiriusTests succeeds clean",
+        "cmake --build build --target IdaTests succeeds clean",
         "ctest --test-dir build passes (baseline 602 -> +N for new CMP cases)",
         "RT-safety: grep CmpAdapter::process for new/malloc/lock — none found"
       ],
@@ -44,7 +44,7 @@
         "InternalFxFactory returns a valid adapter for InternalFxId::kDly",
         "tests/DlyAdapterTests.cpp exists with at least: unprepared-no-op, prepared-process-finite, reset-clears-state, in-place-aliasing, and unit-impulse-delay-offset cases tagged [internal-fx][dly-adapter]",
         "tests/InternalFxFactoryTests.cpp updated: kDly now asserted valid",
-        "cmake --build build --target SiriusTests succeeds clean",
+        "cmake --build build --target IdaTests succeeds clean",
         "ctest --test-dir build passes",
         "RT-safety: grep DlyAdapter::process for new/malloc/lock — none found"
       ],
@@ -57,13 +57,13 @@
       "goal": "At the top of OutOfProcessEffectChainHost::prepareInternalFx(sr, maxBlock), early-return when (sr, maxBlock) == (currentSampleRate_, currentMaxBlock_) && prepared_. Four-line fix. Existing state fields already present per todo.md (a). This prevents rebuildInputStrips()'s repeated calls on stereo-toggle / device-config rebuild from zapping bound adapters' IIR state. Extend tests to verify idempotency.",
       "primary_files": [
         "host/src/OutOfProcessEffectChainHost.cpp",
-        "host/include/sirius/OutOfProcessEffectChainHost.h",
+        "host/include/ida/OutOfProcessEffectChainHost.h",
         "tests/OutOfProcessEffectChainHostTests.cpp"
       ],
       "acceptance_criteria": [
         "prepareInternalFx early-returns when sr/maxBlock unchanged AND prepared_ is true",
         "New test case in OutOfProcessEffectChainHostTests: 'prepareInternalFx is idempotent — same sr+block calls adapter->prepare() exactly once' using a counting mock adapter",
-        "cmake --build build --target SiriusTests succeeds clean",
+        "cmake --build build --target IdaTests succeeds clean",
         "ctest --test-dir build passes",
         "todo.md entry (a) for 2026-05-23 (late) is removed or marked resolved"
       ],
@@ -75,7 +75,7 @@
       "title": "P7 T3a I-2 — InputMixer::setEffectChainHost wiring + end-to-end test",
       "goal": "Add setEffectChainHost(IEffectChainHost* host) to InputMixer mirroring OutputMixer's shape: store pointer, propagate to every existing internal bus via bus.setEffectChainHost(host), propagate to any new bus on creation. Wire MainComponent to call inputMixer_->setEffectChainHost(pluginHost_.get()) alongside the existing outputMixer_ call. New end-to-end test mirrors BusInternalFxEndToEndTests.cpp: drop an EffectChainEntry::makeInternal(kEq) onto an Input-side bus, verify finite non-zero stereo output through the host's dispatch.",
       "primary_files": [
-        "engine/include/sirius/InputMixer.h",
+        "engine/include/ida/InputMixer.h",
         "engine/src/InputMixer.cpp",
         "app/MainComponent.cpp",
         "tests/InputMixerInternalFxEndToEndTests.cpp"
@@ -85,7 +85,7 @@
         "Setter propagates to every existing internal bus AND to any new bus on creation",
         "MainComponent calls inputMixer_->setEffectChainHost(pluginHost_.get()) next to the existing outputMixer_->setEffectChainHost(...) site",
         "tests/InputMixerInternalFxEndToEndTests.cpp exists with at least one [input-mixer][internal-fx][end-to-end] case mirroring BusInternalFxEndToEndTests.cpp",
-        "cmake --build build --target SiriusTests succeeds clean",
+        "cmake --build build --target IdaTests succeeds clean",
         "ctest --test-dir build passes",
         "todo.md entry (b) for 2026-05-23 (late) is removed or marked resolved"
       ],
@@ -98,14 +98,14 @@
       "goal": "Bus::process is currently 173 lines (>100 default per CLAUDE.md). Split into private helpers processInline(...) (inline-path branch) and processChain(...) (chain-path branch). Wet-capture + meter writeback stay in the outer process. Both helpers noexcept, no allocation, no locking — same RT contract as the outer function. No behavior change.",
       "primary_files": [
         "engine/src/Bus.cpp",
-        "engine/include/sirius/Bus.h"
+        "engine/include/ida/Bus.h"
       ],
       "acceptance_criteria": [
         "Bus::processInline and Bus::processChain exist as private member methods (or anonymous-namespace statics if all dependencies are passed in)",
         "Both helpers noexcept",
         "Bus::process body drops below 100 lines",
         "Grep new helpers for new/malloc/lock — none found",
-        "cmake --build build --target SiriusTests succeeds clean",
+        "cmake --build build --target IdaTests succeeds clean",
         "ctest --test-dir build passes — exactly the same number of cases as before (no behavior change)",
         "todo.md entry (c) for 2026-05-23 (late) is removed or marked resolved"
       ],
@@ -123,7 +123,7 @@
         "spliceLoopIntoSharedHost helper exists in core/src/Promotion.cpp's anonymous namespace",
         "promote() body drops from ~226 to ~165 lines",
         "Cross-reference comments added at both Overlay and Shared splice sites",
-        "cmake --build build --target SiriusTests succeeds clean",
+        "cmake --build build --target IdaTests succeeds clean",
         "ctest --test-dir build passes — exactly the same number of cases as before",
         "tests/PromotionTests.cpp::'promote with Shared and a wrapper covering Mark In adds the Loop to the shared Phrase' still passes (load-bearing pointer-equality assertion)",
         "todo.md entry for 2026-05-16 'Hoist Shared-path splice' is removed or marked resolved"
@@ -143,7 +143,7 @@
         "MainComponent::refreshAll() declared private in MainComponent.h with a one-line docstring",
         "MainComponent::refreshAll() defined in MainComponent.cpp calling the four refresh* methods in order",
         "All full-sequence call sites replaced with refreshAll() — verify by grepping for any remaining 4-line refreshPerformance/refreshPreparation/refreshCaptureControls/refreshDiagnostics blocks",
-        "cmake --build build --target SiriusTests succeeds clean",
+        "cmake --build build --target IdaTests succeeds clean",
         "ctest --test-dir build passes — exactly the same number of cases as before",
         "todo.md entry for 2026-05-16 'Extract MainComponent::refreshAll' is removed or marked resolved"
       ],
@@ -160,7 +160,7 @@
       "acceptance_criteria": [
         "Both value_or fallbacks in the announceCapture Overlay branch replaced with direct dereference",
         "A jassert guards both optionals immediately above the dereferences",
-        "cmake --build build --target SiriusTests succeeds clean",
+        "cmake --build build --target IdaTests succeeds clean",
         "ctest --test-dir build passes — exactly the same number of cases as before",
         "todo.md entry for 2026-05-16 'announceCapture Overlay branch: replace value_or fallbacks with jassert' is removed or marked resolved"
       ],

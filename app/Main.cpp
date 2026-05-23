@@ -7,12 +7,12 @@
 namespace sirius
 {
 
-class SiriusLooperApplication final : public juce::JUCEApplication
+class IDAApplication final : public juce::JUCEApplication
 {
 public:
-    SiriusLooperApplication() = default;
+    IDAApplication() = default;
 
-    const juce::String getApplicationName() override    { return "Sirius Looper"; }
+    const juce::String getApplicationName() override    { return "IDA"; }
     const juce::String getApplicationVersion() override { return "0.1.0"; }
     bool moreThanOneInstanceAllowed() override          { return true; }
 
@@ -72,4 +72,4 @@ private:
 
 } // namespace sirius
 
-START_JUCE_APPLICATION (sirius::SiriusLooperApplication)
+START_JUCE_APPLICATION (ida::IDAApplication)

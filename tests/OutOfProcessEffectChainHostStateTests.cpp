@@ -10,28 +10,28 @@
 #include <chrono>
 #include <thread>
 
-#ifndef SIRIUS_HOST_BINARY_PATH
-    #error "SIRIUS_HOST_BINARY_PATH required"
+#ifndef IDA_HOST_BINARY_PATH
+    #error "IDA_HOST_BINARY_PATH required"
 #endif
-#ifndef SIRIUS_SYNTHETIC_CLAP_PATH
-    #error "SIRIUS_SYNTHETIC_CLAP_PATH required"
+#ifndef IDA_SYNTHETIC_CLAP_PATH
+    #error "IDA_SYNTHETIC_CLAP_PATH required"
 #endif
 
-using sirius::OutOfProcessEffectChainHost;
+using ida::OutOfProcessEffectChainHost;
 
 namespace
 {
-    sirius::EffectChain singleEntryChain (const std::string& uniqueId)
+    ida::EffectChain singleEntryChain (const std::string& uniqueId)
     {
-        sirius::EffectChainEntry entry;
-        entry.descriptor.format   = sirius::PluginFormat::Clap;
+        ida::EffectChainEntry entry;
+        entry.descriptor.format   = ida::PluginFormat::Clap;
         entry.descriptor.uniqueId = uniqueId;
         entry.descriptor.version  = "1.0.0";
         entry.descriptor.name     = "Sirius Synthetic Identity";
-        entry.descriptor.filePath = SIRIUS_SYNTHETIC_CLAP_PATH;
+        entry.descriptor.filePath = IDA_SYNTHETIC_CLAP_PATH;
         entry.displayName         = "Synthetic";
         entry.bypassed            = false;
-        return sirius::EffectChain{}.withAppended (entry);
+        return ida::EffectChain{}.withAppended (entry);
     }
 }
 
@@ -40,8 +40,8 @@ TEST_CASE ("descriptorForSlot returns the configured descriptor",
 {
     OutOfProcessEffectChainHost host;
     host.configureBus (1, singleEntryChain ("com.sirius.synthetic.identity"),
-                       juce::File (SIRIUS_HOST_BINARY_PATH),
-                       juce::File (SIRIUS_SYNTHETIC_CLAP_PATH));
+                       juce::File (IDA_HOST_BINARY_PATH),
+                       juce::File (IDA_SYNTHETIC_CLAP_PATH));
     std::this_thread::sleep_for (std::chrono::milliseconds (200));
 
     const auto desc = host.descriptorForSlot (1, 0);
@@ -57,8 +57,8 @@ TEST_CASE ("stateBlobForSlot returns the synthetic CLAP's payload",
 {
     OutOfProcessEffectChainHost host;
     host.configureBus (2, singleEntryChain ("com.sirius.synthetic.identity"),
-                       juce::File (SIRIUS_HOST_BINARY_PATH),
-                       juce::File (SIRIUS_SYNTHETIC_CLAP_PATH));
+                       juce::File (IDA_HOST_BINARY_PATH),
+                       juce::File (IDA_SYNTHETIC_CLAP_PATH));
     std::this_thread::sleep_for (std::chrono::milliseconds (200));
 
     const auto state = host.stateBlobForSlot (2, 0);

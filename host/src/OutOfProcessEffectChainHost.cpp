@@ -447,7 +447,7 @@ bool OutOfProcessEffectChainHost::pumpSlot (std::int64_t        busId,
     auto& instance = *state.instance;
 
     // Package the input buffer into the CLAP-mode wire format the
-    // sirius_plugin_host child expects (matches host_process/main.cpp
+    // ida_plugin_host child expects (matches host_process/main.cpp
     // `runClapMode`): `uint32_t frameCount` followed by `frameCount ×
     // kPumpChannels × float` interleaved samples.
     constexpr std::size_t kHeaderBytes  = sizeof (std::uint32_t);

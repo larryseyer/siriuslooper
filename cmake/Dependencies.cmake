@@ -1,5 +1,5 @@
 # =============================================================================
-# Sirius Looper — Third-Party Dependencies
+# IDA — Third-Party Dependencies
 # =============================================================================
 # Dependencies are vendored as plain directories under external/ (gitignored,
 # not committed) and built via local-path add_subdirectory. This matches the
@@ -37,7 +37,7 @@ message(STATUS "JUCE configured from: ${JUCE_PATH}")
 # -----------------------------------------------------------------------------
 # Catch2 — test framework (development only, not distributed)
 # -----------------------------------------------------------------------------
-if(SIRIUS_BUILD_TESTS)
+if(IDA_BUILD_TESTS)
     set(CATCH2_PATH "${CMAKE_SOURCE_DIR}/external/Catch2")
 
     if(NOT EXISTS "${CATCH2_PATH}/CMakeLists.txt")
@@ -82,7 +82,7 @@ unset(CMAKE_POLICY_DEFAULT_CMP0115)
 message(STATUS "libsoxr configured from: ${SOXR_PATH}")
 
 # -----------------------------------------------------------------------------
-# CLAP — plug-in SDK (header-only). Hosted by sirius_plugin_host (M7 S2+)
+# CLAP — plug-in SDK (header-only). Hosted by ida_plugin_host (M7 S2+)
 # and built into test fixtures (SyntheticTestPlugin) for round-trip coverage.
 # CLAP itself ships only headers, but its CMakeLists exposes a `clap`
 # INTERFACE target with the include dir — the cleanest way to consume it.

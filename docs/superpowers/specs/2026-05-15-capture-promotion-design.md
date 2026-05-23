@@ -56,20 +56,20 @@ Constituent tree on the same gesture that produced it.
   Mark In playhead. Loop boundaries that extend past the host are
   clamped to the host's parent span.
 
-### 2. New module: `core/sirius::promotion`
+### 2. New module: `core/ida::promotion`
 
-Pure functions, mirroring the existing `core/sirius::arrangement`
-pattern (`core/include/sirius/Arrangement.h`).
+Pure functions, mirroring the existing `core/ida::arrangement`
+pattern (`core/include/ida/Arrangement.h`).
 
 **Files:**
 
-- `core/include/sirius/Promotion.h` — public header.
+- `core/include/ida/Promotion.h` — public header.
 - `core/src/Promotion.cpp` — implementation.
 
 **Public surface:**
 
 ```cpp
-namespace sirius::promotion
+namespace ida::promotion
 {
 struct PromotionResult
 {
@@ -133,7 +133,7 @@ once anywhere in the tree, throw:
 
 ```cpp
 throw std::logic_error (
-    "sirius::promotion: shared-placement architecture not yet implemented; "
+    "ida::promotion: shared-placement architecture not yet implemented; "
     "see todo.md \"Shared-placement-with-per-instance-overlays architecture\"");
 ```
 
@@ -203,7 +203,7 @@ This requires extending `UndoStack::Entry` with an optional
 `CaptureRestorePoint`:
 
 ```cpp
-// in ui/include/sirius/UndoStack.h
+// in ui/include/ida/UndoStack.h
 struct CaptureRestorePoint
 {
     Rational pendingIn;
@@ -274,7 +274,7 @@ Manual verification (operator-side, not in CI):
 
 ### 8. User guide — first chapter
 
-`docs/Sirius Looper User Guide.md` (alongside the white paper in `docs/`).
+`docs/IDA User Guide.md` (alongside the white paper in `docs/`).
 First chapter:
 "Capturing Phrases and Loops." Outline:
 
@@ -309,10 +309,10 @@ A comprehensive entry per `CLAUDE.md` "No Silent Deferral" rule:
 ```
 ### 2026-05-15 — Shared-placement-with-per-instance-overlays architecture
 
-- Files: core/include/sirius/Arrangement.h, core/src/Arrangement.cpp,
-  core/include/sirius/Constituent.h (possibly), ui/src/TimelineViewState.cpp,
-  ui/include/sirius/UndoStack.h, core/src/Promotion.cpp (the runtime
-  guard goes away), docs/Sirius Looper User Guide.md (Roadmap section).
+- Files: core/include/ida/Arrangement.h, core/src/Arrangement.cpp,
+  core/include/ida/Constituent.h (possibly), ui/src/TimelineViewState.cpp,
+  ui/include/ida/UndoStack.h, core/src/Promotion.cpp (the runtime
+  guard goes away), docs/IDA User Guide.md (Roadmap section).
 - What was deferred: shared-placement semantics for repeated Phrases.
   Today arrangement::sequence creates per-placement Constituent copies;
   the user model requires shared-by-reference with per-instance

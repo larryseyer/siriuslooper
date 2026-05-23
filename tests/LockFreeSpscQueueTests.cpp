@@ -1,4 +1,4 @@
-// Tests for sirius::LockFreeSpscQueue — the real-time-safe tape-write path.
+// Tests for ida::LockFreeSpscQueue — the real-time-safe tape-write path.
 // The plan calls proving this path the riskiest single piece of M2, so these
 // tests cover both single-threaded correctness and a concurrent producer/
 // consumer stress run that would expose loss, duplication, or reordering.
@@ -10,7 +10,7 @@
 #include <thread>
 #include <vector>
 
-using sirius::LockFreeSpscQueue;
+using ida::LockFreeSpscQueue;
 
 TEST_CASE ("a queue reports its usable capacity and rejects zero", "[lockfree]")
 {

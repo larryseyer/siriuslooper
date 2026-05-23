@@ -1,4 +1,4 @@
-// Audio-thread surface tests for sirius::OutOfProcessPluginInstance (M7 S3).
+// Audio-thread surface tests for ida::OutOfProcessPluginInstance (M7 S3).
 //
 // The two `try…` methods are the wait-free siblings of `sendBytes`/`readBytes`
 // promoted onto the audio thread by S3. These tests cover the semantics:
@@ -29,8 +29,8 @@ namespace
 {
     juce::File hostBinary()
     {
-       #ifdef SIRIUS_PLUGIN_HOST_PATH
-        return juce::File (SIRIUS_PLUGIN_HOST_PATH);
+       #ifdef IDA_PLUGIN_HOST_PATH
+        return juce::File (IDA_PLUGIN_HOST_PATH);
        #else
         return juce::File();
        #endif
@@ -41,10 +41,10 @@ namespace
 // (RT-safety contract §6, new S3 row). A non-noexcept variant would let an
 // allocator failure inside the SPSC implementation throw across the audio
 // callback boundary, which is undefined behaviour per JUCE's contract.
-static_assert (noexcept (std::declval<sirius::OutOfProcessPluginInstance&>()
+static_assert (noexcept (std::declval<ida::OutOfProcessPluginInstance&>()
                              .tryWriteBytes (static_cast<const std::byte*> (nullptr), 0)),
                "OutOfProcessPluginInstance::tryWriteBytes must be noexcept");
-static_assert (noexcept (std::declval<sirius::OutOfProcessPluginInstance&>()
+static_assert (noexcept (std::declval<ida::OutOfProcessPluginInstance&>()
                              .tryReadBytes (static_cast<std::byte*> (nullptr), 0,
                                             std::declval<std::size_t&>())),
                "OutOfProcessPluginInstance::tryReadBytes must be noexcept");
@@ -54,9 +54,9 @@ TEST_CASE ("tryReadBytes on an empty host→engine ring returns false with bytes
 {
     const auto binary = hostBinary();
     if (! binary.existsAsFile())
-        SKIP ("sirius_plugin_host binary not present at SIRIUS_PLUGIN_HOST_PATH");
+        SKIP ("ida_plugin_host binary not present at IDA_PLUGIN_HOST_PATH");
 
-    sirius::OutOfProcessPluginInstance instance (binary, "at-empty");
+    ida::OutOfProcessPluginInstance instance (binary, "at-empty");
     REQUIRE (instance.isRunning());
 
     // Before any work has been pushed/echoed, the host→engine ring is empty.
@@ -74,9 +74,9 @@ TEST_CASE ("tryWriteBytes succeeds on a fresh engine→host ring",
 {
     const auto binary = hostBinary();
     if (! binary.existsAsFile())
-        SKIP ("sirius_plugin_host binary not present at SIRIUS_PLUGIN_HOST_PATH");
+        SKIP ("ida_plugin_host binary not present at IDA_PLUGIN_HOST_PATH");
 
-    sirius::OutOfProcessPluginInstance instance (binary, "at-write");
+    ida::OutOfProcessPluginInstance instance (binary, "at-write");
     REQUIRE (instance.isRunning());
 
     std::array<std::byte, 8> payload {};
@@ -94,16 +94,16 @@ TEST_CASE ("tryWriteBytes returns false when count exceeds kMaxPayloadBytes",
 {
     const auto binary = hostBinary();
     if (! binary.existsAsFile())
-        SKIP ("sirius_plugin_host binary not present at SIRIUS_PLUGIN_HOST_PATH");
+        SKIP ("ida_plugin_host binary not present at IDA_PLUGIN_HOST_PATH");
 
-    sirius::OutOfProcessPluginInstance instance (binary, "at-over");
+    ida::OutOfProcessPluginInstance instance (binary, "at-over");
     REQUIRE (instance.isRunning());
 
     // Pass count = kMaxPayloadBytes + 1; data pointer is non-null but the
     // method must reject before touching it.
     std::array<std::byte, 1> token {};
     const bool ok = instance.tryWriteBytes (token.data(),
-                                            sirius::PluginIpcMessage::kMaxPayloadBytes + 1);
+                                            ida::PluginIpcMessage::kMaxPayloadBytes + 1);
     CHECK_FALSE (ok);
 
     instance.shutdown();

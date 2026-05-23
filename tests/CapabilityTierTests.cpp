@@ -10,11 +10,11 @@
 
 #include <string>
 
-using sirius::AsrcQuality;
-using sirius::CapabilityTier;
-using sirius::EffectStrategy;
-using sirius::HardwareProfile;
-using sirius::TapeFormat;
+using ida::AsrcQuality;
+using ida::CapabilityTier;
+using ida::EffectStrategy;
+using ida::HardwareProfile;
+using ida::TapeFormat;
 
 namespace
 {
@@ -39,7 +39,7 @@ namespace
 
 TEST_CASE ("a high-end workstation earns the Lavish tier", "[capability]")
 {
-    CHECK (sirius::selectTier (workstation()) == CapabilityTier::Lavish);
+    CHECK (ida::selectTier (workstation()) == CapabilityTier::Lavish);
 }
 
 TEST_CASE ("running on battery rules out Lavish", "[capability]")
@@ -49,7 +49,7 @@ TEST_CASE ("running on battery rules out Lavish", "[capability]")
     // cannot be trusted to sustain Lavish.
     HardwareProfile hw = workstation();
     hw.onBattery = true;
-    CHECK (sirius::selectTier (hw) == CapabilityTier::Comfortable);
+    CHECK (ida::selectTier (hw) == CapabilityTier::Comfortable);
 }
 
 TEST_CASE ("a missing vector unit caps the tier at Tight", "[capability]")
@@ -58,7 +58,7 @@ TEST_CASE ("a missing vector unit caps the tier at Tight", "[capability]")
     // per-sample DSP budget cannot sustain it, regardless of core count.
     HardwareProfile hw = workstation();
     hw.hasVectorUnit = false;
-    CHECK (sirius::selectTier (hw) == CapabilityTier::Tight);
+    CHECK (ida::selectTier (hw) == CapabilityTier::Tight);
 }
 
 TEST_CASE ("thermal throttling demotes one step from the measured base", "[capability]")
@@ -67,7 +67,7 @@ TEST_CASE ("thermal throttling demotes one step from the measured base", "[capab
     // workstation is, right now, not a workstation.
     HardwareProfile hw = workstation();
     hw.thermallyThrottled = true;
-    CHECK (sirius::selectTier (hw) == CapabilityTier::Comfortable);
+    CHECK (ida::selectTier (hw) == CapabilityTier::Comfortable);
 }
 
 TEST_CASE ("a large audio buffer is treated as a glitch-risk signal", "[capability]")
@@ -76,7 +76,7 @@ TEST_CASE ("a large audio buffer is treated as a glitch-risk signal", "[capabili
     // keep up tight — and rule 1 is audio-never-glitches, so step down.
     HardwareProfile hw = workstation();
     hw.audioBufferFrames = 1024;
-    CHECK (sirius::selectTier (hw) == CapabilityTier::Comfortable);
+    CHECK (ida::selectTier (hw) == CapabilityTier::Comfortable);
 }
 
 TEST_CASE ("constraints compound — battery plus throttling stack", "[capability]")
@@ -84,7 +84,7 @@ TEST_CASE ("constraints compound — battery plus throttling stack", "[capabilit
     HardwareProfile hw = workstation();
     hw.onBattery = true;          // caps at Comfortable
     hw.thermallyThrottled = true; // then one step down
-    CHECK (sirius::selectTier (hw) == CapabilityTier::Tight);
+    CHECK (ida::selectTier (hw) == CapabilityTier::Tight);
 }
 
 TEST_CASE ("a modern laptop on AC lands at Comfortable", "[capability]")
@@ -96,7 +96,7 @@ TEST_CASE ("a modern laptop on AC lands at Comfortable", "[capability]")
     hw.ramAvailableBytes = gib (10); // clears Comfortable, short of Lavish's 16
     hw.storageWriteBytesPerSec = mib (1500);
     hw.audioBufferFrames = 256;
-    CHECK (sirius::selectTier (hw) == CapabilityTier::Comfortable);
+    CHECK (ida::selectTier (hw) == CapabilityTier::Comfortable);
 }
 
 TEST_CASE ("marginal hardware falls to Survival, never below", "[capability]")
@@ -112,27 +112,27 @@ TEST_CASE ("marginal hardware falls to Survival, never below", "[capability]")
     hw.audioBufferFrames = 2048;
     hw.onBattery = true;
     hw.thermallyThrottled = true;
-    CHECK (sirius::selectTier (hw) == CapabilityTier::Survival);
+    CHECK (ida::selectTier (hw) == CapabilityTier::Survival);
 }
 
 TEST_CASE ("each tier's policy matches the white paper Part 13.2 table", "[capability]")
 {
-    const auto lavish = sirius::policyFor (CapabilityTier::Lavish);
+    const auto lavish = ida::policyFor (CapabilityTier::Lavish);
     CHECK (lavish.tapeFormat == TapeFormat::UncompressedPcm);
     CHECK (lavish.asrcQuality == AsrcQuality::VeryHigh);
     CHECK (lavish.effectStrategy == EffectStrategy::AllLive);
-    CHECK (lavish.ringDepthSeconds > sirius::policyFor (CapabilityTier::Comfortable).ringDepthSeconds);
+    CHECK (lavish.ringDepthSeconds > ida::policyFor (CapabilityTier::Comfortable).ringDepthSeconds);
 
-    const auto comfortable = sirius::policyFor (CapabilityTier::Comfortable);
+    const auto comfortable = ida::policyFor (CapabilityTier::Comfortable);
     CHECK (comfortable.tapeFormat == TapeFormat::Flac);
     CHECK (comfortable.asrcQuality == AsrcQuality::VeryHigh);
     CHECK (comfortable.effectStrategy == EffectStrategy::AllLive);
 
-    const auto tight = sirius::policyFor (CapabilityTier::Tight);
+    const auto tight = ida::policyFor (CapabilityTier::Tight);
     CHECK (tight.asrcQuality == AsrcQuality::High);
     CHECK (tight.effectStrategy == EffectStrategy::MixedLiveCached);
 
-    const auto survival = sirius::policyFor (CapabilityTier::Survival);
+    const auto survival = ida::policyFor (CapabilityTier::Survival);
     CHECK (survival.tapeFormat == TapeFormat::Flac);
     CHECK (survival.asrcQuality == AsrcQuality::Medium);
     CHECK (survival.effectStrategy == EffectStrategy::AggressiveCaching);
@@ -141,8 +141,8 @@ TEST_CASE ("each tier's policy matches the white paper Part 13.2 table", "[capab
 
 TEST_CASE ("every tier has a stable display name", "[capability]")
 {
-    CHECK (std::string (sirius::toString (CapabilityTier::Lavish)) == "Lavish");
-    CHECK (std::string (sirius::toString (CapabilityTier::Comfortable)) == "Comfortable");
-    CHECK (std::string (sirius::toString (CapabilityTier::Tight)) == "Tight");
-    CHECK (std::string (sirius::toString (CapabilityTier::Survival)) == "Survival");
+    CHECK (std::string (ida::toString (CapabilityTier::Lavish)) == "Lavish");
+    CHECK (std::string (ida::toString (CapabilityTier::Comfortable)) == "Comfortable");
+    CHECK (std::string (ida::toString (CapabilityTier::Tight)) == "Tight");
+    CHECK (std::string (ida::toString (CapabilityTier::Survival)) == "Survival");
 }

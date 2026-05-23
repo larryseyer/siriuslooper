@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the M7 S5 placeholder editor surface with real cross-process GPU compositing. Engine's `CARemoteLayerServer.sharedServer.serverPort` is brokered to each `sirius_plugin_host` child through a bundled XPC service; the child constructs a `CARemoteLayerClient`, publishes its `clientId` via the existing `PluginGuiState` shm, and the engine's `OutOfProcessEditorView` swaps the S5 placeholder NSView for one backed by `+[CALayer layerWithRemoteClientId:]`.
+**Goal:** Replace the M7 S5 placeholder editor surface with real cross-process GPU compositing. Engine's `CARemoteLayerServer.sharedServer.serverPort` is brokered to each `ida_plugin_host` child through a bundled XPC service; the child constructs a `CARemoteLayerClient`, publishes its `clientId` via the existing `PluginGuiState` shm, and the engine's `OutOfProcessEditorView` swaps the S5 placeholder NSView for one backed by `+[CALayer layerWithRemoteClientId:]`.
 
-**Architecture:** A tiny stateless XPC service (`sirius_gui_bridge`) bundled at `SiriusLooper.app/Contents/XPCServices/com.larryseyer.siriuslooper.gui-bridge.xpc/` acts as a Mach-port broker. Engine holds one shared `xpc_connection_t`; each child opens its own. The bridge caches the most-recently-registered `mach_port_t` (the engine's `CARemoteLayerServer.sharedServer.serverPort`) and replays it to each requesting child. After bootstrap, CARemoteLayer's window-server compositing carries every pixel; XPC sits idle until child shutdown. Soft-fails to S5 placeholder when the bridge is missing.
+**Architecture:** A tiny stateless XPC service (`sirius_gui_bridge`) bundled at `IDA.app/Contents/XPCServices/com.larryseyer.ida.gui-bridge.xpc/` acts as a Mach-port broker. Engine holds one shared `xpc_connection_t`; each child opens its own. The bridge caches the most-recently-registered `mach_port_t` (the engine's `CARemoteLayerServer.sharedServer.serverPort`) and replays it to each requesting child. After bootstrap, CARemoteLayer's window-server compositing carries every pixel; XPC sits idle until child shutdown. Soft-fails to S5 placeholder when the bridge is missing.
 
 **Tech Stack:** C++20 + Objective-C++ (.mm), `<xpc/xpc.h>`, `<mach/mach.h>`, `QuartzCore.CARemoteLayerServer` / `CARemoteLayerClient`, JUCE (`NSViewComponent` only — host binary stays JUCE-free), CMake, Catch2 (existing test framework).
 
@@ -20,8 +20,8 @@
 - `xpc_service/CMakeLists.txt` — builds the `sirius_gui_bridge` XPC binary on Apple only
 - `xpc_service/main.cpp` — XPC service entry point + dispatch (~150 LOC)
 - `xpc_service/Info.plist.in` — CMake-templated XPC service Info.plist
-- `host/include/sirius/IGuiBridge.h` — engine-side test seam (pure-virtual port)
-- `host/include/sirius/PluginGuiBridge.h` — singleton XPC connection holder, plain C++ header
+- `host/include/ida/IGuiBridge.h` — engine-side test seam (pure-virtual port)
+- `host/include/ida/PluginGuiBridge.h` — singleton XPC connection holder, plain C++ header
 - `host/src/PluginGuiBridge.cpp` — XPC connection lifecycle (~80 LOC)
 - `host/src/PluginGuiBridge.mm` — Cocoa shim that returns `CARemoteLayerServer.sharedServer.serverPort` (~30 LOC)
 - `tests/PluginGuiBridgeTests.cpp` — unit tests for connection holder, IGuiBridge stub
@@ -32,7 +32,7 @@
 **Modified files:**
 - `CMakeLists.txt` — `add_subdirectory(xpc_service)` under `if(APPLE)`
 - `app/CMakeLists.txt` — POST_BUILD copy of `.xpc` bundle into `Contents/XPCServices/`; extend Xcode signing block to sign the XPC binary
-- `host/CMakeLists.txt` — link `PluginGuiBridge.{cpp,mm}` into `Sirius::Host`; add `-framework Foundation` (XPC framework on Apple)
+- `host/CMakeLists.txt` — link `PluginGuiBridge.{cpp,mm}` into `Ida::Host`; add `-framework Foundation` (XPC framework on Apple)
 - `host_process/CMakeLists.txt` — add Foundation framework for the XPC client side
 - `host_process/main.cpp` — XPC bootstrap at startup to fetch engine serverPort
 - `host_process/gui_cocoa.mm` — replace placeholder contextId with real `CARemoteLayerClient.clientId`
@@ -42,11 +42,11 @@
 - `continue.md` — S6 close-out + S7 handoff at session end
 
 **Unchanged (re-verified during execution):**
-- `core/include/sirius/PluginGuiState.h`
-- `host/include/sirius/OutOfProcessPluginInstance.h`
-- `host/include/sirius/OutOfProcessEffectChainHost.h`
-- `host/include/sirius/OutOfProcessEditorView.h`
-- `engine/include/sirius/AudioCallback.h`
+- `core/include/ida/PluginGuiState.h`
+- `host/include/ida/OutOfProcessPluginInstance.h`
+- `host/include/ida/OutOfProcessEffectChainHost.h`
+- `host/include/ida/OutOfProcessEditorView.h`
+- `engine/include/ida/AudioCallback.h`
 - `RT_SAFETY_CONTRACT.md`
 
 **Commit cadence:** one commit per task. Each commit message follows the project convention `<type>: <short title>` (single line, single colon). Final S6 feature commit message at end is `feat: M7 S6 — CARemoteLayer cross-process GPU compositing via XPC Mach-port handoff`.
@@ -58,8 +58,8 @@
 Establish the engine-side dependency-inversion port BEFORE any Cocoa/XPC code, so unit tests can drive the bridge through a stub. Follows the S3 `IEffectChainHost` / S4 `INotificationSink` port pattern locked in continue.md decision #3.
 
 **Files:**
-- Create: `host/include/sirius/IGuiBridge.h`
-- Create: `host/include/sirius/PluginGuiBridge.h`
+- Create: `host/include/ida/IGuiBridge.h`
+- Create: `host/include/ida/PluginGuiBridge.h`
 - Create: `host/src/PluginGuiBridge.cpp`
 - Create: `tests/PluginGuiBridgeTests.cpp`
 - Modify: `host/CMakeLists.txt`
@@ -86,7 +86,7 @@ Create `tests/PluginGuiBridgeTests.cpp`:
 
 namespace
 {
-    struct StubBridge : public sirius::IGuiBridge
+    struct StubBridge : public ida::IGuiBridge
     {
         std::atomic<int>           registerCalls { 0 };
         std::atomic<std::uint32_t> lastPortName  { 0 };
@@ -105,8 +105,8 @@ namespace
 TEST_CASE ("PluginGuiBridge defaults to NullGuiBridge when no instance injected",
            "[plugin-editor-xpc][unit]")
 {
-    sirius::PluginGuiBridge::resetForTesting();
-    auto& bridge = sirius::PluginGuiBridge::instance();
+    ida::PluginGuiBridge::resetForTesting();
+    auto& bridge = ida::PluginGuiBridge::instance();
     CHECK_FALSE (bridge.isReady()); // NullGuiBridge is never ready
     bridge.registerServerPort (42u); // must not throw
 }
@@ -115,24 +115,24 @@ TEST_CASE ("PluginGuiBridge::setInstanceForTesting routes calls to the stub",
            "[plugin-editor-xpc][unit]")
 {
     StubBridge stub;
-    sirius::PluginGuiBridge::setInstanceForTesting (&stub);
-    auto& bridge = sirius::PluginGuiBridge::instance();
+    ida::PluginGuiBridge::setInstanceForTesting (&stub);
+    auto& bridge = ida::PluginGuiBridge::instance();
     CHECK (bridge.isReady());
 
     bridge.registerServerPort (1234u);
     CHECK (stub.registerCalls.load() == 1);
     CHECK (stub.lastPortName.load() == 1234u);
 
-    sirius::PluginGuiBridge::resetForTesting();
+    ida::PluginGuiBridge::resetForTesting();
 }
 
 TEST_CASE ("PluginGuiBridge::resetForTesting clears injected instance",
            "[plugin-editor-xpc][unit]")
 {
     StubBridge stub;
-    sirius::PluginGuiBridge::setInstanceForTesting (&stub);
-    sirius::PluginGuiBridge::resetForTesting();
-    auto& bridge = sirius::PluginGuiBridge::instance();
+    ida::PluginGuiBridge::setInstanceForTesting (&stub);
+    ida::PluginGuiBridge::resetForTesting();
+    auto& bridge = ida::PluginGuiBridge::instance();
     CHECK_FALSE (bridge.isReady());
 }
 ```
@@ -142,7 +142,7 @@ TEST_CASE ("PluginGuiBridge::resetForTesting clears injected instance",
 Run: `cmake --build build -j --target PluginGuiBridgeTests 2>&1 | tail -20`
 Expected: compile error on `#include "sirius/IGuiBridge.h"` (no such file).
 
-- [ ] **Step 3: Create `host/include/sirius/IGuiBridge.h`**
+- [ ] **Step 3: Create `host/include/ida/IGuiBridge.h`**
 
 ```cpp
 #pragma once
@@ -187,7 +187,7 @@ struct IGuiBridge
 } // namespace sirius
 ```
 
-- [ ] **Step 4: Create `host/include/sirius/PluginGuiBridge.h`**
+- [ ] **Step 4: Create `host/include/ida/PluginGuiBridge.h`**
 
 ```cpp
 #pragma once
@@ -288,7 +288,7 @@ target_sources(Sirius_Host PRIVATE
     src/PluginGuiBridge.cpp)
 ```
 
-If the headers list is explicit, add `include/sirius/IGuiBridge.h` and `include/sirius/PluginGuiBridge.h` there too.
+If the headers list is explicit, add `include/ida/IGuiBridge.h` and `include/ida/PluginGuiBridge.h` there too.
 
 - [ ] **Step 7: Wire into `tests/CMakeLists.txt`**
 
@@ -296,7 +296,7 @@ Read `tests/CMakeLists.txt` to find how existing tests (e.g. `OutOfProcessEditor
 
 ```cmake
 sirius_add_catch2_test(PluginGuiBridgeTests PluginGuiBridgeTests.cpp)
-target_link_libraries(PluginGuiBridgeTests PRIVATE Sirius::Host)
+target_link_libraries(PluginGuiBridgeTests PRIVATE Ida::Host)
 ```
 
 (Use whatever helper macro the file already uses for Catch2 test registration.)
@@ -314,8 +314,8 @@ Expected: `100% tests passed, 0 tests failed out of 381` (378 from S5 + 3 new).
 - [ ] **Step 10: Commit**
 
 ```bash
-git add host/include/sirius/IGuiBridge.h \
-        host/include/sirius/PluginGuiBridge.h \
+git add host/include/ida/IGuiBridge.h \
+        host/include/ida/PluginGuiBridge.h \
         host/src/PluginGuiBridge.cpp \
         host/CMakeLists.txt \
         tests/PluginGuiBridgeTests.cpp \
@@ -327,7 +327,7 @@ git commit -m "feat: M7 S6 step 1 — IGuiBridge port + PluginGuiBridge null ske
 
 ## Task 2: XPC service binary (`sirius_gui_bridge`)
 
-Build the tiny Mach-port broker that will live inside `SiriusLooper.app/Contents/XPCServices/`. This task only adds the binary + Info.plist + CMake; it does NOT yet install into the bundle (Task 4 does that).
+Build the tiny Mach-port broker that will live inside `IDA.app/Contents/XPCServices/`. This task only adds the binary + Info.plist + CMake; it does NOT yet install into the bundle (Task 4 does that).
 
 **Files:**
 - Create: `xpc_service/CMakeLists.txt`
@@ -341,9 +341,9 @@ Build the tiny Mach-port broker that will live inside `SiriusLooper.app/Contents
 // =============================================================================
 // sirius_gui_bridge — XPC service binary (M7 S6).
 // =============================================================================
-// Bundled inside SiriusLooper.app/Contents/XPCServices/. launchd brings
-// this up on demand when the engine or a sirius_plugin_host child opens
-// an XPC connection to com.larryseyer.siriuslooper.gui-bridge.
+// Bundled inside IDA.app/Contents/XPCServices/. launchd brings
+// this up on demand when the engine or a ida_plugin_host child opens
+// an XPC connection to com.larryseyer.ida.gui-bridge.
 //
 // **Stateless Mach-port broker.** Holds one cached mach_port_t — the
 // engine's CARemoteLayerServer.sharedServer.serverPort. Two ops:
@@ -446,7 +446,7 @@ namespace
 int main (int /*argc*/, const char* /*argv*/[])
 {
     g_serialQueue = dispatch_queue_create (
-        "com.larryseyer.siriuslooper.gui-bridge.serial",
+        "com.larryseyer.ida.gui-bridge.serial",
         DISPATCH_QUEUE_SERIAL);
 
     xpc_main (connectionHandler);
@@ -466,7 +466,7 @@ int main (int /*argc*/, const char* /*argv*/[])
     <key>CFBundleExecutable</key>
     <string>sirius_gui_bridge</string>
     <key>CFBundleIdentifier</key>
-    <string>com.larryseyer.siriuslooper.gui-bridge</string>
+    <string>com.larryseyer.ida.gui-bridge</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
@@ -494,7 +494,7 @@ int main (int /*argc*/, const char* /*argv*/[])
 # =============================================================================
 # sirius_gui_bridge — XPC service for the CARemoteLayer Mach-port handoff (M7 S6).
 # =============================================================================
-# Bundled into SiriusLooper.app/Contents/XPCServices/ by app/CMakeLists.txt.
+# Bundled into IDA.app/Contents/XPCServices/ by app/CMakeLists.txt.
 # JUCE-free, AppKit-free; only depends on the libSystem XPC + Mach surfaces.
 # =============================================================================
 
@@ -508,9 +508,9 @@ add_executable(sirius_gui_bridge MACOSX_BUNDLE
 set_target_properties(sirius_gui_bridge PROPERTIES
     BUNDLE TRUE
     BUNDLE_EXTENSION xpc
-    OUTPUT_NAME "com.larryseyer.siriuslooper.gui-bridge"
+    OUTPUT_NAME "com.larryseyer.ida.gui-bridge"
     MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in"
-    MACOSX_BUNDLE_GUI_IDENTIFIER "com.larryseyer.siriuslooper.gui-bridge"
+    MACOSX_BUNDLE_GUI_IDENTIFIER "com.larryseyer.ida.gui-bridge"
     MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
     MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}")
 
@@ -547,7 +547,7 @@ endif()
 - [ ] **Step 5: Configure + build**
 
 Run: `cmake -B build -S . && cmake --build build -j --target sirius_gui_bridge 2>&1 | tail -10`
-Expected: builds `build/xpc_service/com.larryseyer.siriuslooper.gui-bridge.xpc/Contents/MacOS/sirius_gui_bridge`.
+Expected: builds `build/xpc_service/com.larryseyer.ida.gui-bridge.xpc/Contents/MacOS/sirius_gui_bridge`.
 
 - [ ] **Step 6: Verify bundle structure**
 
@@ -617,7 +617,7 @@ Read the current `host/src/PluginGuiBridge.cpp` from Task 1, then replace it ent
 // PluginGuiBridge.cpp — engine-side XPC bridge holder (M7 S6).
 // =============================================================================
 // Concrete impl wraps an xpc_connection_t to the bundled
-// `com.larryseyer.siriuslooper.gui-bridge` XPC service. Opens lazily on
+// `com.larryseyer.ida.gui-bridge` XPC service. Opens lazily on
 // first instance() call, sends `set_server_port` with
 // CARemoteLayerServer.sharedServer.serverPort, holds the connection for
 // process lifetime so the kernel doesn't reclaim the registered send-
@@ -657,11 +657,11 @@ namespace
         XpcGuiBridge()
         {
             queue_ = dispatch_queue_create (
-                "com.larryseyer.siriuslooper.gui-bridge.client",
+                "com.larryseyer.ida.gui-bridge.client",
                 DISPATCH_QUEUE_SERIAL);
 
             conn_ = xpc_connection_create_mach_service (
-                "com.larryseyer.siriuslooper.gui-bridge",
+                "com.larryseyer.ida.gui-bridge",
                 queue_,
                 /* flags */ 0);
 
@@ -795,7 +795,7 @@ if(APPLE)
 endif()
 ```
 
-Also ensure `Sirius::Host` links `-framework QuartzCore` on Apple (it likely already does for the S5 work).
+Also ensure `Ida::Host` links `-framework QuartzCore` on Apple (it likely already does for the S5 work).
 
 - [ ] **Step 4: Build**
 
@@ -821,54 +821,54 @@ git commit -m "feat: M7 S6 step 3 — PluginGuiBridge real XPC connection + CARe
 
 ---
 
-## Task 4: Bundle layout — copy XPC service + `sirius_plugin_host` into `SiriusLooper.app`
+## Task 4: Bundle layout — copy XPC service + `ida_plugin_host` into `IDA.app`
 
-The XPC `mach_service` lookup only succeeds when the `.xpc` bundle lives at `SiriusLooper.app/Contents/XPCServices/`. This task wires the POST_BUILD copy. Also confirms (and adds if absent) the `sirius_plugin_host` copy into `Contents/MacOS/` so both binaries ship together.
+The XPC `mach_service` lookup only succeeds when the `.xpc` bundle lives at `IDA.app/Contents/XPCServices/`. This task wires the POST_BUILD copy. Also confirms (and adds if absent) the `ida_plugin_host` copy into `Contents/MacOS/` so both binaries ship together.
 
 **Files:**
 - Modify: `app/CMakeLists.txt`
 
 - [ ] **Step 1: Read `app/CMakeLists.txt` and check current bundle-copy state**
 
-Run: `grep -n "TARGET_BUNDLE_DIR\|sirius_plugin_host\|XPCServices" app/CMakeLists.txt`
+Run: `grep -n "TARGET_BUNDLE_DIR\|ida_plugin_host\|XPCServices" app/CMakeLists.txt`
 
-If `sirius_plugin_host` is already copied into `Contents/MacOS/`, skip step 3. Otherwise both copies (the host binary AND the XPC service) need adding.
+If `ida_plugin_host` is already copied into `Contents/MacOS/`, skip step 3. Otherwise both copies (the host binary AND the XPC service) need adding.
 
 - [ ] **Step 2: Add XPC service copy + signing block**
 
-Inside `app/CMakeLists.txt`, after the existing `juce_add_gui_app(SiriusLooper ...)` + `target_link_libraries(SiriusLooper ...)` block, add (Apple-only):
+Inside `app/CMakeLists.txt`, after the existing `juce_add_gui_app(IDA ...)` + `target_link_libraries(IDA ...)` block, add (Apple-only):
 
 ```cmake
 if(APPLE)
     # Copy the bundled XPC service into the .app at the path launchd
     # expects for in-app XPC services. The .xpc bundle is built by
     # xpc_service/CMakeLists.txt.
-    add_dependencies(SiriusLooper sirius_gui_bridge)
-    add_custom_command(TARGET SiriusLooper POST_BUILD
+    add_dependencies(IDA sirius_gui_bridge)
+    add_custom_command(TARGET IDA POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory
-            "$<TARGET_BUNDLE_DIR:SiriusLooper>/Contents/XPCServices"
+            "$<TARGET_BUNDLE_DIR:IDA>/Contents/XPCServices"
         COMMAND ${CMAKE_COMMAND} -E copy_directory
             "$<TARGET_BUNDLE_DIR:sirius_gui_bridge>"
-            "$<TARGET_BUNDLE_DIR:SiriusLooper>/Contents/XPCServices/$<TARGET_BUNDLE_DIR_NAME:sirius_gui_bridge>"
+            "$<TARGET_BUNDLE_DIR:IDA>/Contents/XPCServices/$<TARGET_BUNDLE_DIR_NAME:sirius_gui_bridge>"
         VERBATIM
         COMMENT "Sirius: install XPC service into app bundle")
 endif()
 ```
 
-(`$<TARGET_BUNDLE_DIR_NAME:sirius_gui_bridge>` resolves to `com.larryseyer.siriuslooper.gui-bridge.xpc` per the OUTPUT_NAME set in Task 2.)
+(`$<TARGET_BUNDLE_DIR_NAME:sirius_gui_bridge>` resolves to `com.larryseyer.ida.gui-bridge.xpc` per the OUTPUT_NAME set in Task 2.)
 
-- [ ] **Step 3: Add `sirius_plugin_host` copy (if missing)**
+- [ ] **Step 3: Add `ida_plugin_host` copy (if missing)**
 
 If step 1 showed no existing copy, append (also Apple-only, in the same `if(APPLE)` block):
 
 ```cmake
-    add_dependencies(SiriusLooper sirius_plugin_host)
-    add_custom_command(TARGET SiriusLooper POST_BUILD
+    add_dependencies(IDA ida_plugin_host)
+    add_custom_command(TARGET IDA POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy
-            "$<TARGET_FILE:sirius_plugin_host>"
-            "$<TARGET_BUNDLE_DIR:SiriusLooper>/Contents/MacOS/$<TARGET_FILE_NAME:sirius_plugin_host>"
+            "$<TARGET_FILE:ida_plugin_host>"
+            "$<TARGET_BUNDLE_DIR:IDA>/Contents/MacOS/$<TARGET_FILE_NAME:ida_plugin_host>"
         VERBATIM
-        COMMENT "Sirius: install sirius_plugin_host into app bundle")
+        COMMENT "Sirius: install ida_plugin_host into app bundle")
 ```
 
 - [ ] **Step 4: Extend the Xcode signing block**
@@ -882,7 +882,7 @@ Find the existing `if(APPLE AND CMAKE_GENERATOR STREQUAL "Xcode")` block. Inside
         XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "Developer ID Application"
         XCODE_ATTRIBUTE_ENABLE_HARDENED_RUNTIME "YES")
 
-    set_target_properties(sirius_plugin_host PROPERTIES
+    set_target_properties(ida_plugin_host PROPERTIES
         XCODE_ATTRIBUTE_CODE_SIGN_STYLE "Manual"
         XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "RR5DY39W4Q"
         XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "Developer ID Application"
@@ -891,19 +891,19 @@ Find the existing `if(APPLE AND CMAKE_GENERATOR STREQUAL "Xcode")` block. Inside
 
 - [ ] **Step 5: Configure + build the app**
 
-Run: `cmake --build build -j --target SiriusLooper 2>&1 | tail -10`
-Expected: builds `build/app/SiriusLooper_artefacts/.../Sirius Looper.app` with both `Contents/MacOS/sirius_plugin_host` and `Contents/XPCServices/com.larryseyer.siriuslooper.gui-bridge.xpc/`.
+Run: `cmake --build build -j --target IDA 2>&1 | tail -10`
+Expected: builds `build/app/IDA_artefacts/.../IDA.app` with both `Contents/MacOS/ida_plugin_host` and `Contents/XPCServices/com.larryseyer.ida.gui-bridge.xpc/`.
 
 - [ ] **Step 6: Verify bundle contents**
 
-Run: `find "build/app/SiriusLooper_artefacts" -path "*Sirius Looper.app/Contents/*" -name "sirius_*" -o -name "*.xpc"`
-Expected: lists `sirius_plugin_host`, `com.larryseyer.siriuslooper.gui-bridge.xpc` directory, and the `sirius_gui_bridge` binary inside it.
+Run: `find "build/app/IDA_artefacts" -path "*IDA.app/Contents/*" -name "sirius_*" -o -name "*.xpc"`
+Expected: lists `ida_plugin_host`, `com.larryseyer.ida.gui-bridge.xpc` directory, and the `sirius_gui_bridge` binary inside it.
 
 - [ ] **Step 7: Commit**
 
 ```bash
 git add app/CMakeLists.txt
-git commit -m "feat: M7 S6 step 4 — install sirius_gui_bridge.xpc + sirius_plugin_host into app bundle"
+git commit -m "feat: M7 S6 step 4 — install sirius_gui_bridge.xpc + ida_plugin_host into app bundle"
 ```
 
 ---
@@ -935,7 +935,7 @@ At the top of `configureBus` (after argument validation, before slot iteration),
     // real XpcGuiBridge; later calls are no-ops. Children spawned
     // for any slot in this bus will then succeed in their
     // get_server_port lookup.
-    (void) sirius::PluginGuiBridge::instance();
+    (void) ida::PluginGuiBridge::instance();
 }
 ```
 
@@ -991,11 +991,11 @@ namespace
     void bootstrapXpcBridge()
     {
         dispatch_queue_t queue = dispatch_queue_create (
-            "com.larryseyer.siriuslooper.host.bridge-client",
+            "com.larryseyer.ida.host.bridge-client",
             DISPATCH_QUEUE_SERIAL);
 
         xpc_connection_t conn = xpc_connection_create_mach_service (
-            "com.larryseyer.siriuslooper.gui-bridge",
+            "com.larryseyer.ida.gui-bridge",
             queue,
             /* flags */ 0);
 
@@ -1030,7 +1030,7 @@ namespace
             g_engineServerPort.store (fetched, std::memory_order_release);
         else
             std::fprintf (stderr,
-                "sirius_plugin_host: XPC bridge timeout (250 ms); "
+                "ida_plugin_host: XPC bridge timeout (250 ms); "
                 "falling back to S5 placeholder editor surface\n");
 
         xpc_release (req);
@@ -1061,11 +1061,11 @@ In `int main(int argc, char** argv)`, immediately after argv parsing but BEFORE 
 
 - [ ] **Step 4: Update `host_process/CMakeLists.txt` to link Foundation**
 
-Read `host_process/CMakeLists.txt`. In the Apple branch's `target_link_libraries(sirius_plugin_host PRIVATE ...)` block, add `-framework Foundation`:
+Read `host_process/CMakeLists.txt`. In the Apple branch's `target_link_libraries(ida_plugin_host PRIVATE ...)` block, add `-framework Foundation`:
 
 ```cmake
-target_link_libraries(sirius_plugin_host PRIVATE
-    Sirius::Core
+target_link_libraries(ida_plugin_host PRIVATE
+    Ida::Core
     clap
     "-framework AppKit"
     "-framework QuartzCore"
@@ -1076,18 +1076,18 @@ target_link_libraries(sirius_plugin_host PRIVATE
 
 - [ ] **Step 5: Build**
 
-Run: `cmake --build build -j --target sirius_plugin_host 2>&1 | tail -10`
+Run: `cmake --build build -j --target ida_plugin_host 2>&1 | tail -10`
 Expected: builds clean.
 
 - [ ] **Step 6: Smoke — run the binary outside a bundle**
 
-Run: `build/host_process/sirius_plugin_host --help 2>&1 | head -5; echo "exit=$?"`
+Run: `build/host_process/ida_plugin_host --help 2>&1 | head -5; echo "exit=$?"`
 Expected: prints help text and exits cleanly (or whatever the existing `--help` / no-args path does). The XPC bootstrap silently fails (no bundle context); the binary should NOT hang at startup. If `--help` isn't a thing, run with the existing test-mode args.
 
 - [ ] **Step 7: Re-run the suite**
 
 Run: `ctest --test-dir build --output-on-failure 2>&1 | tail -5`
-Expected: 381 / 381 pass. Tests run from `build/` without bundle context; the XPC bootstrap in each child timeouts after 250 ms, the child logs once to stderr, and the existing editor tests proceed on the S5 placeholder path. **A 250 ms-per-spawn cost will slow the integration tests.** If observed test runtime balloons, gate the bootstrap on an env-var check (e.g. skip when `SIRIUS_DISABLE_XPC_BRIDGE=1` is set; tests set this in their fixtures) — adjust inline if measured.
+Expected: 381 / 381 pass. Tests run from `build/` without bundle context; the XPC bootstrap in each child timeouts after 250 ms, the child logs once to stderr, and the existing editor tests proceed on the S5 placeholder path. **A 250 ms-per-spawn cost will slow the integration tests.** If observed test runtime balloons, gate the bootstrap on an env-var check (e.g. skip when `IDA_DISABLE_XPC_BRIDGE=1` is set; tests set this in their fixtures) — adjust inline if measured.
 
 - [ ] **Step 8: Commit**
 
@@ -1179,7 +1179,7 @@ if (g_editor.remoteClient != nil)
 
 - [ ] **Step 4: Build**
 
-Run: `cmake --build build -j --target sirius_plugin_host 2>&1 | tail -10`
+Run: `cmake --build build -j --target ida_plugin_host 2>&1 | tail -10`
 Expected: clean build. ARC is OFF in this TU (per `host_process/CMakeLists.txt`); the manual `release` / `invalidate` calls are intentional.
 
 - [ ] **Step 5: Re-run editor tests**
@@ -1450,7 +1450,7 @@ Run: `ctest --test-dir build -R "plugin-ipc" --output-on-failure --verbose 2>&1 
 Or invoke the gated tag directly via the project's existing convention (likely an env-var or `--test-action`):
 
 ```bash
-SIRIUS_RUN_RT_SMOKE=1 ctest --test-dir build -R "plugin-ipc" --output-on-failure --verbose 2>&1 | tail -40
+IDA_RUN_RT_SMOKE=1 ctest --test-dir build -R "plugin-ipc" --output-on-failure --verbose 2>&1 | tail -40
 ```
 
 (Check `tests/OutOfProcessPluginIpcLatencyTests.cpp` for the actual invocation gate — adjust as the file documents.)
@@ -1500,27 +1500,27 @@ This procedure does.
 
    ```bash
    cmake -B build-xcode -S . -G Xcode
-   cmake --build build-xcode --config Release --target SiriusLooper
+   cmake --build build-xcode --config Release --target IDA
    ```
 
 2. Confirm the bundle has both binaries + the XPC service:
 
    ```bash
-   find "build-xcode/app/SiriusLooper_artefacts/Release/Sirius Looper.app/Contents" \
-       -name "sirius_plugin_host" -o -name "*.xpc"
+   find "build-xcode/app/IDA_artefacts/Release/IDA.app/Contents" \
+       -name "ida_plugin_host" -o -name "*.xpc"
    ```
 
    Expected output:
 
    ```
-   .../Contents/MacOS/sirius_plugin_host
-   .../Contents/XPCServices/com.larryseyer.siriuslooper.gui-bridge.xpc
+   .../Contents/MacOS/ida_plugin_host
+   .../Contents/XPCServices/com.larryseyer.ida.gui-bridge.xpc
    ```
 
 3. Launch the app:
 
    ```bash
-   open "build-xcode/app/SiriusLooper_artefacts/Release/Sirius Looper.app"
+   open "build-xcode/app/IDA_artefacts/Release/IDA.app"
    ```
 
 4. M20+ adds a "Add plug-in" UI. Until then, the eyes-on flow uses the
@@ -1531,14 +1531,14 @@ This procedure does.
    operator sees:
    - **A flat coloured rectangle (purple-ish, hue shifts per restart)**:
      bridge is missing, child fell back to S5 placeholder. Check
-     Console.app for `sirius_plugin_host: XPC bridge timeout` lines.
+     Console.app for `ida_plugin_host: XPC bridge timeout` lines.
    - **The synthetic plug-in's actual NSView contents**: success.
      CARemoteLayer is composing the child's CALayer tree into the
      engine's window via the window-server.
 
 5. To prove the supervisor-restart re-publication path:
    - Open the synthetic plug-in's editor (you should see real content).
-   - In another terminal: `killall sirius_plugin_host`.
+   - In another terminal: `killall ida_plugin_host`.
    - Within ~5 seconds (kConsecutiveMissThreshold × kSupervisorPollMs),
      a new child spawns and re-publishes. The editor's CAContext rebinds
      to the new clientId; you should see the synthetic plug-in's content
@@ -1550,7 +1550,7 @@ This procedure does.
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | App launches but synthetic plug-in editor stays purple forever | Bridge XPC service not bundled; check `Contents/XPCServices/` exists | Re-build with the POST_BUILD copy from `app/CMakeLists.txt` |
-| Console shows `XPC bridge timeout` | Bridge crashed at launch or never connected | Check Console.app for `sirius_gui_bridge` crashes; check launchd registered the service (`launchctl print user/$UID/com.larryseyer.siriuslooper.gui-bridge`) |
+| Console shows `XPC bridge timeout` | Bridge crashed at launch or never connected | Check Console.app for `sirius_gui_bridge` crashes; check launchd registered the service (`launchctl print user/$UID/com.larryseyer.ida.gui-bridge`) |
 | Editor shows purple on first open, real content after force-quit + relaunch | First-show race — engine hadn't registered serverPort yet | Confirm `OutOfProcessEffectChainHost::configureBus` calls `PluginGuiBridge::instance()` (Task 5) |
 | Engine crashes when opening plug-in editor | Likely Mach send-right lifetime bug | Run under `lldb`; check `mach_port_deallocate` pairing in bridge + child |
 ```
@@ -1564,10 +1564,10 @@ This procedure does.
 
 ## Context
 
-Sirius Looper is currently NOT sandboxed. The CI signing workflow
+IDA is currently NOT sandboxed. The CI signing workflow
 (`ci-macos-signed.yml`) is operator-pending (carryover from M6). When
 that workflow lands and sandbox is enabled, the M7 S6 XPC bridge will
-need new entitlements declared in `app/SiriusLooper.macos.entitlements`
+need new entitlements declared in `app/IDA.macos.entitlements`
 to keep working.
 
 This file documents the diff so the operator session that enables the
@@ -1579,7 +1579,7 @@ sandbox can apply it without re-deriving.
 <!-- Allow the engine to look up the bundled XPC service -->
 <key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
 <array>
-    <string>com.larryseyer.siriuslooper.gui-bridge</string>
+    <string>com.larryseyer.ida.gui-bridge</string>
 </array>
 
 <!-- Allow CARemoteLayer Mach port transfer -->
@@ -1600,7 +1600,7 @@ already-allowed XPC connection.
 2. Operator eyes-on procedure (`docs/operator/m7-eyes-on.md`) still
    shows synthetic plug-in NSView content (not the placeholder).
 3. Console.app shows no `sandbox` blocked messages from
-   `SiriusLooper` or `sirius_plugin_host`.
+   `IDA` or `ida_plugin_host`.
 
 ## Why deferred
 
@@ -1647,19 +1647,19 @@ Expected: **384 / 384 pass** (378 from S5 + 3 PluginGuiBridge + 3 CARemoteLayerR
 - [ ] **Step 3: Verify bundle structure once more**
 
 ```bash
-find "build/app/SiriusLooper_artefacts" -path "*Sirius Looper.app/Contents/*" \
-    \( -name "sirius_plugin_host" -o -name "*.xpc" \) | sort
+find "build/app/IDA_artefacts" -path "*IDA.app/Contents/*" \
+    \( -name "ida_plugin_host" -o -name "*.xpc" \) | sort
 ```
 
-Expected: both `Contents/MacOS/sirius_plugin_host` AND `Contents/XPCServices/com.larryseyer.siriuslooper.gui-bridge.xpc` listed.
+Expected: both `Contents/MacOS/ida_plugin_host` AND `Contents/XPCServices/com.larryseyer.ida.gui-bridge.xpc` listed.
 
 - [ ] **Step 4: Launch the app once (smoke)**
 
 Per memory `feedback_can_launch_app`: Claude is authorized to launch.
 
 ```bash
-open "build/app/SiriusLooper_artefacts/Debug/Sirius Looper.app" || \
-open "build/app/SiriusLooper_artefacts/Sirius Looper.app"
+open "build/app/IDA_artefacts/Debug/IDA.app" || \
+open "build/app/IDA_artefacts/IDA.app"
 ```
 
 (Path depends on JUCE's artefact layout under Unix Makefiles; pick whichever exists.)
@@ -1667,13 +1667,13 @@ open "build/app/SiriusLooper_artefacts/Sirius Looper.app"
 Wait ~3 seconds, then:
 
 ```bash
-ps -A | grep -E "sirius_(plugin_host|gui_bridge)|Sirius Looper" | grep -v grep
+ps -A | grep -E "sirius_(plugin_host|gui_bridge)|IDA" | grep -v grep
 ```
 
-Expected: at minimum `Sirius Looper` is running. `sirius_gui_bridge` and `sirius_plugin_host` only spawn when a plug-in is loaded, which doesn't happen yet (no MainComponent production wiring per S5 deferral). Quit the app:
+Expected: at minimum `IDA` is running. `sirius_gui_bridge` and `ida_plugin_host` only spawn when a plug-in is loaded, which doesn't happen yet (no MainComponent production wiring per S5 deferral). Quit the app:
 
 ```bash
-osascript -e 'quit app "Sirius Looper"'
+osascript -e 'quit app "IDA"'
 ```
 
 - [ ] **Step 5: Update `continue.md`**
@@ -1702,8 +1702,8 @@ Test count: **384 / 384** green (was 378 at S5; +6 in S6 — three
 
 **S6 made cross-process GPU compositing real.** Engine's
 `CARemoteLayerServer.sharedServer.serverPort` is brokered to each
-`sirius_plugin_host` child via a bundled XPC service
-(`Contents/XPCServices/com.larryseyer.siriuslooper.gui-bridge.xpc/`).
+`ida_plugin_host` child via a bundled XPC service
+(`Contents/XPCServices/com.larryseyer.ida.gui-bridge.xpc/`).
 Children construct `CARemoteLayerClient`, publish the `clientId` via the
 existing S5 `PluginGuiState` shm, and the engine wraps
 `+[CALayer layerWithRemoteClientId:]` inside the same
@@ -1785,5 +1785,5 @@ Expected: top entry is the SHA-fill commit; second-to-top is the close-out commi
 - `sirius_engine_server_port()` (declared in Task 6, called in Task 7) — match: `extern "C" std::uint32_t`.
 - `sirius_bridge_engine_server_port()` (declared in Task 3 .mm, called in Task 3 .cpp) — match: `extern "C" std::uint32_t`.
 - `IGuiBridge::registerServerPort(std::uint32_t)` (declared Task 1, implemented Task 3) — match.
-- XPC connection name string `"com.larryseyer.siriuslooper.gui-bridge"` (used Task 2 Info.plist, Task 3 engine connection, Task 6 child connection) — match.
+- XPC connection name string `"com.larryseyer.ida.gui-bridge"` (used Task 2 Info.plist, Task 3 engine connection, Task 6 child connection) — match.
 - `g_editor.remoteClient` (added Task 7, torn down in same task) — match.

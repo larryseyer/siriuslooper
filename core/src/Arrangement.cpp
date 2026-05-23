@@ -11,7 +11,7 @@ RoleSlot::RoleSlot (std::string role, Position conceptualIn, Position conceptual
 {
     if (conceptualOut_ < conceptualIn_)
         throw std::invalid_argument (
-            "sirius::RoleSlot: conceptualOut must not precede conceptualIn");
+            "ida::RoleSlot: conceptualOut must not precede conceptualIn");
 }
 
 Rational RoleSlot::duration() const
@@ -62,7 +62,7 @@ Constituent sequence (const Constituent& parent,
 {
     for (const auto& child : children)
         if (child == nullptr)
-            throw std::invalid_argument ("sirius::arrangement::sequence: child must not be null");
+            throw std::invalid_argument ("ida::arrangement::sequence: child must not be null");
 
     Constituent result (parent);
     Position cursor = childrenEnd (parent);
@@ -82,7 +82,7 @@ Constituent layer (const Constituent& parent,
 {
     for (const auto& child : children)
         if (child == nullptr)
-            throw std::invalid_argument ("sirius::arrangement::layer: child must not be null");
+            throw std::invalid_argument ("ida::arrangement::layer: child must not be null");
 
     Constituent result (parent);
 
@@ -99,10 +99,10 @@ Constituent sequenceShared (const Constituent&             parent,
 {
     if (phrase == nullptr)
         throw std::invalid_argument (
-            "sirius::arrangement::sequenceShared: phrase must not be null");
+            "ida::arrangement::sequenceShared: phrase must not be null");
     if (offsets.empty())
         throw std::invalid_argument (
-            "sirius::arrangement::sequenceShared: offsets must not be empty");
+            "ida::arrangement::sequenceShared: offsets must not be empty");
 
     const Rational phraseDuration = phrase->duration();
 

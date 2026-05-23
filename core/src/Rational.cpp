@@ -14,7 +14,7 @@ namespace
 
     [[noreturn]] void throwOverflow()
     {
-        throw std::overflow_error ("sirius::Rational: int64 overflow");
+        throw std::overflow_error ("ida::Rational: int64 overflow");
     }
 
     std::int64_t checkedMul (std::int64_t a, std::int64_t b)
@@ -57,7 +57,7 @@ namespace
 void Rational::normalize()
 {
     if (den == 0)
-        throw std::invalid_argument ("sirius::Rational: zero denominator");
+        throw std::invalid_argument ("ida::Rational: zero denominator");
 
     // Canonicalize the sign onto the numerator so the denominator is always
     // positive. INT64_MIN has no positive counterpart, so negating it overflows.

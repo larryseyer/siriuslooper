@@ -8,7 +8,7 @@
 namespace sirius
 {
 
-/// The performer-facing capture state. The Sirius tape is always running
+/// The performer-facing capture state. The IDA tape is always running
 /// (white paper Part 7) — that architectural commitment is what enables
 /// retroactive capture. CaptureSession sits *above* the tape and gates
 /// whether the performer's marking gestures take effect, and (downstream)

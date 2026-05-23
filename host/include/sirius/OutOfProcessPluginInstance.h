@@ -20,7 +20,7 @@ namespace juce { class File; }
 namespace sirius
 {
 
-/// Engine-side handle for one `sirius_plugin_host` child process (V7 §9.1,
+/// Engine-side handle for one `ida_plugin_host` child process (V7 §9.1,
 /// plan M7). Spawns the host binary at construction, exposes byte-stream
 /// IPC over the child's stdin/stdout (S1 transport — S2 swaps in POSIX
 /// shared-memory + SPSC rings), and tears the child down cleanly at
@@ -32,7 +32,7 @@ namespace sirius
 /// surface is the two `try…` methods added in M7 S3: `tryWriteBytes` and
 /// `tryReadBytes`. Both wrap the underlying `SharedMemorySpscQueue` push
 /// and pop directly (already wait-free noexcept per
-/// `core/include/sirius/SharedMemorySpscQueue.h:103-124`), do exactly one
+/// `core/include/ida/SharedMemorySpscQueue.h:103-124`), do exactly one
 /// SPSC operation, allocate nothing, and never spin.
 ///
 /// The instance is non-copyable + non-movable. The owner keeps it alive
@@ -51,7 +51,7 @@ class OutOfProcessPluginInstance
 public:
     /// Spawns the host child process in identity mode (byte-stream
     /// pass-through over stdin/stdout). `hostBinaryPath` must point at
-    /// the built `sirius_plugin_host` executable; `instanceId` is
+    /// the built `ida_plugin_host` executable; `instanceId` is
     /// forwarded via `--instance-id` (logged only in S1; will name the
     /// shared-mem segment in S2c). The constructor returns whether or
     /// not the spawn succeeded — call `isRunning()` immediately after

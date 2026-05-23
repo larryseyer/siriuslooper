@@ -16,7 +16,7 @@
 
 ## Spec deviation note (read before Task 1)
 
-The spec calls for `TapeStore::appendBytes(TapeId, span<const std::byte>)` and `TapeStore::finalize(TapeId)`. After grounding against the existing `persistence/include/sirius/TapeStore.h`, the cleaner architecture is to keep `TapeStore` purely content-addressed (its existing `store(juce::MemoryBlock&) → juce::String contentHash` is unchanged) and put the partial-file mechanics entirely on `TapeWriter`:
+The spec calls for `TapeStore::appendBytes(TapeId, span<const std::byte>)` and `TapeStore::finalize(TapeId)`. After grounding against the existing `persistence/include/ida/TapeStore.h`, the cleaner architecture is to keep `TapeStore` purely content-addressed (its existing `store(juce::MemoryBlock&) → juce::String contentHash` is unchanged) and put the partial-file mechanics entirely on `TapeWriter`:
 
 - `TapeWriter::appendForChannel(ChannelId, juce::MemoryBlock)` — writes to the per-channel partial file (writer thread does this; audio thread enqueues a `TapeWriteMessage`, never touches the file).
 - `TapeWriter::finalizeChannel(ChannelId, TapeStore&) → juce::String contentHash` — flushes pending writes, reads the partial back, calls `TapeStore::store(bytes)`, deletes the partial, returns the hash.
@@ -29,12 +29,12 @@ This preserves the data-layer / structure-layer split documented at `TapeStore.h
 
 | File | Action | Session | Responsibility |
 |---|---|---|---|
-| `core/include/sirius/ChannelDefaults.h` | NEW | 1 | Small struct used by `InputDescriptor::defaults` and `setInputDefaults`; carries `TapeMode defaultTapeMode` and `bool defaultEnabled` |
-| `core/include/sirius/InputDescriptor.h` | MOD | 1 | Add `bool rawDirectMonitor{false}`, `bool enabled{true}`, `ChannelDefaults defaults{}` initial-value fields |
-| `engine/include/sirius/ProcessingChain.h` + `.cpp` | NEW | 1 | Abstract base + 4 concrete no-op subclasses (AudioChain, MidiChain, VideoChain, FileChain) + `makeProcessingChain(SignalType)` factory |
-| `engine/include/sirius/Channel.h` + `.cpp` | MOD | 1 | Promote `Channel` from aggregate to class with constructor that builds the matching `ProcessingChain` via the factory; add `std::unique_ptr<ProcessingChain> processing` member |
-| `engine/include/sirius/TapeWriter.h` + `.cpp` | NEW | 2 | Writer thread + `LockFreeSpscQueue<TapeWriteMessage>` + per-channel partial-file handles + tier-aware flush + dtor lifecycle + I/O error handling |
-| `engine/include/sirius/InputMixer.h` + `.cpp` | MOD | 2+3 | Replace every assert-false body with real implementation; add `setInputDefaults`, `finalizeChannel`; real `processBuffer` walking channels, enqueueing, calling `OverloadProtection.reportLoad(1.0)` on queue-full |
+| `core/include/ida/ChannelDefaults.h` | NEW | 1 | Small struct used by `InputDescriptor::defaults` and `setInputDefaults`; carries `TapeMode defaultTapeMode` and `bool defaultEnabled` |
+| `core/include/ida/InputDescriptor.h` | MOD | 1 | Add `bool rawDirectMonitor{false}`, `bool enabled{true}`, `ChannelDefaults defaults{}` initial-value fields |
+| `engine/include/ida/ProcessingChain.h` + `.cpp` | NEW | 1 | Abstract base + 4 concrete no-op subclasses (AudioChain, MidiChain, VideoChain, FileChain) + `makeProcessingChain(SignalType)` factory |
+| `engine/include/ida/Channel.h` + `.cpp` | MOD | 1 | Promote `Channel` from aggregate to class with constructor that builds the matching `ProcessingChain` via the factory; add `std::unique_ptr<ProcessingChain> processing` member |
+| `engine/include/ida/TapeWriter.h` + `.cpp` | NEW | 2 | Writer thread + `LockFreeSpscQueue<TapeWriteMessage>` + per-channel partial-file handles + tier-aware flush + dtor lifecycle + I/O error handling |
+| `engine/include/ida/InputMixer.h` + `.cpp` | MOD | 2+3 | Replace every assert-false body with real implementation; add `setInputDefaults`, `finalizeChannel`; real `processBuffer` walking channels, enqueueing, calling `OverloadProtection.reportLoad(1.0)` on queue-full |
 | `tests/ProcessingChainTests.cpp` | NEW | 1 | Construction, polymorphic dispatch via `signalType()`, factory mapping, all four subclasses instantiate |
 | `tests/InputDescriptorTests.cpp` | MOD | 1 | Add coverage for the three new initial-value fields |
 | `tests/ChannelTests.cpp` | MOD | 1 | Update brace-init tests to use the new constructor; assert `processing` is non-null and matches `signalType` |
@@ -50,7 +50,7 @@ This preserves the data-layer / structure-layer split documented at `TapeStore.h
 ### Task 1.1 — ChannelDefaults.h
 
 **Files:**
-- Create: `core/include/sirius/ChannelDefaults.h`
+- Create: `core/include/ida/ChannelDefaults.h`
 
 - [ ] **Step 1: Write the failing test** (append to existing `tests/InputDescriptorTests.cpp`)
 
@@ -62,8 +62,8 @@ This preserves the data-layer / structure-layer split documented at `TapeStore.h
 TEST_CASE ("ChannelDefaults is value-typed and round-trips its fields",
            "[input-descriptor][channel-defaults]")
 {
-    using sirius::ChannelDefaults;
-    using sirius::TapeMode;
+    using ida::ChannelDefaults;
+    using ida::TapeMode;
 
     const ChannelDefaults defaults { TapeMode::CommitToTape, true };
 
@@ -79,7 +79,7 @@ TEST_CASE ("ChannelDefaults is value-typed and round-trips its fields",
 - [ ] **Step 2: Run test to verify it fails (no such header)**
 
 ```bash
-cmake --build build --target SiriusTests 2>&1 | head -5
+cmake --build build --target IdaTests 2>&1 | head -5
 ```
 
 Expected: build failure, `'sirius/ChannelDefaults.h' file not found`.
@@ -113,12 +113,12 @@ struct ChannelDefaults
 } // namespace sirius
 ```
 
-Note: `TapeMode` lives in `engine/include/sirius/TapeMode.h`, but `ChannelDefaults` is in `core/`. The `#include "sirius/TapeMode.h"` resolves because the `SiriusEngine` target's `target_include_directories` exposes `engine/include` publicly. This is acceptable for M3 — if the include direction ever needs to reverse (engine depending on core only), `TapeMode` moves to `core/`. Note this in continue.md handoff if it surfaces.
+Note: `TapeMode` lives in `engine/include/ida/TapeMode.h`, but `ChannelDefaults` is in `core/`. The `#include "sirius/TapeMode.h"` resolves because the `IdaEngine` target's `target_include_directories` exposes `engine/include` publicly. This is acceptable for M3 — if the include direction ever needs to reverse (engine depending on core only), `TapeMode` moves to `core/`. Note this in continue.md handoff if it surfaces.
 
 - [ ] **Step 4: Run test to verify it passes**
 
 ```bash
-cmake --build build --target SiriusTests && \
+cmake --build build --target IdaTests && \
   ctest --test-dir build -R "ChannelDefaults" --output-on-failure
 ```
 
@@ -127,7 +127,7 @@ Expected: 1 test pass.
 ### Task 1.2 — InputDescriptor.h gains three initial-value fields
 
 **Files:**
-- Modify: `core/include/sirius/InputDescriptor.h`
+- Modify: `core/include/ida/InputDescriptor.h`
 - Modify: `tests/InputDescriptorTests.cpp`
 
 - [ ] **Step 1: Write the failing test** (append to `tests/InputDescriptorTests.cpp`)
@@ -136,11 +136,11 @@ Expected: 1 test pass.
 TEST_CASE ("InputDescriptor carries rawDirectMonitor / enabled / defaults initial values",
            "[input-descriptor]")
 {
-    using sirius::ChannelDefaults;
-    using sirius::InputDescriptor;
-    using sirius::InputKind;
-    using sirius::TapeId;
-    using sirius::TapeMode;
+    using ida::ChannelDefaults;
+    using ida::InputDescriptor;
+    using ida::InputKind;
+    using ida::TapeId;
+    using ida::TapeMode;
 
     SECTION ("default-initialized values match the spec")
     {
@@ -178,14 +178,14 @@ TEST_CASE ("InputDescriptor carries rawDirectMonitor / enabled / defaults initia
 - [ ] **Step 2: Run test to verify it fails (compile error: aggregate has too few members)**
 
 ```bash
-cmake --build build --target SiriusTests 2>&1 | grep -E "error:|InputDescriptor" | head -5
+cmake --build build --target IdaTests 2>&1 | grep -E "error:|InputDescriptor" | head -5
 ```
 
 Expected: compile error mentioning `rawDirectMonitor` / aggregate initialization.
 
 - [ ] **Step 3: Add the three fields**
 
-Replace the `InputDescriptor` struct body in `core/include/sirius/InputDescriptor.h` with:
+Replace the `InputDescriptor` struct body in `core/include/ida/InputDescriptor.h` with:
 
 ```cpp
 #include "sirius/ChannelDefaults.h"
@@ -229,7 +229,7 @@ struct InputDescriptor
 - [ ] **Step 4: Run test to verify it passes**
 
 ```bash
-cmake --build build --target SiriusTests && \
+cmake --build build --target IdaTests && \
   ctest --test-dir build -R "InputDescriptor" --output-on-failure
 ```
 
@@ -238,7 +238,7 @@ Expected: all `[input-descriptor]` tests pass (existing + 2 new SECTIONs).
 ### Task 1.3 — ProcessingChain hierarchy
 
 **Files:**
-- Create: `engine/include/sirius/ProcessingChain.h`
+- Create: `engine/include/ida/ProcessingChain.h`
 - Create: `engine/src/ProcessingChain.cpp`
 - Create: `tests/ProcessingChainTests.cpp`
 - Modify: `engine/CMakeLists.txt`
@@ -258,13 +258,13 @@ Expected: all `[input-descriptor]` tests pass (existing + 2 new SECTIONs).
 
 #include <memory>
 
-using sirius::AudioChain;
-using sirius::FileChain;
-using sirius::MidiChain;
-using sirius::ProcessingChain;
-using sirius::SignalType;
-using sirius::VideoChain;
-using sirius::makeProcessingChain;
+using ida::AudioChain;
+using ida::FileChain;
+using ida::MidiChain;
+using ida::ProcessingChain;
+using ida::SignalType;
+using ida::VideoChain;
+using ida::makeProcessingChain;
 
 TEST_CASE ("each concrete chain reports its SignalType via the virtual interface",
            "[processing-chain]")
@@ -327,12 +327,12 @@ TEST_CASE ("base destructor is virtual so unique_ptr<ProcessingChain> deletes co
 - [ ] **Step 2: Run to verify it fails (no header)**
 
 ```bash
-cmake --build build --target SiriusTests 2>&1 | grep "ProcessingChain.h" | head -3
+cmake --build build --target IdaTests 2>&1 | grep "ProcessingChain.h" | head -3
 ```
 
 Expected: `'sirius/ProcessingChain.h' file not found`.
 
-- [ ] **Step 3: Create the header** `engine/include/sirius/ProcessingChain.h`
+- [ ] **Step 3: Create the header** `engine/include/ida/ProcessingChain.h`
 
 ```cpp
 #pragma once
@@ -436,7 +436,7 @@ std::unique_ptr<ProcessingChain> makeProcessingChain (SignalType type)
 Modify `engine/CMakeLists.txt` — after `src/OutputMixer.cpp` insert `src/ProcessingChain.cpp`:
 
 ```cmake
-add_library(SiriusEngine STATIC
+add_library(IdaEngine STATIC
     src/MonotonicClock.cpp
     src/Lmc.cpp
     src/AudioDeviceCalibration.cpp
@@ -463,7 +463,7 @@ Modify `tests/CMakeLists.txt` — append `ProcessingChainTests.cpp` after `Outpu
 - [ ] **Step 7: Run tests to verify pass**
 
 ```bash
-cmake --build build --target SiriusTests && \
+cmake --build build --target IdaTests && \
   ctest --test-dir build -R "ProcessingChain" --output-on-failure
 ```
 
@@ -472,7 +472,7 @@ Expected: all `[processing-chain]` tests pass.
 ### Task 1.4 — Channel becomes a class with a constructor that builds its ProcessingChain
 
 **Files:**
-- Modify: `engine/include/sirius/Channel.h`
+- Modify: `engine/include/ida/Channel.h`
 - Modify: `engine/src/Channel.cpp`
 - Modify: `tests/ChannelTests.cpp`
 
@@ -529,12 +529,12 @@ Add `#include "sirius/ProcessingChain.h"` to the test file's include section.
 - [ ] **Step 2: Run to verify failure**
 
 ```bash
-cmake --build build --target SiriusTests 2>&1 | grep -E "error:" | head -5
+cmake --build build --target IdaTests 2>&1 | grep -E "error:" | head -5
 ```
 
 Expected: compile error — `Channel` has no matching constructor; no `processing` member.
 
-- [ ] **Step 3: Promote Channel to a class with a constructor** (replace the `struct Channel` block in `engine/include/sirius/Channel.h`)
+- [ ] **Step 3: Promote Channel to a class with a constructor** (replace the `struct Channel` block in `engine/include/ida/Channel.h`)
 
 Replace the existing `struct Channel { ... };` block with:
 
@@ -598,7 +598,7 @@ Channel::Channel (ChannelId id_,
 - [ ] **Step 5: Run channel tests to verify pass**
 
 ```bash
-cmake --build build --target SiriusTests && \
+cmake --build build --target IdaTests && \
   ctest --test-dir build -R "Channel|channel" --output-on-failure
 ```
 
@@ -625,9 +625,9 @@ Expected: all 4 phases green. If Phase 4 GUI smoke flakes on cold-build, re-run 
 - [ ] **Step 2: Sanity-grep for placeholders**
 
 ```bash
-grep -rnE "TODO|FIXME|XXX|stub" core/include/sirius/ChannelDefaults.h \
-  engine/include/sirius/ProcessingChain.h engine/src/ProcessingChain.cpp \
-  engine/include/sirius/Channel.h engine/src/Channel.cpp
+grep -rnE "TODO|FIXME|XXX|stub" core/include/ida/ChannelDefaults.h \
+  engine/include/ida/ProcessingChain.h engine/src/ProcessingChain.cpp \
+  engine/include/ida/Channel.h engine/src/Channel.cpp
 ```
 
 Expected: zero hits (the `// M5 adds:` and `// M3+:` comments are intentional pickup pointers, not stubs — they don't match the grep).
@@ -635,11 +635,11 @@ Expected: zero hits (the `// M5 adds:` and `// M3+:` comments are intentional pi
 - [ ] **Step 3: Commit Session 1**
 
 ```bash
-git add core/include/sirius/ChannelDefaults.h \
-        core/include/sirius/InputDescriptor.h \
-        engine/include/sirius/ProcessingChain.h \
+git add core/include/ida/ChannelDefaults.h \
+        core/include/ida/InputDescriptor.h \
+        engine/include/ida/ProcessingChain.h \
         engine/src/ProcessingChain.cpp \
-        engine/include/sirius/Channel.h \
+        engine/include/ida/Channel.h \
         engine/src/Channel.cpp \
         engine/CMakeLists.txt \
         tests/ProcessingChainTests.cpp \
@@ -658,7 +658,7 @@ Do NOT push (Session 3 pushes per spec).
 ### Task 2.1 — TapeWriteMessage POD + TapeWriter header skeleton
 
 **Files:**
-- Create: `engine/include/sirius/TapeWriter.h`
+- Create: `engine/include/ida/TapeWriter.h`
 
 - [ ] **Step 1: Create the header**
 
@@ -681,7 +681,7 @@ Do NOT push (Session 3 pushes per spec).
 #include <thread>
 #include <unordered_map>
 
-namespace sirius::persistence { class TapeStore; }
+namespace ida::persistence { class TapeStore; }
 
 namespace sirius
 {
@@ -974,10 +974,10 @@ Modify `engine/CMakeLists.txt`, append after `src/ProcessingChain.cpp`:
 - [ ] **Step 3: Compile check (no tests yet)**
 
 ```bash
-cmake --build build --target SiriusEngine 2>&1 | tail -10
+cmake --build build --target IdaEngine 2>&1 | tail -10
 ```
 
-Expected: clean build of `libSiriusEngine.a`.
+Expected: clean build of `libIdaEngine.a`.
 
 ### Task 2.3 — TapeWriterTests
 
@@ -1009,12 +1009,12 @@ Expected: clean build of `libSiriusEngine.a`.
 #include <chrono>
 #include <thread>
 
-using sirius::CapabilityTier;
-using sirius::ChannelId;
-using sirius::kMaxTapeWriteMessageBytes;
-using sirius::Rational;
-using sirius::TapeWriteMessage;
-using sirius::TapeWriter;
+using ida::CapabilityTier;
+using ida::ChannelId;
+using ida::kMaxTapeWriteMessageBytes;
+using ida::Rational;
+using ida::TapeWriteMessage;
+using ida::TapeWriter;
 
 namespace
 {
@@ -1149,7 +1149,7 @@ Modify `tests/CMakeLists.txt`, append after `ProcessingChainTests.cpp`:
 - [ ] **Step 3: Build and run**
 
 ```bash
-cmake --build build --target SiriusTests && \
+cmake --build build --target IdaTests && \
   ctest --test-dir build -R "tape-writer" --output-on-failure
 ```
 
@@ -1158,7 +1158,7 @@ Expected: all `[tape-writer]` tests pass. If the first test times out, the Lavis
 ### Task 2.4 — InputMixer::processBuffer real body
 
 **Files:**
-- Modify: `engine/include/sirius/InputMixer.h`
+- Modify: `engine/include/ida/InputMixer.h`
 - Modify: `engine/src/InputMixer.cpp`
 - Modify: `tests/InputMixerTests.cpp`
 
@@ -1175,14 +1175,14 @@ Expected: all `[tape-writer]` tests pass. If the first test times out, the Lavis
 TEST_CASE ("InputMixer::processBuffer enqueues one message per tape-bearing channel",
            "[input-mixer][process-buffer]")
 {
-    using sirius::CapabilityTier;
-    using sirius::ChannelId;
-    using sirius::InputId;
-    using sirius::InputMixer;
-    using sirius::OverloadProtection;
-    using sirius::SignalType;
-    using sirius::TapeMode;
-    using sirius::TapeWriter;
+    using ida::CapabilityTier;
+    using ida::ChannelId;
+    using ida::InputId;
+    using ida::InputMixer;
+    using ida::OverloadProtection;
+    using ida::SignalType;
+    using ida::TapeMode;
+    using ida::TapeWriter;
 
     auto tempDir = juce::File::getSpecialLocation (juce::File::tempDirectory)
                        .getChildFile ("sirius-inputmixer-process-"
@@ -1224,13 +1224,13 @@ TEST_CASE ("InputMixer::processBuffer enqueues one message per tape-bearing chan
 TEST_CASE ("InputMixer::processBuffer reports overload when the writer queue is full",
            "[input-mixer][overload]")
 {
-    using sirius::CapabilityTier;
-    using sirius::InputId;
-    using sirius::InputMixer;
-    using sirius::OverloadProtection;
-    using sirius::SignalType;
-    using sirius::TapeMode;
-    using sirius::TapeWriter;
+    using ida::CapabilityTier;
+    using ida::InputId;
+    using ida::InputMixer;
+    using ida::OverloadProtection;
+    using ida::SignalType;
+    using ida::TapeMode;
+    using ida::TapeWriter;
 
     auto tempDir = juce::File::getSpecialLocation (juce::File::tempDirectory)
                        .getChildFile ("sirius-inputmixer-overload-"
@@ -1443,7 +1443,7 @@ void InputMixer::finalizeChannel (ChannelId id)
 - [ ] **Step 4: Build and run**
 
 ```bash
-cmake --build build --target SiriusTests && \
+cmake --build build --target IdaTests && \
   ctest --test-dir build -R "input-mixer" --output-on-failure
 ```
 
@@ -1462,8 +1462,8 @@ Expected: all 4 phases green.
 - [ ] **Step 2: Commit Session 2**
 
 ```bash
-git add engine/include/sirius/TapeWriter.h engine/src/TapeWriter.cpp \
-        engine/include/sirius/InputMixer.h engine/src/InputMixer.cpp \
+git add engine/include/ida/TapeWriter.h engine/src/TapeWriter.cpp \
+        engine/include/ida/InputMixer.h engine/src/InputMixer.cpp \
         engine/CMakeLists.txt \
         tests/TapeWriterTests.cpp tests/InputMixerTests.cpp tests/CMakeLists.txt
 git commit -m "feat: M3 Session 2 — TapeWriter + InputMixer::processBuffer real bodies"
@@ -1478,7 +1478,7 @@ Do NOT push (Session 3 pushes).
 ### Task 3.1 — InputMixer::finalizeChannel real body
 
 **Files:**
-- Modify: `engine/include/sirius/InputMixer.h` — add TapeStore& injection
+- Modify: `engine/include/ida/InputMixer.h` — add TapeStore& injection
 - Modify: `engine/src/InputMixer.cpp` — fill in finalizeChannel
 - Modify: `tests/InputMixerTests.cpp` — new test for end-to-end finalize
 
@@ -1489,7 +1489,7 @@ TEST_CASE ("InputMixer::finalizeChannel produces a content-addressed tape and cl
            "[input-mixer][finalize]")
 {
     using namespace sirius;
-    using sirius::persistence::TapeStore;
+    using ida::persistence::TapeStore;
 
     auto root = juce::File::getSpecialLocation (juce::File::tempDirectory)
                     .getChildFile ("sirius-finalize-"
@@ -1537,19 +1537,19 @@ TEST_CASE ("InputMixer::finalizeChannel produces a content-addressed tape and cl
 
 - [ ] **Step 2: Add setter + finalize real body to InputMixer.h**
 
-In `engine/include/sirius/InputMixer.h`, add forward declaration and setter:
+In `engine/include/ida/InputMixer.h`, add forward declaration and setter:
 
 ```cpp
-namespace sirius::persistence { class TapeStore; }
+namespace ida::persistence { class TapeStore; }
 
 // ...inside class InputMixer:
-void setTapeStore (sirius::persistence::TapeStore* store) noexcept;
+void setTapeStore (ida::persistence::TapeStore* store) noexcept;
 ```
 
 And add the private member:
 
 ```cpp
-sirius::persistence::TapeStore* tapeStore_ { nullptr };
+ida::persistence::TapeStore* tapeStore_ { nullptr };
 ```
 
 - [ ] **Step 3: Implement finalizeChannel in InputMixer.cpp**
@@ -1563,7 +1563,7 @@ Add include:
 Add setter and real body:
 
 ```cpp
-void InputMixer::setTapeStore (sirius::persistence::TapeStore* store) noexcept
+void InputMixer::setTapeStore (ida::persistence::TapeStore* store) noexcept
 {
     tapeStore_ = store;
 }
@@ -1593,7 +1593,7 @@ void InputMixer::finalizeChannel (ChannelId id)
 - [ ] **Step 4: Run finalize test**
 
 ```bash
-cmake --build build --target SiriusTests && \
+cmake --build build --target IdaTests && \
   ctest --test-dir build -R "input-mixer.*finalize" --output-on-failure
 ```
 
@@ -1603,7 +1603,7 @@ Expected: 1 new test pass.
 
 **Files:**
 - Modify: `engine/src/InputMixer.cpp`
-- Modify: `engine/include/sirius/TapeWriter.h` + `.cpp` — accept a sibling-params output
+- Modify: `engine/include/ida/TapeWriter.h` + `.cpp` — accept a sibling-params output
 - Modify: `tests/InputMixerTests.cpp` — assert both files exist
 
 - [ ] **Step 1: Failing test** (append to `tests/InputMixerTests.cpp`)
@@ -1613,7 +1613,7 @@ TEST_CASE ("NonDestructive channel writes both audio partial and JSONL params pa
            "[input-mixer][non-destructive]")
 {
     using namespace sirius;
-    using sirius::persistence::TapeStore;
+    using ida::persistence::TapeStore;
 
     auto root = juce::File::getSpecialLocation (juce::File::tempDirectory)
                     .getChildFile ("sirius-nondestructive-"
@@ -1687,7 +1687,7 @@ Replace the tape-write block in `engine/src/InputMixer.cpp`'s `processBuffer` bo
 
 - [ ] **Step 3: Add touchParamsPartial to TapeWriter**
 
-In `engine/include/sirius/TapeWriter.h`, declare:
+In `engine/include/ida/TapeWriter.h`, declare:
 
 ```cpp
 /// Ensure the JSONL params partial file exists for `channelId` — used by
@@ -1715,7 +1715,7 @@ Note: `path.create()` allocates and does I/O — this is **not** RT-safe. Justif
 - [ ] **Step 4: Build and run**
 
 ```bash
-cmake --build build --target SiriusTests && \
+cmake --build build --target IdaTests && \
   ctest --test-dir build -R "input-mixer.*non-destructive" --output-on-failure
 ```
 
@@ -1772,7 +1772,7 @@ TEST_CASE ("addChannel honors the per-input default TapeMode set via setInputDef
 - [ ] **Step 2: Run — should already pass**
 
 ```bash
-cmake --build build --target SiriusTests && \
+cmake --build build --target IdaTests && \
   ctest --test-dir build -R "input-mixer.*defaults" --output-on-failure
 ```
 
@@ -1791,8 +1791,8 @@ Expected: all 4 phases green. Test count ~308 (was 279 at M2 close; +~29 across 
 - [ ] **Step 2: Commit Session 3**
 
 ```bash
-git add engine/include/sirius/InputMixer.h engine/src/InputMixer.cpp \
-        engine/include/sirius/TapeWriter.h engine/src/TapeWriter.cpp \
+git add engine/include/ida/InputMixer.h engine/src/InputMixer.cpp \
+        engine/include/ida/TapeWriter.h engine/src/TapeWriter.cpp \
         tests/InputMixerTests.cpp
 git commit -m "feat: M3 Session 3 — finalize + NonDestructive params + setInputDefaults end-to-end"
 ```

@@ -1,18 +1,18 @@
-# Sirius Looper — V7 Alignment Roadmap
+# IDA — V7 Alignment Roadmap
 
 **Created:** 2026-05-17
 **Triggered by:** White paper rewrite (V2 → V7) at `docs/Sirius_Looper.md`, accompanied by `docs/sirius-looper-v2-to-v7-transition.md`.
-**Source-of-truth white paper file:** `/Users/larryseyer/SiriusLooper/docs/Sirius_Looper.md` (the V7 successor file; was previously `Sirius_Looper_Whitepaper_V6.md`).
-**Companion transition doc:** `/Users/larryseyer/SiriusLooper/docs/sirius-looper-v2-to-v7-transition.md`.
+**Source-of-truth white paper file:** `/Users/larryseyer/IDA/docs/Sirius_Looper.md` (the V7 successor file; was previously `Sirius_Looper_Whitepaper_V6.md`).
+**Companion transition doc:** `/Users/larryseyer/IDA/docs/sirius-looper-v2-to-v7-transition.md`.
 **Replaces (in role, not on disk):** `continue.md §6` "white-paper alignment pass" was the deferred milestone — this plan **is** that milestone.
 
 ---
 
 ## Context
 
-This plan exists because the Sirius Looper white paper grew from V2 (the version the code was last designed against) through V3, V4, V5, V6, to V7 in one large authoring push. The architectural shape from V2 is preserved — the paper is explicit that V3 was additive-and-clarifying, not a do-over — but the additions are substantial: input mixer / output mixer / direct layer (V3); MIDI 2.0 UMP-shaped tape events, inclusive design, validation harness (V4); plug-in determinism + failure semantics + realtime audit (V5); export targets + ensemble security defaults + plug-in format scope (V6); out-of-process plug-in hosting + Sirius Archive Format + ensemble consistency + video tier-aware rendering + MIDI 2.0 closure (V7).
+This plan exists because the IDA white paper grew from V2 (the version the code was last designed against) through V3, V4, V5, V6, to V7 in one large authoring push. The architectural shape from V2 is preserved — the paper is explicit that V3 was additive-and-clarifying, not a do-over — but the additions are substantial: input mixer / output mixer / direct layer (V3); MIDI 2.0 UMP-shaped tape events, inclusive design, validation harness (V4); plug-in determinism + failure semantics + realtime audit (V5); export targets + ensemble security defaults + plug-in format scope (V6); out-of-process plug-in hosting + IDA Archive Format + ensemble consistency + video tier-aware rendering + MIDI 2.0 closure (V7).
 
-A V2→V7 transition guide was authored alongside V7 to keep migration cost finite. This plan **operationalizes that guide for the SiriusLooper codebase specifically** — every V3-V7 architectural item is mapped to a milestone, a milestone is mapped to concrete files in this repo, and each milestone carries its own execution mode (orchestrator+subagents by default; ralph as inner loop for the four milestones whose internal shape genuinely fits ralph's iteration model).
+A V2→V7 transition guide was authored alongside V7 to keep migration cost finite. This plan **operationalizes that guide for the IDA codebase specifically** — every V3-V7 architectural item is mapped to a milestone, a milestone is mapped to concrete files in this repo, and each milestone carries its own execution mode (orchestrator+subagents by default; ralph as inner loop for the four milestones whose internal shape genuinely fits ralph's iteration model).
 
 The pre-existing `continue.md` correctly identified that "the alignment pass is a design session, not a code session." This plan **is** the output of that design session. Execution begins in the next chat.
 
@@ -80,21 +80,21 @@ Source: the three Explore-agent inventories run 2026-05-17 against engine/core/h
 
 **Mature, V7-preserves-intact (do not refactor):**
 
-- `core/include/sirius/Constituent.h` + `core/src/Constituent.cpp` — copy-on-write Constituent hierarchy
+- `core/include/ida/Constituent.h` + `core/src/Constituent.cpp` — copy-on-write Constituent hierarchy
 - `core/src/Promotion.cpp` — promotion logic (largest file at 338 LOC; mature)
-- `core/include/sirius/Tape.h` — append-only Tape<T> template
-- `core/include/sirius/Rational.h`, `Position.h`, `TempoMap.h`, `TimeDomain.h`, `Meter.h` — time and meter primitives
-- `core/include/sirius/RepetitionRules.h`, `Phrase.h`, `Arrangement.h`, `EffectChain.h`, `CaptureSession.h` — Constituent supporting types
-- `engine/include/sirius/RenderPipeline.h` + impl — the read-side walker that yields `ActiveRead { loop, tape, tapePosition, cycle }` from a Constituent tree against an LMC time
-- `engine/include/sirius/MonotonicClock.h`, `Lmc.h` — clock substrate (LMC stubbed to `LocalMonotonic` tier only — extended in M15)
-- `engine/include/sirius/LockFreeSpscQueue.h` — pre-built lock-free queue (used by M6, M7)
-- `engine/include/sirius/Asrc.h` — libsoxr variable-rate, allocation-free `process` (used by M1)
-- `engine/include/sirius/RetroactiveRing.h`, `OverloadProtection.h`, `AudioDeviceCalibration.h` — supporting infrastructure
-- `persistence/include/sirius/TapeStore.h` + impl — content-addressed `<sha256>.tape` blob store (carried into SAF as the `tapes/` subdirectory contents)
-- `net/include/sirius/LmcElection.h` + impl — Marzullo interval-intersection + tier dominance + anchor override (extended in M16)
-- `net/include/sirius/SessionMerge.h` + impl — union-merge CRDT (refactored in M16 to use vector clocks instead of single `editTimestamp`)
+- `core/include/ida/Tape.h` — append-only Tape<T> template
+- `core/include/ida/Rational.h`, `Position.h`, `TempoMap.h`, `TimeDomain.h`, `Meter.h` — time and meter primitives
+- `core/include/ida/RepetitionRules.h`, `Phrase.h`, `Arrangement.h`, `EffectChain.h`, `CaptureSession.h` — Constituent supporting types
+- `engine/include/ida/RenderPipeline.h` + impl — the read-side walker that yields `ActiveRead { loop, tape, tapePosition, cycle }` from a Constituent tree against an LMC time
+- `engine/include/ida/MonotonicClock.h`, `Lmc.h` — clock substrate (LMC stubbed to `LocalMonotonic` tier only — extended in M15)
+- `engine/include/ida/LockFreeSpscQueue.h` — pre-built lock-free queue (used by M6, M7)
+- `engine/include/ida/Asrc.h` — libsoxr variable-rate, allocation-free `process` (used by M1)
+- `engine/include/ida/RetroactiveRing.h`, `OverloadProtection.h`, `AudioDeviceCalibration.h` — supporting infrastructure
+- `persistence/include/ida/TapeStore.h` + impl — content-addressed `<sha256>.tape` blob store (carried into SAF as the `tapes/` subdirectory contents)
+- `net/include/ida/LmcElection.h` + impl — Marzullo interval-intersection + tier dominance + anchor override (extended in M16)
+- `net/include/ida/SessionMerge.h` + impl — union-merge CRDT (refactored in M16 to use vector clocks instead of single `editTimestamp`)
 - `host/src/PluginScanner.cpp` — `juce::KnownPluginList` scanner (carried into M7 as the plug-in discovery source for the out-of-process loader)
-- `ui/include/sirius/PerformanceViewState.h`, `PreparationViewState.h`, `TimelineViewState.h`, `UndoStack.h` + impls — view-state classes (UI vocabulary refactored in M22, but data shape mostly preserved)
+- `ui/include/ida/PerformanceViewState.h`, `PreparationViewState.h`, `TimelineViewState.h`, `UndoStack.h` + impls — view-state classes (UI vocabulary refactored in M22, but data shape mostly preserved)
 - `app/CapabilityTier.h` + impl — pure decision function for tier selection (extended in M11/M12/M15 as the tunable source)
 - 43 existing test files / 7063 LOC — preserved
 
@@ -145,19 +145,19 @@ Source: the three Explore-agent inventories run 2026-05-17 against engine/core/h
 **Files touched (created, unless marked).**
 
 > **Deviation note (filed 2026-05-17, M1 Session 2):** the plan
-> originally listed `engine/include/sirius/AudioCallback.{h,cpp}`,
+> originally listed `engine/include/ida/AudioCallback.{h,cpp}`,
 > but `engine/CMakeLists.txt` has a deliberate "JUCE-free" design
 > comment. Putting an `AudioIODeviceCallback` subclass in the engine
 > would force `juce_audio_devices` into that layer and break the
-> contract. A new top-level `audio/` library (`Sirius::Audio`) was
+> contract. A new top-level `audio/` library (`Ida::Audio`) was
 > created instead — the "thin layer added on top" the engine comment
 > itself anticipates. File paths below reflect the actual landed layout.
 
-- `audio/include/sirius/AudioCallback.h`, `audio/src/AudioCallback.cpp`, `audio/CMakeLists.txt` (new — `Sirius::Audio` static library linking `juce_audio_devices` PUBLIC; engine stays JUCE-free)
-- `engine/include/sirius/EngineConfig.h` (new — plain config struct, JUCE-free, carrying `Asrc::Quality` + preferred sample-rate / buffer-size; M11 capability tiers will steer these)
+- `audio/include/ida/AudioCallback.h`, `audio/src/AudioCallback.cpp`, `audio/CMakeLists.txt` (new — `Ida::Audio` static library linking `juce_audio_devices` PUBLIC; engine stays JUCE-free)
+- `engine/include/ida/EngineConfig.h` (new — plain config struct, JUCE-free, carrying `Asrc::Quality` + preferred sample-rate / buffer-size; M11 capability tiers will steer these)
 - `app/MainComponent.{h,cpp}` (modified: owns `AudioDeviceManager`, `AudioCallback`, `Lmc`, and `SteadyMonotonicClock`; `PreparationPane` gains an Audio-device section with JUCE's `AudioDeviceSelectorComponent` and an `Enable monitoring` toggle)
-- `app/CMakeLists.txt` (modified: link `Sirius::Audio` and `juce::juce_audio_utils` — the picker lives in `audio_utils`, not `audio_devices`)
-- `engine/include/sirius/Lmc.h`, `engine/src/Lmc.cpp` (modified: Session 2 adds `advanceBySamples`, `nowSecondsFromSamples`, `sampleCount` — sample-clock surface alongside the existing `nowSeconds()` wall-clock reader)
+- `app/CMakeLists.txt` (modified: link `Ida::Audio` and `juce::juce_audio_utils` — the picker lives in `audio_utils`, not `audio_devices`)
+- `engine/include/ida/Lmc.h`, `engine/src/Lmc.cpp` (modified: Session 2 adds `advanceBySamples`, `nowSecondsFromSamples`, `sampleCount` — sample-clock surface alongside the existing `nowSeconds()` wall-clock reader)
 - `engine/src/Asrc.cpp`, `engine/src/OverloadProtection.cpp`, `engine/src/AudioDeviceCalibration.cpp`, `engine/src/RetroactiveRing.cpp` (modified in Session 3: usage hookup, not internal change)
 - `docs/RT_SAFETY_CONTRACT.md` (new — Session 2)
 - `tests/AudioCallbackTests.cpp` (new — Session 1) — silence-by-default, identity pass-through, fewer-input-than-output silenced, extra-input dropped, sample-rate/buffer-size capture, EngineConfig round-trip
@@ -184,7 +184,7 @@ Source: the three Explore-agent inventories run 2026-05-17 against engine/core/h
 bash bash/autotest.sh                            # full 4-phase, ~25s
 ctest --test-dir build -R AudioCallback          # M1-specific tests
 ctest --test-dir build -R Lmc                    # regression check
-APP_BUNDLE="build-xcode/app/SiriusLooper_artefacts/Release/Sirius Looper.app" \
+APP_BUNDLE="build-xcode/app/IDA_artefacts/Release/IDA.app" \
   bash bash/smoke-persistence.sh                 # smoke unchanged
 ```
 
@@ -203,32 +203,32 @@ APP_BUNDLE="build-xcode/app/SiriusLooper_artefacts/Release/Sirius Looper.app" \
 
 **Acceptance criteria.**
 
-- `engine/Membrane.h` and `.cpp` renamed to `engine/LatencyTiming.h` and `.cpp`; the two free functions (`inboundCaptureTime`, `outboundPresentTime`) renamed to `inboundCaptureTime` and `outboundPresentTime` in the new `sirius::latency` namespace. Old `sirius::membrane` namespace gone.
-- `core/include/sirius/SignalType.h` added with `enum class SignalType { Audio, Midi, Video, File }`. Used wherever a signal modality must be tracked.
-- `core/include/sirius/InputKind.h` extended: `InputKind` continues to exist as descriptor metadata; a new helper `signalTypeOf(InputKind)` maps to `SignalType` (Audio → Audio; Midi → Midi; Video → Video; everything else → File or a new `Control` SignalType TBD by milestone).
-- `engine/include/sirius/InputMixer.h` + `OutputMixer.h` added as empty skeleton classes with the V3 transition-guide interface sketch declared (methods declared, bodies are `// M3-M5` stubs that assert false at runtime). This is the architectural placeholder so M3-M5 grow into it.
-- `engine/include/sirius/Channel.h` added: `Channel { ChannelId, SignalType, InputId source, ProcessingChain processing, TapeMode tapeMode, [destinations] }`.
-- `engine/include/sirius/TapeMode.h` added: `enum class TapeMode { CommitToTape, NonDestructive, NoTape }`.
+- `engine/Membrane.h` and `.cpp` renamed to `engine/LatencyTiming.h` and `.cpp`; the two free functions (`inboundCaptureTime`, `outboundPresentTime`) renamed to `inboundCaptureTime` and `outboundPresentTime` in the new `ida::latency` namespace. Old `ida::membrane` namespace gone.
+- `core/include/ida/SignalType.h` added with `enum class SignalType { Audio, Midi, Video, File }`. Used wherever a signal modality must be tracked.
+- `core/include/ida/InputKind.h` extended: `InputKind` continues to exist as descriptor metadata; a new helper `signalTypeOf(InputKind)` maps to `SignalType` (Audio → Audio; Midi → Midi; Video → Video; everything else → File or a new `Control` SignalType TBD by milestone).
+- `engine/include/ida/InputMixer.h` + `OutputMixer.h` added as empty skeleton classes with the V3 transition-guide interface sketch declared (methods declared, bodies are `// M3-M5` stubs that assert false at runtime). This is the architectural placeholder so M3-M5 grow into it.
+- `engine/include/ida/Channel.h` added: `Channel { ChannelId, SignalType, InputId source, ProcessingChain processing, TapeMode tapeMode, [destinations] }`.
+- `engine/include/ida/TapeMode.h` added: `enum class TapeMode { CommitToTape, NonDestructive, NoTape }`.
 - Existing tests stay green (rename is mechanical; no behavior change).
 
 **Dependencies.** M1 (audio I/O wired so the mixer classes have a real audio thread to be a placeholder for).
 
 **Files touched.**
 
-- `engine/include/sirius/LatencyTiming.h` (new, replaces `Membrane.h`)
+- `engine/include/ida/LatencyTiming.h` (new, replaces `Membrane.h`)
 - `engine/src/LatencyTiming.cpp` (new, replaces `Membrane.cpp`)
-- `engine/include/sirius/Membrane.h`, `engine/src/Membrane.cpp` (deleted)
-- `engine/include/sirius/InputMixer.h`, `engine/src/InputMixer.cpp` (new, skeleton)
-- `engine/include/sirius/OutputMixer.h`, `engine/src/OutputMixer.cpp` (new, skeleton)
-- `engine/include/sirius/Channel.h`, `engine/src/Channel.cpp` (new)
-- `engine/include/sirius/TapeMode.h` (new)
-- `core/include/sirius/SignalType.h` (new)
-- `core/include/sirius/InputKind.h` (modified: add `signalTypeOf` helper)
+- `engine/include/ida/Membrane.h`, `engine/src/Membrane.cpp` (deleted)
+- `engine/include/ida/InputMixer.h`, `engine/src/InputMixer.cpp` (new, skeleton)
+- `engine/include/ida/OutputMixer.h`, `engine/src/OutputMixer.cpp` (new, skeleton)
+- `engine/include/ida/Channel.h`, `engine/src/Channel.cpp` (new)
+- `engine/include/ida/TapeMode.h` (new)
+- `core/include/ida/SignalType.h` (new)
+- `core/include/ida/InputKind.h` (modified: add `signalTypeOf` helper)
 - `tests/MembraneTests.cpp` (renamed to `LatencyTimingTests.cpp`; updated namespace references)
 - `tests/InputMixerTests.cpp`, `tests/OutputMixerTests.cpp`, `tests/ChannelTests.cpp` (new — skeleton tests that verify class instantiation and basic property setters, not behavior)
 - `tests/CMakeLists.txt` (modified)
 - `engine/CMakeLists.txt`, `core/CMakeLists.txt` (modified)
-- All call sites that used `sirius::membrane::` (grep before refactoring; expected hits in `engine/src/RenderPipeline.cpp`, `app/MainComponent.cpp`, plus tests)
+- All call sites that used `ida::membrane::` (grep before refactoring; expected hits in `engine/src/RenderPipeline.cpp`, `app/MainComponent.cpp`, plus tests)
 
 **Existing utilities to reuse.** None new; this milestone establishes the shapes M3+ will populate.
 
@@ -246,7 +246,7 @@ APP_BUNDLE="build-xcode/app/SiriusLooper_artefacts/Release/Sirius Looper.app" \
 **Verification.**
 
 ```bash
-grep -r "sirius::membrane" core/ engine/ app/ ui/ host/ persistence/ net/ tests/   # expect zero hits
+grep -r "ida::membrane" core/ engine/ app/ ui/ host/ persistence/ net/ tests/   # expect zero hits
 grep -r "InputMembrane\|OutputMembrane" .                                          # expect zero
 bash bash/autotest.sh                                                              # 4/4 green
 ```
@@ -280,12 +280,12 @@ bash bash/autotest.sh                                                           
 
 **Files touched.**
 
-- `engine/include/sirius/Channel.h`, `engine/src/Channel.cpp` (modified: ProcessingChain, tape allocation hooks)
-- `engine/include/sirius/InputMixer.h`, `engine/src/InputMixer.cpp` (modified: implementation bodies; `process_buffer` real)
-- `engine/include/sirius/ProcessingChain.h`, `engine/src/ProcessingChain.cpp` (new; SignalType-parameterized)
-- `engine/include/sirius/TapeWriter.h`, `engine/src/TapeWriter.cpp` (new; dedicated writer thread + SPSC queue from audio thread)
-- `persistence/include/sirius/TapeStore.h`, `persistence/src/TapeStore.cpp` (modified: add `appendBytes(TapeId, span<const std::byte>)` for incremental writes; current API writes whole blobs)
-- `core/include/sirius/InputDescriptor.h` (modified: add `bool rawDirectMonitor`, `bool enabled`, `ChannelDefaults defaults`)
+- `engine/include/ida/Channel.h`, `engine/src/Channel.cpp` (modified: ProcessingChain, tape allocation hooks)
+- `engine/include/ida/InputMixer.h`, `engine/src/InputMixer.cpp` (modified: implementation bodies; `process_buffer` real)
+- `engine/include/ida/ProcessingChain.h`, `engine/src/ProcessingChain.cpp` (new; SignalType-parameterized)
+- `engine/include/ida/TapeWriter.h`, `engine/src/TapeWriter.cpp` (new; dedicated writer thread + SPSC queue from audio thread)
+- `persistence/include/ida/TapeStore.h`, `persistence/src/TapeStore.cpp` (modified: add `appendBytes(TapeId, span<const std::byte>)` for incremental writes; current API writes whole blobs)
+- `core/include/ida/InputDescriptor.h` (modified: add `bool rawDirectMonitor`, `bool enabled`, `ChannelDefaults defaults`)
 - `tests/InputMixerTests.cpp` (modified: channel-driven tape allocation tests)
 - `tests/TapeWriterTests.cpp` (new)
 - `tests/CMakeLists.txt` (modified)
@@ -328,7 +328,7 @@ bash bash/autotest.sh                                            # 4/4 green
 
 **Acceptance criteria.**
 
-- `engine/include/sirius/DirectLayer.h` + impl exists. Manages two route types: `RawRoute` (from `InputId` directly to `OutputChannelId`) and `ProcessedRoute` (from `ChannelId` after processing to `OutputChannelId`).
+- `engine/include/ida/DirectLayer.h` + impl exists. Manages two route types: `RawRoute` (from `InputId` directly to `OutputChannelId`) and `ProcessedRoute` (from `ChannelId` after processing to `OutputChannelId`).
 - `DirectLayer::route_buffers` runs on the audio thread, takes raw-input buffers + processed-channel buffers, writes to output buffers. Allocation-free, lock-free, bounded-loop. Sub-millisecond per buffer at 256 samples / 48 kHz.
 - `InputMixer` wired to call `DirectLayer::route_buffers` after `process_buffer` and before the audio-thread hands off to `OutputMixer`.
 - `OutputMixer` (still skeleton from M2 until M5) accepts direct-layer contributions as a separate input alongside Constituent renders.
@@ -338,9 +338,9 @@ bash bash/autotest.sh                                            # 4/4 green
 
 **Files touched.**
 
-- `engine/include/sirius/DirectLayer.h`, `engine/src/DirectLayer.cpp` (new)
-- `engine/include/sirius/AudioCallback.h`, `engine/src/AudioCallback.cpp` (modified: insert DirectLayer hop)
-- `engine/include/sirius/InputMixer.h`, `engine/src/InputMixer.cpp` (modified: surface direct-route requests to DirectLayer)
+- `engine/include/ida/DirectLayer.h`, `engine/src/DirectLayer.cpp` (new)
+- `engine/include/ida/AudioCallback.h`, `engine/src/AudioCallback.cpp` (modified: insert DirectLayer hop)
+- `engine/include/ida/InputMixer.h`, `engine/src/InputMixer.cpp` (modified: surface direct-route requests to DirectLayer)
 - `tests/DirectLayerTests.cpp` (new)
 - `tests/CMakeLists.txt` (modified)
 
@@ -384,7 +384,7 @@ bash bash/autotest.sh
 - `OutputMixer::add_bus(BusConfig, EffectChain)` returns `BusId`; channels route to buses via `route_channel_to_bus(OutputChannelId, BusId, SendLevel)`.
 - Master bus exists implicitly as `BusId{0}`; all channels and buses ultimately route there.
 - `OutputMixer::render_buffer` runs on the audio thread, traverses channels → buses → master, applies strip+bus+master processing, writes to physical-output buffers. Allocation-free, lock-free.
-- Existing `EffectChain` (`core/include/sirius/EffectChain.h`) is reused as the bus-level effect chain type; Constituent-local effects continue to use the same type.
+- Existing `EffectChain` (`core/include/ida/EffectChain.h`) is reused as the bus-level effect chain type; Constituent-local effects continue to use the same type.
 - Tests assert: channel gain attenuates output; pan distributes correctly; send-to-bus + bus-effect produces wet signal; master bus is the last stage; RT-budget for a 32-channel / 8-bus configuration on the dev machine.
 - **Input-side AudioChain bodies become real here too.** M3 ships `ProcessingChain` as the abstract base on `Channel` with no-op `AudioChain` / `MidiChain` / `VideoChain` / `FileChain` subclasses. M5 introduces `ChannelStrip<SignalType::Audio>` with real gain/pan DSP; the same class is wired in as the concrete implementation behind `Channel::processing` so InputMixer channels apply real input-side gain/pan before tape writes (not just OutputMixer channels). Mechanically: either `ChannelStrip<SignalType::Audio>` inherits `ProcessingChain` and supersedes `AudioChain` (rename — preferred), or `AudioChain` is rewritten to delegate to a held `ChannelStrip<SignalType::Audio>` (composition — fallback if inheritance forces an unwanted vtable layout on OutputMixer paths). Test addition to M5 Session 1: assert InputMixer channels apply gain/pan on the input side before enqueueing to TapeWriter. Added by `docs/superpowers/specs/2026-05-18-m3-design.md` Plan Amendment §3.
 
@@ -392,11 +392,11 @@ bash bash/autotest.sh
 
 **Files touched.**
 
-- `engine/include/sirius/OutputMixer.h`, `engine/src/OutputMixer.cpp` (modified: real bodies)
-- `engine/include/sirius/ChannelStrip.h`, `engine/src/ChannelStrip.cpp` (new; SignalType-parameterized template)
-- `engine/include/sirius/Bus.h`, `engine/src/Bus.cpp` (new)
-- `engine/include/sirius/AudioCallback.h`, `engine/src/AudioCallback.cpp` (modified: OutputMixer slot real)
-- `engine/include/sirius/RenderPipeline.h`, `engine/src/RenderPipeline.cpp` (modified: emit ActiveReads keyed by OutputChannelId)
+- `engine/include/ida/OutputMixer.h`, `engine/src/OutputMixer.cpp` (modified: real bodies)
+- `engine/include/ida/ChannelStrip.h`, `engine/src/ChannelStrip.cpp` (new; SignalType-parameterized template)
+- `engine/include/ida/Bus.h`, `engine/src/Bus.cpp` (new)
+- `engine/include/ida/AudioCallback.h`, `engine/src/AudioCallback.cpp` (modified: OutputMixer slot real)
+- `engine/include/ida/RenderPipeline.h`, `engine/src/RenderPipeline.cpp` (modified: emit ActiveReads keyed by OutputChannelId)
 - `tests/OutputMixerTests.cpp` (modified: real assertions)
 - `tests/ChannelStripTests.cpp`, `tests/BusTests.cpp` (new)
 - `tests/CMakeLists.txt` (modified)
@@ -438,7 +438,7 @@ bash bash/autotest.sh
 
 **Acceptance criteria.**
 
-- `engine/include/sirius/NotificationBus.h` + impl exists. `post(NotificationLevel, Category, Message)` callable from any thread including audio thread; allocation-free, wait-free on the audio-thread path (uses pre-allocated per-category SPSC ring).
+- `engine/include/ida/NotificationBus.h` + impl exists. `post(NotificationLevel, Category, Message)` callable from any thread including audio thread; allocation-free, wait-free on the audio-thread path (uses pre-allocated per-category SPSC ring).
 - `Category` enum covers V5 §8.6 list: `DiskPressure, CpuPressure, RamPressure, DeviceEvent, PluginEvent, ClockEvent, NetworkEvent, StateRepair, TapeRotation`.
 - `NotificationLevel` enum: `Info, Degradation, Warning, Error`.
 - `drain()` non-blocking; returns a `std::vector<Notification>` for the UI thread to render.
@@ -449,7 +449,7 @@ bash bash/autotest.sh
 
 **Files touched.**
 
-- `engine/include/sirius/NotificationBus.h`, `engine/src/NotificationBus.cpp` (new)
+- `engine/include/ida/NotificationBus.h`, `engine/src/NotificationBus.cpp` (new)
 - `app/MainComponent.h`, `app/MainComponent.cpp` (modified: drain on Timer tick; render under Preparation tab)
 - `tests/NotificationBusTests.cpp` (new)
 - `tests/CMakeLists.txt` (modified)
@@ -490,7 +490,7 @@ bash bash/autotest.sh
 
 **Acceptance criteria.**
 
-- A standalone `sirius_plugin_host` executable target builds, takes a plug-in UID and a shared-memory segment name as arguments, loads the plug-in into its own address space, pumps buffers through it.
+- A standalone `ida_plugin_host` executable target builds, takes a plug-in UID and a shared-memory segment name as arguments, loads the plug-in into its own address space, pumps buffers through it.
 - Engine-side `OutOfProcessPluginInstance` class manages the lifecycle of one host process per plug-in instance: spawn, attach shared memory, send/receive buffers, observe missed deadlines, request restart.
 - Shared-memory transport: two SPSC rings per instance (engine→host, host→engine); pre-allocated at session start; LMC-timestamps in each message header.
 - Engine-side watchdog: per-buffer time budget per plug-in; on miss, bypass node substitutes (dry signal flows); supervisor escalates persistent misses.
@@ -504,15 +504,15 @@ bash bash/autotest.sh
 
 **Files touched.**
 
-- `host/include/sirius/OutOfProcessPluginInstance.h`, `host/src/OutOfProcessPluginInstance.cpp` (new)
-- `host/include/sirius/PluginHostProcess.h`, `host/src/PluginHostProcess.cpp` (new — IPC primitives shared between engine and host binary)
-- `host/include/sirius/PluginWatchdog.h`, `host/src/PluginWatchdog.cpp` (new)
-- `host/include/sirius/PluginSupervisor.h`, `host/src/PluginSupervisor.cpp` (new)
-- `host/include/sirius/PluginGuiEmbedding.h`, `host/src/PluginGuiEmbedding.cpp` (new; platform-conditional bodies)
-- `host_process/main.cpp` (new — the `sirius_plugin_host` executable's entry point)
+- `host/include/ida/OutOfProcessPluginInstance.h`, `host/src/OutOfProcessPluginInstance.cpp` (new)
+- `host/include/ida/PluginHostProcess.h`, `host/src/PluginHostProcess.cpp` (new — IPC primitives shared between engine and host binary)
+- `host/include/ida/PluginWatchdog.h`, `host/src/PluginWatchdog.cpp` (new)
+- `host/include/ida/PluginSupervisor.h`, `host/src/PluginSupervisor.cpp` (new)
+- `host/include/ida/PluginGuiEmbedding.h`, `host/src/PluginGuiEmbedding.cpp` (new; platform-conditional bodies)
+- `host_process/main.cpp` (new — the `ida_plugin_host` executable's entry point)
 - `host_process/CMakeLists.txt` (new — separate executable target)
 - `CMakeLists.txt` (modified: add `host_process` subdirectory)
-- `engine/include/sirius/AudioCallback.h`, `engine/src/AudioCallback.cpp` (modified: pump plug-in IPC rings inline)
+- `engine/include/ida/AudioCallback.h`, `engine/src/AudioCallback.cpp` (modified: pump plug-in IPC rings inline)
 - `tests/OutOfProcessPluginTests.cpp`, `tests/PluginWatchdogTests.cpp`, `tests/PluginSupervisorTests.cpp` (new)
 - `tests/fixtures/SyntheticTestPlugin.cpp` (new — minimal CLAP plug-in for tests)
 - `tests/CMakeLists.txt` (modified)
@@ -528,7 +528,7 @@ bash bash/autotest.sh
 
 **Sessions 1-3 broken out.**
 
-- Session 1: `sirius_plugin_host` executable target; loads a synthetic plug-in; identity pass-through over `stdin`/`stdout` (the simplest transport before shared memory); commit.
+- Session 1: `ida_plugin_host` executable target; loads a synthetic plug-in; identity pass-through over `stdin`/`stdout` (the simplest transport before shared memory); commit.
 - Session 2: Replace `stdin`/`stdout` with POSIX shared-memory + SPSC rings; LMC timestamps in headers; round-trip latency measurement; commit.
 - Session 3: Engine-side `OutOfProcessPluginInstance` wires through `OutputMixer`'s plug-in slot on a Constituent's `EffectChain`; integration test plays audio through the synthetic plug-in; commit.
 
@@ -537,7 +537,7 @@ Sessions 4-N (estimated): watchdog (Session 4); supervisor (Session 5-6); GUI em
 **Verification.**
 
 ```bash
-cmake --build build --target sirius_plugin_host
+cmake --build build --target ida_plugin_host
 ctest --test-dir build -R "OutOfProcessPlugin|PluginWatchdog|PluginSupervisor"
 bash bash/autotest.sh
 # Manual: launch app, add a synthetic test plug-in to a Constituent's effect chain,
@@ -547,7 +547,7 @@ bash bash/autotest.sh
 **Risks & open decisions.**
 
 - Plug-in GUI embedding is platform-specific and historically painful (NSView reparenting on macOS in particular). Budget extra time. Fall back to "plug-in GUI in its own top-level window" if embedding stalls — operator UX cost is small.
-- Sandbox entitlements on macOS for the `sirius_plugin_host` binary: shared memory IPC requires careful entitlement design under macOS's app sandbox (`com.apple.security.app-sandbox` interactions with `com.apple.security.cs.allow-shared-memory`). The signed CI workflow (`ci-macos-signed.yml`) needs updating to sign the host binary too.
+- Sandbox entitlements on macOS for the `ida_plugin_host` binary: shared memory IPC requires careful entitlement design under macOS's app sandbox (`com.apple.security.app-sandbox` interactions with `com.apple.security.cs.allow-shared-memory`). The signed CI workflow (`ci-macos-signed.yml`) needs updating to sign the host binary too.
 - Wet-capture pre-allocation: budget for non-deterministic plug-ins' wet captures (V5 §15.6) is committed in M8; M7 only allocates the input/output rings.
 
 **Execution mode.** `orchestrator+subagents` (Backend Architect for the IPC ring shape; Security Engineer for sandboxing review; Performance Benchmarker for round-trip latency).
@@ -560,8 +560,8 @@ bash bash/autotest.sh
 
 **Acceptance criteria.**
 
-- `host/include/sirius/PluginDeterminismFlag.h` defines `enum class ArchivalMode { DeterminismContract, WetCapture, VersionPinning }`. Default for new sessions: `VersionPinning` (per V5 §8.3 default disposition).
-- CLAP host extension in `sirius_plugin_host`: loads `.clap` bundles via the CLAP API; queries `clap_plugin->is_deterministic` (or equivalent host extension if CLAP exposes one; otherwise treat as non-deterministic by default).
+- `host/include/ida/PluginDeterminismFlag.h` defines `enum class ArchivalMode { DeterminismContract, WetCapture, VersionPinning }`. Default for new sessions: `VersionPinning` (per V5 §8.3 default disposition).
+- CLAP host extension in `ida_plugin_host`: loads `.clap` bundles via the CLAP API; queries `clap_plugin->is_deterministic` (or equivalent host extension if CLAP exposes one; otherwise treat as non-deterministic by default).
 - `WetCapture` mode: tape writer adds a `<channelId>.wet.tape` alongside the dry tape; stored in SAF's `tapes/` subdir (interop with M11).
 - `VersionPinning` mode: plug-in version, settings hash (SHA-256 of state blob), oversampling rate, declared internal state hash stored in the session manifest; on reopen, mismatch warns operator via NotificationBus.
 - Constituent state machine extended: `Valid | Broken | Invalid`. `Broken` = references missing tape segment; `Invalid` = anchor/bounds contradict parent. Rendering treats both as silence; identity preserved.
@@ -573,16 +573,16 @@ bash bash/autotest.sh
 
 **Files touched.**
 
-- `host/include/sirius/ArchivalMode.h`, `host/include/sirius/PluginDeterminismFlag.h` (new)
+- `host/include/ida/ArchivalMode.h`, `host/include/ida/PluginDeterminismFlag.h` (new)
 - `host/src/OutOfProcessPluginInstance.cpp` (modified: archival mode handling)
 - `host_process/main.cpp` (modified: CLAP loader)
 - `host_process/CMakeLists.txt` (modified: link CLAP host SDK)
 - `external/clap/` (new submodule or vendored — pick after format-priority sub-decision)
-- `engine/include/sirius/WetCaptureWriter.h`, `engine/src/WetCaptureWriter.cpp` (new)
-- `core/include/sirius/Constituent.h`, `core/src/Constituent.cpp` (modified: state enum + transitions)
+- `engine/include/ida/WetCaptureWriter.h`, `engine/src/WetCaptureWriter.cpp` (new)
+- `core/include/ida/Constituent.h`, `core/src/Constituent.cpp` (modified: state enum + transitions)
 - `engine/src/AudioDeviceCalibration.cpp` (modified: corruption detection + auto-recovery)
-- `engine/include/sirius/TapeReachabilityScan.h`, `engine/src/TapeReachabilityScan.cpp` (new)
-- `persistence/include/sirius/TapeStore.h`, `persistence/src/TapeStore.cpp` (modified: `reclaimUnreferenced(span<TapeId>)` API)
+- `engine/include/ida/TapeReachabilityScan.h`, `engine/src/TapeReachabilityScan.cpp` (new)
+- `persistence/include/ida/TapeStore.h`, `persistence/src/TapeStore.cpp` (modified: `reclaimUnreferenced(span<TapeId>)` API)
 - `tests/ArchivalModeTests.cpp`, `tests/ConstituentStateTests.cpp`, `tests/CalibrationRecoveryTests.cpp`, `tests/TapeReachabilityTests.cpp` (new)
 
 **Existing utilities to reuse.** `Constituent` (extended in place), `AudioDeviceCalibration` (extended for recovery), `TapeStore`, `NotificationBus`.
@@ -629,10 +629,10 @@ bash bash/autotest.sh
 
 **Acceptance criteria.**
 
-- `engine/include/sirius/UmpEvent.h` defines a discriminated union covering 32-bit Channel Voice Message (MIDI 1.0 upcast), 64-bit Channel Voice Message (MIDI 2.0), 128-bit System Exclusive 8, 32-bit Utility Message.
-- `engine/include/sirius/MidiInput.h` + impl wraps `juce::MidiInput`; upcast happens at the wrapper (decision per V4 open question 7: at the input wrapper, not the channel strip — keeps the device-dependent code concentrated and the channel-strip code modality-clean).
-- `engine/include/sirius/MidiChannelStrip.h` implements `ChannelStrip<SignalType::Midi>` specialization: transpose, velocity curve, channel filter, event remap.
-- `engine/include/sirius/MidiDeviceWrapper.h` performs MIDI-CI Discovery on attach; flags device 1.0-only or 2.0-capable per-direction.
+- `engine/include/ida/UmpEvent.h` defines a discriminated union covering 32-bit Channel Voice Message (MIDI 1.0 upcast), 64-bit Channel Voice Message (MIDI 2.0), 128-bit System Exclusive 8, 32-bit Utility Message.
+- `engine/include/ida/MidiInput.h` + impl wraps `juce::MidiInput`; upcast happens at the wrapper (decision per V4 open question 7: at the input wrapper, not the channel strip — keeps the device-dependent code concentrated and the channel-strip code modality-clean).
+- `engine/include/ida/MidiChannelStrip.h` implements `ChannelStrip<SignalType::Midi>` specialization: transpose, velocity curve, channel filter, event remap.
+- `engine/include/ida/MidiDeviceWrapper.h` performs MIDI-CI Discovery on attach; flags device 1.0-only or 2.0-capable per-direction.
 - MPE channel allocation: incoming MPE messages allocated per MPE lower/upper zone model; allocation persisted as tape metadata.
 - Per-note expression: stored on parallel parameter tapes time-aligned with the note tape; NOT interleaved with notes; first-class automatable.
 - Output membrane downcast: per-destination policy (1.0 destination → downcast 16-bit velocity to 7-bit, drop per-note attributes); UMP 2.0 destination → pass-through.
@@ -643,13 +643,13 @@ bash bash/autotest.sh
 
 **Files touched.**
 
-- `engine/include/sirius/UmpEvent.h` (new)
-- `engine/include/sirius/MidiInput.h`, `engine/src/MidiInput.cpp` (new)
-- `engine/include/sirius/MidiDeviceWrapper.h`, `engine/src/MidiDeviceWrapper.cpp` (new)
-- `engine/include/sirius/MidiChannelStrip.h`, `engine/src/MidiChannelStrip.cpp` (new — `ChannelStrip<SignalType::Midi>` specialization)
-- `engine/include/sirius/MpeAllocator.h`, `engine/src/MpeAllocator.cpp` (new)
-- `engine/include/sirius/MidiLearnSession.h`, `engine/src/MidiLearnSession.cpp` (new)
-- `core/include/sirius/ParameterAutomation.h` (modified: per-note expression parameter shape)
+- `engine/include/ida/UmpEvent.h` (new)
+- `engine/include/ida/MidiInput.h`, `engine/src/MidiInput.cpp` (new)
+- `engine/include/ida/MidiDeviceWrapper.h`, `engine/src/MidiDeviceWrapper.cpp` (new)
+- `engine/include/ida/MidiChannelStrip.h`, `engine/src/MidiChannelStrip.cpp` (new — `ChannelStrip<SignalType::Midi>` specialization)
+- `engine/include/ida/MpeAllocator.h`, `engine/src/MpeAllocator.cpp` (new)
+- `engine/include/ida/MidiLearnSession.h`, `engine/src/MidiLearnSession.cpp` (new)
+- `core/include/ida/ParameterAutomation.h` (modified: per-note expression parameter shape)
 - `engine/src/InputMixer.cpp` (modified: MIDI inputs supported)
 - `engine/src/OutputMixer.cpp` (modified: MIDI outputs supported; downcast policy)
 - `tests/UmpEventTests.cpp`, `tests/MidiInputTests.cpp`, `tests/MidiDeviceWrapperTests.cpp`, `tests/MidiChannelStripTests.cpp`, `tests/MpeAllocatorTests.cpp`, `tests/MidiLearnSessionTests.cpp` (new)
@@ -699,7 +699,7 @@ bash bash/autotest.sh
 
 **Acceptance criteria.**
 
-- `core/include/sirius/MixSnapshot.h` extends `Constituent` (via the existing copy-on-write pattern); carries `InputMixerState input_state`, `OutputMixerState output_state`, `TransitionType { Cut, LinearFade, Curve }`, `Duration transition_duration`.
+- `core/include/ida/MixSnapshot.h` extends `Constituent` (via the existing copy-on-write pattern); carries `InputMixerState input_state`, `OutputMixerState output_state`, `TransitionType { Cut, LinearFade, Curve }`, `Duration transition_duration`.
 - `InputMixerState` and `OutputMixerState` capture the full per-channel + per-bus + per-strip configuration snapshot.
 - `RenderPipeline::activeReadsAt` recognizes MixSnapshot Constituents and emits a "snapshot active" marker that `AudioCallback` consumes to call `OutputMixer::recall_snapshot(snapshotId, transition, duration)`.
 - `OutputMixer::capture_snapshot(name)` returns a `SnapshotId` capturing current state; `OutputMixer::recall_snapshot(snapshotId, transition, duration)` applies a snapshot with the requested transition.
@@ -710,8 +710,8 @@ bash bash/autotest.sh
 
 **Files touched.**
 
-- `core/include/sirius/MixSnapshot.h`, `core/src/MixSnapshot.cpp` (new)
-- `engine/include/sirius/InputMixerState.h`, `engine/include/sirius/OutputMixerState.h` (new — capturable structs)
+- `core/include/ida/MixSnapshot.h`, `core/src/MixSnapshot.cpp` (new)
+- `engine/include/ida/InputMixerState.h`, `engine/include/ida/OutputMixerState.h` (new — capturable structs)
 - `engine/src/OutputMixer.cpp` (modified: capture_snapshot, recall_snapshot, transition interpolation)
 - `engine/src/RenderPipeline.cpp` (modified: emit snapshot markers)
 - `engine/src/AudioCallback.cpp` (modified: consume snapshot markers)
@@ -745,19 +745,19 @@ bash bash/autotest.sh
 
 ---
 
-### M11 — Sirius Archive Format (clean break from JSON SessionFormat)
+### M11 — IDA Archive Format (clean break from JSON SessionFormat)
 
 **Goal.** Implement V7 §15.7 in full: `.saf` ZIP container; `manifest.json` with SemVer; reader version-check policy; `tapes/` subdir with tier-appropriate codecs; `constituents.json` flat-array-keyed-by-ID (refactor from current nested tree); `plugins.json` with state migration; `permissions.json`; atomic save via tmp+rename. Delete the existing JSON SessionFormat after SAF round-trip is proven.
 
 **Acceptance criteria.**
 
-- `persistence/include/sirius/SafContainer.h` + impl: `.saf` ZIP wrapper using `juce::ZipFile`; compression level 0 (tapes are already compressed).
-- `persistence/include/sirius/SafManifest.h` + impl: `manifest.json` schema (SemVer `format-version`, engine version, session UUID, creation + modification timestamps in LMC + UTC, capability tier, tape index, constituent index, top-level SHA-256).
+- `persistence/include/ida/SafContainer.h` + impl: `.saf` ZIP wrapper using `juce::ZipFile`; compression level 0 (tapes are already compressed).
+- `persistence/include/ida/SafManifest.h` + impl: `manifest.json` schema (SemVer `format-version`, engine version, session UUID, creation + modification timestamps in LMC + UTC, capability tier, tape index, constituent index, top-level SHA-256).
 - Reader SemVer check is FIRST action after opening: same MAJOR (else refuse), MINOR ≤ reader's MINOR (else open + warn + ignore unknown fields), PATCH ignored.
-- `persistence/include/sirius/SafTapeFormat.h`: FLAC for audio above Survival; WAV for Lavish if user prefers; JSONL for MIDI (one UMP event per line); ProRes 422 LT / MJPEG / HEVC-I for video by tier; JSONL for parameter/control/system tapes.
-- `persistence/include/sirius/SafConstituentSerializer.h`: flat-array-keyed-by-ID (refactor from `SessionFormat.cpp:560-595`'s nested-tree-with-refs); each entry has boundaries, anchor, tempo map, effect chain refs, repetition rules, metadata, child IDs.
-- `persistence/include/sirius/SafPluginSerializer.h`: `plugins.json` records UID, version, state hash, state blob, determinism flag, wet-capture pointer.
-- `persistence/include/sirius/SafPermissions.h`: `permissions.json` initialized to owner-writable + ensemble-readable defaults (M16 extends with peer-specific entries).
+- `persistence/include/ida/SafTapeFormat.h`: FLAC for audio above Survival; WAV for Lavish if user prefers; JSONL for MIDI (one UMP event per line); ProRes 422 LT / MJPEG / HEVC-I for video by tier; JSONL for parameter/control/system tapes.
+- `persistence/include/ida/SafConstituentSerializer.h`: flat-array-keyed-by-ID (refactor from `SessionFormat.cpp:560-595`'s nested-tree-with-refs); each entry has boundaries, anchor, tempo map, effect chain refs, repetition rules, metadata, child IDs.
+- `persistence/include/ida/SafPluginSerializer.h`: `plugins.json` records UID, version, state hash, state blob, determinism flag, wet-capture pointer.
+- `persistence/include/ida/SafPermissions.h`: `permissions.json` initialized to owner-writable + ensemble-readable defaults (M16 extends with peer-specific entries).
 - Atomic save: write to `session.saf.tmp`, fsync, atomic rename to `session.saf`. POSIX `rename`; Windows `MoveFileEx` (M23+).
 - Plug-in state migration UI: four-outcome dispatcher (exact match / newer version / older version / missing) per V7 §15.7.
 - Forward compatibility test: deliberately-broken "future MINOR version" file opens with warning, ignores unknown fields.
@@ -769,13 +769,13 @@ bash bash/autotest.sh
 
 **Files touched.**
 
-- `persistence/include/sirius/SafContainer.h`, `persistence/src/SafContainer.cpp` (new)
-- `persistence/include/sirius/SafManifest.h`, `persistence/src/SafManifest.cpp` (new)
-- `persistence/include/sirius/SafTapeFormat.h`, `persistence/src/SafTapeFormat.cpp` (new)
-- `persistence/include/sirius/SafConstituentSerializer.h`, `persistence/src/SafConstituentSerializer.cpp` (new)
-- `persistence/include/sirius/SafPluginSerializer.h`, `persistence/src/SafPluginSerializer.cpp` (new)
-- `persistence/include/sirius/SafPermissions.h`, `persistence/src/SafPermissions.cpp` (new)
-- `persistence/include/sirius/SessionFormat.h`, `persistence/src/SessionFormat.cpp` (DELETED at end of milestone)
+- `persistence/include/ida/SafContainer.h`, `persistence/src/SafContainer.cpp` (new)
+- `persistence/include/ida/SafManifest.h`, `persistence/src/SafManifest.cpp` (new)
+- `persistence/include/ida/SafTapeFormat.h`, `persistence/src/SafTapeFormat.cpp` (new)
+- `persistence/include/ida/SafConstituentSerializer.h`, `persistence/src/SafConstituentSerializer.cpp` (new)
+- `persistence/include/ida/SafPluginSerializer.h`, `persistence/src/SafPluginSerializer.cpp` (new)
+- `persistence/include/ida/SafPermissions.h`, `persistence/src/SafPermissions.cpp` (new)
+- `persistence/include/ida/SessionFormat.h`, `persistence/src/SessionFormat.cpp` (DELETED at end of milestone)
 - `tests/SessionFormatTests.cpp` (DELETED)
 - `tests/SafContainerTests.cpp`, `SafManifestTests.cpp`, `SafConstituentSerializerTests.cpp`, `SafPluginSerializerTests.cpp`, `SafRoundTripTests.cpp` (new)
 - `app/CapabilityTier.cpp` (modified: expose flush-interval tunables per tier)
@@ -806,7 +806,7 @@ Sessions 4-N: tape format selection per tier (Session 4); plug-in serializer + m
 ```bash
 ctest --test-dir build -R Saf
 bash bash/autotest.sh
-APP_BUNDLE="build-xcode/app/SiriusLooper_artefacts/Release/Sirius Looper.app" \
+APP_BUNDLE="build-xcode/app/IDA_artefacts/Release/IDA.app" \
   bash bash/smoke-persistence.sh                # SAF round-trip
 grep -r "SessionFormat\|sessionformat" .         # expect zero hits after milestone close
 ```
@@ -829,7 +829,7 @@ grep -r "SessionFormat\|sessionformat" .         # expect zero hits after milest
 
 **Acceptance criteria.**
 
-- `video/include/sirius/VideoRenderer.h` + impl exposes `RenderStrategy { NearestFrame, FrameBlending, MotionCompensated }` enum.
+- `video/include/ida/VideoRenderer.h` + impl exposes `RenderStrategy { NearestFrame, FrameBlending, MotionCompensated }` enum.
 - Strategy selected at session start from `CapabilityTier`; per-Constituent override field on `Constituent` (uses existing metadata channel).
 - `VideoRenderer::renderFrame(LmcTime target, VideoTapeRef tape) → Frame` implementation:
   - NearestFrame: single timestamp lookup; deterministic
@@ -843,12 +843,12 @@ grep -r "SessionFormat\|sessionformat" .         # expect zero hits after milest
 
 **Files touched.**
 
-- `video/include/sirius/VideoRenderer.h`, `video/src/VideoRenderer.cpp` (new)
-- `video/include/sirius/RenderStrategy.h` (new)
-- `video/include/sirius/FrameBlendShader.h`, `video/src/FrameBlendShader.metal` (new — Metal shader for macOS)
-- `video/include/sirius/MotionCompensator.h`, `video/src/MotionCompensator.cpp` (new — OpenCV DISOpticalFlow wrapper)
+- `video/include/ida/VideoRenderer.h`, `video/src/VideoRenderer.cpp` (new)
+- `video/include/ida/RenderStrategy.h` (new)
+- `video/include/ida/FrameBlendShader.h`, `video/src/FrameBlendShader.metal` (new — Metal shader for macOS)
+- `video/include/ida/MotionCompensator.h`, `video/src/MotionCompensator.cpp` (new — OpenCV DISOpticalFlow wrapper)
 - `video/src/VideoTape.cpp` (modified: integration with VideoRenderer)
-- `core/include/sirius/Constituent.h` (modified: per-Constituent render-strategy override field)
+- `core/include/ida/Constituent.h` (modified: per-Constituent render-strategy override field)
 - `tests/VideoRendererTests.cpp`, `MotionCompensatorTests.cpp` (new)
 - `external/opencv/` (new — vendored or system-installed)
 - `CMakeLists.txt` (modified: link OpenCV, Metal)
@@ -900,16 +900,16 @@ bash bash/autotest.sh
 
 **Files touched.**
 
-- `persistence/include/sirius/AudioFileReader.h`, `persistence/src/AudioFileReader.cpp` (new — wraps `juce::AudioFormatReader` family)
-- `persistence/include/sirius/AudioFileWriter.h`, `persistence/src/AudioFileWriter.cpp` (new)
-- `persistence/include/sirius/SmfReader.h`, `persistence/src/SmfReader.cpp` (new)
-- `persistence/include/sirius/SmfWriter.h`, `persistence/src/SmfWriter.cpp` (new)
-- `persistence/include/sirius/UmpJsonlReader.h`, `persistence/src/UmpJsonlReader.cpp` (new)
-- `persistence/include/sirius/UmpJsonlWriter.h`, `persistence/src/UmpJsonlWriter.cpp` (new)
-- `persistence/include/sirius/VideoFileReader.h`, `persistence/src/VideoFileReader.cpp` (new)
-- `persistence/include/sirius/VideoFileWriter.h`, `persistence/src/VideoFileWriter.cpp` (new)
-- `engine/include/sirius/FileInputChannelStrip.h`, `engine/src/FileInputChannelStrip.cpp` (new — `ChannelStrip<SignalType::File>`)
-- `engine/include/sirius/ExportEngine.h`, `engine/src/ExportEngine.cpp` (new)
+- `persistence/include/ida/AudioFileReader.h`, `persistence/src/AudioFileReader.cpp` (new — wraps `juce::AudioFormatReader` family)
+- `persistence/include/ida/AudioFileWriter.h`, `persistence/src/AudioFileWriter.cpp` (new)
+- `persistence/include/ida/SmfReader.h`, `persistence/src/SmfReader.cpp` (new)
+- `persistence/include/ida/SmfWriter.h`, `persistence/src/SmfWriter.cpp` (new)
+- `persistence/include/ida/UmpJsonlReader.h`, `persistence/src/UmpJsonlReader.cpp` (new)
+- `persistence/include/ida/UmpJsonlWriter.h`, `persistence/src/UmpJsonlWriter.cpp` (new)
+- `persistence/include/ida/VideoFileReader.h`, `persistence/src/VideoFileReader.cpp` (new)
+- `persistence/include/ida/VideoFileWriter.h`, `persistence/src/VideoFileWriter.cpp` (new)
+- `engine/include/ida/FileInputChannelStrip.h`, `engine/src/FileInputChannelStrip.cpp` (new — `ChannelStrip<SignalType::File>`)
+- `engine/include/ida/ExportEngine.h`, `engine/src/ExportEngine.cpp` (new)
 - `app/MainComponent.cpp` (modified: Export... menu + modal)
 - `tests/AudioFileTests.cpp`, `SmfTests.cpp`, `UmpJsonlTests.cpp`, `VideoFileTests.cpp`, `ExportEngineTests.cpp` (new)
 
@@ -953,7 +953,7 @@ bash bash/autotest.sh
 
 **Acceptance criteria.**
 
-- `engine/include/sirius/DirectRoutingInference.h` + impl: pure function from `(ChannelArmStates, PlaybackOverlaps, UtilitySignals) → set<DirectLayerRoute>`.
+- `engine/include/ida/DirectRoutingInference.h` + impl: pure function from `(ChannelArmStates, PlaybackOverlaps, UtilitySignals) → set<DirectLayerRoute>`.
 - Deterministic; fast (< 100 µs per call on the dev machine); traceable (returns reasoning alongside routes for debugging).
 - Wired into `AudioCallback` at the start of each audio block; reads context, updates DirectLayer routes if changed.
 - UI surfaces auto-derived routes with override toggles in the Preparation tab.
@@ -963,8 +963,8 @@ bash bash/autotest.sh
 
 **Files touched.**
 
-- `engine/include/sirius/DirectRoutingInference.h`, `engine/src/DirectRoutingInference.cpp` (new)
-- `engine/include/sirius/AudioCallback.h`, `engine/src/AudioCallback.cpp` (modified: inference call at block start)
+- `engine/include/ida/DirectRoutingInference.h`, `engine/src/DirectRoutingInference.cpp` (new)
+- `engine/include/ida/AudioCallback.h`, `engine/src/AudioCallback.cpp` (modified: inference call at block start)
 - `app/MainComponent.cpp` (modified: Preparation-tab override toggles)
 - `tests/DirectRoutingInferenceTests.cpp` (new)
 
@@ -999,7 +999,7 @@ bash bash/autotest.sh
 
 **Acceptance criteria.**
 
-- `engine/include/sirius/LmcSource.h` defines the source interface.
+- `engine/include/ida/LmcSource.h` defines the source interface.
 - Four concrete implementations: `LmcGpsSource`, `LmcPtpSource`, `LmcNtpSource`, `LmcAbletonLinkSource`.
 - `Lmc::selectSource(DisciplineTier)` chooses the active source; fallback chain per V2's hierarchy GPS → PTP → NTP → Link → local.
 - Source switch is glitch-free (rate slewing per existing slewing infrastructure).
@@ -1009,11 +1009,11 @@ bash bash/autotest.sh
 
 **Files touched.**
 
-- `engine/include/sirius/LmcSource.h` (new)
-- `engine/include/sirius/LmcGpsSource.h`, `engine/src/LmcGpsSource.cpp` (new)
-- `engine/include/sirius/LmcPtpSource.h`, `engine/src/LmcPtpSource.cpp` (new)
-- `engine/include/sirius/LmcNtpSource.h`, `engine/src/LmcNtpSource.cpp` (new)
-- `engine/include/sirius/LmcAbletonLinkSource.h`, `engine/src/LmcAbletonLinkSource.cpp` (new)
+- `engine/include/ida/LmcSource.h` (new)
+- `engine/include/ida/LmcGpsSource.h`, `engine/src/LmcGpsSource.cpp` (new)
+- `engine/include/ida/LmcPtpSource.h`, `engine/src/LmcPtpSource.cpp` (new)
+- `engine/include/ida/LmcNtpSource.h`, `engine/src/LmcNtpSource.cpp` (new)
+- `engine/include/ida/LmcAbletonLinkSource.h`, `engine/src/LmcAbletonLinkSource.cpp` (new)
 - `engine/src/Lmc.cpp` (modified: source selection + fallback)
 - `external/ableton-link/` (new submodule)
 - `tests/LmcSourceTests.cpp` (new)
@@ -1033,7 +1033,7 @@ Sessions 4+: `LmcGpsSource` (requires PPS device or simulator); fallback chain i
 ```bash
 ctest --test-dir build -R Lmc
 bash bash/autotest.sh
-# Manual: launch app with Ableton Live in Link mode; verify Sirius locks to Link clock.
+# Manual: launch app with Ableton Live in Link mode; verify IDA locks to Link clock.
 ```
 
 **Risks & open decisions.**
@@ -1052,12 +1052,12 @@ bash bash/autotest.sh
 
 **Acceptance criteria.**
 
-- `net/include/sirius/VectorClock.h` + impl: `std::array<uint64_t, MAX_PEERS>` with happens-before / concurrent comparison operators.
-- `net/include/sirius/CausalHoldingQueue.h` + impl: incoming messages buffered until causal predecessors arrive; graduation when predecessors present; configurable timeout (default 5s → escalate to performer via NotificationBus).
-- `net/include/sirius/PartitionForkResolver.h` + impl: rejoin → vector-clock summary exchange → causal-order replay → unambiguous-merge vs semantic-conflict outcome → conflict-slot marked forked, both candidates surfaced.
-- `net/include/sirius/AnchorAuthority.h` + impl: anchor flag in `permissions.json` (M11 SAF integration); anchor designation changeable mid-session by anchor consent; without anchor, causal-time last-writer-wins.
-- `net/include/sirius/SplitReplication.h` + impl: metadata channel (full Constituent graph; always carried) and media channel (tape data; pulled on first playback); cache per session.
-- `net/include/sirius/PermissionsModel.h` + impl: owner-writable, ensemble-readable, explicit grant for write-sharing; revocations immediate + symmetric (revoked peer's local replica invalidated); observer-node and ensemble-writable-namespace as opt-in modes.
+- `net/include/ida/VectorClock.h` + impl: `std::array<uint64_t, MAX_PEERS>` with happens-before / concurrent comparison operators.
+- `net/include/ida/CausalHoldingQueue.h` + impl: incoming messages buffered until causal predecessors arrive; graduation when predecessors present; configurable timeout (default 5s → escalate to performer via NotificationBus).
+- `net/include/ida/PartitionForkResolver.h` + impl: rejoin → vector-clock summary exchange → causal-order replay → unambiguous-merge vs semantic-conflict outcome → conflict-slot marked forked, both candidates surfaced.
+- `net/include/ida/AnchorAuthority.h` + impl: anchor flag in `permissions.json` (M11 SAF integration); anchor designation changeable mid-session by anchor consent; without anchor, causal-time last-writer-wins.
+- `net/include/ida/SplitReplication.h` + impl: metadata channel (full Constituent graph; always carried) and media channel (tape data; pulled on first playback); cache per session.
+- `net/include/ida/PermissionsModel.h` + impl: owner-writable, ensemble-readable, explicit grant for write-sharing; revocations immediate + symmetric (revoked peer's local replica invalidated); observer-node and ensemble-writable-namespace as opt-in modes.
 - Refactor `net/src/SessionMerge.cpp` to use vector clocks instead of `editTimestamp`.
 - Network transport: at least one concrete transport (TCP socket via `juce::SocketDataInputStream` or similar) wires the vector-clock messages between peers.
 - Fork-resolution UI surfaces in Preparation tab.
@@ -1067,15 +1067,15 @@ bash bash/autotest.sh
 
 **Files touched.**
 
-- `net/include/sirius/VectorClock.h`, `net/src/VectorClock.cpp` (new)
-- `net/include/sirius/CausalHoldingQueue.h`, `net/src/CausalHoldingQueue.cpp` (new)
-- `net/include/sirius/PartitionForkResolver.h`, `net/src/PartitionForkResolver.cpp` (new)
-- `net/include/sirius/AnchorAuthority.h`, `net/src/AnchorAuthority.cpp` (new)
-- `net/include/sirius/SplitReplication.h`, `net/src/SplitReplication.cpp` (new)
-- `net/include/sirius/PermissionsModel.h`, `net/src/PermissionsModel.cpp` (new)
-- `net/include/sirius/EnsembleTransport.h`, `net/src/EnsembleTransport.cpp` (new — TCP first; QUIC later if needed)
-- `net/include/sirius/SessionMerge.h`, `net/src/SessionMerge.cpp` (modified: vector clocks)
-- `persistence/include/sirius/SafPermissions.h`, `persistence/src/SafPermissions.cpp` (modified: extend with peer entries)
+- `net/include/ida/VectorClock.h`, `net/src/VectorClock.cpp` (new)
+- `net/include/ida/CausalHoldingQueue.h`, `net/src/CausalHoldingQueue.cpp` (new)
+- `net/include/ida/PartitionForkResolver.h`, `net/src/PartitionForkResolver.cpp` (new)
+- `net/include/ida/AnchorAuthority.h`, `net/src/AnchorAuthority.cpp` (new)
+- `net/include/ida/SplitReplication.h`, `net/src/SplitReplication.cpp` (new)
+- `net/include/ida/PermissionsModel.h`, `net/src/PermissionsModel.cpp` (new)
+- `net/include/ida/EnsembleTransport.h`, `net/src/EnsembleTransport.cpp` (new — TCP first; QUIC later if needed)
+- `net/include/ida/SessionMerge.h`, `net/src/SessionMerge.cpp` (modified: vector clocks)
+- `persistence/include/ida/SafPermissions.h`, `persistence/src/SafPermissions.cpp` (modified: extend with peer entries)
 - `app/MainComponent.cpp` (modified: fork-resolution UI in Preparation tab)
 - `tests/VectorClockTests.cpp`, `CausalHoldingQueueTests.cpp`, `PartitionForkTests.cpp`, `AnchorAuthorityTests.cpp`, `SplitReplicationTests.cpp`, `PermissionsModelTests.cpp` (new)
 - `tests/SessionMergeTests.cpp` (modified)
@@ -1099,7 +1099,7 @@ Sessions 4-N: PartitionForkResolver (Session 4-6); AnchorAuthority + permissions
 ```bash
 ctest --test-dir build -R "VectorClock|CausalHoldingQueue|PartitionFork|AnchorAuthority|SplitReplication|PermissionsModel|SessionMerge"
 bash bash/autotest.sh
-# Manual: run two Sirius instances on the same machine, induce a partition (firewall rules),
+# Manual: run two IDA instances on the same machine, induce a partition (firewall rules),
 # edit on both sides, restore, verify fork-resolution UI surfaces the conflict.
 ```
 
@@ -1118,9 +1118,9 @@ bash bash/autotest.sh
 
 **Acceptance criteria.**
 
-- `net/include/sirius/EnsembleCrypto.h` + impl wraps libsodium primitives.
-- `net/include/sirius/NoiseHandshake.h` + impl drives the Noise handshake.
-- `net/include/sirius/SessionIdentity.h` + impl issues per-session identity (ephemeral X25519 key pair).
+- `net/include/ida/EnsembleCrypto.h` + impl wraps libsodium primitives.
+- `net/include/ida/NoiseHandshake.h` + impl drives the Noise handshake.
+- `net/include/ida/SessionIdentity.h` + impl issues per-session identity (ephemeral X25519 key pair).
 - `EnsembleTransport` (M16) integrates encryption: every message E2E encrypted; key exchange via NoiseHandshake at peer connect.
 - Air-gapped solo default: ensemble networking off by default; opt-in via Settings (M22).
 - Consent for shared Constituents: per-Constituent permissions check before any data leaves the local machine.
@@ -1130,9 +1130,9 @@ bash bash/autotest.sh
 
 **Files touched.**
 
-- `net/include/sirius/EnsembleCrypto.h`, `net/src/EnsembleCrypto.cpp` (new)
-- `net/include/sirius/NoiseHandshake.h`, `net/src/NoiseHandshake.cpp` (new)
-- `net/include/sirius/SessionIdentity.h`, `net/src/SessionIdentity.cpp` (new)
+- `net/include/ida/EnsembleCrypto.h`, `net/src/EnsembleCrypto.cpp` (new)
+- `net/include/ida/NoiseHandshake.h`, `net/src/NoiseHandshake.cpp` (new)
+- `net/include/ida/SessionIdentity.h`, `net/src/SessionIdentity.cpp` (new)
 - `net/src/EnsembleTransport.cpp` (modified: encrypt every message)
 - `app/MainComponent.cpp` (modified: ensemble opt-in toggle under Settings)
 - `external/libsodium/` (new — vendored)
@@ -1177,12 +1177,12 @@ bash bash/autotest.sh
 
 **Acceptance criteria.**
 
-- `ui/include/sirius/FootswitchLayout.h` + impl: layouts swap without rebinding actions (binding is action → layout-slot, not action → physical-button-id).
-- `ui/include/sirius/ColorTokens.h` + impl: a token system where every UI color carries a non-color fallback. Audited via a test that every color use site references a token, not a literal.
-- `ui/include/sirius/PreparationStateTree.h` + impl: screen-reader-friendly DOM-shaped representation of preparation state.
-- `ui/include/sirius/LargePrintHud.h` + impl: large-print HUD overlay toggled via a Settings switch.
-- `ui/include/sirius/AudibleConfirmation.h` + impl: discrete confirmation sounds for state changes (mirrors visible cues for eyes-free use).
-- `ui/include/sirius/HapticConfirmation.h` + impl: haptic equivalent for hearing-impaired operators (USB game controller rumble channel; iOS uses Core Haptics on M23).
+- `ui/include/ida/FootswitchLayout.h` + impl: layouts swap without rebinding actions (binding is action → layout-slot, not action → physical-button-id).
+- `ui/include/ida/ColorTokens.h` + impl: a token system where every UI color carries a non-color fallback. Audited via a test that every color use site references a token, not a literal.
+- `ui/include/ida/PreparationStateTree.h` + impl: screen-reader-friendly DOM-shaped representation of preparation state.
+- `ui/include/ida/LargePrintHud.h` + impl: large-print HUD overlay toggled via a Settings switch.
+- `ui/include/ida/AudibleConfirmation.h` + impl: discrete confirmation sounds for state changes (mirrors visible cues for eyes-free use).
+- `ui/include/ida/HapticConfirmation.h` + impl: haptic equivalent for hearing-impaired operators (USB game controller rumble channel; iOS uses Core Haptics on M23).
 - All JUCE components in `app/` and `ui/` adopt `juce::AccessibilityHandler` per JUCE 8's accessibility model.
 - One-handed operation: every multi-button gesture has a single-button alternative.
 - Tests audit color-token coverage; screen-reader DOM completeness; footswitch-layout swap; haptic + audible parity.
@@ -1191,12 +1191,12 @@ bash bash/autotest.sh
 
 **Files touched.**
 
-- `ui/include/sirius/FootswitchLayout.h`, `ui/src/FootswitchLayout.cpp` (new)
-- `ui/include/sirius/ColorTokens.h`, `ui/src/ColorTokens.cpp` (new)
-- `ui/include/sirius/PreparationStateTree.h`, `ui/src/PreparationStateTree.cpp` (new)
-- `ui/include/sirius/LargePrintHud.h`, `ui/src/LargePrintHud.cpp` (new)
-- `ui/include/sirius/AudibleConfirmation.h`, `ui/src/AudibleConfirmation.cpp` (new)
-- `ui/include/sirius/HapticConfirmation.h`, `ui/src/HapticConfirmation.cpp` (new)
+- `ui/include/ida/FootswitchLayout.h`, `ui/src/FootswitchLayout.cpp` (new)
+- `ui/include/ida/ColorTokens.h`, `ui/src/ColorTokens.cpp` (new)
+- `ui/include/ida/PreparationStateTree.h`, `ui/src/PreparationStateTree.cpp` (new)
+- `ui/include/ida/LargePrintHud.h`, `ui/src/LargePrintHud.cpp` (new)
+- `ui/include/ida/AudibleConfirmation.h`, `ui/src/AudibleConfirmation.cpp` (new)
+- `ui/include/ida/HapticConfirmation.h`, `ui/src/HapticConfirmation.cpp` (new)
 - Every existing component file under `app/` and `ui/` (modified: accessibility hooks, color tokens replacing literals)
 - `tests/ColorTokenAuditTests.cpp`, `FootswitchLayoutTests.cpp`, `PreparationStateTreeTests.cpp`, `AudibleHapticParityTests.cpp` (new)
 
@@ -1246,7 +1246,7 @@ bash bash/autotest.sh
 
 - `tests/validation/` directory (new)
 - All six test files listed above (new)
-- `tests/CMakeLists.txt` (modified: register `SiriusValidationTests` target separate from `SiriusTests`)
+- `tests/CMakeLists.txt` (modified: register `SiriusValidationTests` target separate from `IdaTests`)
 - `bash/validation.sh` (new — runs validation suite separately, since these are slower than unit tests)
 
 **Existing utilities to reuse.** All existing engine primitives; loopback driver from M1 calibration code.
@@ -1274,11 +1274,11 @@ ctest --test-dir build -L validation       # individual validation tests
 
 ### M20 — VST3 host (after CLAP is solid)
 
-**Goal.** Extend `sirius_plugin_host` to load `.vst3` bundles. VST3 SDK from Steinberg.
+**Goal.** Extend `ida_plugin_host` to load `.vst3` bundles. VST3 SDK from Steinberg.
 
 **Acceptance criteria.**
 
-- `sirius_plugin_host` loads `.vst3` bundles via the VST3 SDK.
+- `ida_plugin_host` loads `.vst3` bundles via the VST3 SDK.
 - Determinism handling: VST3 has no `isDeterministic()` equivalent → default non-deterministic (per V5 §8.3 default disposition for unknown).
 - Tests round-trip a known free VST3 plug-in.
 
@@ -1308,11 +1308,11 @@ bash bash/autotest.sh
 
 ### M21 — AU host (prep for iOS in M23)
 
-**Goal.** Extend `sirius_plugin_host` to load Audio Unit components (AU v3 prefered; AU v2 fallback for legacy AU). Required for iOS where AU is the only allowed format.
+**Goal.** Extend `ida_plugin_host` to load Audio Unit components (AU v3 prefered; AU v2 fallback for legacy AU). Required for iOS where AU is the only allowed format.
 
 **Acceptance criteria.**
 
-- `sirius_plugin_host` loads AU components via macOS `AudioUnit.framework`.
+- `ida_plugin_host` loads AU components via macOS `AudioUnit.framework`.
 - AU v3 (App Extension model) supported alongside AU v2 in-process model. Note: AU v3 already uses macOS extension sandboxing — composes naturally with the out-of-process model.
 - Tests round-trip a known free AU plug-in.
 
@@ -1379,12 +1379,12 @@ bash bash/autotest.sh
 
 ### M23 — iOS AUv3 port
 
-**Goal.** Port Sirius Looper to iOS as an AUv3 plug-in per the platform memory (`feedback-mac-first-linux-windows-last`: "iOS hosts AUv3 only"). Reuse all engine + persistence + net code; iOS-specific work is the AUv3 wrapper, audio device handling, UI adaptation, and signing.
+**Goal.** Port IDA to iOS as an AUv3 plug-in per the platform memory (`feedback-mac-first-linux-windows-last`: "iOS hosts AUv3 only"). Reuse all engine + persistence + net code; iOS-specific work is the AUv3 wrapper, audio device handling, UI adaptation, and signing.
 
 **Acceptance criteria.**
 
 - iOS Release build (per `feedback-clean-builds` and the CLAUDE.md iOS-release-builds rule).
-- AUv3 wrapper exposes the Sirius engine as an Audio Unit; host controls view presentation per the AUv3 layout rule (no full-screen forcing).
+- AUv3 wrapper exposes the IDA engine as an Audio Unit; host controls view presentation per the AUv3 layout rule (no full-screen forcing).
 - `APPLICATION_EXTENSION_API_ONLY=YES` enforced; no `[UIApplication sharedApplication]` paths reachable from shared code (guard with `#if !TARGET_OS_IOS` or extension-safe abstractions).
 - Audio device handling via iOS AVAudioSession.
 - Touch UI adaptation in `app/MainComponent`; existing accessibility hooks (M18) extend with iOS-specific VoiceOver wiring.
@@ -1398,7 +1398,7 @@ bash bash/autotest.sh
 **Files touched.**
 
 - `app/Main.ios.cpp` (new — iOS entry point) or AUv3 extension target structure
-- `app/SiriusLooper.ios.entitlements` (new)
+- `app/IDA.ios.entitlements` (new)
 - `app/Info.ios.plist` (new)
 - `CMakeLists.txt` (modified: iOS target)
 - `cmake/iOSToolchain.cmake` (new or modified)
@@ -1413,7 +1413,7 @@ bash bash/autotest.sh
 
 ```bash
 # iOS Release build (per CLAUDE.md iOS rules — never Debug)
-xcodebuild -project build-ios/SiriusLooper.xcodeproj -configuration Release -sdk iphoneos
+xcodebuild -project build-ios/IDA.xcodeproj -configuration Release -sdk iphoneos
 # Run on hardware device (simulator may pass while hardware fails per past lessons)
 ```
 
@@ -1430,7 +1430,7 @@ xcodebuild -project build-ios/SiriusLooper.xcodeproj -configuration Release -sdk
 **Acceptance criteria.**
 
 - `docs/Sirius_Looper.md` (V7) reviewed for any behavior that drifted during implementation; sections updated to match reality (rare — V7 is the spec; implementation aligns to it, not vice versa).
-- `docs/Sirius Looper User Guide.md` rewritten / extended to cover every feature shipped through M23.
+- `docs/IDA User Guide.md` rewritten / extended to cover every feature shipped through M23.
 - Marketing site (`website/`) content audited against V7; updates per `408f63c` precedent.
 - Every public header in `core/include`, `engine/include`, `host/include`, `persistence/include`, `net/include`, `ui/include`, `app/` has up-to-date one-line doc comments on each class and one-paragraph block comments on each non-trivial method.
 - `README.md` updated.
@@ -1441,7 +1441,7 @@ xcodebuild -project build-ios/SiriusLooper.xcodeproj -configuration Release -sdk
 **Files touched.**
 
 - `docs/Sirius_Looper.md` (audit; minimal edits if any)
-- `docs/Sirius Looper User Guide.md` (extensive)
+- `docs/IDA User Guide.md` (extensive)
 - `website/` (audit)
 - Every public header (one-line + one-paragraph doc comments)
 - `README.md`, project-root `CLAUDE.md`
@@ -1514,46 +1514,46 @@ Every milestone cross-checked against the `feedback-*` and `project-*` memories 
 
 | Transition-guide reference | Milestone | Primary files |
 |---|---|---|
-| §1 — Unchanged from V2 (Constituent, LMC, polymetric, repetition, capability tiers) | (carry through; no rework) | `core/include/sirius/*`, `engine/include/sirius/Lmc.h`, `engine/include/sirius/RenderPipeline.h` |
-| §2.1 — Input Mixer | M2, M3 | `engine/include/sirius/InputMixer.h` |
-| §2.2 — Output Mixer | M2, M5 | `engine/include/sirius/OutputMixer.h` |
-| §2.3 — Direct Layer | M4 (manual), M14 (inference) | `engine/include/sirius/DirectLayer.h`, `engine/include/sirius/DirectRoutingInference.h` |
-| §2.4 — SignalType / MIDI / Video / File | M2 (SignalType), M9 (MIDI), M12 (Video), M13 (File) | `core/include/sirius/SignalType.h`, `engine/include/sirius/UmpEvent.h`, `video/`, `persistence/include/sirius/AudioFileReader.h` |
-| §2.5 — Mix snapshots | M10 | `core/include/sirius/MixSnapshot.h` |
+| §1 — Unchanged from V2 (Constituent, LMC, polymetric, repetition, capability tiers) | (carry through; no rework) | `core/include/ida/*`, `engine/include/ida/Lmc.h`, `engine/include/ida/RenderPipeline.h` |
+| §2.1 — Input Mixer | M2, M3 | `engine/include/ida/InputMixer.h` |
+| §2.2 — Output Mixer | M2, M5 | `engine/include/ida/OutputMixer.h` |
+| §2.3 — Direct Layer | M4 (manual), M14 (inference) | `engine/include/ida/DirectLayer.h`, `engine/include/ida/DirectRoutingInference.h` |
+| §2.4 — SignalType / MIDI / Video / File | M2 (SignalType), M9 (MIDI), M12 (Video), M13 (File) | `core/include/ida/SignalType.h`, `engine/include/ida/UmpEvent.h`, `video/`, `persistence/include/ida/AudioFileReader.h` |
+| §2.5 — Mix snapshots | M10 | `core/include/ida/MixSnapshot.h` |
 | §3.1 — Scope revision (mixing in scope) | M5 | `engine/src/OutputMixer.cpp` |
-| §3.2 — Membrane → Mixer rename | M2 | `engine/include/sirius/LatencyTiming.h` |
-| §3.3 — Tape topology channel-driven | M3 | `engine/include/sirius/Channel.h`, `engine/include/sirius/TapeWriter.h` |
-| §3.4 — Effects on Constituent + bus | M5 | `engine/include/sirius/Bus.h` + existing `core/include/sirius/EffectChain.h` |
+| §3.2 — Membrane → Mixer rename | M2 | `engine/include/ida/LatencyTiming.h` |
+| §3.3 — Tape topology channel-driven | M3 | `engine/include/ida/Channel.h`, `engine/include/ida/TapeWriter.h` |
+| §3.4 — Effects on Constituent + bus | M5 | `engine/include/ida/Bus.h` + existing `core/include/ida/EffectChain.h` |
 | §4 — Migration order Steps 1-10 | M2-M14 | (covers V3 migration) |
 | §7 #1 — RT-safety of channel-strip processing | M1, M5 | `docs/RT_SAFETY_CONTRACT.md` |
 | §7 #2 — Bus topology limits | M5 | `engine/src/Bus.cpp` (cap at 64) |
 | §7 #3 — Mix snapshot transitions | M10 | `engine/src/OutputMixer.cpp` (Cut, LinearFade; Curve deferred) |
-| §7 #4 — File output formats | M13 | `persistence/include/sirius/AudioFileWriter.h`, `SmfWriter.h`, etc. |
+| §7 #4 — File output formats | M13 | `persistence/include/ida/AudioFileWriter.h`, `SmfWriter.h`, etc. |
 | §7 #5 — Per-snapshot routing recall | M10 | (committed: direct-layer routing IS included) |
 | §7 #6 — JUCE 8 mapping | (decided inline per milestone) | various |
-| §7 #7 — MIDI 1.0 → UMP upcast location | M9 | `engine/include/sirius/MidiInput.h` (at the wrapper) |
-| §7 #8 — Inclusive design surfaces | M18 | `ui/include/sirius/FootswitchLayout.h`, `ColorTokens.h`, etc. |
+| §7 #7 — MIDI 1.0 → UMP upcast location | M9 | `engine/include/ida/MidiInput.h` (at the wrapper) |
+| §7 #8 — Inclusive design surfaces | M18 | `ui/include/ida/FootswitchLayout.h`, `ColorTokens.h`, etc. |
 | §7 #9 — Validation test harness | M19 | `tests/validation/` |
-| §7 #10 — MIDI 2.0 controller learn UX | M9 | `engine/include/sirius/MidiLearnSession.h` |
-| §7 #11 — Plug-in sandboxing (CLOSED in V7) | M7 | `host/include/sirius/OutOfProcessPluginInstance.h` |
+| §7 #10 — MIDI 2.0 controller learn UX | M9 | `engine/include/ida/MidiLearnSession.h` |
+| §7 #11 — Plug-in sandboxing (CLOSED in V7) | M7 | `host/include/ida/OutOfProcessPluginInstance.h` |
 | §7 #12 — Tape flush per tier (CLOSED in V7) | M3, M11 | `engine/src/TapeWriter.cpp`, `app/CapabilityTier.cpp` |
-| §7 #13 — Wet capture budget | M8 | `engine/include/sirius/WetCaptureWriter.h` |
+| §7 #13 — Wet capture budget | M8 | `engine/include/ida/WetCaptureWriter.h` |
 | §7 #14 — Plug-in determinism trust model | M8 | `host/src/OutOfProcessPluginInstance.cpp` (first-load differential render) |
-| §7 #15 — Notification categories | M6 | `engine/include/sirius/NotificationBus.h` |
-| §7 #16 — Export ergonomics | M13 | `engine/include/sirius/ExportEngine.h`, `app/MainComponent.cpp` |
-| §7 #17 — Ensemble security implementation | M17 | `net/include/sirius/EnsembleCrypto.h` |
+| §7 #15 — Notification categories | M6 | `engine/include/ida/NotificationBus.h` |
+| §7 #16 — Export ergonomics | M13 | `engine/include/ida/ExportEngine.h`, `app/MainComponent.cpp` |
+| §7 #17 — Ensemble security implementation | M17 | `net/include/ida/EnsembleCrypto.h` |
 | §7 #18 — Plug-in format priorities | M8 (CLAP), M20 (VST3), M21 (AU) | `host_process/main.cpp` |
 | §8.1 — Realtime execution audit | M1 | `docs/RT_SAFETY_CONTRACT.md` |
-| §8.2 — Failure semantics | M8 | `core/include/sirius/Constituent.h` (state machine), `engine/src/AudioDeviceCalibration.cpp`, `engine/include/sirius/TapeReachabilityScan.h` |
-| §8.3 — Plug-in determinism | M8 | `host/include/sirius/ArchivalMode.h` |
-| §8.6 — Notification channel | M6 | `engine/include/sirius/NotificationBus.h` |
-| §9.1 — Out-of-process plug-in hosting | M7 | `host_process/`, `host/include/sirius/OutOfProcessPluginInstance.h` |
-| §9.2 — Sirius Archive Format | M11 | `persistence/include/sirius/Saf*.h` |
-| §9.3 — Ensemble consistency | M16 | `net/include/sirius/VectorClock.h`, `CausalHoldingQueue.h`, etc. |
-| §9.4 — Video tier-aware rendering | M12 | `video/include/sirius/VideoRenderer.h` |
-| §9.5 — MIDI 2.0 integration details | M9 | `engine/include/sirius/UmpEvent.h`, `MidiDeviceWrapper.h`, etc. |
+| §8.2 — Failure semantics | M8 | `core/include/ida/Constituent.h` (state machine), `engine/src/AudioDeviceCalibration.cpp`, `engine/include/ida/TapeReachabilityScan.h` |
+| §8.3 — Plug-in determinism | M8 | `host/include/ida/ArchivalMode.h` |
+| §8.6 — Notification channel | M6 | `engine/include/ida/NotificationBus.h` |
+| §9.1 — Out-of-process plug-in hosting | M7 | `host_process/`, `host/include/ida/OutOfProcessPluginInstance.h` |
+| §9.2 — IDA Archive Format | M11 | `persistence/include/ida/Saf*.h` |
+| §9.3 — Ensemble consistency | M16 | `net/include/ida/VectorClock.h`, `CausalHoldingQueue.h`, etc. |
+| §9.4 — Video tier-aware rendering | M12 | `video/include/ida/VideoRenderer.h` |
+| §9.5 — MIDI 2.0 integration details | M9 | `engine/include/ida/UmpEvent.h`, `MidiDeviceWrapper.h`, etc. |
 | §9.6 — Flush intervals (spec values) | M11 | `app/CapabilityTier.cpp` |
-| §9.6 — Reference-vs-containment | (already correct) | `core/include/sirius/Constituent.h` carries `TapeReference` not tape ownership |
+| §9.6 — Reference-vs-containment | (already correct) | `core/include/ida/Constituent.h` carries `TapeReference` not tape ownership |
 | §9.6 — §18.3 UX research questions | (parked; not blockers) | see "Parked decisions" below |
 
 ---
@@ -1580,9 +1580,9 @@ Each parked decision will get a `todo.md` entry as it's defrosted for an operato
 
 > Before touching any code, this chat must:
 >
-> 1. Read `/Users/larryseyer/SiriusLooper/continue.md` (the prior session's handoff).
-> 2. Read `/Users/larryseyer/SiriusLooper/docs/Sirius_Looper.md` (V7 white paper).
-> 3. Read `/Users/larryseyer/SiriusLooper/docs/sirius-looper-v2-to-v7-transition.md` (V2→V7 bridge).
+> 1. Read `/Users/larryseyer/IDA/continue.md` (the prior session's handoff).
+> 2. Read `/Users/larryseyer/IDA/docs/Sirius_Looper.md` (V7 white paper).
+> 3. Read `/Users/larryseyer/IDA/docs/sirius-looper-v2-to-v7-transition.md` (V2→V7 bridge).
 > 4. Read this plan end-to-end.
 > 5. Copy this plan's Parts 0-3 + coverage matrix to `docs/superpowers/specs/2026-05-17-v7-alignment-design.md` and Parts 4+ to `docs/superpowers/plans/2026-05-17-v7-alignment-plan.md`. Single commit: `docs: V7 alignment design + plan (M0 setup)`. Push.
 > 6. Open M1's block; brainstorm any open questions; start Session 1.

@@ -1,4 +1,4 @@
-// Tests for sirius::DirectLayer — M4 Session 1 registry surface.
+// Tests for ida::DirectLayer — M4 Session 1 registry surface.
 // Session 1 ships the manual-route registry (addRawRoute /
 // addProcessedRoute / removeRoute) and the OutputChannelId strong type;
 // the audio-thread routeBuffers entry point lands in Session 2 and
@@ -16,13 +16,13 @@
 #include <type_traits>
 #include <vector>
 
-using sirius::ChannelId;
-using sirius::DirectLayer;
-using sirius::InputId;
-using sirius::OutputBufferView;
-using sirius::OutputChannelId;
-using sirius::ProcessedChannelBufferView;
-using sirius::RawInputBufferView;
+using ida::ChannelId;
+using ida::DirectLayer;
+using ida::InputId;
+using ida::OutputBufferView;
+using ida::OutputChannelId;
+using ida::ProcessedChannelBufferView;
+using ida::RawInputBufferView;
 
 static_assert (! std::is_convertible_v<int, OutputChannelId>,
                "OutputChannelId must NOT be implicitly constructible from int — strong typing");

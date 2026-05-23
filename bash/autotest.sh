@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# autotest.sh — one-shot local verification gate for Sirius Looper on macOS.
+# autotest.sh — one-shot local verification gate for IDA on macOS.
 #
 # Runs every gate in order and bails on the first failure with a clear
 # "PHASE X FAILED" prefix so the operator knows where to look. Phases:
@@ -34,7 +34,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-APP_BUNDLE="$ROOT/build-xcode/app/SiriusLooper_artefacts/Release/Sirius Looper.app"
+APP_BUNDLE="$ROOT/build-xcode/app/IDA_artefacts/Release/IDA.app"
 
 # --- timing helper -------------------------------------------------------
 phase_start() {
@@ -65,8 +65,8 @@ fail() {
 phase_start "Phase 1: headless unit tests (build/, ctest)"
 cmake -B build -DCMAKE_BUILD_TYPE=Release >/dev/null \
     || fail 1 "cmake configure (build/) failed"
-cmake --build build --config Release --target SiriusTests --parallel \
-    || fail 1 "SiriusTests build failed"
+cmake --build build --config Release --target IdaTests --parallel \
+    || fail 1 "IdaTests build failed"
 ctest --test-dir build --build-config Release --output-on-failure \
     || fail 1 "ctest reported failures"
 phase_end "Phase 1: headless unit tests"
@@ -75,8 +75,8 @@ phase_end "Phase 1: headless unit tests"
 phase_start "Phase 2: signed Xcode bundle (build-xcode/, Developer ID)"
 cmake -B build-xcode -G Xcode >/dev/null \
     || fail 2 "cmake configure (build-xcode/) failed"
-cmake --build build-xcode --config Release --target SiriusLooper \
-    || fail 2 "SiriusLooper signed build failed"
+cmake --build build-xcode --config Release --target IDA \
+    || fail 2 "IDA signed build failed"
 [[ -d "$APP_BUNDLE" ]] \
     || fail 2 "expected bundle not produced at $APP_BUNDLE"
 phase_end "Phase 2: signed Xcode bundle"
@@ -108,7 +108,7 @@ phase_end "Phase 3: signing verification"
 
 # --- Phase 4: GUI smoke -------------------------------------------------
 phase_start "Phase 4: GUI smoke (smoke-persistence.sh)"
-killall "Sirius Looper" 2>/dev/null || true
+killall "IDA" 2>/dev/null || true
 sleep 1
 APP_BUNDLE="$APP_BUNDLE" bash "$ROOT/bash/smoke-persistence.sh" \
     || fail 4 "smoke-persistence.sh reported failure (see exit-code triage in continue.md §4)"

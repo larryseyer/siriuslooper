@@ -28,7 +28,7 @@ Asrc::Asrc (double maxIoRatio, Quality quality)
     : maxIoRatio_ (maxIoRatio), handle_ (nullptr)
 {
     if (maxIoRatio_ < 1.0)
-        throw std::invalid_argument ("sirius::Asrc: maxIoRatio must be at least 1");
+        throw std::invalid_argument ("ida::Asrc: maxIoRatio must be at least 1");
 
     soxr_io_spec_t ioSpec = soxr_io_spec (SOXR_FLOAT32_I, SOXR_FLOAT32_I);
     // SOXR_VR selects the variable-rate path: the ratio can be changed on the
@@ -43,7 +43,7 @@ Asrc::Asrc (double maxIoRatio, Quality quality)
                            &error, &ioSpec, &qualitySpec, &runtimeSpec);
 
     if (handle_ == nullptr || error != nullptr)
-        throw std::runtime_error (std::string ("sirius::Asrc: soxr_create failed: ")
+        throw std::runtime_error (std::string ("ida::Asrc: soxr_create failed: ")
                                   + (error != nullptr ? error : "unknown error"));
 
     // Start at a 1:1 ratio (instant — third argument 0).
@@ -51,7 +51,7 @@ Asrc::Asrc (double maxIoRatio, Quality quality)
     if (error != nullptr)
     {
         soxr_delete (static_cast<soxr_t> (handle_));
-        throw std::runtime_error (std::string ("sirius::Asrc: soxr_set_io_ratio failed: ")
+        throw std::runtime_error (std::string ("ida::Asrc: soxr_set_io_ratio failed: ")
                                   + error);
     }
 }
@@ -65,13 +65,13 @@ Asrc::~Asrc()
 void Asrc::setIoRatio (double ioRatio, std::size_t slewLengthSamples)
 {
     if (ioRatio <= 0.0)
-        throw std::invalid_argument ("sirius::Asrc: ioRatio must be positive");
+        throw std::invalid_argument ("ida::Asrc: ioRatio must be positive");
 
     const soxr_error_t error =
         soxr_set_io_ratio (static_cast<soxr_t> (handle_), ioRatio, slewLengthSamples);
 
     if (error != nullptr)
-        throw std::invalid_argument (std::string ("sirius::Asrc: ioRatio out of range: ")
+        throw std::invalid_argument (std::string ("ida::Asrc: ioRatio out of range: ")
                                      + error);
 }
 

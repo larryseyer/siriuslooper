@@ -125,7 +125,7 @@ bank of mono mics and stereo line sources share one console.
      net-new (terminal = tape). A per-bus **kind** flag (Bus vs FxReturn) and a
      main-out-vs-sends split are the core additions; evaluation order is a
      topological sort recomputed on the message thread.
-   - **FX-return contents:** an effect chain — Sirius **internal** RVB/DLY (OTTO's
+   - **FX-return contents:** an effect chain — IDA **internal** RVB/DLY (OTTO's
      reverb + delay, a **follow-on spec** right behind this one) **or** 3rd-party
      plugins (UAD, FabFilter…) via the existing out-of-process host. This spec is
      the wiring; the OTTO RVB/DLY integration is the next.

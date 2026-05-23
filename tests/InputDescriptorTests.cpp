@@ -1,4 +1,4 @@
-// Tests for sirius::InputDescriptor — the free-standing metadata struct
+// Tests for ida::InputDescriptor — the free-standing metadata struct
 // that pairs a TapeId with the human-visible shape of an input (kind,
 // display name, optional channel/port index). Per the white paper's §7.2
 // data-layer / structure-layer split, Tape<T> itself does not know about
@@ -16,9 +16,9 @@
 #include <optional>
 #include <string>
 
-using sirius::InputDescriptor;
-using sirius::InputKind;
-using sirius::TapeId;
+using ida::InputDescriptor;
+using ida::InputKind;
+using ida::TapeId;
 
 TEST_CASE ("audio input descriptor carries its tape id, kind, name, and channel index",
            "[input-descriptor]")
@@ -138,11 +138,11 @@ TEST_CASE ("display name preserves whitespace and unicode",
 TEST_CASE ("InputDescriptor carries rawDirectMonitor / enabled / defaults initial values",
            "[input-descriptor]")
 {
-    using sirius::ChannelDefaults;
-    using sirius::InputDescriptor;
-    using sirius::InputKind;
-    using sirius::TapeId;
-    using sirius::TapeMode;
+    using ida::ChannelDefaults;
+    using ida::InputDescriptor;
+    using ida::InputKind;
+    using ida::TapeId;
+    using ida::TapeMode;
 
     SECTION ("default-initialized values match the spec")
     {
@@ -178,8 +178,8 @@ TEST_CASE ("InputDescriptor carries rawDirectMonitor / enabled / defaults initia
 TEST_CASE ("ChannelDefaults is value-typed and round-trips its fields",
            "[input-descriptor][channel-defaults]")
 {
-    using sirius::ChannelDefaults;
-    using sirius::TapeMode;
+    using ida::ChannelDefaults;
+    using ida::TapeMode;
 
     const ChannelDefaults defaults { TapeMode::CommitToTape, true };
 

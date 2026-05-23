@@ -1,4 +1,4 @@
-// Tests for sirius::SignalType and the signalTypeOf(InputKind) projection
+// Tests for ida::SignalType and the signalTypeOf(InputKind) projection
 // added in M2 Session 2. SignalType is the four-case modality the V3 mixer
 // architecture uses (Audio / Midi / Video / File); InputKind is the seven-
 // case descriptor enum InputDescriptor already carries. Per V7 alignment
@@ -13,9 +13,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using sirius::InputKind;
-using sirius::SignalType;
-using sirius::signalTypeOf;
+using ida::InputKind;
+using ida::SignalType;
+using ida::signalTypeOf;
 
 static_assert (signalTypeOf (InputKind::Audio) == SignalType::Audio);
 static_assert (signalTypeOf (InputKind::Midi)  == SignalType::Midi);

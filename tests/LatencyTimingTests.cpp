@@ -9,10 +9,10 @@
 
 #include <stdexcept>
 
-using sirius::Rational;
-using sirius::SampleClock;
-using sirius::latency::inboundCaptureTime;
-using sirius::latency::outboundPresentTime;
+using ida::Rational;
+using ida::SampleClock;
+using ida::latency::inboundCaptureTime;
+using ida::latency::outboundPresentTime;
 
 TEST_CASE ("inbound capture time backdates each sample from the callback", "[latency]")
 {

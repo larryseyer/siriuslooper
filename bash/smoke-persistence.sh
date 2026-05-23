@@ -1,11 +1,11 @@
 #!/bin/bash
 # =============================================================================
-# smoke-persistence.sh — drive the Sirius Looper .app through a Save / Load
+# smoke-persistence.sh — drive the IDA .app through a Save / Load
 # round-trip via osascript + System Events accessibility, then verify the
 # status banner reports success.
 #
 # This covers the GUI-integration plumbing (TextButton click, NSSavePanel /
-# NSOpenPanel navigation, status-banner write) that the headless SiriusTests
+# NSOpenPanel navigation, status-banner write) that the headless IdaTests
 # cases cannot reach. The persistence engine itself is covered by the
 # [sessionformat] tests; this script is the last-mile GUI smoke.
 #
@@ -16,7 +16,7 @@
 # targeting the process with AppleScript error -25211, even when the calling
 # shell HAS accessibility access. This is the same TCC failure mode as the
 # Load-dialog file-greying issue tracked in todo.md (2026-05-15 — "Load
-# dialog still cannot select `.sirius.json` on macOS"). Resolving the
+# dialog still cannot select `.ida.json` on macOS"). Resolving the
 # signing problem unblocks both this script and the Load dialog at once.
 #
 # Until then this script is intentionally committed but cannot run. It
@@ -39,10 +39,10 @@
 
 set -euo pipefail
 
-APP_BUNDLE="${APP_BUNDLE:-/Users/larryseyer/SiriusLooper/build/app/SiriusLooper_artefacts/Release/Sirius Looper.app}"
-APP_NAME="Sirius Looper"
-TMP_DIR="$(mktemp -d -t sirius-smoke)"
-TMP_FILE="${TMP_DIR}/smoke-session.sirius.json"
+APP_BUNDLE="${APP_BUNDLE:-/Users/larryseyer/IDA/build/app/IDA_artefacts/Release/IDA.app}"
+APP_NAME="IDA"
+TMP_DIR="$(mktemp -d -t ida-smoke)"
+TMP_FILE="${TMP_DIR}/smoke-session.ida.json"
 
 cleanup() {
   osascript -e "tell application \"${APP_NAME}\" to quit" >/dev/null 2>&1 || true
@@ -53,7 +53,7 @@ trap cleanup EXIT
 # --- Sanity: app bundle exists --------------------------------------------
 if [[ ! -d "${APP_BUNDLE}" ]]; then
   echo "ERROR: app bundle not found at ${APP_BUNDLE}" >&2
-  echo "Build first: cmake --build build --target SiriusLooper -j" >&2
+  echo "Build first: cmake --build build --target IDA -j" >&2
   exit 2
 fi
 
@@ -228,7 +228,7 @@ APPLESCRIPT
 drive_dialog_to_path() {
   local path="$1"
   local action_name="$2"   # "Save" or "Open"
-  local dialog_title_prefix="$3"  # e.g. "Save Sirius session" / "Load Sirius session"
+  local dialog_title_prefix="$3"  # e.g. "Save IDA session" / "Load IDA session"
 
   # Wait for dialog window to appear (poll up to ~5 s).
   local dialog_present=0
@@ -246,7 +246,7 @@ drive_dialog_to_path() {
     return 1
   fi
 
-  # Activate Sirius Looper AND send keystrokes in the same osascript block
+  # Activate IDA AND send keystrokes in the same osascript block
   # so focus can't slip back to the terminal between the activate and
   # the typing. (When activate and keystroke are in separate osascript
   # invocations, the shell that launched osascript steals focus back
@@ -326,7 +326,7 @@ sleep 1
 # --- Save flow -----------------------------------------------------------
 echo "[smoke] clicking Save..."
 click_button_named "Save"
-drive_dialog_to_path "${TMP_FILE}" "Save" "Save Sirius session"
+drive_dialog_to_path "${TMP_FILE}" "Save" "Save IDA session"
 sleep 1
 
 # Confirm the file appeared on disk.
@@ -347,7 +347,7 @@ fi
 # --- Load flow -----------------------------------------------------------
 echo "[smoke] clicking Load..."
 click_button_named "Load"
-drive_dialog_to_path "${TMP_FILE}" "Open" "Load Sirius session"
+drive_dialog_to_path "${TMP_FILE}" "Open" "Load IDA session"
 sleep 1
 
 texts="$(read_window_texts)"

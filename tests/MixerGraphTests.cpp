@@ -14,10 +14,10 @@
 #include <utility>
 #include <vector>
 
-using sirius::MixerGraph;
-using sirius::MixerNodeId;
-using sirius::MixerNodeKind;
-using sirius::MixerTerminal;
+using ida::MixerGraph;
+using ida::MixerNodeId;
+using ida::MixerNodeKind;
+using ida::MixerTerminal;
 
 // Compile-time invariant — evaluationOrder() is the only audio-thread read
 // surface and MUST be noexcept (RT-safety contract §6).

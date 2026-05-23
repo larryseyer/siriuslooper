@@ -2,7 +2,7 @@
 
 #include <juce_core/juce_core.h>
 
-namespace sirius::persistence
+namespace ida::persistence
 {
 
 /// A content-addressed blob store for tape files (white paper Part 7.8). Each
@@ -47,4 +47,4 @@ private:
     juce::File directory_;
 };
 
-} // namespace sirius::persistence
+} // namespace ida::persistence

@@ -1,4 +1,4 @@
-// Tests for sirius::validate — the Constituent state machine (white paper
+// Tests for ida::validate — the Constituent state machine (white paper
 // §17.7). State is derived, never persisted: a leaf loop whose tape does not
 // resolve is Broken; a node placed outside its parent is Invalid; both render
 // as silence with identity intact.
@@ -16,14 +16,14 @@
 #include <string>
 #include <vector>
 
-using sirius::Constituent;
-using sirius::ConstituentId;
-using sirius::ConstituentState;
-using sirius::Position;
-using sirius::Rational;
-using sirius::RenderPipeline;
-using sirius::TapeId;
-using sirius::TapeReference;
+using ida::Constituent;
+using ida::ConstituentId;
+using ida::ConstituentState;
+using ida::Position;
+using ida::Rational;
+using ida::RenderPipeline;
+using ida::TapeId;
+using ida::TapeReference;
 
 namespace
 {
@@ -46,12 +46,12 @@ namespace
     }
 
     /// Minimal recording sink: captures level/category/message for assertions.
-    struct RecordingSink : sirius::INotificationSink
+    struct RecordingSink : ida::INotificationSink
     {
-        struct Entry { sirius::NotificationLevel level; sirius::Category category; std::string message; };
+        struct Entry { ida::NotificationLevel level; ida::Category category; std::string message; };
         std::vector<Entry> entries;
 
-        bool post (sirius::NotificationLevel level, sirius::Category category,
+        bool post (ida::NotificationLevel level, ida::Category category,
                    const char* message) noexcept override
         {
             entries.push_back ({ level, category, message ? message : "" });
@@ -65,7 +65,7 @@ TEST_CASE ("a well-formed tree validates entirely Valid", "[constituent-state]")
     const Constituent root = makeSession (1, Rational (8),
         makeLoop (10, Rational (0), Rational (8), 100));
 
-    const auto validation = sirius::validate (root, sirius::alwaysResolves);
+    const auto validation = ida::validate (root, ida::alwaysResolves);
 
     CHECK (validation.state (ConstituentId (1)) == ConstituentState::Valid);
     CHECK (validation.state (ConstituentId (10)) == ConstituentState::Valid);
@@ -81,7 +81,7 @@ TEST_CASE ("a leaf loop whose tape does not resolve is Broken", "[constituent-st
     const auto resolver = [] (const TapeReference& ref)
     { return ref.tape != TapeId (100); };
 
-    const auto validation = sirius::validate (root, resolver);
+    const auto validation = ida::validate (root, resolver);
 
     CHECK (validation.state (ConstituentId (10)) == ConstituentState::Broken);
     CHECK_FALSE (validation.renderable (ConstituentId (10)));
@@ -94,7 +94,7 @@ TEST_CASE ("a child extending past the parent's end is Invalid", "[constituent-s
     const Constituent root = makeSession (1, Rational (4),
         makeLoop (10, Rational (0), Rational (6), 100));
 
-    const auto validation = sirius::validate (root, sirius::alwaysResolves);
+    const auto validation = ida::validate (root, ida::alwaysResolves);
 
     CHECK (validation.state (ConstituentId (10)) == ConstituentState::Invalid);
 }
@@ -104,7 +104,7 @@ TEST_CASE ("a child filling the parent exactly is Valid (half-open bound)", "[co
     const Constituent root = makeSession (1, Rational (4),
         makeLoop (10, Rational (0), Rational (4), 100));
 
-    const auto validation = sirius::validate (root, sirius::alwaysResolves);
+    const auto validation = ida::validate (root, ida::alwaysResolves);
 
     CHECK (validation.state (ConstituentId (10)) == ConstituentState::Valid);
 }
@@ -117,7 +117,7 @@ TEST_CASE ("a node that is both out-of-bounds and tape-broken reports Invalid", 
 
     const auto resolver = [] (const TapeReference&) { return false; };
 
-    const auto validation = sirius::validate (root, resolver);
+    const auto validation = ida::validate (root, resolver);
 
     // Structural error dominates: Invalid, not Broken.
     CHECK (validation.state (ConstituentId (10)) == ConstituentState::Invalid);
@@ -130,7 +130,7 @@ TEST_CASE ("validation does not mutate the tree", "[constituent-state]")
 
     const auto resolver = [] (const TapeReference&) { return false; }; // mark Broken
 
-    const auto validation = sirius::validate (root, resolver);
+    const auto validation = ida::validate (root, resolver);
 
     // Identity and structure survive (white paper §17.7: repair, not recreate).
     CHECK (validation.state (ConstituentId (10)) == ConstituentState::Broken);
@@ -153,9 +153,9 @@ TEST_CASE ("a Broken node and its subtree render as silence; Valid siblings stil
     const auto resolver = [] (const TapeReference& ref)
     { return ref.tape != TapeId (100); }; // only loop 10 is Broken
 
-    const auto validation = sirius::validate (*root, resolver);
+    const auto validation = ida::validate (*root, resolver);
 
-    const RenderPipeline pipeline (root, sirius::TempoMap::fromBpm (Rational (120)), validation);
+    const RenderPipeline pipeline (root, ida::TempoMap::fromBpm (Rational (120)), validation);
     const auto reads = pipeline.activeReadsAt (Rational (0));
 
     // Only loop 11 sounds; the Broken loop 10 is silent.
@@ -173,10 +173,10 @@ TEST_CASE ("an Invalid parent silences its whole subtree", "[constituent-state][
     session = session.withChildAdded (std::make_shared<const Constituent> (phrase));
     const auto root = std::make_shared<const Constituent> (session);
 
-    const auto validation = sirius::validate (*root, sirius::alwaysResolves);
+    const auto validation = ida::validate (*root, ida::alwaysResolves);
     REQUIRE (validation.state (ConstituentId (20)) == ConstituentState::Invalid);
 
-    const RenderPipeline pipeline (root, sirius::TempoMap::fromBpm (Rational (120)), validation);
+    const RenderPipeline pipeline (root, ida::TempoMap::fromBpm (Rational (120)), validation);
     const auto reads = pipeline.activeReadsAt (Rational (0));
 
     // The Invalid phrase is skipped, so its grandchild loop never sounds.
@@ -190,14 +190,14 @@ TEST_CASE ("load posts a Warning per Broken/Invalid node, none for Valid", "[con
     session = session.withChildAdded (makeLoop (11, Rational (0), Rational (8), 200)); // Valid
 
     const auto resolver = [] (const TapeReference& ref) { return ref.tape != TapeId (100); };
-    const auto validation = sirius::validate (session, resolver);
+    const auto validation = ida::validate (session, resolver);
 
     RecordingSink sink;
-    sirius::postConstituentStateNotifications (session, validation, sink);
+    ida::postConstituentStateNotifications (session, validation, sink);
 
     REQUIRE (sink.entries.size() == 1);
-    CHECK (sink.entries[0].level == sirius::NotificationLevel::Warning);
-    CHECK (sink.entries[0].category == sirius::Category::StateRepair);
+    CHECK (sink.entries[0].level == ida::NotificationLevel::Warning);
+    CHECK (sink.entries[0].category == ida::Category::StateRepair);
     CHECK (sink.entries[0].message.find ("broken") != std::string::npos);
     CHECK (sink.entries[0].message.find ("10") != std::string::npos);
 }
@@ -211,7 +211,7 @@ TEST_CASE ("a child beginning before the parent's start is Invalid", "[constitue
     const Constituent root = makeSession (1, Rational (4),
         makeLoop (10, Rational (-1), Rational (3), 100));
 
-    const auto validation = sirius::validate (root, sirius::alwaysResolves);
+    const auto validation = ida::validate (root, ida::alwaysResolves);
 
     CHECK (validation.state (ConstituentId (10)) == ConstituentState::Invalid);
 }

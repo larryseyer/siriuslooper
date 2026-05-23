@@ -71,7 +71,7 @@ struct MixerChannelSource
     bool operator!= (const MixerChannelSource& o) const noexcept { return ! (*this == o); }
 };
 
-/// Default bus width — Sirius audio is stereo-only (white paper §6.1), so a
+/// Default bus width — IDA audio is stereo-only (white paper §6.1), so a
 /// bus defaults to a stereo pair. Mirrors engine BusConfig::channelCount.
 inline constexpr int kDefaultBusChannelCount = 2;
 

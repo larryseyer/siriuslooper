@@ -3,7 +3,7 @@
 // descriptor-only fallback, and the new hash-prefix-first drift format.
 // These configure a real OutOfProcessEffectChainHost against the
 // synthetic CLAP and consult its live state — they require both
-// SIRIUS_HOST_BINARY_PATH and SIRIUS_SYNTHETIC_CLAP_PATH.
+// IDA_HOST_BINARY_PATH and IDA_SYNTHETIC_CLAP_PATH.
 #include "sirius/SessionSnapshot.h"
 
 #include "sirius/Constituent.h"
@@ -26,11 +26,11 @@
 #include <thread>
 #include <vector>
 
-#ifndef SIRIUS_HOST_BINARY_PATH
-    #error "SIRIUS_HOST_BINARY_PATH required"
+#ifndef IDA_HOST_BINARY_PATH
+    #error "IDA_HOST_BINARY_PATH required"
 #endif
-#ifndef SIRIUS_SYNTHETIC_CLAP_PATH
-    #error "SIRIUS_SYNTHETIC_CLAP_PATH required"
+#ifndef IDA_SYNTHETIC_CLAP_PATH
+    #error "IDA_SYNTHETIC_CLAP_PATH required"
 #endif
 
 namespace
@@ -38,13 +38,13 @@ namespace
     constexpr const char* kEmptyHash =
         "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
-    struct RecordingSink : sirius::INotificationSink
+    struct RecordingSink : ida::INotificationSink
     {
-        struct Entry { sirius::NotificationLevel level;
-                       sirius::Category cat; std::string msg; };
+        struct Entry { ida::NotificationLevel level;
+                       ida::Category cat; std::string msg; };
         std::vector<Entry> entries;
-        bool post (sirius::NotificationLevel level,
-                   sirius::Category cat,
+        bool post (ida::NotificationLevel level,
+                   ida::Category cat,
                    const char* msg) noexcept override
         {
             entries.push_back ({ level, cat, msg != nullptr ? std::string (msg) : std::string {} });
@@ -52,29 +52,29 @@ namespace
         }
     };
 
-    sirius::EffectChainEntry makeClapEntry (const std::string& uniqueId,
+    ida::EffectChainEntry makeClapEntry (const std::string& uniqueId,
                                             const std::string& version)
     {
-        sirius::EffectChainEntry e;
-        e.descriptor.format   = sirius::PluginFormat::Clap;
+        ida::EffectChainEntry e;
+        e.descriptor.format   = ida::PluginFormat::Clap;
         e.descriptor.uniqueId = uniqueId;
         e.descriptor.version  = version;
         e.descriptor.name     = "Synthetic";
-        e.descriptor.filePath = SIRIUS_SYNTHETIC_CLAP_PATH;
+        e.descriptor.filePath = IDA_SYNTHETIC_CLAP_PATH;
         e.displayName         = "S";
-        e.archivalMode        = sirius::ArchivalMode::VersionPinning;
+        e.archivalMode        = ida::ArchivalMode::VersionPinning;
         return e;
     }
 
     // The real Constituent has no makeRoot() factory; mirror the
     // ArchivalModeTests helper pattern (leaf + withEffectChain).
-    std::shared_ptr<const sirius::Constituent>
-        rootWithChain (const sirius::EffectChain& chain)
+    std::shared_ptr<const ida::Constituent>
+        rootWithChain (const ida::EffectChain& chain)
     {
-        auto leaf = std::make_shared<sirius::Constituent> (
-            sirius::ConstituentId (1),
-            sirius::Position (sirius::Rational (0)),
-            sirius::Position (sirius::Rational (1)));
+        auto leaf = std::make_shared<ida::Constituent> (
+            ida::ConstituentId (1),
+            ida::Position (ida::Rational (0)),
+            ida::Position (ida::Rational (1)));
         *leaf = leaf->withEffectChain (chain);
         return leaf;
     }
@@ -83,23 +83,23 @@ namespace
 TEST_CASE ("populator hashes real state bytes, not the empty-string hash",
            "[session-snapshot-live]")
 {
-    sirius::OutOfProcessEffectChainHost host;
-    sirius::EffectChain chain;
+    ida::OutOfProcessEffectChainHost host;
+    ida::EffectChain chain;
     chain = chain.withAppended (
         makeClapEntry ("com.sirius.synthetic.identity", "1.0.0"));
     host.configureBus (10, chain,
-                       juce::File (SIRIUS_HOST_BINARY_PATH),
-                       juce::File (SIRIUS_SYNTHETIC_CLAP_PATH));
+                       juce::File (IDA_HOST_BINARY_PATH),
+                       juce::File (IDA_SYNTHETIC_CLAP_PATH));
     std::this_thread::sleep_for (std::chrono::milliseconds (200));
 
     auto root = rootWithChain (chain);
 
     RecordingSink sink;
-    const auto lookup = [] (const sirius::Constituent&, std::size_t i)
-        -> std::optional<sirius::SlotLocation>
-    { return sirius::SlotLocation { 10, i }; };
+    const auto lookup = [] (const ida::Constituent&, std::size_t i)
+        -> std::optional<ida::SlotLocation>
+    { return ida::SlotLocation { 10, i }; };
 
-    auto populated = sirius::populateVersionPinningRecords (
+    auto populated = ida::populateVersionPinningRecords (
         root, host, lookup, sink);
 
     const auto& entry = populated->effectChain()->at (0);
@@ -112,12 +112,12 @@ TEST_CASE ("populator hashes real state bytes, not the empty-string hash",
 TEST_CASE ("populator always refreshes (no !has_value() guard)",
            "[session-snapshot-live]")
 {
-    sirius::OutOfProcessEffectChainHost host;
-    sirius::EffectChain chain;
+    ida::OutOfProcessEffectChainHost host;
+    ida::EffectChain chain;
     auto entry = makeClapEntry ("com.sirius.synthetic.identity", "1.0.0");
     // Pre-populate with a record that intentionally has a different
     // version — simulates a save-A followed by an upgrade.
-    sirius::VersionPinningRecord stale;
+    ida::VersionPinningRecord stale;
     stale.uniqueId        = "com.sirius.synthetic.identity";
     stale.version         = "0.9.0";
     stale.stateBlobSha256 = "deadbeef00000000000000000000000000000000000000000000000000000000";
@@ -125,20 +125,20 @@ TEST_CASE ("populator always refreshes (no !has_value() guard)",
     chain = chain.withAppended (entry);
 
     host.configureBus (11,
-                       sirius::EffectChain{}.withAppended (
+                       ida::EffectChain{}.withAppended (
                            makeClapEntry ("com.sirius.synthetic.identity", "1.0.0")),
-                       juce::File (SIRIUS_HOST_BINARY_PATH),
-                       juce::File (SIRIUS_SYNTHETIC_CLAP_PATH));
+                       juce::File (IDA_HOST_BINARY_PATH),
+                       juce::File (IDA_SYNTHETIC_CLAP_PATH));
     std::this_thread::sleep_for (std::chrono::milliseconds (200));
 
     auto root = rootWithChain (chain);
 
     RecordingSink sink;
-    const auto lookup = [] (const sirius::Constituent&, std::size_t i)
-        -> std::optional<sirius::SlotLocation>
-    { return sirius::SlotLocation { 11, i }; };
+    const auto lookup = [] (const ida::Constituent&, std::size_t i)
+        -> std::optional<ida::SlotLocation>
+    { return ida::SlotLocation { 11, i }; };
 
-    auto populated = sirius::populateVersionPinningRecords (
+    auto populated = ida::populateVersionPinningRecords (
         root, host, lookup, sink);
 
     const auto& post = populated->effectChain()->at (0);
@@ -156,19 +156,19 @@ TEST_CASE ("populator always refreshes (no !has_value() guard)",
 TEST_CASE ("populator falls back to descriptor-only when slot is not configured",
            "[session-snapshot-live]")
 {
-    sirius::OutOfProcessEffectChainHost host; // no buses configured
-    sirius::EffectChain chain;
+    ida::OutOfProcessEffectChainHost host; // no buses configured
+    ida::EffectChain chain;
     chain = chain.withAppended (
         makeClapEntry ("com.sirius.synthetic.identity", "1.0.0"));
 
     auto root = rootWithChain (chain);
 
     RecordingSink sink;
-    const auto lookup = [] (const sirius::Constituent&, std::size_t)
-        -> std::optional<sirius::SlotLocation>
+    const auto lookup = [] (const ida::Constituent&, std::size_t)
+        -> std::optional<ida::SlotLocation>
     { return std::nullopt; };
 
-    auto populated = sirius::populateVersionPinningRecords (
+    auto populated = ida::populateVersionPinningRecords (
         root, host, lookup, sink);
 
     const auto& entry = populated->effectChain()->at (0);
@@ -179,59 +179,59 @@ TEST_CASE ("populator falls back to descriptor-only when slot is not configured"
 TEST_CASE ("verifier with matching records posts zero notifications",
            "[session-snapshot-live]")
 {
-    sirius::OutOfProcessEffectChainHost host;
-    sirius::EffectChain chain;
+    ida::OutOfProcessEffectChainHost host;
+    ida::EffectChain chain;
     chain = chain.withAppended (
         makeClapEntry ("com.sirius.synthetic.identity", "1.0.0"));
     host.configureBus (12, chain,
-                       juce::File (SIRIUS_HOST_BINARY_PATH),
-                       juce::File (SIRIUS_SYNTHETIC_CLAP_PATH));
+                       juce::File (IDA_HOST_BINARY_PATH),
+                       juce::File (IDA_SYNTHETIC_CLAP_PATH));
     std::this_thread::sleep_for (std::chrono::milliseconds (200));
 
     RecordingSink sink;
-    const auto lookup = [] (const sirius::Constituent&, std::size_t i)
-        -> std::optional<sirius::SlotLocation>
-    { return sirius::SlotLocation { 12, i }; };
+    const auto lookup = [] (const ida::Constituent&, std::size_t i)
+        -> std::optional<ida::SlotLocation>
+    { return ida::SlotLocation { 12, i }; };
 
     auto root = rootWithChain (chain);
-    auto populated = sirius::populateVersionPinningRecords (
+    auto populated = ida::populateVersionPinningRecords (
         root, host, lookup, sink);
     sink.entries.clear();
 
-    sirius::verifyVersionPinningOnLoad (*populated, host, lookup, sink);
+    ida::verifyVersionPinningOnLoad (*populated, host, lookup, sink);
     CHECK (sink.entries.empty());
 }
 
 TEST_CASE ("verifier with mismatched version posts drift with hash prefixes",
            "[session-snapshot-live]")
 {
-    sirius::OutOfProcessEffectChainHost host;
-    sirius::EffectChain chain;
+    ida::OutOfProcessEffectChainHost host;
+    ida::EffectChain chain;
     chain = chain.withAppended (
         makeClapEntry ("com.sirius.synthetic.identity", "1.0.0"));
     host.configureBus (13, chain,
-                       juce::File (SIRIUS_HOST_BINARY_PATH),
-                       juce::File (SIRIUS_SYNTHETIC_CLAP_PATH));
+                       juce::File (IDA_HOST_BINARY_PATH),
+                       juce::File (IDA_SYNTHETIC_CLAP_PATH));
     std::this_thread::sleep_for (std::chrono::milliseconds (200));
 
     RecordingSink sink;
-    const auto lookup = [] (const sirius::Constituent&, std::size_t i)
-        -> std::optional<sirius::SlotLocation>
-    { return sirius::SlotLocation { 13, i }; };
+    const auto lookup = [] (const ida::Constituent&, std::size_t i)
+        -> std::optional<ida::SlotLocation>
+    { return ida::SlotLocation { 13, i }; };
 
     // Build a tree whose snapshot has a stale version + hash.
     auto entry = makeClapEntry ("com.sirius.synthetic.identity", "1.0.0");
-    sirius::VersionPinningRecord stale;
+    ida::VersionPinningRecord stale;
     stale.uniqueId        = "com.sirius.synthetic.identity";
     stale.version         = "0.9.0";
     stale.stateBlobSha256 = "deadbeef00000000000000000000000000000000000000000000000000000000";
     entry.persistedSnapshot = stale;
-    sirius::EffectChain staleChain;
+    ida::EffectChain staleChain;
     staleChain = staleChain.withAppended (entry);
 
     auto root = rootWithChain (staleChain);
 
-    sirius::verifyVersionPinningOnLoad (*root, host, lookup, sink);
+    ida::verifyVersionPinningOnLoad (*root, host, lookup, sink);
 
     int driftCount = 0;
     bool sawHashPrefix = false;

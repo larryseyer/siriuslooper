@@ -26,7 +26,7 @@
 TEST_CASE ("pumpSlot on an unconfigured slot returns false without crashing",
            "[plugin-supervisor][unit]")
 {
-    sirius::OutOfProcessEffectChainHost host;
+    ida::OutOfProcessEffectChainHost host;
 
     std::array<float, 8>  leftIn  {};
     std::array<float, 8>  rightIn {};
@@ -49,7 +49,7 @@ TEST_CASE ("pumpSlot on an unconfigured slot returns false without crashing",
 TEST_CASE ("restartCountForTesting / permanentlyBypassedForTesting default to zero / false",
            "[plugin-supervisor][unit]")
 {
-    sirius::OutOfProcessEffectChainHost host;
+    ida::OutOfProcessEffectChainHost host;
 
     // Unknown slot → returns 0 / false (the accessors are nullptr-tolerant
     // for the missing-slot case so a test can assert against fresh hosts
@@ -65,10 +65,10 @@ TEST_CASE ("constants are the V7 §9.1 acceptance values",
     // values, and changing them would silently change supervisor behaviour
     // in production. A test failure here is a deliberate forcing function
     // to re-review the white paper alignment before any threshold tweak.
-    CHECK (sirius::OutOfProcessEffectChainHost::kConsecutiveMissThreshold == 16u);
-    CHECK (sirius::OutOfProcessEffectChainHost::kMaxRestartAttempts       == 3u);
-    CHECK (sirius::OutOfProcessEffectChainHost::kSupervisorPollMs         == 50);
-    CHECK (sirius::OutOfProcessEffectChainHost::kRestartGraceMs           == 100);
+    CHECK (ida::OutOfProcessEffectChainHost::kConsecutiveMissThreshold == 16u);
+    CHECK (ida::OutOfProcessEffectChainHost::kMaxRestartAttempts       == 3u);
+    CHECK (ida::OutOfProcessEffectChainHost::kSupervisorPollMs         == 50);
+    CHECK (ida::OutOfProcessEffectChainHost::kRestartGraceMs           == 100);
 }
 
 TEST_CASE ("host with no slots constructs and destructs cleanly (supervisor thread joins)",
@@ -79,6 +79,6 @@ TEST_CASE ("host with no slots constructs and destructs cleanly (supervisor thre
     // poll. A leaked thread would cause a TSan / ASan terminate; a hung
     // join would hang the test process. Either failure mode fails this
     // test deterministically.
-    sirius::OutOfProcessEffectChainHost host;
+    ida::OutOfProcessEffectChainHost host;
     (void) host;
 }

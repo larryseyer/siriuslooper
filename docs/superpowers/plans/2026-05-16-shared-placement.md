@@ -22,18 +22,18 @@
 
 | File | Status | Responsibility |
 |---|---|---|
-| `core/include/sirius/Constituent.h` | MODIFY | Add `inline bool isPlacementWrapper (const Constituent&)` free function (convention-not-type). |
-| `core/include/sirius/Arrangement.h` | MODIFY | Declare `sequenceShared (parent, phrase, offsets, allocateId)`. |
+| `core/include/ida/Constituent.h` | MODIFY | Add `inline bool isPlacementWrapper (const Constituent&)` free function (convention-not-type). |
+| `core/include/ida/Arrangement.h` | MODIFY | Declare `sequenceShared (parent, phrase, offsets, allocateId)`. |
 | `core/src/Arrangement.cpp` | MODIFY | Implement `sequenceShared` using existing `placedAt` neighbour pattern. |
-| `core/include/sirius/Promotion.h` | MODIFY | Add `enum class AttachmentMode { Shared, Overlay }`; extend `PromotionResult` with `resolvedMode` + `overlayPlacementIndex`; new `promote` signature taking `AttachmentMode`. |
+| `core/include/ida/Promotion.h` | MODIFY | Add `enum class AttachmentMode { Shared, Overlay }`; extend `PromotionResult` with `resolvedMode` + `overlayPlacementIndex`; new `promote` signature taking `AttachmentMode`. |
 | `core/src/Promotion.cpp` | MODIFY | Replace `enforceSingleInstance` with `enforceSharedInstancesAreShared` (pointer-aware); make `findHostRecursive` descend through wrappers; implement Overlay-attach path + downgrade rule. |
-| `ui/include/sirius/TimelineViewState.h` | MODIFY | Add `sharedSiblings`, `hasOverlays`, `isForked` fields to `PillState`. |
+| `ui/include/ida/TimelineViewState.h` | MODIFY | Add `sharedSiblings`, `hasOverlays`, `isForked` fields to `PillState`. |
 | `ui/src/TimelineViewState.cpp` | MODIFY | Wrapper-aware walk: emit one Pill per wrapper (suppress shared child); aggregate from shared child; second-pass pointer-identity grouping for `sharedSiblings`. |
 | `ui/src/TimelineView.cpp` | MODIFY | Render tie-bar across `sharedSiblings`; overlay-dot when `hasOverlays`; prime mark when `isForked`. |
 | `app/DemoSession.cpp` | MODIFY | Grow session to 24 whole notes; verse becomes one shared Phrase (id 20) placed at offsets 3/9/15 via `sequenceShared`, minting wrappers 51/52/53. |
 | `app/MainComponent.h` | MODIFY | Add long-press timer member + pending-overlay-flag for Mark In gesture; declare `onPillContextMenu`. |
 | `app/MainComponent.cpp` | MODIFY | Wire 500 ms long-press on `markInButton_` to upgrade pending `AttachmentMode`; rewrite `announceCapture` to use the four §11 templates; pass `requestedMode` into `promote`; wire right-click / long-press on Pills to a one-item "Vary this one" popup that runs the fork edit through `UndoStack`. |
-| `docs/Sirius Looper User Guide.md` | MODIFY | Roadmap line: "repeating song sections" lands; dedicated chapter follows after operator verification. |
+| `docs/IDA User Guide.md` | MODIFY | Roadmap line: "repeating song sections" lands; dedicated chapter follows after operator verification. |
 | `tests/ArrangementTests.cpp` | MODIFY | New cases: `sequenceShared` shape, pointer-equal sharing across three offsets, null/empty rejections, mixed bare+wrapped sequence. |
 | `tests/ConstituentTests.cpp` | MODIFY | New case: `isPlacementWrapper` predicate truth-table (bare Phrase, wrapper, hybrid, Loop, role-mismatched Phrase). |
 | `tests/PromotionTests.cpp` | MODIFY | Replace the multi-instance-throws case; new cases: pointer-aware guard accepts true sharing + rejects aliased mistakes; host descends through wrapper; Overlay attaches to wrapper with correct `overlayPlacementIndex`; Overlay outside wrapper downgrades. |
@@ -45,8 +45,8 @@
 ## Task 1: `isPlacementWrapper` predicate + `arrangement::sequenceShared`
 
 **Files:**
-- Modify: `core/include/sirius/Constituent.h`
-- Modify: `core/include/sirius/Arrangement.h`
+- Modify: `core/include/ida/Constituent.h`
+- Modify: `core/include/ida/Arrangement.h`
 - Modify: `core/src/Arrangement.cpp`
 - Modify: `tests/ConstituentTests.cpp`
 - Modify: `tests/ArrangementTests.cpp`
@@ -59,13 +59,13 @@ Append at the end of the file (above the closing namespace if there is one — m
 TEST_CASE ("isPlacementWrapper recognises wrappers and rejects non-wrappers",
            "[constituent][placementWrapper]")
 {
-    using sirius::Constituent;
-    using sirius::ConstituentId;
-    using sirius::PhraseMetadata;
-    using sirius::Position;
-    using sirius::Rational;
-    using sirius::TapeId;
-    using sirius::TapeReference;
+    using ida::Constituent;
+    using ida::ConstituentId;
+    using ida::PhraseMetadata;
+    using ida::Position;
+    using ida::Rational;
+    using ida::TapeId;
+    using ida::TapeReference;
 
     const Constituent emptyShell (ConstituentId (1), Position(),
                                   Position (Rational (4)));
@@ -74,14 +74,14 @@ TEST_CASE ("isPlacementWrapper recognises wrappers and rejects non-wrappers",
     {
         const auto bare = emptyShell.withPhraseMetadata (
             PhraseMetadata { .role = "verse" });
-        CHECK_FALSE (sirius::isPlacementWrapper (bare));
+        CHECK_FALSE (ida::isPlacementWrapper (bare));
     }
 
     SECTION ("Loop is NOT a wrapper")
     {
         const auto leaf = emptyShell.withTapeReference (
             TapeReference (TapeId (1), Rational (0), Rational (4)));
-        CHECK_FALSE (sirius::isPlacementWrapper (leaf));
+        CHECK_FALSE (ida::isPlacementWrapper (leaf));
     }
 
     SECTION ("Phrase whose role is not 'placement' is NOT a wrapper, even with a Phrase child")
@@ -90,7 +90,7 @@ TEST_CASE ("isPlacementWrapper recognises wrappers and rejects non-wrappers",
             emptyShell.withPhraseMetadata (PhraseMetadata { .role = "verse" }));
         const auto outer = emptyShell.withPhraseMetadata (
             PhraseMetadata { .role = "verse" }).withChildAdded (child);
-        CHECK_FALSE (sirius::isPlacementWrapper (outer));
+        CHECK_FALSE (ida::isPlacementWrapper (outer));
     }
 
     SECTION ("role=='placement' Phrase whose first child is a Phrase IS a wrapper")
@@ -99,7 +99,7 @@ TEST_CASE ("isPlacementWrapper recognises wrappers and rejects non-wrappers",
             emptyShell.withPhraseMetadata (PhraseMetadata { .role = "verse" }));
         const auto wrapper = emptyShell.withPhraseMetadata (
             PhraseMetadata { .role = "placement" }).withChildAdded (sharedPhrase);
-        CHECK (sirius::isPlacementWrapper (wrapper));
+        CHECK (ida::isPlacementWrapper (wrapper));
     }
 
     SECTION ("role=='placement' Phrase whose first child is a Loop is NOT a wrapper")
@@ -109,7 +109,7 @@ TEST_CASE ("isPlacementWrapper recognises wrappers and rejects non-wrappers",
                 TapeReference (TapeId (1), Rational (0), Rational (4))));
         const auto bogus = emptyShell.withPhraseMetadata (
             PhraseMetadata { .role = "placement" }).withChildAdded (leaf);
-        CHECK_FALSE (sirius::isPlacementWrapper (bogus));
+        CHECK_FALSE (ida::isPlacementWrapper (bogus));
     }
 }
 ```
@@ -119,13 +119,13 @@ If `tests/ConstituentTests.cpp` does not already `#include <memory>` and the rel
 - [ ] **Step 2: Run tests to verify the build fails (predicate not declared)**
 
 ```bash
-cd /Users/larryseyer/SiriusLooper
-cmake --build build --target SiriusTests 2>&1 | tail -20
+cd /Users/larryseyer/IDA
+cmake --build build --target IdaTests 2>&1 | tail -20
 ```
 
 Expected: compile error mentioning `isPlacementWrapper` — the symbol does not exist yet.
 
-- [ ] **Step 3: Add the predicate to `core/include/sirius/Constituent.h`**
+- [ ] **Step 3: Add the predicate to `core/include/ida/Constituent.h`**
 
 Immediately after the closing `}` of the `class Constituent` and before the `} // namespace sirius`, insert:
 
@@ -150,8 +150,8 @@ inline bool isPlacementWrapper (const Constituent& c) noexcept
 - [ ] **Step 4: Run the predicate test, verify it passes**
 
 ```bash
-cmake --build build --target SiriusTests 2>&1 | tail -5
-./build/tests/SiriusTests "[constituent][placementWrapper]"
+cmake --build build --target IdaTests 2>&1 | tail -5
+./build/tests/IdaTests "[constituent][placementWrapper]"
 ```
 
 Expected: 1 test case, 5 SECTIONs, all pass.
@@ -164,7 +164,7 @@ Append at the end of the file (after the existing RoleSlot tests):
 TEST_CASE ("sequenceShared places one wrapper per offset, all sharing the same ChildPtr",
            "[arrangement][sequenceShared]")
 {
-    using sirius::PhraseMetadata;
+    using ida::PhraseMetadata;
 
     const Constituent parent (ConstituentId (1), Position(), Position (Rational (24)));
     const auto verse = std::make_shared<const Constituent> (
@@ -175,7 +175,7 @@ TEST_CASE ("sequenceShared places one wrapper per offset, all sharing the same C
     std::int64_t nextId = 50;
     auto allocate = [&nextId] { return ConstituentId (nextId++); };
 
-    const Constituent arranged = sirius::arrangement::sequenceShared (
+    const Constituent arranged = ida::arrangement::sequenceShared (
         parent, verse,
         { Position (Rational (3)), Position (Rational (9)), Position (Rational (15)) },
         allocate);
@@ -187,7 +187,7 @@ TEST_CASE ("sequenceShared places one wrapper per offset, all sharing the same C
     for (std::size_t i = 0; i < arranged.children().size(); ++i)
     {
         const auto& wrapper = *arranged.children()[i];
-        REQUIRE (sirius::isPlacementWrapper (wrapper));
+        REQUIRE (ida::isPlacementWrapper (wrapper));
         CHECK (wrapper.phraseMetadata()->role == "placement");
         CHECK_FALSE (wrapper.tapeReference().has_value());
         CHECK (wrapper.children().size() == 1);
@@ -216,7 +216,7 @@ TEST_CASE ("sequenceShared places one wrapper per offset, all sharing the same C
 TEST_CASE ("sequenceShared rejects a null phrase and an empty offset list",
            "[arrangement][sequenceShared]")
 {
-    using sirius::PhraseMetadata;
+    using ida::PhraseMetadata;
 
     const Constituent parent (ConstituentId (1), Position(), Position (Rational (12)));
     const auto verse = std::make_shared<const Constituent> (
@@ -226,20 +226,20 @@ TEST_CASE ("sequenceShared rejects a null phrase and an empty offset list",
     auto allocate = [] { return ConstituentId (99); };
 
     CHECK_THROWS_AS (
-        sirius::arrangement::sequenceShared (
+        ida::arrangement::sequenceShared (
             parent, nullptr,
             { Position (Rational (0)) }, allocate),
         std::invalid_argument);
 
     CHECK_THROWS_AS (
-        sirius::arrangement::sequenceShared (parent, verse, {}, allocate),
+        ida::arrangement::sequenceShared (parent, verse, {}, allocate),
         std::invalid_argument);
 }
 
 TEST_CASE ("sequenceShared composes with the existing bare sequence",
            "[arrangement][sequenceShared]")
 {
-    using sirius::PhraseMetadata;
+    using ida::PhraseMetadata;
 
     const Constituent parent (ConstituentId (1), Position(), Position (Rational (24)));
 
@@ -257,19 +257,19 @@ TEST_CASE ("sequenceShared composes with the existing bare sequence",
     auto allocate = [&nextId] { return ConstituentId (nextId++); };
 
     // intro (bare) + verse×3 (wrapped) + outro (bare).
-    const Constituent withIntro = sirius::arrangement::sequence (parent, { intro });
-    const Constituent withVerses = sirius::arrangement::sequenceShared (
+    const Constituent withIntro = ida::arrangement::sequence (parent, { intro });
+    const Constituent withVerses = ida::arrangement::sequenceShared (
         withIntro, verse,
         { Position (Rational (3)), Position (Rational (9)), Position (Rational (15)) },
         allocate);
-    const Constituent full = sirius::arrangement::sequence (
+    const Constituent full = ida::arrangement::sequence (
         withVerses, { outro });
 
     REQUIRE (full.children().size() == 5);
     CHECK (full.children()[0]->id().value() == 10);                       // intro
-    CHECK (sirius::isPlacementWrapper (*full.children()[1]));             // verse wrapper A
-    CHECK (sirius::isPlacementWrapper (*full.children()[2]));             // wrapper B
-    CHECK (sirius::isPlacementWrapper (*full.children()[3]));             // wrapper C
+    CHECK (ida::isPlacementWrapper (*full.children()[1]));             // verse wrapper A
+    CHECK (ida::isPlacementWrapper (*full.children()[2]));             // wrapper B
+    CHECK (ida::isPlacementWrapper (*full.children()[3]));             // wrapper C
     // arrangement::sequence places its `outro` argument at childrenEnd, which
     // is the last wrapper's conceptualOut = Rational (21).
     CHECK (full.children()[4]->id().value() == 30);
@@ -283,12 +283,12 @@ If `tests/ArrangementTests.cpp` does not already `#include "sirius/Phrase.h"`, `
 - [ ] **Step 6: Run the new tests to verify they fail (sequenceShared not declared)**
 
 ```bash
-cmake --build build --target SiriusTests 2>&1 | tail -10
+cmake --build build --target IdaTests 2>&1 | tail -10
 ```
 
 Expected: compile error mentioning `sequenceShared`.
 
-- [ ] **Step 7: Declare `sequenceShared` in `core/include/sirius/Arrangement.h`**
+- [ ] **Step 7: Declare `sequenceShared` in `core/include/ida/Arrangement.h`**
 
 Add `#include "sirius/Promotion.h"` is NOT what we want (avoids dependency cycles). The `IdAllocator` typedef should be referenced as a `std::function<ConstituentId()>` without pulling in promotion's header. The cleanest path: define an arrangement-local typedef with the same shape.
 
@@ -296,7 +296,7 @@ In the `namespace arrangement` block, immediately after the `layer` declaration,
 
 ```cpp
 /// Callable that mints a fresh ConstituentId on each call. Same shape as
-/// `sirius::promotion::IdAllocator`; defined locally here so Arrangement.h
+/// `ida::promotion::IdAllocator`; defined locally here so Arrangement.h
 /// does not depend on Promotion.h.
 using IdAllocator = std::function<ConstituentId()>;
 
@@ -332,10 +332,10 @@ Constituent sequenceShared (const Constituent&             parent,
 {
     if (phrase == nullptr)
         throw std::invalid_argument (
-            "sirius::arrangement::sequenceShared: phrase must not be null");
+            "ida::arrangement::sequenceShared: phrase must not be null");
     if (offsets.empty())
         throw std::invalid_argument (
-            "sirius::arrangement::sequenceShared: offsets must not be empty");
+            "ida::arrangement::sequenceShared: offsets must not be empty");
 
     const Rational phraseDuration = phrase->duration();
 
@@ -366,8 +366,8 @@ Constituent sequenceShared (const Constituent&             parent,
 - [ ] **Step 9: Build and run the new arrangement tests, verify they pass**
 
 ```bash
-cmake --build build --target SiriusTests 2>&1 | tail -5
-./build/tests/SiriusTests "[arrangement][sequenceShared]"
+cmake --build build --target IdaTests 2>&1 | tail -5
+./build/tests/IdaTests "[arrangement][sequenceShared]"
 ```
 
 Expected: 3 test cases, all assertions pass.
@@ -375,7 +375,7 @@ Expected: 3 test cases, all assertions pass.
 - [ ] **Step 10: Run the full suite to verify no regression**
 
 ```bash
-./build/tests/SiriusTests 2>&1 | tail -3
+./build/tests/IdaTests 2>&1 | tail -3
 ```
 
 Expected: 235 + 4 new test cases = 239 tests pass (5 SECTIONs in the predicate test still count as 1 test case; sequenceShared adds 3 test cases; total +4).
@@ -383,7 +383,7 @@ Expected: 235 + 4 new test cases = 239 tests pass (5 SECTIONs in the predicate t
 - [ ] **Step 11: Commit**
 
 ```bash
-git add core/include/sirius/Constituent.h core/include/sirius/Arrangement.h core/src/Arrangement.cpp tests/ConstituentTests.cpp tests/ArrangementTests.cpp
+git add core/include/ida/Constituent.h core/include/ida/Arrangement.h core/src/Arrangement.cpp tests/ConstituentTests.cpp tests/ArrangementTests.cpp
 git commit -m "feat: arrangement — sequenceShared + isPlacementWrapper predicate"
 git push origin master
 ```
@@ -417,7 +417,7 @@ TEST_CASE ("promote accepts a tree containing shared placements (pointer-aware g
     std::int64_t nextWrapperId = 50;
     auto allocateWrapper = [&nextWrapperId] { return ConstituentId (nextWrapperId++); };
 
-    Constituent root = sirius::arrangement::sequenceShared (
+    Constituent root = ida::arrangement::sequenceShared (
         emptyRoot(), verse,
         { Position (Rational (0)), Position (Rational (4)), Position (Rational (8)) },
         allocateWrapper);
@@ -431,7 +431,7 @@ TEST_CASE ("promote accepts a tree containing shared placements (pointer-aware g
 
     CHECK_NOTHROW (
         promote (root, identityMap(), region, /*lmcAtMarkIn*/ Rational (1),
-                 sirius::promotion::AttachmentMode::Shared,
+                 ida::promotion::AttachmentMode::Shared,
                  IdAllocator (std::ref (counter))));
 }
 
@@ -456,7 +456,7 @@ TEST_CASE ("promote rejects aliased-id-by-mistake (pointer-distinct, same id)",
 
     CHECK_THROWS_AS (
         promote (root, identityMap(), region, /*lmcAtMarkIn*/ Rational (1),
-                 sirius::promotion::AttachmentMode::Shared,
+                 ida::promotion::AttachmentMode::Shared,
                  IdAllocator (std::ref (counter))),
         std::logic_error);
 }
@@ -486,7 +486,7 @@ Delete the existing `enforceSingleInstance` function (lines 17-27 of the current
         {
             if (it->second != cPtr.get())
                 throw std::logic_error (
-                    "sirius::promotion: ConstituentId aliased across distinct allocations "
+                    "ida::promotion: ConstituentId aliased across distinct allocations "
                     "(same id reached via different shared_ptr); shared placements must "
                     "share the same ChildPtr, not duplicate it");
             // Same id, same pointer → genuine sharing, already walked.
@@ -519,7 +519,7 @@ Update the call site inside `promote` (currently `std::unordered_set<std::int64_
 - [ ] **Step 3: Build (will not link successfully until Task 3 lands, because the new test cases reference `AttachmentMode`)**
 
 ```bash
-cmake --build build --target SiriusTests 2>&1 | tail -10
+cmake --build build --target IdaTests 2>&1 | tail -10
 ```
 
 Expected: compile errors in `tests/PromotionTests.cpp` mentioning `AttachmentMode` and the new four-arg `promote`. The guard change itself compiles cleanly inside `core/src/Promotion.cpp`. **Do not commit yet** — Task 3 closes the loop.
@@ -529,14 +529,14 @@ Expected: compile errors in `tests/PromotionTests.cpp` mentioning `AttachmentMod
 ## Task 3: Promotion `AttachmentMode` + new fields + wrapper-aware host walk
 
 **Files:**
-- Modify: `core/include/sirius/Promotion.h`
+- Modify: `core/include/ida/Promotion.h`
 - Modify: `core/src/Promotion.cpp`
 - Modify: `tests/PromotionTests.cpp`
 - Modify: `app/MainComponent.cpp` (one call-site update)
 
-- [ ] **Step 1: Extend `core/include/sirius/Promotion.h`**
+- [ ] **Step 1: Extend `core/include/ida/Promotion.h`**
 
-Add the enum + fields + new signature. Inside `namespace sirius::promotion`, immediately above `struct PromotionResult`, add:
+Add the enum + fields + new signature. Inside `namespace ida::promotion`, immediately above `struct PromotionResult`, add:
 
 ```cpp
 /// What the operator's gesture asked for. The default capture (a tap on Mark
@@ -627,7 +627,7 @@ PromotionResult promote (const Constituent&   root,
 {
     if (! (region.outLmcSeconds > region.inLmcSeconds))
         throw std::invalid_argument (
-            "sirius::promotion::promote: region duration must be strictly positive");
+            "ida::promotion::promote: region duration must be strictly positive");
 
     enforceSharedInstancesAreShared (root);
 
@@ -839,12 +839,12 @@ Add the `pendingOverlay_` member to `app/MainComponent.h` in the private member 
 
 - [ ] **Step 4: Extend the test fixture and add the new behavioural tests in `tests/PromotionTests.cpp`**
 
-Update the `using sirius::promotion::promote;` alias section at the top of the file to also pull in `AttachmentMode`:
+Update the `using ida::promotion::promote;` alias section at the top of the file to also pull in `AttachmentMode`:
 
 ```cpp
-using sirius::promotion::AttachmentMode;
-using sirius::promotion::IdAllocator;
-using sirius::promotion::promote;
+using ida::promotion::AttachmentMode;
+using ida::promotion::IdAllocator;
+using ida::promotion::promote;
 ```
 
 Find every existing call to `promote (...)` in the file and add the new `AttachmentMode::Shared` argument in fifth position, before the `IdAllocator`. There are calls inside these cases (per the file inventory): host, mint (×2), straddle, hybrid rejection, defensive (×2). Each gets the same fifth argument: `AttachmentMode::Shared`.
@@ -863,7 +863,7 @@ TEST_CASE ("promote with Shared and a wrapper covering Mark In adds the Loop to 
     std::int64_t nextWrapperId = 50;
     auto allocateWrapper = [&nextWrapperId] { return ConstituentId (nextWrapperId++); };
 
-    Constituent root = sirius::arrangement::sequenceShared (
+    Constituent root = ida::arrangement::sequenceShared (
         emptyRoot(), verse,
         { Position (Rational (0)), Position (Rational (4)), Position (Rational (8)) },
         allocateWrapper);
@@ -905,7 +905,7 @@ TEST_CASE ("promote with Overlay attaches the Loop to the specific wrapper, othe
     std::int64_t nextWrapperId = 50;
     auto allocateWrapper = [&nextWrapperId] { return ConstituentId (nextWrapperId++); };
 
-    Constituent root = sirius::arrangement::sequenceShared (
+    Constituent root = ida::arrangement::sequenceShared (
         emptyRoot(), verse,
         { Position (Rational (0)), Position (Rational (4)), Position (Rational (8)) },
         allocateWrapper);
@@ -983,7 +983,7 @@ TEST_CASE ("promote with Overlay outside any wrapper AND no host mints a Phrase 
 - [ ] **Step 5: Clean build (CMake source list unchanged but enum + signature changes ripple through Promotion.h consumers)**
 
 ```bash
-cd /Users/larryseyer/SiriusLooper
+cd /Users/larryseyer/IDA
 rm -rf build && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build 2>&1 | tail -5
 ```
 
@@ -992,7 +992,7 @@ Expected: clean build.
 - [ ] **Step 6: Run the new promotion + guard tests**
 
 ```bash
-./build/tests/SiriusTests "[promotion]"
+./build/tests/IdaTests "[promotion]"
 ```
 
 Expected: previously-passing tests still pass; 2 new guard cases pass; 4 new behavioural cases pass; total +6 promotion cases beyond the pre-Task-2 baseline (the old "throws on duplicate" case was replaced, not added).
@@ -1000,7 +1000,7 @@ Expected: previously-passing tests still pass; 2 new guard cases pass; 4 new beh
 - [ ] **Step 7: Run the full suite**
 
 ```bash
-./build/tests/SiriusTests 2>&1 | tail -3
+./build/tests/IdaTests 2>&1 | tail -3
 ```
 
 Expected: 239 (after Task 1) + 6 (Task 3 net new) − 1 (replaced multi-instance case) = 244 tests pass. *Note: existing DemoSession test still passes; Task 6 updates it.*
@@ -1008,7 +1008,7 @@ Expected: 239 (after Task 1) + 6 (Task 3 net new) − 1 (replaced multi-instance
 - [ ] **Step 8: Commit**
 
 ```bash
-git add core/include/sirius/Promotion.h core/src/Promotion.cpp tests/PromotionTests.cpp app/MainComponent.h app/MainComponent.cpp
+git add core/include/ida/Promotion.h core/src/Promotion.cpp tests/PromotionTests.cpp app/MainComponent.h app/MainComponent.cpp
 git commit -m "feat: promotion — AttachmentMode + pointer-aware guard + wrapper-aware host walk"
 git push origin master
 ```
@@ -1018,11 +1018,11 @@ git push origin master
 ## Task 4: TimelineViewState wrapper-aware selector
 
 **Files:**
-- Modify: `ui/include/sirius/TimelineViewState.h`
+- Modify: `ui/include/ida/TimelineViewState.h`
 - Modify: `ui/src/TimelineViewState.cpp`
 - Modify: `tests/TimelineViewStateTests.cpp`
 
-- [ ] **Step 1: Extend `PillState` in `ui/include/sirius/TimelineViewState.h`**
+- [ ] **Step 1: Extend `PillState` in `ui/include/ida/TimelineViewState.h`**
 
 Inside `struct PillState`, after the existing `exitName` field and before the closing `}`, add:
 
@@ -1052,7 +1052,7 @@ TEST_CASE ("selectTimelineView emits one Pill per wrapper, content delegated to 
            "[timelineView][shared]")
 {
     auto verse = std::make_shared<const Constituent> (
-        sirius::arrangement::layer (
+        ida::arrangement::layer (
             Constituent (ConstituentId (20), Position(), Position (Rational (4)))
                 .withName ("verse")
                 .withPhraseMetadata (PhraseMetadata { .role = "verse",
@@ -1064,7 +1064,7 @@ TEST_CASE ("selectTimelineView emits one Pill per wrapper, content delegated to 
     auto allocateWrapper = [&nextWrapperId] { return ConstituentId (nextWrapperId++); };
 
     const Constituent shell (ConstituentId (1), Position(), Position (Rational (12)));
-    const Constituent root = sirius::arrangement::sequenceShared (
+    const Constituent root = ida::arrangement::sequenceShared (
         shell, verse,
         { Position (Rational (0)), Position (Rational (4)), Position (Rational (8)) },
         allocateWrapper);
@@ -1073,7 +1073,7 @@ TEST_CASE ("selectTimelineView emits one Pill per wrapper, content delegated to 
     const std::vector<InputDescriptor> inputs {
         { TapeId (200), InputKind::Audio, "Rhythm", 0 } };
 
-    const auto state = sirius::selectTimelineView (
+    const auto state = ida::selectTimelineView (
         root, identity, inputs, /*armed*/ {}, /*focused*/ TapeId (200));
 
     // Three Pills, one per wrapper. Shared verse itself is suppressed.
@@ -1105,13 +1105,13 @@ TEST_CASE ("selectTimelineView populates sharedSiblings via pointer-identity gro
     auto allocateWrapper = [&nextWrapperId] { return ConstituentId (nextWrapperId++); };
 
     const Constituent shell (ConstituentId (1), Position(), Position (Rational (12)));
-    const Constituent root = sirius::arrangement::sequenceShared (
+    const Constituent root = ida::arrangement::sequenceShared (
         shell, verse,
         { Position (Rational (0)), Position (Rational (4)), Position (Rational (8)) },
         allocateWrapper);
 
     const TempoMap identity = TempoMap::fromBpm (Rational (120));
-    const auto state = sirius::selectTimelineView (
+    const auto state = ida::selectTimelineView (
         root, identity, /*inputs*/ {}, /*armed*/ {}, /*focused*/ TapeId (0));
 
     REQUIRE (state.pills.size() == 3);
@@ -1141,7 +1141,7 @@ TEST_CASE ("selectTimelineView leaves sharedSiblings empty for bare Phrases",
     const Constituent root = shell.withChildAdded (intro);
 
     const TempoMap identity = TempoMap::fromBpm (Rational (120));
-    const auto state = sirius::selectTimelineView (
+    const auto state = ida::selectTimelineView (
         root, identity, /*inputs*/ {}, /*armed*/ {}, /*focused*/ TapeId (0));
 
     REQUIRE (state.pills.size() == 1);
@@ -1174,7 +1174,7 @@ TEST_CASE ("selectTimelineView sets hasOverlays when a wrapper has overlay Loops
     const Constituent root = shell.withChildAdded (wrapper);
 
     const TempoMap identity = TempoMap::fromBpm (Rational (120));
-    const auto state = sirius::selectTimelineView (
+    const auto state = ida::selectTimelineView (
         root, identity, /*inputs*/ {}, /*armed*/ {}, /*focused*/ TapeId (0));
 
     REQUIRE (state.pills.size() == 1);
@@ -1201,7 +1201,7 @@ TEST_CASE ("selectTimelineView sets isForked when wrapper role is 'forked-placem
     const Constituent root = shell.withChildAdded (forked);
 
     const TempoMap identity = TempoMap::fromBpm (Rational (120));
-    const auto state = sirius::selectTimelineView (
+    const auto state = ida::selectTimelineView (
         root, identity, /*inputs*/ {}, /*armed*/ {}, /*focused*/ TapeId (0));
 
     REQUIRE (state.pills.size() == 1);
@@ -1215,7 +1215,7 @@ If `tests/TimelineViewStateTests.cpp` doesn't already pull in `sirius/Arrangemen
 - [ ] **Step 3: Run the tests, verify they fail (wrapper not specially handled yet)**
 
 ```bash
-cmake --build build --target SiriusTests 2>&1 | tail -10
+cmake --build build --target IdaTests 2>&1 | tail -10
 ```
 
 Expected: build succeeds (the new fields default-initialise harmlessly); tests fail because the walker emits a Pill for the shared Phrase too (`pills.size() == 6` instead of 3), and `sharedSiblings` / `hasOverlays` / `isForked` stay at their defaults.
@@ -1399,8 +1399,8 @@ TimelineViewState selectTimelineView (const Constituent&                  root,
 - [ ] **Step 5: Build + run the new selector tests**
 
 ```bash
-cmake --build build --target SiriusTests 2>&1 | tail -5
-./build/tests/SiriusTests "[timelineView]"
+cmake --build build --target IdaTests 2>&1 | tail -5
+./build/tests/IdaTests "[timelineView]"
 ```
 
 Expected: previously-passing TimelineView tests still pass; 5 new cases pass.
@@ -1408,7 +1408,7 @@ Expected: previously-passing TimelineView tests still pass; 5 new cases pass.
 - [ ] **Step 6: Run the full suite**
 
 ```bash
-./build/tests/SiriusTests 2>&1 | tail -3
+./build/tests/IdaTests 2>&1 | tail -3
 ```
 
 Expected: 244 + 5 = 249 tests pass.
@@ -1416,7 +1416,7 @@ Expected: 244 + 5 = 249 tests pass.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add ui/include/sirius/TimelineViewState.h ui/src/TimelineViewState.cpp tests/TimelineViewStateTests.cpp
+git add ui/include/ida/TimelineViewState.h ui/src/TimelineViewState.cpp tests/TimelineViewStateTests.cpp
 git commit -m "feat: TimelineViewState — wrapper-aware Pills with sharedSiblings/overlays/forked"
 git push origin master
 ```
@@ -1522,15 +1522,15 @@ Inside the per-pill loop, after the dot draw, add:
 - [ ] **Step 5: Clean build and operator-side verification**
 
 ```bash
-cd /Users/larryseyer/SiriusLooper
+cd /Users/larryseyer/IDA
 rm -rf build && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build 2>&1 | tail -5
-./build/tests/SiriusTests 2>&1 | tail -3
+./build/tests/IdaTests 2>&1 | tail -3
 ```
 
 Expected: 249 tests pass (no regressions; rendering is GUI-only).
 
 **Operator verification** — ask the operator (do NOT run `open` yourself):
-1. Launch `./build/app/SiriusLooper_artefacts/Release/Sirius Looper.app` on macOS.
+1. Launch `./build/app/IDA_artefacts/Release/IDA.app` on macOS.
 2. The Preparation tab shows the demo timeline. (The demo's verse-×3 shape lands in Task 6 — for this task, expect the *current* single-verse layout; the tie-bar will appear only after Task 6.) Verify nothing broke: intro/verse/outro pills still draw with their loop count, name, entrance/exit text.
 3. Confirm no orange dot or prime mark appears on any current pill (overlays and forks land in later tasks).
 
@@ -1573,21 +1573,21 @@ TEST_CASE ("DemoSession top-level children are all Phrase shells, never hybrids"
         REQUIRE (intro.isPhrase());
         REQUIRE_FALSE (isHybrid (intro));
         REQUIRE (hasLoopChild (intro));
-        CHECK (intro.conceptualIn()  == sirius::Position (sirius::Rational (0)));
-        CHECK (intro.conceptualOut() == sirius::Position (sirius::Rational (3)));
+        CHECK (intro.conceptualIn()  == ida::Position (ida::Rational (0)));
+        CHECK (intro.conceptualOut() == ida::Position (ida::Rational (3)));
     }
 
     // Three verse wrappers at [3,9), [9,15), [15,21).
     for (std::size_t i = 1; i <= 3; ++i)
     {
         const auto& wrapper = *demo.root->children()[i];
-        REQUIRE (sirius::isPlacementWrapper (wrapper));
+        REQUIRE (ida::isPlacementWrapper (wrapper));
         REQUIRE_FALSE (isHybrid (wrapper));
         // Wrapper itself has no direct Loop child (the shared verse does).
         CHECK (wrapper.conceptualIn()  ==
-               sirius::Position (sirius::Rational (3 + static_cast<int> (i - 1) * 6)));
+               ida::Position (ida::Rational (3 + static_cast<int> (i - 1) * 6)));
         CHECK (wrapper.conceptualOut() ==
-               sirius::Position (sirius::Rational (3 + static_cast<int> (i) * 6)));
+               ida::Position (ida::Rational (3 + static_cast<int> (i) * 6)));
     }
 
     // Outro [21,24) — bare Phrase, has a Loop descendant.
@@ -1596,12 +1596,12 @@ TEST_CASE ("DemoSession top-level children are all Phrase shells, never hybrids"
         REQUIRE (outro.isPhrase());
         REQUIRE_FALSE (isHybrid (outro));
         REQUIRE (hasLoopChild (outro));
-        CHECK (outro.conceptualIn()  == sirius::Position (sirius::Rational (21)));
-        CHECK (outro.conceptualOut() == sirius::Position (sirius::Rational (24)));
+        CHECK (outro.conceptualIn()  == ida::Position (ida::Rational (21)));
+        CHECK (outro.conceptualOut() == ida::Position (ida::Rational (24)));
     }
 
     // Total span: 24 whole notes.
-    CHECK (demo.root->conceptualOut() == sirius::Position (sirius::Rational (24)));
+    CHECK (demo.root->conceptualOut() == ida::Position (ida::Rational (24)));
 }
 
 TEST_CASE ("DemoSession's three verse wrappers share one Phrase ChildPtr",
@@ -1633,8 +1633,8 @@ Add `#include "sirius/Position.h"`, `#include "sirius/Rational.h"`, and `#includ
 - [ ] **Step 2: Run the tests, verify they fail (demo still has the single-verse shape)**
 
 ```bash
-cmake --build build --target SiriusTests 2>&1 | tail -5
-./build/tests/SiriusTests "[demoSession]"
+cmake --build build --target IdaTests 2>&1 | tail -5
+./build/tests/IdaTests "[demoSession]"
 ```
 
 Expected: FAIL — `demo.root->children().size()` is 3, not 5.
@@ -1721,8 +1721,8 @@ DemoSession buildDemoSession()
 - [ ] **Step 4: Build + run demo tests**
 
 ```bash
-cmake --build build --target SiriusTests 2>&1 | tail -5
-./build/tests/SiriusTests "[demoSession]"
+cmake --build build --target IdaTests 2>&1 | tail -5
+./build/tests/IdaTests "[demoSession]"
 ```
 
 Expected: 2 test cases pass (shape + shared).
@@ -1730,7 +1730,7 @@ Expected: 2 test cases pass (shape + shared).
 - [ ] **Step 5: Run full suite**
 
 ```bash
-./build/tests/SiriusTests 2>&1 | tail -3
+./build/tests/IdaTests 2>&1 | tail -3
 ```
 
 Expected: 249 + 1 (the `[demoSession][shared]` new case) = 250 tests pass. (The shape case was replaced, not added.)
@@ -1915,9 +1915,9 @@ Expected: zero hits. (The old `Phrase captured  ·  ... s  ·  tape #...` string
 - [ ] **Step 5: Clean build + full test suite**
 
 ```bash
-cd /Users/larryseyer/SiriusLooper
+cd /Users/larryseyer/IDA
 rm -rf build && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build 2>&1 | tail -5
-./build/tests/SiriusTests 2>&1 | tail -3
+./build/tests/IdaTests 2>&1 | tail -3
 ```
 
 Expected: 250 tests pass (no headless tests touch the banner; this change is exercised manually).
@@ -1967,11 +1967,11 @@ namespace
     /// Deep-copy a Constituent subtree, minting fresh ConstituentIds for
     /// every node. The structure (boundaries, names, metadata, tape refs) is
     /// preserved; only ids change. Used by the fork gesture to break sharing.
-    sirius::Constituent deepCopyWithFreshIds (
-        const sirius::Constituent& src,
-        const sirius::promotion::IdAllocator& allocate)
+    ida::Constituent deepCopyWithFreshIds (
+        const ida::Constituent& src,
+        const ida::promotion::IdAllocator& allocate)
     {
-        sirius::Constituent copy (allocate(), src.conceptualIn(), src.conceptualOut());
+        ida::Constituent copy (allocate(), src.conceptualIn(), src.conceptualOut());
         if (! src.name().empty())  copy = copy.withName (src.name());
         if (src.phraseMetadata())  copy = copy.withPhraseMetadata (*src.phraseMetadata());
         if (src.tapeReference())   copy = copy.withTapeReference  (*src.tapeReference());
@@ -1982,7 +1982,7 @@ namespace
         copy = copy.withRepetitionRules (src.repetitionRules());
         for (const auto& child : src.children())
             copy = copy.withChildAdded (
-                std::make_shared<const sirius::Constituent> (
+                std::make_shared<const ida::Constituent> (
                     deepCopyWithFreshIds (*child, allocate)));
         return copy;
     }
@@ -1990,12 +1990,12 @@ namespace
     /// Locate the wrapper by id in `root` and return its index path from the
     /// root's children. Returns empty optional if not found (caller can no-op).
     std::optional<std::vector<std::size_t>> findWrapperPath (
-        const sirius::Constituent& root, sirius::ConstituentId wrapperId)
+        const ida::Constituent& root, ida::ConstituentId wrapperId)
     {
         std::optional<std::vector<std::size_t>> found;
         std::vector<std::size_t> path;
-        std::function<void (const sirius::Constituent&)> walk;
-        walk = [&] (const sirius::Constituent& c)
+        std::function<void (const ida::Constituent&)> walk;
+        walk = [&] (const ida::Constituent& c)
         {
             if (c.id() == wrapperId) { found = path; return; }
             for (std::size_t i = 0; i < c.children().size(); ++i)
@@ -2038,39 +2038,39 @@ void MainComponent::forkPlacement (ConstituentId wrapperId)
 
     // Walk to the wrapper, confirm shape, deep-copy its shared first child,
     // then splice the copy back in via copy-on-write down the same path.
-    std::function<sirius::Constituent (const sirius::Constituent&, std::size_t)>
+    std::function<ida::Constituent (const ida::Constituent&, std::size_t)>
         forkedSplice;
-    forkedSplice = [&] (const sirius::Constituent& c, std::size_t depth)
-                       -> sirius::Constituent
+    forkedSplice = [&] (const ida::Constituent& c, std::size_t depth)
+                       -> ida::Constituent
     {
         if (depth == wrapperPath->size())
         {
-            if (! sirius::isPlacementWrapper (c)) return c;  // not a wrapper, no-op
+            if (! ida::isPlacementWrapper (c)) return c;  // not a wrapper, no-op
             const auto& sharedPhrase = *c.children()[0];
             auto allocate = [this] { return ConstituentId (nextConstituentId_++); };
-            const auto deepCopy = std::make_shared<const sirius::Constituent> (
+            const auto deepCopy = std::make_shared<const ida::Constituent> (
                 deepCopyWithFreshIds (sharedPhrase, allocate));
 
             // Change the wrapper's role to "forked-placement" (so the selector
             // reports isForked = true and pulls it out of tie-bar grouping)
             // and replace its first child with the deep copy.
-            sirius::PhraseMetadata forkedMeta = *c.phraseMetadata();
+            ida::PhraseMetadata forkedMeta = *c.phraseMetadata();
             forkedMeta.role = "forked-placement";
             return c.withPhraseMetadata (std::move (forkedMeta))
                     .withChildReplaced (0, deepCopy);
         }
         const std::size_t i = (*wrapperPath)[depth];
-        auto childCopy = std::make_shared<const sirius::Constituent> (
+        auto childCopy = std::make_shared<const ida::Constituent> (
             forkedSplice (*c.children()[i], depth + 1));
         return c.withChildReplaced (i, childCopy);
     };
 
-    sirius::Constituent newRoot = forkedSplice (root, 0);
+    ida::Constituent newRoot = forkedSplice (root, 0);
 
     // One undo entry, plain label. Banner is not used for fork — the visual
     // change on the Pill (prime mark) IS the feedback per spec §13.
     undoStack_.push (
-        std::make_shared<const sirius::Constituent> (std::move (newRoot)),
+        std::make_shared<const ida::Constituent> (std::move (newRoot)),
         "vary this placement");
 
     refreshPerformance();
@@ -2087,7 +2087,7 @@ This step's exact code depends on the structure of `ui/src/TimelineView.cpp` and
 Inspect first:
 
 ```bash
-grep -n "class TimelineView\|mouseDown\|onPillClicked\|onPill" ui/src/TimelineView.cpp ui/include/sirius/TimelineView.h
+grep -n "class TimelineView\|mouseDown\|onPillClicked\|onPill" ui/src/TimelineView.cpp ui/include/ida/TimelineView.h
 ```
 
 Add a `std::function<void (ConstituentId)> onPillContextMenuRequested;` public member to the `TimelineView` class declaration. In its `mouseDown`, when the click is a right-click (or a long-press on touch), hit-test against `state_.pills` and fire the callback with the matching Pill id:
@@ -2134,7 +2134,7 @@ In MainComponent's constructor, after the TimelineView is constructed (find the 
         for (std::size_t depth = 1; depth < path->size(); ++depth)
             target = target->children()[(*path)[depth]];
 
-        if (! sirius::isPlacementWrapper (*target)) return;
+        if (! ida::isPlacementWrapper (*target)) return;
 
         juce::PopupMenu menu;
         menu.addItem ("Vary this one", [this, wrapperId] { forkPlacement (wrapperId); });
@@ -2153,9 +2153,9 @@ Inspect each hit. The only acceptable musician-facing strings are `"Vary this on
 - [ ] **Step 5: Clean build + run full suite**
 
 ```bash
-cd /Users/larryseyer/SiriusLooper
+cd /Users/larryseyer/IDA
 rm -rf build && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build 2>&1 | tail -5
-./build/tests/SiriusTests 2>&1 | tail -3
+./build/tests/IdaTests 2>&1 | tail -3
 ```
 
 Expected: 250 tests pass (no headless test exercises the fork UI gesture; the data path is covered transitively by the `[timelineView][forked]` case in Task 4).
@@ -2176,7 +2176,7 @@ If any string in the popup or banner reads "Fork" or "Diverge" or any other non-
 - [ ] **Step 7: Commit**
 
 ```bash
-git add app/MainComponent.h app/MainComponent.cpp ui/include/sirius/TimelineView.h ui/src/TimelineView.cpp
+git add app/MainComponent.h app/MainComponent.cpp ui/include/ida/TimelineView.h ui/src/TimelineView.cpp
 git commit -m "feat: fork — 'Vary this one' context menu on placement Pills"
 git push origin master
 ```
@@ -2186,12 +2186,12 @@ git push origin master
 ## Task 9: User guide Roadmap update
 
 **Files:**
-- Modify: `docs/Sirius Looper User Guide.md`
+- Modify: `docs/IDA User Guide.md`
 
 - [ ] **Step 1: Locate the Roadmap section**
 
 ```bash
-grep -n "^## Roadmap\|^# Roadmap" "docs/Sirius Looper User Guide.md"
+grep -n "^## Roadmap\|^# Roadmap" "docs/IDA User Guide.md"
 ```
 
 If the Roadmap section does not exist, find the most natural place to add it (typically near the end, after the per-chapter how-to content).
@@ -2213,7 +2213,7 @@ Words/phrases that must NOT appear anywhere in this section: `wrapper`, `placeme
 - [ ] **Step 3: Grep audit**
 
 ```bash
-grep -nE 'wrapper|placement|overlay|attachment|shared_ptr|Constituent|ChildPtr' "docs/Sirius Looper User Guide.md"
+grep -nE 'wrapper|placement|overlay|attachment|shared_ptr|Constituent|ChildPtr' "docs/IDA User Guide.md"
 ```
 
 Expected: zero hits in any musician-facing prose. (Existing mentions, if any, are bugs to fix as part of this task.)
@@ -2221,7 +2221,7 @@ Expected: zero hits in any musician-facing prose. (Existing mentions, if any, ar
 - [ ] **Step 4: Commit**
 
 ```bash
-git add "docs/Sirius Looper User Guide.md"
+git add "docs/IDA User Guide.md"
 git commit -m "docs: user guide — Roadmap line for repeating song sections"
 git push origin master
 ```
@@ -2235,7 +2235,7 @@ git push origin master
 - [ ] **Step 1: Clean build from scratch**
 
 ```bash
-cd /Users/larryseyer/SiriusLooper
+cd /Users/larryseyer/IDA
 rm -rf build
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build 2>&1 | tail -5
@@ -2246,7 +2246,7 @@ Expected: zero warnings from any source under our control; build succeeds.
 - [ ] **Step 2: Full test suite**
 
 ```bash
-./build/tests/SiriusTests 2>&1 | tail -3
+./build/tests/IdaTests 2>&1 | tail -3
 ```
 
 Expected: ≥ 250 tests pass, no failures. (Per-task expectations: Task 1 +4, Task 3 +6 −1, Task 4 +5, Task 6 ±0, Task 8 ±0 → 235 + 14 = 249, plus the new `[demoSession][shared]` case in Task 6 = 250.)

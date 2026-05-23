@@ -3,28 +3,28 @@
 **Copyright (C) 1999 Larry Seyer. All Rights Reserved.**
 
 This license governs the use of the Larry Seyer Acoustic Drum Library ("Sample
-Library") included with official distributions of Sirius Looper.
+Library") included with official distributions of IDA.
 
-Sirius Looper ships with a selection from the Sample Library, played by an
+IDA ships with a selection from the Sample Library, played by an
 embedded sampler engine derived from the sister application OTTO. The selection
-included with Sirius Looper is smaller than the one distributed with OTTO, but
+included with IDA is smaller than the one distributed with OTTO, but
 the terms below apply identically to it.
 
 ---
 
 ## Grant of License
 
-By using Sirius Looper with the included Sample Library, you are granted a
+By using IDA with the included Sample Library, you are granted a
 non-exclusive, non-transferable license to use the Sample Library under the
 following terms:
 
 ### Permitted Uses
 
-1. **Music Production**: You may use the Sample Library within Sirius Looper to
+1. **Music Production**: You may use the Sample Library within IDA to
    create original musical compositions, recordings, and productions.
 
 2. **Commercial Use**: You may use recordings and productions created with
-   Sirius Looper (incorporating sounds from the Sample Library) for any
+   IDA (incorporating sounds from the Sample Library) for any
    commercial purpose, including but not limited to:
    - Commercial music releases
    - Film, television, and video game soundtracks
@@ -46,8 +46,8 @@ following terms:
    product.
 
 3. **No Extraction for External Use**: You may NOT extract the sample files from
-   Sirius Looper for use in other software, samplers, or DAWs. The Sample
-   Library is licensed exclusively for use within Sirius Looper.
+   IDA for use in other software, samplers, or DAWs. The Sample
+   Library is licensed exclusively for use within IDA.
 
 4. **No Derivative Sample Products**: You may NOT create derivative sample
    libraries or instruments based on these samples.
@@ -64,16 +64,16 @@ does not grant you any ownership rights to the samples themselves.
 ## Official Distributions Only
 
 This license applies only to the Sample Library as distributed with official
-Sirius Looper releases from Larry Seyer. The Sample Library is not included in
-the Sirius Looper source code repository and is not covered by the Sirius Looper
+IDA releases from Larry Seyer. The Sample Library is not included in
+the IDA source code repository and is not covered by the IDA
 software license (AGPLv3).
 
 ---
 
 ## Third-Party SFZ Libraries
 
-Sirius Looper is designed to work with any SFZ-compatible sample library. You
-may use Sirius Looper with third-party sample libraries subject to their
+IDA is designed to work with any SFZ-compatible sample library. You
+may use IDA with third-party sample libraries subject to their
 respective licenses. This license applies only to the Larry Seyer Acoustic Drum
 Library.
 

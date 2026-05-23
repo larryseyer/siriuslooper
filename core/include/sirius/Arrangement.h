@@ -79,7 +79,7 @@ Constituent layer (const Constituent& parent,
                    const std::vector<Constituent::ChildPtr>& children);
 
 /// Callable that mints a fresh ConstituentId on each call. Same shape as
-/// `sirius::promotion::IdAllocator`; defined locally here so Arrangement.h
+/// `ida::promotion::IdAllocator`; defined locally here so Arrangement.h
 /// does not depend on Promotion.h.
 using IdAllocator = std::function<ConstituentId()>;
 

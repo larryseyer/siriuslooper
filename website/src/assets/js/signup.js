@@ -1,4 +1,4 @@
-// Sirius Looper — signup.js
+// IDA — signup.js
 // Handles email-capture form submit + builds the doc-page TOC from h2s.
 (function () {
   "use strict";

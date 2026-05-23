@@ -1,5 +1,5 @@
 // Optional third-party CLAP integration test (M8 S2). Activated only
-// when SIRIUS_THIRDPARTY_CLAP_PATH is set at CMake configure time
+// when IDA_THIRDPARTY_CLAP_PATH is set at CMake configure time
 // (point it at any installed CLAP bundle — FabFilter, Surge XT, etc.).
 // Same instantiate / parameter / save / load cycle the synthetic
 // tests run, but against the real plug-in.
@@ -17,15 +17,15 @@
 #include <thread>
 #include <vector>
 
-#ifndef SIRIUS_THIRDPARTY_CLAP_PATH
+#ifndef IDA_THIRDPARTY_CLAP_PATH
     #error "Compile-time define missing — this TU is conditional"
 #endif
-#ifndef SIRIUS_HOST_BINARY_PATH
-    #error "SIRIUS_HOST_BINARY_PATH required"
+#ifndef IDA_HOST_BINARY_PATH
+    #error "IDA_HOST_BINARY_PATH required"
 #endif
 
-using sirius::ClapBundleLoader;
-using sirius::OutOfProcessPluginInstance;
+using ida::ClapBundleLoader;
+using ida::OutOfProcessPluginInstance;
 
 namespace
 {
@@ -48,9 +48,9 @@ TEST_CASE ("third-party CLAP loads and instantiates",
            "[third-party-clap]")
 {
     std::string err;
-    auto loader = ClapBundleLoader::load (SIRIUS_THIRDPARTY_CLAP_PATH, err);
+    auto loader = ClapBundleLoader::load (IDA_THIRDPARTY_CLAP_PATH, err);
     REQUIRE (loader.valid());
-    const auto descs = loader.descriptors (SIRIUS_THIRDPARTY_CLAP_PATH);
+    const auto descs = loader.descriptors (IDA_THIRDPARTY_CLAP_PATH);
     REQUIRE (! descs.empty());
 
     clap_host_t host {};
@@ -83,9 +83,9 @@ TEST_CASE ("third-party CLAP loads and instantiates",
 TEST_CASE ("third-party CLAP state round-trips through the host child",
            "[third-party-clap]")
 {
-    juce::File bundle (SIRIUS_THIRDPARTY_CLAP_PATH);
+    juce::File bundle (IDA_THIRDPARTY_CLAP_PATH);
     OutOfProcessPluginInstance inst (
-        juce::File (SIRIUS_HOST_BINARY_PATH), "thirdparty", bundle);
+        juce::File (IDA_HOST_BINARY_PATH), "thirdparty", bundle);
     REQUIRE (inst.isRunning());
     std::this_thread::sleep_for (kThirdPartyChildWarmup);
 

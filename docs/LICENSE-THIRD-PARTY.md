@@ -1,7 +1,7 @@
 # Third-Party Licenses
 
-This document lists the third-party dependencies used by Sirius Looper and their
-respective licenses. Sirius Looper follows the same licensing model as its
+This document lists the third-party dependencies used by IDA and their
+respective licenses. IDA follows the same licensing model as its
 sister application, OTTO; this file is maintained alongside the project's
 evolving dependency set.
 
@@ -13,7 +13,7 @@ evolving dependency set.
 
 The following dependencies are dual-licensed under GPL (or AGPL) and commercial
 licenses. The required commercial licenses have been obtained for the
-distribution of Sirius Looper.
+distribution of IDA.
 
 ### JUCE Framework
 
@@ -22,7 +22,7 @@ distribution of Sirius Looper.
 - **Commercial License:** https://juce.com/legal/juce-8-licence/
 
 The JUCE Framework is dual-licensed. A commercial license from JUCE is held for
-the distribution of Sirius Looper.
+the distribution of IDA.
 
 ### Ableton Link
 
@@ -32,7 +32,7 @@ the distribution of Sirius Looper.
 
 Ableton Link is used as one of the Logical Master Clock's discipline sources for
 tempo/phase synchronization across an ensemble. A proprietary license from
-Ableton is held for the distribution of Sirius Looper.
+Ableton is held for the distribution of IDA.
 
 ---
 
@@ -82,7 +82,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 - **License:** MIT
 - **Repository:** https://github.com/free-audio/clap
 
-The CLAP SDK is used by Sirius Looper's plugin-hosting layer to host CLAP
+The CLAP SDK is used by IDA's plugin-hosting layer to host CLAP
 plugins inside Constituent effect chains.
 
 ```
@@ -114,7 +114,7 @@ SOFTWARE.
 ## LGPL Licenses (Dynamically Linked)
 
 The following dependencies are licensed under the GNU Lesser General Public
-License. They are **dynamically linked** so that Sirius Looper's distribution
+License. They are **dynamically linked** so that IDA's distribution
 remains compliant; GPL-only optional components (e.g. x264) are excluded from
 the build.
 
@@ -130,7 +130,7 @@ libsoxr provides continuous async sample-rate conversion at the audio membranes.
 - **License:** LGPL-2.1-or-later (built without GPL-only components)
 - **Website:** https://ffmpeg.org
 
-FFmpeg/libav provides the video decode/encode pipeline. Sirius Looper links only
+FFmpeg/libav provides the video decode/encode pipeline. IDA links only
 the LGPL-licensed libraries (libavcodec, libavformat, libavutil, libswscale) and
 excludes any GPL-only components from the build.
 
@@ -212,7 +212,7 @@ distribution.
 
 The bundled drum sample selection is proprietary content, NOT covered by the
 AGPLv3, and NOT included in the source repository. It ships only with official
-Sirius Looper binary distributions.
+IDA binary distributions.
 
 ---
 
@@ -231,4 +231,4 @@ Sirius Looper binary distributions.
 
 ---
 
-*This file should be included in all Sirius Looper distributions.*
+*This file should be included in all IDA distributions.*

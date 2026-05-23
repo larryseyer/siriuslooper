@@ -23,7 +23,7 @@ public:
         : samplesPerSecond_ (samplesPerSecond)
     {
         if (samplesPerSecond_.isZero() || samplesPerSecond_.isNegative())
-            throw std::invalid_argument ("sirius::SampleClock: sample rate must be positive");
+            throw std::invalid_argument ("ida::SampleClock: sample rate must be positive");
     }
 
     Rational samplesPerSecond() const noexcept { return samplesPerSecond_; }

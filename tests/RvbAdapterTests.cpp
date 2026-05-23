@@ -1,4 +1,4 @@
-// Tests for sirius::RvbAdapter — the fourth and final internal-FX adapter
+// Tests for ida::RvbAdapter — the fourth and final internal-FX adapter
 // (T3d of the P7 umbrella). We do NOT test convolution DSP correctness
 // (PlayerIRConvolution owns that); we test the Sirius-side wrapper:
 // prepare/process/reset state, the miss contract on an un-prepared
@@ -7,7 +7,7 @@
 // once OTTO's background worker has finished installing the default IR.
 //
 // RvbAdapter lives in engine/src/fx/ (private to the engine target). The
-// SiriusTests target adds engine/src to its PRIVATE include path so this
+// IdaTests target adds engine/src to its PRIVATE include path so this
 // test can reach the adapter header without exposing it on the engine's
 // public surface — see tests/CMakeLists.txt.
 //
@@ -28,7 +28,7 @@
 #include <thread>
 #include <vector>
 
-using sirius::RvbAdapter;
+using ida::RvbAdapter;
 
 namespace
 {
@@ -225,7 +225,7 @@ TEST_CASE ("RvbAdapter::process supports in-place invocation (in == out aliased 
 TEST_CASE ("RvbAdapter::process produces non-silent wet output after IR load completes",
            "[internal-fx][rvb-adapter]")
 {
-    // The IR-loaded smoke test. The CMake-injected SIRIUS_OTTO_ASSETS_DIR
+    // The IR-loaded smoke test. The CMake-injected IDA_OTTO_ASSETS_DIR
     // points at a path containing "Plate Bright 1.13.wav"; OTTO's
     // background worker decodes + processes + installs it after prepare.
     // We poll isLoaded() with a 5 s timeout. If the asset isn't available

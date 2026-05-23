@@ -18,14 +18,14 @@ TapePool::TapePool (std::vector<TapeDescriptor> tapes)
     : tapes_ (std::move (tapes))
 {
     if (tapes_.empty())
-        throw std::invalid_argument ("sirius::TapePool: tape list must be non-empty (>=1 invariant)");
+        throw std::invalid_argument ("ida::TapePool: tape list must be non-empty (>=1 invariant)");
 
     std::unordered_set<std::int64_t> seen;
     std::int64_t maxId = 0;
     for (const auto& t : tapes_)
     {
         if (! seen.insert (t.id.value()).second)
-            throw std::invalid_argument ("sirius::TapePool: duplicate tape id");
+            throw std::invalid_argument ("ida::TapePool: duplicate tape id");
         maxId = std::max (maxId, t.id.value());
     }
     nextId_ = maxId + 1;

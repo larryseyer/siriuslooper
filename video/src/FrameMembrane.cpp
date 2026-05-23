@@ -18,7 +18,7 @@ namespace
     void requirePositiveFps (Rational fps, const char* context)
     {
         if (! (fps > Rational (0)))
-            throw std::invalid_argument (std::string ("sirius::FrameMembrane: ") + context
+            throw std::invalid_argument (std::string ("ida::FrameMembrane: ") + context
                                          + " fps must be positive");
     }
 }
@@ -51,7 +51,7 @@ std::vector<std::int64_t> convertFrameRate (
     requirePositiveFps (sourceFps, "source");
     requirePositiveFps (targetFps, "target");
     if (targetFrameCount < 0)
-        throw std::invalid_argument ("sirius::convertFrameRate: targetFrameCount must be >= 0");
+        throw std::invalid_argument ("ida::convertFrameRate: targetFrameCount must be >= 0");
 
     const FrameMembrane membrane (sourceFps, sourceStartLmcSeconds);
     const Rational targetFrameDuration = Rational (1) / targetFps;

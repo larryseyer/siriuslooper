@@ -5,7 +5,7 @@
 
 #include <cstdint>
 
-namespace sirius::latency
+namespace ida::latency
 {
 
 /// The LMC time at which sample `sampleIndex` (0-based) in a captured buffer of
@@ -34,4 +34,4 @@ Rational outboundPresentTime (Rational lmcCallbackTime,
                               std::int64_t sampleIndex,
                               const SampleClock& deviceClock);
 
-} // namespace sirius::latency
+} // namespace ida::latency

@@ -6,7 +6,7 @@
 
 **Architecture:** This is the **engine prerequisite for routing-graph Phase 6** (the spec assumes bus/FX-return strips have "fader/mute/solo + the dual peak+LUFS meter like channel strips," but `Bus` currently has only an effect chain + mix scratch). All work is headless TDD in the `engine` library; no UI, no operator eyes-on. The new state lives on the shared `Bus` type (both mixers reuse it per `project_two_mixers_totally_separate` — same *type*, separate instances). `OutputMixer` is structurally untouched: its master/sub buses inherit the new members at their defaults (gain 1.0, unmuted, meter un-prepared → no-op), so its audio output stays bit-identical and its existing tests stay green. The Input Mixer UI phase that follows wires gestures/strips to these accessors.
 
-**Tech Stack:** C++20, JUCE (engine public API stays JUCE-free), Catch2 (`SiriusTests`), CMake + Ninja. RT-safety contract `docs/RT_SAFETY_CONTRACT.md` §6 governs `Bus::process`.
+**Tech Stack:** C++20, JUCE (engine public API stays JUCE-free), Catch2 (`IdaTests`), CMake + Ninja. RT-safety contract `docs/RT_SAFETY_CONTRACT.md` §6 governs `Bus::process`.
 
 ---
 
@@ -23,18 +23,18 @@ So this plan: (1) makes `LufsMeter` move-only via a defaulted `noexcept` move ct
 
 ## File structure
 
-- **Modify** `engine/include/sirius/LufsMeter.h` — add `noexcept` move ctor + move assignment (keep copy deleted).
-- **Modify** `engine/include/sirius/Bus.h` — add gain/mute/peak/LUFS API + members + a `noexcept` move ctor; include `<atomic>` and `"sirius/LufsMeter.h"`.
+- **Modify** `engine/include/ida/LufsMeter.h` — add `noexcept` move ctor + move assignment (keep copy deleted).
+- **Modify** `engine/include/ida/Bus.h` — add gain/mute/peak/LUFS API + members + a `noexcept` move ctor; include `<atomic>` and `"sirius/LufsMeter.h"`.
 - **Modify** `engine/src/Bus.cpp` — implement the move ctor; apply gain+mute and write the post-fader meter inside `process()` (both the inline path and the effect-chain path), preserving the M8 S4 wet-capture tap point and default-config bit-equivalence.
-- **Modify** `engine/include/sirius/InputMixer.h` + `engine/src/InputMixer.cpp` — add `Bus* busForId (BusId) noexcept` (message-thread accessor, mirrors `processingChainFor`).
+- **Modify** `engine/include/ida/InputMixer.h` + `engine/src/InputMixer.cpp` — add `Bus* busForId (BusId) noexcept` (message-thread accessor, mirrors `processingChainFor`).
 - **Modify** `tests/BusTests.cpp` — gain/mute/peak/LUFS/move-ctor cases.
 - **Modify** `tests/InputMixerTests.cpp` — `busForId` accessor cases.
 - **Modify** `tests/LufsMeterTests.cpp` if present (else add cases to `tests/BusTests.cpp`) — LufsMeter move case.
 
 ## Conventions for every task
 
-- Build: `cmake --build build --target SiriusTests` (configure once: `cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release`).
-- Run one tag: `./build/tests/SiriusTests "[tag]"`. Full suite: `ctest --test-dir build` (baseline 521/522 — the 1 non-pass is the documented `MainComponentPluginEditorTests_NOT_BUILT`, run separately by `bash/test-s7.sh`).
+- Build: `cmake --build build --target IdaTests` (configure once: `cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release`).
+- Run one tag: `./build/tests/IdaTests "[tag]"`. Full suite: `ctest --test-dir build` (baseline 521/522 — the 1 non-pass is the documented `MainComponentPluginEditorTests_NOT_BUILT`, run separately by `bash/test-s7.sh`).
 - Commit after each task (single-line message, `<type>: <title>`), then `git push` (authorized: memory `feedback_claude_commits_and_pushes_master`).
 - Const-correctness, named constants, RAII, no magic numbers (CLAUDE.md). The peak atomics + `LufsMeter` are `mutable` because `process` is `const`.
 
@@ -43,7 +43,7 @@ So this plan: (1) makes `LufsMeter` move-only via a defaulted `noexcept` move ct
 ### Task 1: Make `LufsMeter` move-only
 
 **Files:**
-- Modify: `engine/include/sirius/LufsMeter.h:30-33` (the special-members block)
+- Modify: `engine/include/ida/LufsMeter.h:30-33` (the special-members block)
 - Test: `tests/LufsMeterTests.cpp` (if it exists; otherwise add the case to `tests/BusTests.cpp`)
 
 - [ ] **Step 1: Confirm the test file**
@@ -56,16 +56,16 @@ If `USE_BusTests`, add the test below to `tests/BusTests.cpp` instead (it alread
 ```cpp
 TEST_CASE ("LufsMeter is move-constructible and a moved meter still measures", "[lufs][move]")
 {
-    static_assert (std::is_move_constructible_v<sirius::LufsMeter>,
+    static_assert (std::is_move_constructible_v<ida::LufsMeter>,
                    "LufsMeter must be movable so Bus can live in std::vector<Bus>");
 
     constexpr double kSampleRate = 48000.0;
     constexpr int    kBlock      = 512;
 
-    sirius::LufsMeter source;
+    ida::LufsMeter source;
     source.prepare (kSampleRate, kBlock);
 
-    sirius::LufsMeter moved (std::move (source));   // move-construct after prepare()
+    ida::LufsMeter moved (std::move (source));   // move-construct after prepare()
 
     // Feed a 1 kHz sine (NOT DC — K-weighting's high-pass would kill a constant);
     // integrated loudness must rise above the -70 LUFS absolute gate, proving the
@@ -87,12 +87,12 @@ Add `#include <type_traits>`, `#include <array>`, `#include <cmath>` (for `std::
 
 - [ ] **Step 3: Run the test to verify it fails**
 
-Run: `cmake --build build --target SiriusTests 2>&1 | tail -20`
-Expected: **compile error** — `use of deleted function 'sirius::LufsMeter::LufsMeter(sirius::LufsMeter&&)'` (move is deleted today because copy is user-deleted).
+Run: `cmake --build build --target IdaTests 2>&1 | tail -20`
+Expected: **compile error** — `use of deleted function 'ida::LufsMeter::LufsMeter(ida::LufsMeter&&)'` (move is deleted today because copy is user-deleted).
 
 - [ ] **Step 4: Make LufsMeter move-only**
 
-In `engine/include/sirius/LufsMeter.h`, replace the special-members block (currently lines ~30-33):
+In `engine/include/ida/LufsMeter.h`, replace the special-members block (currently lines ~30-33):
 
 ```cpp
     LufsMeter() = default;
@@ -118,13 +118,13 @@ with:
 
 - [ ] **Step 5: Run the test to verify it passes**
 
-Run: `cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[lufs][move]"`
+Run: `cmake --build build --target IdaTests && ./build/tests/IdaTests "[lufs][move]"`
 Expected: PASS (1 assertion + the static_assert compiles).
 
 - [ ] **Step 6: Commit + push**
 
 ```bash
-git add engine/include/sirius/LufsMeter.h tests/LufsMeterTests.cpp
+git add engine/include/ida/LufsMeter.h tests/LufsMeterTests.cpp
 git commit -m "refactor: make LufsMeter move-only so Bus can hold one by value"
 git push
 ```
@@ -135,7 +135,7 @@ git push
 ### Task 2: `Bus` gain + mute (atomics) + `noexcept` move ctor
 
 **Files:**
-- Modify: `engine/include/sirius/Bus.h` (includes; public API after `setEffectChain`; private members after `processedBuffer_`)
+- Modify: `engine/include/ida/Bus.h` (includes; public API after `setEffectChain`; private members after `processedBuffer_`)
 - Modify: `engine/src/Bus.cpp` (move ctor; apply gain+mute in `process` — both paths)
 - Test: `tests/BusTests.cpp`
 
@@ -147,14 +147,14 @@ Add to `tests/BusTests.cpp`:
 TEST_CASE ("Bus is movable (std::vector<Bus> requirement) and move preserves gain/mute",
            "[bus][move]")
 {
-    static_assert (std::is_move_constructible_v<sirius::Bus>,
+    static_assert (std::is_move_constructible_v<ida::Bus>,
                    "Bus must be MoveInsertable for std::vector<Bus>");
 
-    sirius::Bus source (sirius::BusId { 7 }, sirius::BusConfig {});
+    ida::Bus source (ida::BusId { 7 }, ida::BusConfig {});
     source.setGain (0.25f);
     source.setMuted (true);
 
-    sirius::Bus moved (std::move (source));
+    ida::Bus moved (std::move (source));
     REQUIRE (moved.id().value() == 7);
     REQUIRE (moved.gain()  == 0.25f);
     REQUIRE (moved.muted() == true);
@@ -163,7 +163,7 @@ TEST_CASE ("Bus is movable (std::vector<Bus> requirement) and move preserves gai
 TEST_CASE ("Bus default gain is unity and unmuted (inline path stays bit-identical)",
            "[bus][gain]")
 {
-    sirius::Bus bus (sirius::BusId { 1 }, sirius::BusConfig {});
+    ida::Bus bus (ida::BusId { 1 }, ida::BusConfig {});
     REQUIRE (bus.gain()  == 1.0f);
     REQUIRE (bus.muted() == false);
 
@@ -181,7 +181,7 @@ TEST_CASE ("Bus default gain is unity and unmuted (inline path stays bit-identic
 
 TEST_CASE ("Bus::setGain scales the output (inline path)", "[bus][gain]")
 {
-    sirius::Bus bus (sirius::BusId { 1 }, sirius::BusConfig {});
+    ida::Bus bus (ida::BusId { 1 }, ida::BusConfig {});
     bus.setGain (0.5f);
 
     constexpr int kSamples = 4;
@@ -197,7 +197,7 @@ TEST_CASE ("Bus::setGain scales the output (inline path)", "[bus][gain]")
 
 TEST_CASE ("Bus::setMuted silences the output (inline path)", "[bus][mute]")
 {
-    sirius::Bus bus (sirius::BusId { 1 }, sirius::BusConfig {});
+    ida::Bus bus (ida::BusId { 1 }, ida::BusConfig {});
     bus.setMuted (true);
 
     constexpr int kSamples = 4;
@@ -216,8 +216,8 @@ Ensure the test file has `#include <type_traits>`, `#include <utility>`, `#inclu
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `cmake --build build --target SiriusTests 2>&1 | tail -20`
-Expected: compile errors — `'class sirius::Bus' has no member named 'setGain'` (and `gain`, `setMuted`, `muted`).
+Run: `cmake --build build --target IdaTests 2>&1 | tail -20`
+Expected: compile errors — `'class ida::Bus' has no member named 'setGain'` (and `gain`, `setMuted`, `muted`).
 
 - [ ] **Step 3: Add the gain/mute API + members + move ctor declaration to `Bus.h`**
 
@@ -370,16 +370,16 @@ becomes:
 
 - [ ] **Step 5: Run the new tests + the existing Bus/OutputMixer suites**
 
-Run: `cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[bus]"`
+Run: `cmake --build build --target IdaTests && ./build/tests/IdaTests "[bus]"`
 Expected: PASS (new gain/mute/move cases + all pre-existing `[bus]` cases).
 
-Run: `./build/tests/SiriusTests "[output-mixer]" && ./build/tests/SiriusTests "[input-mixer]"`
+Run: `./build/tests/IdaTests "[output-mixer]" && ./build/tests/IdaTests "[input-mixer]"`
 Expected: PASS — bit-identical default behavior; no regression.
 
 - [ ] **Step 6: Commit + push**
 
 ```bash
-git add engine/include/sirius/Bus.h engine/src/Bus.cpp tests/BusTests.cpp
+git add engine/include/ida/Bus.h engine/src/Bus.cpp tests/BusTests.cpp
 git commit -m "feat: Bus post-fader gain + mute (parity with ChannelStrip)"
 git push
 ```
@@ -389,7 +389,7 @@ git push
 ### Task 3: `Bus` post-fader peak metering
 
 **Files:**
-- Modify: `engine/include/sirius/Bus.h` (public accessors after `muted()`; private mutable atomics after `muted_`)
+- Modify: `engine/include/ida/Bus.h` (public accessors after `muted()`; private mutable atomics after `muted_`)
 - Modify: `engine/src/Bus.cpp` (compute peak in both accumulate loops; init-list order)
 - Test: `tests/BusTests.cpp`
 
@@ -398,7 +398,7 @@ git push
 ```cpp
 TEST_CASE ("Bus peak reflects the post-fader signal (inline path)", "[bus][meter]")
 {
-    sirius::Bus bus (sirius::BusId { 1 }, sirius::BusConfig {});
+    ida::Bus bus (ida::BusId { 1 }, ida::BusConfig {});
     bus.setGain (0.5f);
 
     constexpr int kSamples = 8;
@@ -417,7 +417,7 @@ TEST_CASE ("Bus peak reflects the post-fader signal (inline path)", "[bus][meter
 
 TEST_CASE ("Bus peak reads silence when muted", "[bus][meter][mute]")
 {
-    sirius::Bus bus (sirius::BusId { 1 }, sirius::BusConfig {});
+    ida::Bus bus (ida::BusId { 1 }, ida::BusConfig {});
     bus.setMuted (true);
     constexpr int kSamples = 8;
     for (int s = 0; s < kSamples; ++s)
@@ -436,8 +436,8 @@ TEST_CASE ("Bus peak reads silence when muted", "[bus][meter][mute]")
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `cmake --build build --target SiriusTests 2>&1 | tail -20`
-Expected: compile error — `'class sirius::Bus' has no member named 'peakLeft'`.
+Run: `cmake --build build --target IdaTests 2>&1 | tail -20`
+Expected: compile error — `'class ida::Bus' has no member named 'peakLeft'`.
 
 - [ ] **Step 3: Add the peak API + members to `Bus.h`**
 
@@ -533,13 +533,13 @@ Update the move ctor init-list to include the peak atomics in declaration order 
 
 - [ ] **Step 5: Run tests**
 
-Run: `cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[bus]"`
+Run: `cmake --build build --target IdaTests && ./build/tests/IdaTests "[bus]"`
 Expected: PASS (peak cases + all prior). Also re-run `[output-mixer]` and `[input-mixer]` → PASS (output bits unchanged; only the meter side-effect is new).
 
 - [ ] **Step 6: Commit + push**
 
 ```bash
-git add engine/include/sirius/Bus.h engine/src/Bus.cpp tests/BusTests.cpp
+git add engine/include/ida/Bus.h engine/src/Bus.cpp tests/BusTests.cpp
 git commit -m "feat: Bus post-fader peak metering"
 git push
 ```
@@ -549,7 +549,7 @@ git push
 ### Task 4: `Bus` LUFS meter + `prepare()`
 
 **Files:**
-- Modify: `engine/include/sirius/Bus.h` (`prepare` + `lufsIntegrated` API; `mutable LufsMeter lufsMeter_` member)
+- Modify: `engine/include/ida/Bus.h` (`prepare` + `lufsIntegrated` API; `mutable LufsMeter lufsMeter_` member)
 - Modify: `engine/src/Bus.cpp` (feed the meter in both paths; init-list)
 - Test: `tests/BusTests.cpp`
 
@@ -558,7 +558,7 @@ git push
 ```cpp
 TEST_CASE ("Bus LUFS reads silence floor before prepare()", "[bus][lufs]")
 {
-    sirius::Bus bus (sirius::BusId { 1 }, sirius::BusConfig {});
+    ida::Bus bus (ida::BusId { 1 }, ida::BusConfig {});
     constexpr int kSamples = 64;
     for (int s = 0; s < kSamples; ++s)
     {
@@ -575,7 +575,7 @@ TEST_CASE ("Bus LUFS reads silence floor before prepare()", "[bus][lufs]")
 
 TEST_CASE ("Bus LUFS rises with a 1 kHz post-fader signal after prepare()", "[bus][lufs]")
 {
-    sirius::Bus bus (sirius::BusId { 1 }, sirius::BusConfig {});
+    ida::Bus bus (ida::BusId { 1 }, ida::BusConfig {});
     constexpr double kSampleRate = 48000.0;
     constexpr int    kBlock      = 512;
     bus.prepare (kSampleRate, kBlock);
@@ -606,8 +606,8 @@ Add `#include <algorithm>` (`std::fill`) and `#include <cmath>` (`std::sin`/`M_P
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `cmake --build build --target SiriusTests 2>&1 | tail -20`
-Expected: compile error — `'class sirius::Bus' has no member named 'prepare'` / `'lufsIntegrated'`.
+Run: `cmake --build build --target IdaTests 2>&1 | tail -20`
+Expected: compile error — `'class ida::Bus' has no member named 'prepare'` / `'lufsIntegrated'`.
 
 - [ ] **Step 3: Add the LUFS API + member to `Bus.h`**
 
@@ -720,16 +720,16 @@ Finally, append `lufsMeter_` to the move ctor init-list (LAST, matching declarat
 
 - [ ] **Step 5: Run tests + the noexcept static_assert sanity**
 
-Run: `cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[bus]"`
+Run: `cmake --build build --target IdaTests && ./build/tests/IdaTests "[bus]"`
 Expected: PASS (LUFS cases + all prior `[bus]`).
 
-Run: `./build/tests/SiriusTests "[output-mixer]" "[input-mixer]" "[mixer-graph]"`
+Run: `./build/tests/IdaTests "[output-mixer]" "[input-mixer]" "[mixer-graph]"`
 Expected: PASS — no regression (default gain 1.0; un-prepared OutputMixer bus meters no-op).
 
 - [ ] **Step 6: Commit + push**
 
 ```bash
-git add engine/include/sirius/Bus.h engine/src/Bus.cpp tests/BusTests.cpp
+git add engine/include/ida/Bus.h engine/src/Bus.cpp tests/BusTests.cpp
 git commit -m "feat: Bus post-fader LUFS meter + prepare() (dual-meter parity)"
 git push
 ```
@@ -739,7 +739,7 @@ git push
 ### Task 5: `InputMixer::busForId` accessor for the UI
 
 **Files:**
-- Modify: `engine/include/sirius/InputMixer.h` (declare after `setBusEffectChain`)
+- Modify: `engine/include/ida/InputMixer.h` (declare after `setBusEffectChain`)
 - Modify: `engine/src/InputMixer.cpp` (define near `setBusEffectChain`)
 - Test: `tests/InputMixerTests.cpp`
 
@@ -751,10 +751,10 @@ Add to `tests/InputMixerTests.cpp`:
 TEST_CASE ("InputMixer::busForId returns the bus for a known id, nullptr otherwise",
            "[input-mixer][bus-access]")
 {
-    sirius::InputMixer mixer;
-    const sirius::BusId id = mixer.addBus (sirius::BusConfig { 2, "Drum Bus", sirius::BusKind::Bus });
+    ida::InputMixer mixer;
+    const ida::BusId id = mixer.addBus (ida::BusConfig { 2, "Drum Bus", ida::BusKind::Bus });
 
-    sirius::Bus* bus = mixer.busForId (id);
+    ida::Bus* bus = mixer.busForId (id);
     REQUIRE (bus != nullptr);
     REQUIRE (bus->id() == id);
     REQUIRE (bus->config().name == "Drum Bus");
@@ -763,18 +763,18 @@ TEST_CASE ("InputMixer::busForId returns the bus for a known id, nullptr otherwi
     bus->setGain (0.3f);
     REQUIRE (mixer.busForId (id)->gain() == Approx (0.3f));
 
-    REQUIRE (mixer.busForId (sirius::BusId { 9999 }) == nullptr);
+    REQUIRE (mixer.busForId (ida::BusId { 9999 }) == nullptr);
 }
 ```
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `cmake --build build --target SiriusTests 2>&1 | tail -20`
-Expected: compile error — `'class sirius::InputMixer' has no member named 'busForId'`.
+Run: `cmake --build build --target IdaTests 2>&1 | tail -20`
+Expected: compile error — `'class ida::InputMixer' has no member named 'busForId'`.
 
 - [ ] **Step 3: Declare + define `busForId`**
 
-In `engine/include/sirius/InputMixer.h`, immediately after the `setBusEffectChain` declaration, add:
+In `engine/include/ida/InputMixer.h`, immediately after the `setBusEffectChain` declaration, add:
 
 ```cpp
     /// Message-thread accessor — the live Bus for `id`, or nullptr if unknown.
@@ -799,13 +799,13 @@ Bus* InputMixer::busForId (BusId id) noexcept
 
 - [ ] **Step 4: Run the test**
 
-Run: `cmake --build build --target SiriusTests && ./build/tests/SiriusTests "[input-mixer][bus-access]"`
+Run: `cmake --build build --target IdaTests && ./build/tests/IdaTests "[input-mixer][bus-access]"`
 Expected: PASS.
 
 - [ ] **Step 5: Commit + push**
 
 ```bash
-git add engine/include/sirius/InputMixer.h engine/src/InputMixer.cpp tests/InputMixerTests.cpp
+git add engine/include/ida/InputMixer.h engine/src/InputMixer.cpp tests/InputMixerTests.cpp
 git commit -m "feat: InputMixer::busForId accessor for the bus-strip UI"
 git push
 ```
@@ -819,7 +819,7 @@ git push
 ```bash
 rm -rf build
 cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target SiriusTests
+cmake --build build --target IdaTests
 ctest --test-dir build
 ```
 Expected: the new `[bus]`/`[lufs]`/`[input-mixer]` cases pass; total green except the documented `MainComponentPluginEditorTests_NOT_BUILT` (run separately by `bash/test-s7.sh`). Record the new count.

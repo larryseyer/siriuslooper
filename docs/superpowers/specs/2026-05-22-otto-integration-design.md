@@ -18,9 +18,9 @@ truth in the build, four product-level integration questions surfaced
 that the brainstorm didn't anticipate at T0 planning time. Each had
 real architectural implications worth pinning before resuming T1:
 
-1. **OutputRouter** — does Sirius adopt OTTO's app-wide output-routing
+1. **OutputRouter** — does IDA adopt OTTO's app-wide output-routing
    strategy, or supersede it?
-2. **Edit-policy / governance** — when (and how) may a Sirius session
+2. **Edit-policy / governance** — when (and how) may a IDA session
    edit OTTO source without operator friction?
 3. **Internal-FX adapter shape (T3)** — how do Sirius's internal EQ /
    CMP / RVB / DLY adapters wrap OTTO's header-only Player FX?
@@ -44,9 +44,9 @@ channels (phrases), after buses / FX returns.
 **Sirius's Output Mixer alone decides which physical outputs each OTTO
 channel reaches**, via the same per-channel main-out destination picker
 every other Output Mixer strip already uses. OTTO does not own
-physical-output routing inside Sirius — its
+physical-output routing inside IDA — its
 `OutputRouter::Mode` (`StereoSum` / `PerPlayer` / `PerDrum`) is OTTO's
-internal business and is **rejected as an app-wide Sirius concept**.
+internal business and is **rejected as an app-wide IDA concept**.
 
 **Default fanout follows the audio interface.** A 2-out interface →
 1 phrase + 32 OTTO channels sum to outs 1–2. A 16-out interface →
@@ -56,7 +56,7 @@ any other available output pair in any combination.
 This realizes and slightly extends `project_io_ownership_direct_layer`:
 the existing rule says "output mixer owns ALL physical outputs"; this
 decision adds that **a bundled software instrument (OTTO) does not own
-its own physical-output routing inside Sirius either** — it delivers
+its own physical-output routing inside IDA either** — it delivers
 stereo streams to the Output Mixer, which routes from there.
 
 ### Tape vs render/export carve-out
@@ -100,9 +100,9 @@ layers of awareness propagation:
    `[FROM OTTO → SIRIUS]` sections. Entries have a structured format
    (subject, direction, sirius-sha + otto-sha, files, why, recipient
    guidance, status, resolution).
-2. **Git commit trailers** — `Sirius-Origin: <sirius-sha>` on
+2. **Git commit trailers** — `Ida-Origin: <sirius-sha>` on
    Sirius-originated OTTO commits; `OTTO-Origin: <otto-sha>` on
-   Sirius commits that consume OTTO changes (e.g., submodule bumps).
+   IDA commits that consume OTTO changes (e.g., submodule bumps).
    Forever-durable audit trail in git log.
 3. **Standing rule in both `CLAUDE.md` files** — identical clause:
    "At session start, read `CROSS_PROJECT_INBOX.md`. Acknowledge any
@@ -112,7 +112,7 @@ layers of awareness propagation:
 
 **Push authority:** Sirius's session commits AND pushes the OTTO
 change to `origin/main` as part of the same workflow that bumps the
-submodule SHA on the Sirius side. Extends
+submodule SHA on the IDA side. Extends
 `feedback_claude_commits_and_pushes_master` to OTTO via this protocol.
 
 **Not used and why:**
@@ -125,12 +125,12 @@ submodule SHA on the Sirius side. Extends
 ### Status: LIVE (bootstrap shipped this session)
 
 - OTTO commit `abf8e4d4` (`docs: bootstrap cross-project inbox protocol
-  with Sirius (Sirius-Origin: 75c6866)`) — created
+  with IDA (Ida-Origin: 75c6866)`) — created
   `CROSS_PROJECT_INBOX.md` + added the standing rule to OTTO's
   `CLAUDE.md` + backfilled 3 entries for this session's prior OTTO
   commits (`94a9c054`, `3f535a53`, `6b066db2`), all marked
   `Status: acked 2026-05-22`.
-- Sirius commit `42cb1a9` (`docs: bootstrap cross-project inbox
+- IDA commit `42cb1a9` (`docs: bootstrap cross-project inbox
   protocol + bump OTTO submodule 6b066db2→abf8e4d4 (OTTO-Origin:
   abf8e4d4)`) — added the standing rule to Sirius's `CLAUDE.md` +
   rewrote the stale "Sister app: OTTO" section + bumped submodule.
@@ -233,8 +233,8 @@ Total **~3.7 GB**. None of it rides the submodule.
 - **Customer install time:** The installer / .app-bundling pipeline
   copies the OTTO asset tree into one shared location inside the
   install bundle (e.g.
-  `Sirius Looper.app/Contents/Resources/Assets/`). Both bundled-OTTO
-  and Sirius read from the same path at runtime. Customer machine
+  `IDA.app/Contents/Resources/Assets/`). Both bundled-OTTO
+  and IDA read from the same path at runtime. Customer machine
   carries **one** copy.
 - **Sirius's repo `assets/` directory:** stays empty (or only carries
   Sirius-specific assets that aren't part of OTTO's tree). No 3.7 GB
@@ -252,8 +252,8 @@ OTTO's exactly.
   and content, with product-name substitution where needed.
 - **Runtime paywall:** mirror OTTO's entitlement-check code shape,
   activation flow, keychain/license-server integration. Single
-  shared implementation pattern; bundled-OTTO inside Sirius and
-  Sirius itself both use the same infrastructure.
+  shared implementation pattern; bundled-OTTO inside IDA and
+  IDA itself both use the same infrastructure.
 - **Asset redistribution:** identical license = identical
   redistribution rights → no licensing risk in bundling OTTO's full
   asset set inside Sirius's installer.
@@ -292,7 +292,7 @@ LUFS over no-output buffer).
 - ✅ ctest `[bus]` / `[input-mixer]` / `[output-mixer]` / `[meter]`
   green after meter fix (Phase 1 done).
 - ✅ Cross-project inbox protocol live in both repos
-  (OTTO `abf8e4d4`, Sirius `42cb1a9`).
+  (OTTO `abf8e4d4`, IDA `42cb1a9`).
 - ✅ OTTO `CROSS_PROJECT_INBOX.md` carries 3 backfilled entries
   (Status: acked 2026-05-22).
 - ⏳ Decision 1 (OTTO-as-Output-Mixer-source) requires P8 +

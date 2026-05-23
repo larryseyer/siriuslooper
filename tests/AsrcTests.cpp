@@ -1,4 +1,4 @@
-// Tests for sirius::Asrc — continuous async sample-rate conversion (white paper
+// Tests for ida::Asrc — continuous async sample-rate conversion (white paper
 // Part 5.3), wrapping libsoxr's variable-rate path. Beyond correctness, these
 // tests carry out the measurement the plan explicitly asks for: libsoxr's
 // variable-rate resampling latency, checked against the <30 ms trust budget of
@@ -12,7 +12,7 @@
 #include <stdexcept>
 #include <vector>
 
-using sirius::Asrc;
+using ida::Asrc;
 
 TEST_CASE ("ASRC construction validates the maximum ratio", "[asrc]")
 {

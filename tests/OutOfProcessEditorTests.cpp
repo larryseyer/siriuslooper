@@ -41,8 +41,8 @@ namespace
 {
     juce::File hostBinary()
     {
-       #ifdef SIRIUS_PLUGIN_HOST_PATH
-        return juce::File (SIRIUS_PLUGIN_HOST_PATH);
+       #ifdef IDA_PLUGIN_HOST_PATH
+        return juce::File (IDA_PLUGIN_HOST_PATH);
        #else
         return juce::File();
        #endif
@@ -50,8 +50,8 @@ namespace
 
     juce::File clapBundle()
     {
-       #ifdef SIRIUS_SYNTHETIC_CLAP_PATH
-        return juce::File (SIRIUS_SYNTHETIC_CLAP_PATH);
+       #ifdef IDA_SYNTHETIC_CLAP_PATH
+        return juce::File (IDA_SYNTHETIC_CLAP_PATH);
        #else
         return juce::File();
        #endif
@@ -59,21 +59,21 @@ namespace
 
     /// Configures a single-slot bus + waits for the host to dlopen +
     /// activate the CLAP. Mirrors the M7 S4 supervisor-tests helper.
-    void primeHost (sirius::OutOfProcessEffectChainHost& host,
+    void primeHost (ida::OutOfProcessEffectChainHost& host,
                     std::int64_t busId,
                     const juce::File& binary,
                     const juce::File& bundle)
     {
-        sirius::PluginDescriptor descriptor;
-        descriptor.format   = sirius::PluginFormat::Clap;
+        ida::PluginDescriptor descriptor;
+        descriptor.format   = ida::PluginFormat::Clap;
         descriptor.name     = "SyntheticTestPlugin";
         descriptor.filePath = bundle.getFullPathName().toStdString();
 
-        sirius::EffectChainEntry entry;
+        ida::EffectChainEntry entry;
         entry.descriptor  = descriptor;
         entry.displayName = "Identity";
 
-        sirius::EffectChain chain;
+        ida::EffectChain chain;
         chain = chain.withAppended (entry);
 
         host.configureBus (busId, chain, binary, bundle);
@@ -84,7 +84,7 @@ namespace
     /// the first non-zero value it sees, or 0 on timeout. Polling interval
     /// is short (10 ms) since the host services GUI inside its CLAP pump
     /// loop's idle slot — round-trip should land well under 100 ms.
-    std::uint32_t waitForContextId (sirius::OutOfProcessEffectChainHost& host,
+    std::uint32_t waitForContextId (ida::OutOfProcessEffectChainHost& host,
                                     std::int64_t busId, std::size_t slotIdx,
                                     int timeoutMs)
     {
@@ -101,7 +101,7 @@ namespace
 
     /// Polls until `editorCaContextId` returns 0, or timeout. Used to
     /// confirm a Hide request was serviced.
-    bool waitForContextZero (sirius::OutOfProcessEffectChainHost& host,
+    bool waitForContextZero (ida::OutOfProcessEffectChainHost& host,
                              std::int64_t busId, std::size_t slotIdx,
                              int timeoutMs)
     {
@@ -124,13 +124,13 @@ TEST_CASE ("editor Show round-trip publishes a non-zero CAContextID",
 {
     const auto binary = hostBinary();
     if (! binary.existsAsFile())
-        SKIP ("sirius_plugin_host binary not present at SIRIUS_PLUGIN_HOST_PATH");
+        SKIP ("ida_plugin_host binary not present at IDA_PLUGIN_HOST_PATH");
 
     const auto bundle = clapBundle();
     if (! bundle.isDirectory())
-        SKIP ("SyntheticTestPlugin .clap bundle not present at SIRIUS_SYNTHETIC_CLAP_PATH");
+        SKIP ("SyntheticTestPlugin .clap bundle not present at IDA_SYNTHETIC_CLAP_PATH");
 
-    sirius::OutOfProcessEffectChainHost host;
+    ida::OutOfProcessEffectChainHost host;
     primeHost (host, /* busId */ 10, binary, bundle);
 
     REQUIRE (host.requestEditorShow (10, 0, /* w */ 200, /* h */ 100));
@@ -148,13 +148,13 @@ TEST_CASE ("editor Hide releases the CAContextID",
 {
     const auto binary = hostBinary();
     if (! binary.existsAsFile())
-        SKIP ("sirius_plugin_host binary not present at SIRIUS_PLUGIN_HOST_PATH");
+        SKIP ("ida_plugin_host binary not present at IDA_PLUGIN_HOST_PATH");
 
     const auto bundle = clapBundle();
     if (! bundle.isDirectory())
-        SKIP ("SyntheticTestPlugin .clap bundle not present at SIRIUS_SYNTHETIC_CLAP_PATH");
+        SKIP ("SyntheticTestPlugin .clap bundle not present at IDA_SYNTHETIC_CLAP_PATH");
 
-    sirius::OutOfProcessEffectChainHost host;
+    ida::OutOfProcessEffectChainHost host;
     primeHost (host, /* busId */ 11, binary, bundle);
 
     REQUIRE (host.requestEditorShow (11, 0, 200, 100));
@@ -169,13 +169,13 @@ TEST_CASE ("supervisor restart re-publishes CAContextID after SIGKILL",
 {
     const auto binary = hostBinary();
     if (! binary.existsAsFile())
-        SKIP ("sirius_plugin_host binary not present at SIRIUS_PLUGIN_HOST_PATH");
+        SKIP ("ida_plugin_host binary not present at IDA_PLUGIN_HOST_PATH");
 
     const auto bundle = clapBundle();
     if (! bundle.isDirectory())
-        SKIP ("SyntheticTestPlugin .clap bundle not present at SIRIUS_SYNTHETIC_CLAP_PATH");
+        SKIP ("SyntheticTestPlugin .clap bundle not present at IDA_SYNTHETIC_CLAP_PATH");
 
-    sirius::OutOfProcessEffectChainHost host;
+    ida::OutOfProcessEffectChainHost host;
     primeHost (host, /* busId */ 12, binary, bundle);
 
     REQUIRE (host.requestEditorShow (12, 0, 200, 100));

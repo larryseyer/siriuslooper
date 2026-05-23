@@ -1,4 +1,4 @@
-// Tests for sirius::AudioDeviceCalibration — the device-clock-vs-LMC record
+// Tests for ida::AudioDeviceCalibration — the device-clock-vs-LMC record
 // (white paper Part 4.3) and its two conversion directions.
 #include "sirius/AudioDeviceCalibration.h"
 
@@ -6,8 +6,8 @@
 
 #include <stdexcept>
 
-using sirius::AudioDeviceCalibration;
-using sirius::Rational;
+using ida::AudioDeviceCalibration;
+using ida::Rational;
 
 TEST_CASE ("the identity calibration leaves time unchanged", "[calibration]")
 {

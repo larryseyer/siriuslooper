@@ -1,4 +1,4 @@
-// Golden-value tests for sirius::TimeDomain — the tree of conceptual time
+// Golden-value tests for ida::TimeDomain — the tree of conceptual time
 // domains and the "unroll" that renders a local position to absolute time
 // (white paper Parts 3.4, 3.6, IX). These tests encode the architecture's
 // headline claims: polymetric coexistence is exact, and there is no
@@ -9,11 +9,11 @@
 
 #include <stdexcept>
 
-using sirius::Meter;
-using sirius::Position;
-using sirius::Rational;
-using sirius::TempoMap;
-using sirius::TimeDomain;
+using ida::Meter;
+using ida::Position;
+using ida::Rational;
+using ida::TempoMap;
+using ida::TimeDomain;
 
 TEST_CASE ("the root domain unrolls straight to seconds", "[timedomain]")
 {

@@ -27,7 +27,7 @@ struct ParameterEvent
     {
         if (! (value >= 0.0 && value <= 1.0))
             throw std::invalid_argument (
-                "sirius::ParameterEvent: value must be in [0, 1]");
+                "ida::ParameterEvent: value must be in [0, 1]");
     }
 
     int    parameterIndex;
@@ -35,7 +35,7 @@ struct ParameterEvent
 };
 
 /// A tape carrying parameter-automation events. This is just `Tape<...>` —
-/// every tape in Sirius shares one structure (white paper Part 6.2); only the
+/// every tape in IDA shares one structure (white paper Part 6.2); only the
 /// payload differs. Spelling out the alias makes the recursion in the data
 /// model explicit at call sites: a Constituent with a `tapeReference` into a
 /// `ParameterTape` is an automation curve in exactly the same way a

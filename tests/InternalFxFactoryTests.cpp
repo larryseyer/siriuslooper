@@ -1,4 +1,4 @@
-// Tests for sirius::makeInternalFxAdapter — pins the T3a-T3d contract:
+// Tests for ida::makeInternalFxAdapter — pins the T3a-T3d contract:
 // kEq / kCmp / kDly / kRvb all return non-null usable adapters. Each
 // landed in lock-step with its own sub-task (T3a-T3d). The smoke-check
 // reaches through the factory's IInternalFxAdapter* return to verify
@@ -11,8 +11,8 @@
 
 #include <vector>
 
-using sirius::InternalFxId;
-using sirius::makeInternalFxAdapter;
+using ida::InternalFxId;
+using ida::makeInternalFxAdapter;
 
 TEST_CASE ("makeInternalFxAdapter returns a usable adapter for kEq",
            "[internal-fx][factory]")

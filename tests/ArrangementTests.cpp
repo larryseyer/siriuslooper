@@ -1,4 +1,4 @@
-// Golden-value tests for sirius::arrangement — the M3 arrangement primitives
+// Golden-value tests for ida::arrangement — the M3 arrangement primitives
 // (white paper Part 11.3). These pin down the two claims that make the
 // primitives trustworthy: they are pure Constituent-tree placement operations
 // (sequencing puts children end-to-end, layering puts them simultaneously),
@@ -21,15 +21,15 @@
 #include <memory>
 #include <stdexcept>
 
-using sirius::Constituent;
-using sirius::ConstituentId;
-using sirius::Position;
-using sirius::Rational;
-using sirius::RenderPipeline;
-using sirius::RoleSlot;
-using sirius::TapeId;
-using sirius::TapeReference;
-using sirius::TempoMap;
+using ida::Constituent;
+using ida::ConstituentId;
+using ida::Position;
+using ida::Rational;
+using ida::RenderPipeline;
+using ida::RoleSlot;
+using ida::TapeId;
+using ida::TapeReference;
+using ida::TempoMap;
 
 namespace
 {
@@ -53,7 +53,7 @@ TEST_CASE ("sequence places children end-to-end, preserving each child's duratio
     const auto b = makeChild (11, Rational (0), Rational (1));  // duration 1
     const auto c = makeChild (12, Rational (8), Rational (12)); // duration 4
 
-    const Constituent arranged = sirius::arrangement::sequence (parent, { a, b, c });
+    const Constituent arranged = ida::arrangement::sequence (parent, { a, b, c });
 
     REQUIRE (arranged.children().size() == 3);
     CHECK (arranged.children()[0]->conceptualIn()  == Position (Rational (0)));
@@ -76,10 +76,10 @@ TEST_CASE ("sequence is copy-on-write and composable across calls",
     const auto a = makeChild (10, Rational (0), Rational (2));
     const auto b = makeChild (11, Rational (0), Rational (3));
 
-    const Constituent first = sirius::arrangement::sequence (parent, { a });
+    const Constituent first = ida::arrangement::sequence (parent, { a });
     // A second sequence continues where the existing children end, so an
     // arrangement can be built up incrementally.
-    const Constituent second = sirius::arrangement::sequence (first, { b });
+    const Constituent second = ida::arrangement::sequence (first, { b });
 
     CHECK (parent.children().empty());            // the argument is untouched
     CHECK (first.children().size() == 1);         // the intermediate is untouched
@@ -95,7 +95,7 @@ TEST_CASE ("layer places children simultaneously at the parent's start",
     const auto a = makeChild (10, Rational (4), Rational (6));  // duration 2
     const auto b = makeChild (11, Rational (1), Rational (5));  // duration 4
 
-    const Constituent arranged = sirius::arrangement::layer (parent, { a, b });
+    const Constituent arranged = ida::arrangement::layer (parent, { a, b });
 
     REQUIRE (arranged.children().size() == 2);
     // Both start together; each keeps its own duration, so they overlap.
@@ -111,13 +111,13 @@ TEST_CASE ("sequence and layer reject null children and accept an empty list",
 {
     const Constituent parent (ConstituentId (1), Position(), Position (Rational (4)));
 
-    CHECK_THROWS_AS (sirius::arrangement::sequence (parent, { nullptr }),
+    CHECK_THROWS_AS (ida::arrangement::sequence (parent, { nullptr }),
                      std::invalid_argument);
-    CHECK_THROWS_AS (sirius::arrangement::layer (parent, { nullptr }),
+    CHECK_THROWS_AS (ida::arrangement::layer (parent, { nullptr }),
                      std::invalid_argument);
 
-    CHECK (sirius::arrangement::sequence (parent, {}).children().empty());
-    CHECK (sirius::arrangement::layer (parent, {}).children().empty());
+    CHECK (ida::arrangement::sequence (parent, {}).children().empty());
+    CHECK (ida::arrangement::layer (parent, {}).children().empty());
 }
 
 TEST_CASE ("a sequenced arrangement plays its children one after another",
@@ -135,7 +135,7 @@ TEST_CASE ("a sequenced arrangement plays its children one after another",
 
     const Constituent session (ConstituentId (9), Position(), Position (Rational (4)));
     const auto arranged = std::make_shared<const Constituent> (
-        sirius::arrangement::sequence (session, { a, b }));
+        ida::arrangement::sequence (session, { a, b }));
 
     const RenderPipeline pipeline (arranged, TempoMap::fromBpm (Rational (120)));
 
@@ -195,7 +195,7 @@ TEST_CASE ("a RoleSlot is filled and cleared copy-on-write", "[arrangement][role
 TEST_CASE ("sequenceShared places one wrapper per offset, all sharing the same ChildPtr",
            "[arrangement][sequenceShared]")
 {
-    using sirius::PhraseMetadata;
+    using ida::PhraseMetadata;
 
     const Constituent parent (ConstituentId (1), Position(), Position (Rational (24)));
     const auto verse = std::make_shared<const Constituent> (
@@ -206,7 +206,7 @@ TEST_CASE ("sequenceShared places one wrapper per offset, all sharing the same C
     std::int64_t nextId = 50;
     auto allocate = [&nextId] { return ConstituentId (nextId++); };
 
-    const Constituent arranged = sirius::arrangement::sequenceShared (
+    const Constituent arranged = ida::arrangement::sequenceShared (
         parent, verse,
         { Position (Rational (3)), Position (Rational (9)), Position (Rational (15)) },
         allocate);
@@ -218,7 +218,7 @@ TEST_CASE ("sequenceShared places one wrapper per offset, all sharing the same C
     for (std::size_t i = 0; i < arranged.children().size(); ++i)
     {
         const auto& wrapper = *arranged.children()[i];
-        REQUIRE (sirius::isPlacementWrapper (wrapper));
+        REQUIRE (ida::isPlacementWrapper (wrapper));
         CHECK (wrapper.phraseMetadata()->role == "placement");
         CHECK_FALSE (wrapper.tapeReference().has_value());
         CHECK (wrapper.children().size() == 1);
@@ -247,7 +247,7 @@ TEST_CASE ("sequenceShared places one wrapper per offset, all sharing the same C
 TEST_CASE ("sequenceShared rejects a null phrase and an empty offset list",
            "[arrangement][sequenceShared]")
 {
-    using sirius::PhraseMetadata;
+    using ida::PhraseMetadata;
 
     const Constituent parent (ConstituentId (1), Position(), Position (Rational (12)));
     const auto verse = std::make_shared<const Constituent> (
@@ -257,20 +257,20 @@ TEST_CASE ("sequenceShared rejects a null phrase and an empty offset list",
     auto allocate = [] { return ConstituentId (99); };
 
     CHECK_THROWS_AS (
-        sirius::arrangement::sequenceShared (
+        ida::arrangement::sequenceShared (
             parent, nullptr,
             { Position (Rational (0)) }, allocate),
         std::invalid_argument);
 
     CHECK_THROWS_AS (
-        sirius::arrangement::sequenceShared (parent, verse, {}, allocate),
+        ida::arrangement::sequenceShared (parent, verse, {}, allocate),
         std::invalid_argument);
 }
 
 TEST_CASE ("sequenceShared composes with the existing bare sequence",
            "[arrangement][sequenceShared]")
 {
-    using sirius::PhraseMetadata;
+    using ida::PhraseMetadata;
 
     const Constituent parent (ConstituentId (1), Position(), Position (Rational (24)));
 
@@ -288,19 +288,19 @@ TEST_CASE ("sequenceShared composes with the existing bare sequence",
     auto allocate = [&nextId] { return ConstituentId (nextId++); };
 
     // intro (bare) + verse×3 (wrapped) + outro (bare).
-    const Constituent withIntro = sirius::arrangement::sequence (parent, { intro });
-    const Constituent withVerses = sirius::arrangement::sequenceShared (
+    const Constituent withIntro = ida::arrangement::sequence (parent, { intro });
+    const Constituent withVerses = ida::arrangement::sequenceShared (
         withIntro, verse,
         { Position (Rational (3)), Position (Rational (9)), Position (Rational (15)) },
         allocate);
-    const Constituent full = sirius::arrangement::sequence (
+    const Constituent full = ida::arrangement::sequence (
         withVerses, { outro });
 
     REQUIRE (full.children().size() == 5);
     CHECK (full.children()[0]->id().value() == 10);                       // intro
-    CHECK (sirius::isPlacementWrapper (*full.children()[1]));             // verse wrapper A
-    CHECK (sirius::isPlacementWrapper (*full.children()[2]));             // wrapper B
-    CHECK (sirius::isPlacementWrapper (*full.children()[3]));             // wrapper C
+    CHECK (ida::isPlacementWrapper (*full.children()[1]));             // verse wrapper A
+    CHECK (ida::isPlacementWrapper (*full.children()[2]));             // wrapper B
+    CHECK (ida::isPlacementWrapper (*full.children()[3]));             // wrapper C
     // arrangement::sequence places its `outro` argument at childrenEnd, which
     // is the last wrapper's conceptualOut = Rational (21).
     CHECK (full.children()[4]->id().value() == 30);

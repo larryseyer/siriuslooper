@@ -1,4 +1,4 @@
-// Tests for sirius::SharedMemorySpscQueue<T> — the cross-process SPSC
+// Tests for ida::SharedMemorySpscQueue<T> — the cross-process SPSC
 // variant of LockFreeSpscQueue. These exercise correctness in a single
 // process (placement-new'd over a heap allocation); the actual shm_open
 // round-trip is exercised in SharedMemoryRegionTests and at integration
@@ -13,7 +13,7 @@
 #include <stdexcept>
 #include <vector>
 
-using sirius::SharedMemorySpscQueue;
+using ida::SharedMemorySpscQueue;
 
 namespace
 {
