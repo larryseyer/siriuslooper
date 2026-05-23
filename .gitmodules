@@ -1,3 +1,6 @@
 [submodule "external/OTTO"]
 	path = external/OTTO
 	url = https://github.com/larryseyer/OTTO.git
+[submodule "external/lsfx_tapecolor"]
+	path = external/lsfx_tapecolor
+	url = https://github.com/larryseyer/lsfx_tapecolor.git

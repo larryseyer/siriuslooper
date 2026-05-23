@@ -99,3 +99,21 @@ set(CLAP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 
 add_subdirectory("${CLAP_PATH}" "${CMAKE_BINARY_DIR}/clap")
 message(STATUS "CLAP configured from: ${CLAP_PATH}")
+
+# -----------------------------------------------------------------------------
+# lsfx_tapecolor — shared tape-emulation FX module (OTTO + IDA). Owned by
+# OTTO at github.com:larryseyer/lsfx_tapecolor (AGPLv3); both projects
+# consume the same submodule and OTTO is the canonical pin driver. Per
+# the cross-project protocol (CLAUDE.md), do not bump this SHA in IDA
+# without checking OTTO's pin first.
+# -----------------------------------------------------------------------------
+set(LSFX_TAPECOLOR_PATH "${CMAKE_SOURCE_DIR}/external/lsfx_tapecolor")
+
+if(NOT EXISTS "${LSFX_TAPECOLOR_PATH}/CMakeLists.txt")
+    message(FATAL_ERROR
+        "lsfx_tapecolor not found at ${LSFX_TAPECOLOR_PATH}. "
+        "Run: git submodule update --init --recursive")
+endif()
+
+add_subdirectory("${LSFX_TAPECOLOR_PATH}" "${CMAKE_BINARY_DIR}/lsfx_tapecolor")
+message(STATUS "lsfx_tapecolor configured from: ${LSFX_TAPECOLOR_PATH}")

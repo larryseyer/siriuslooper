@@ -80,3 +80,6 @@ external/*
 # active joint development — SHA pinning matters), not a plain snapshot.
 # See .gitmodules + ui/CMakeLists.txt.
 !external/OTTO
+# Exception: lsfx_tapecolor is the shared tape-emulation FX module owned
+# by OTTO; IDA consumes the same submodule. SHA tracked via .gitmodules.
+!external/lsfx_tapecolor

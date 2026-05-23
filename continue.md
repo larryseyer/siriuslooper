@@ -8,10 +8,49 @@
 
 1. Read `external/OTTO/CROSS_PROJECT_INBOX.md`. Ack any
    `[FROM OTTO → IDA]` entries (set `Status: acked YYYY-MM-DD`, add a
-   `Resolution:` line, then act on the guidance). Last check: that
-   section was empty; the only needs-ack entry is `[FROM IDA → OTTO]`
-   (the IDA rename announcement), which is addressed to OTTO's Claude
-   — not ours to ack.
+   `Resolution:` line, then act on the guidance). Last sweep
+   (2026-05-23 mid-session): both 2026-05-23 TAPECOLOR entries acked
+   and resolved — see "DONE THIS SESSION" below.
+
+## ▶ DONE THIS SESSION — 2026-05-23 lsfx_tapecolor mirror (Phase 1+2)
+
+OTTO's Claude pushed two `[FROM OTTO → IDA]` entries on 2026-05-23
+asking IDA to mirror the shared tape-emulation FX submodule and
+prove the link path end-to-end. Combined action item, now done:
+
+- **Submodule mirrored** at `external/lsfx_tapecolor`, auto-pinned to
+  `c4a8ec3333bd84ef5785f12080bbfe58bdf3d671` on `main` (Phase 1 base
+  `958ac1d` + Phase 2 layered on top — APVTS + double-buffered
+  config-swap mirroring OTTO's `MasterBus.h:217-240`, JUCE deps
+  extended to `juce_audio_processors` + `juce_data_structures`,
+  `process()` still passthrough).
+- `.gitignore:83` adds `!external/lsfx_tapecolor` exception matching
+  the existing `!external/OTTO` pattern.
+- **CMake wiring** at `cmake/Dependencies.cmake:103-119` (after the
+  CLAP block, before the test subdirectory descent).
+- **Link added** at `app/CMakeLists.txt:71` —
+  `lsfx::lsfx_tapecolor` on the `IDA` executable. JUCE module deps
+  satisfied transitively by the existing `juce::juce_audio_utils`
+  link, no explicit module additions needed.
+- **Compile-check:** `cmake --build build --target IDA` exits 0;
+  `lsfx_tapecolor.cpp.o` builds cleanly; binary re-signed.
+- **Both inbox entries acked** in OTTO commit `41dcae25` (pushed
+  to `origin/main` with `Ida-Origin: bootstrap` trailer).
+- **No DSP instantiation on IDA's side yet.** The module is in the
+  tree and links, but `lsfx::TapeColorProcessor` is not instantiated
+  anywhere. IDA's first real use lands at OTTO's Phase 13 per
+  `external/OTTO/docs/OTTO_TAPECOLOR_PLAN.md` §Phasing (a real
+  TAPECOLOR per loop track + a master instance). Until then this is
+  pure plumbing.
+- **OTTO's next session** will see both acks, bump OTTO's own
+  `external/lsfx_tapecolor` pin from `958ac1d` → `c4a8ec3`, and
+  unblock Phase 3 (DC blocker + emphasis EQ + ConvolutionStage
+  async swap).
+- **Pin discipline reminder:** do NOT bump
+  `external/lsfx_tapecolor` past `c4a8ec3` in IDA without checking
+  OTTO's pin first — OTTO is the canonical consumer. If IDA needs a
+  change OTTO doesn't, open a PR against `larryseyer/lsfx_tapecolor`,
+  do not fork.
 
 ## ▶ STATUS — P7 T5 COMPLETE (slices 1-5 all landed)
 
@@ -78,9 +117,16 @@ Mixer tab, and B is verifiable in <100 lines once A lands.
 
 - `ctest --test-dir build`: **639 pass / 1 not-run / 640 total**. The
   not-run is the operator-only `MainComponentPluginEditorTests_NOT_BUILT`
-  sentinel — unchanged from baseline.
-- `master` HEAD on origin: `5db3541` (P7 T5 slice 5).
-- OTTO submodule SHA: `6b37609e` on `origin/main`.
+  sentinel — unchanged from baseline. (Not re-run this session — the
+  lsfx_tapecolor mirror is pure plumbing with no DSP/test-touching
+  changes; `IDA` target build green is the relevant verification.)
+- `master` HEAD on origin: pending this session's commit (IDA-side
+  changes: `.gitmodules`, `.gitignore`, `cmake/Dependencies.cmake`,
+  `app/CMakeLists.txt`, `external/lsfx_tapecolor` submodule entry,
+  `external/OTTO` SHA bump, this `continue.md`).
+- OTTO submodule SHA: `41dcae25` on `origin/main`
+  (`docs: ack [FROM OTTO → IDA] 2026-05-23 TAPECOLOR Phase 1+2`).
+- lsfx_tapecolor submodule SHA: `c4a8ec3` on `main`.
 
 ## ▶ HOUSEKEEPING
 
