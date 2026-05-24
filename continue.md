@@ -1,4 +1,4 @@
-# Session Continuation — NEXT: operator smoke of Output Mixer slice 3, then slice 4 scope
+# Session Continuation — NEXT: operator smoke of slice 4, then pick slice 5 or docs
 
 > **For a fresh chat picking this up cold:** memory + project +
 > user CLAUDE.md load automatically. This file is the **forward-looking
@@ -6,120 +6,110 @@
 
 ## ▶ DO THIS FIRST
 
-1. Read `external/OTTO/CROSS_PROJECT_INBOX.md`. Last sweep 2026-05-23.
-   No new entries; everything is acked or informational. Phase 4 from
-   OTTO is the next expected event.
+1. Read `external/OTTO/CROSS_PROJECT_INBOX.md`. Last sweep 2026-05-23
+   covered TAPECOLOR Phase 4 + 5 (resolved in IDA commit `6e1e4d8`,
+   OTTO commit `3c84a409`). Next expected OTTO event is TAPECOLOR
+   Phase 6 (tape-hiss noise floor).
 
-## ▶ DONE PREVIOUS SESSION — Output Mixer slice 3
+## ▶ DONE THIS SESSION — Input Mixer slice 4 (bus rename parity)
 
-Commit `0e4924e`. Engine + UI + tests; pushed to `origin/master`.
+One commit landed on `origin/master`:
 
-### Engine (engine/src/OutputMixer.cpp, engine/include/ida/OutputMixer.h)
-- `busMainOutToBusWouldCycle(BusId, BusId) const noexcept` — pre-check
-  predicate mirroring `InputMixer`; delegates to
-  `MixerGraph::wouldMainOutCycle`.
-- `setBusMainOutToHardwareOutput(BusId, int pairIndex)` — new canonical
-  overload, accepts master (`BusId{0}`); single-arg overload kept as a
-  wrapper.
-- `busHardwareOutPair(BusId) const noexcept` — read-back accessor.
-- `renameBus(BusId, std::string)` — message-thread writer; rejects
-  master + unknown ids. `Bus::setName` added to support it.
-- `renderBuffer` Step 3 now writes aux→HardwareOutput direct to physical
-  outputs at the bus's pair offset (bypassing master — the real "Direct
-  out" semantic; slice 2 had folded it through master). Step 4 master
-  also honours its pair index. `resolveHardwarePair` lambda handles
-  bounds-fallback (requested pair > device channel count falls back to
-  pair 0) and the degenerate mono output case.
-- `MixerMainOut::hardwareOutPair` field added in
-  `core/include/ida/MixerGraphState.h`; `SessionFormat.cpp` emits/reads
-  optional `hardwareOutPair` field with back-compat default 0. Full
-  export→import round-trip preserves pair indexes.
+- **`5acf039`** — `feat: InputMixer slice 4 — bus rename parity +
+  StripContextOverlay lift`. Engine + UI + 1 new test.
 
-### UI (app/MainComponent.cpp)
-- `OutputMixerPane::DestChoice` gains `pairIndex`; `StripDest` gains
-  `currentPairIndex`. Ticking uses a `destMatches` helper that includes
-  the pair on HardwareOutput entries.
-- Per-strip context overlay (`StripContextOverlay` nested class): an
-  invisible click-catcher sitting on each aux strip's top name band.
-  Catches right-click (desktop) and long-press (iOS — 500 ms timer
-  matching the slice-2 "Add bus" pattern). On "Rename…" swaps in an
-  inline `juce::TextEditor` using the TapesPane row pattern: Return /
-  focus-lost commit, Escape cancels, `committed_` flag prevents
-  double-fire, OTTO `bg3`/`textPrimary`/`accent` colours. Pair
-  `feedback_ios_long_press_pairs_right_click` is now realised in
-  Output Mixer.
-- Master strip gains a `masterDestButton_` showing per-pair entries
-  only (no Master/bus entries — master is the terminal). Visible only
-  when the device exposes more than one stereo pair; hidden on
-  2-channel devices.
-- `refreshOutputDestinations` rebuilt: enumerates active output pairs
-  from `audioDeviceManager_.getCurrentAudioDevice()->
-  getActiveOutputChannels()` ("Out 1-2", "Out 3-4", …), pre-filters
-  cycle-bound bus targets via the new predicate, populates per-aux
-  picker, populates master per-pair picker.
-- `onBusRename`, `onMasterDestinationChosen` callbacks added; the
-  aux `onBusDestinationChosen` now passes `dest.pairIndex` through to
-  the engine.
+### Engine (engine/src/InputMixer.cpp, engine/include/ida/InputMixer.h)
+- `InputMixer::renameBus(BusId, std::string)` — mirrors
+  `OutputMixer::renameBus`. Rejects `BusId{0}` (invalid sentinel; input
+  side has no master concept) and unknown ids. Writes through
+  `Bus::setName` (added slice 3).
 
-### Tests (tests/OutputMixerTests.cpp)
-Three new Catch2 cases (slice3 tag):
-1. Cycle predicate true/false/unknown.
-2. Per-output-pair routing + persistence round-trip + master on
-   non-zero pair.
-3. Rename writes BusConfig::name, rejects master, persists.
+### UI — shared overlay lift
+- New header `app/StripContextOverlay.h` carrying class
+  `ida::app::StripContextOverlay`. Lifted out of `OutputMixerPane`'s
+  private section so both mixer panes share one implementation. Same
+  gesture contract: right-click (desktop) + 500 ms long-press (iOS)
+  → caller's `onContextMenu(idx)`; inline `juce::TextEditor` on
+  `beginRename` with return/focus-lost commit, Escape cancel,
+  OTTO bg3/textPrimary/accent colouring.
+- `OutputMixerPane` switched to consume the shared class. No behaviour
+  change on the Output side.
+
+### UI — InputMixerPane wiring
+- New relay `onBusRename` on `InputMixerPane`.
+- `setBusStrips` resets + builds a `StripContextOverlay` per bus /
+  FX-return strip (parallel to existing `busStripInsButtons_` /
+  `busDestButtons_` columns).
+- New `updateBusName(int busIdx, const juce::String&)` accessor
+  (mirrors `OutputMixerPane::updateBusName`).
+- `resized()` bounds each overlay to the top `kNameOverlayHeight = 22`
+  sliver of its bus strip.
+- New private `showBusContextMenu(int idx)` — `Rename…` item anchored
+  to the overlay.
+- MainComponent wires `inputMixerPane_->onBusRename` →
+  `inputMixer_->renameBus(busStripIds_[idx], …)`, bracketed by audio-
+  callback pause (same pattern as the input-side destination picker
+  and the output-side `onBusRename`). Calls `updateBusName` +
+  `refreshInputDestinations()` on success so dependent pickers see
+  the new label.
+
+### Tests
+- New `[input-mixer][slice4][rename]` case in `tests/InputMixerTests.cpp`:
+  rejects `BusId{0}` and unknown ids, renames a plain bus AND an
+  FX return (BusKind irrelevant to renameBus), round-trips both
+  through `exportGraphState`/`importGraphState`.
 
 ## ▶ BASELINE (start of next session)
 
-- `ctest --test-dir build`: **642 pass / 1 not-run / 643 total** (the
+- `ctest --test-dir build`: **643 pass / 1 not-run / 644 total** (the
   not-run is the `MainComponentPluginEditorTests_NOT_BUILT` sentinel —
-  unchanged). Net +3 from the prior 639/640 baseline as predicted.
-- `master` HEAD on origin: `0e4924e` (Output Mixer slice 3).
-- OTTO submodule SHA: `be8240ef` (Phase 3 ack, unchanged).
-- lsfx_tapecolor submodule SHA: `ec6425c` (Phase 1+2+3, unchanged).
+  unchanged). +1 case vs last session (the new slice 4 rename test).
+- `master` HEAD on origin: `5acf039` (slice 4).
+- OTTO submodule SHA: `3c84a409` (Phase 5 + IDA-originated Phase 4+5 ack).
+- lsfx_tapecolor submodule SHA: `d8b06b1` (Phase 1+2+3+4+5).
 
-## ▶ OPERATOR SMOKE PENDING (slice 3 verification)
+## ▶ OPERATOR SMOKE (before next slice)
 
-Clean rebuild done this session. Launch `IDA.app` (Desktop alias) and
-verify on macOS:
-- Aux strip picker lists Master, every other aux bus, and one entry
-  per active hardware output pair from the audio device.
-- Routing aux A → aux B → aux A: the second pick of A is **not
-  offered** for B's picker (cycle pre-filter).
-- Right-click an aux strip's name band → "Rename…" → type → Return
-  or click-away → name persists, shows in other strips' pickers,
-  survives undo/redo and session reload. Escape cancels.
-- Long-press an aux strip's name band (touch / trackpad force-touch)
-  yields the same menu.
-- On a multi-out device: master strip exposes a per-pair picker (no
-  bus entries); routing master to "Out 3-4" lands the stereo mix at
-  physical outputs 3-4.
-- On a 2-channel device: master destination button is hidden.
-- Routing aux to "Out 3-4" lands at physical outputs 3-4 bypassing
-  master entirely.
-- Master has no "Rename…" context menu (right-click anywhere on it
-  produces no per-strip menu — gestures only on aux strips this slice).
+The InputMixerPane rename gesture is UI work — agent-tested via the
+unit test for the engine call, but the gesture itself needs an eyes-on
+verification. Steps in the running .app (operator):
 
-If the smoke surfaces a bug, fix on top with a follow-on commit (don't
-amend `0e4924e`).
+1. Open the Input Mixer tab.
+2. Right-click (or long-press on iOS) in blank pane → `Add bus`.
+3. Right-click (or long-press) the new bus strip's TOP name band →
+   `Rename…` → type new name → Return.
+4. Confirm the strip's name updates AND the destination picker on any
+   other strip targeting this bus now shows the new name.
+5. Repeat with `Add FX return` → rename → same checks.
 
-## ▶ AFTER OPERATOR APPROVES — pick the next slice
+If anything's off, the relevant code is in MainComponent.cpp at
+`inputMixerPane_->onBusRename` (~line 2354) and the InputMixerPane
+`StripContextOverlay` wiring inside `setBusStrips`.
 
-Two ready candidates; either can land independently.
+## ▶ NEXT — pick one
 
-### Slice 4 — InputMixer rename parity
-The handoff for slice 3 deferred bus rename on the input side ("defer
-to a follow-up if it widens scope"). Engine work: `InputMixer::
-renameBus(BusId, std::string)` mirroring `OutputMixer::renameBus`
-(message-thread, rejects master if input ever ships a master concept —
-today input has no master, so just unknown-id rejection). UI work:
-mirror the `StripContextOverlay` pattern onto InputMixerPane strips
-plus the FX-return strips. Picks up the same iOS long-press pair.
-Probably one session.
+### Option A — Slice 5: phrase-channel strips on OutputMixerPane (M6+ rendering)
+The OutputMixerPane has explicit room reserved on the LEFT band for
+"M6+ Constituent rendering" — the phrase / loop / pill channels that
+finally make the Output Mixer fully usable as a mixdown console. The
+engine M6 hooks exist; this is the UI surface. Bigger than slice 4 —
+plan it out first. ~2 sessions.
 
-### Parallel docs plan — IDA-specific plugin specs
-The unchanged `~/.claude/plans/there-are-several-things-moonlit-twilight.md`
-plan from 2026-05-23 is still ready to execute. Pure docs/specs; no
-engine touch; safe to land in any order vs. slice 4.
+### Option B — Slice 5: input-channel strip rename
+Mirror slice 4 onto the channel strips themselves (not just buses).
+Input channels currently inherit names from the underlying physical
+input descriptor; an inline rename would let the operator label
+"In 7" as "Bass DI." Engine work: `setChannelName(ChannelId, …)`
+(stored in `Channel`, surfaced through `exportGraphState`). Bounded;
+~half session.
+
+### Option C — Parallel docs plan: IDA-specific plugin specs
+Unchanged plan file at
+`~/.claude/plans/there-are-several-things-moonlit-twilight.md` from
+2026-05-23. Pure docs/specs (whitepaper amendments + 6 new design docs +
+user-guide stub + V7→V8 CLAUDE.md path fix + IDA→OTTO inbox entry).
+No engine touch; no collision with anything. Self-contained — executor
+reads it top-to-bottom.
 
 ## ▶ HOUSEKEEPING
 
@@ -132,5 +122,5 @@ engine touch; safe to land in any order vs. slice 4.
 - **Clean build before any GUI smoke** (`feedback_clean_builds`):
   `rm -rf build && cmake -B build -S . -G Ninja
    -DCMAKE_BUILD_TYPE=Release && cmake --build build --target
-   IdaTests IDA -j`. (Already done this session; the slice-3 .app
-  in `build/app/IDA_artefacts/Release/IDA.app` is fresh.)
+   IdaTests IDA -j`. This session's last build was incremental
+   (engine + UI files only).
