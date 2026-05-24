@@ -2750,13 +2750,10 @@ MainComponent::MainComponent()
             const auto chId = it->second;
 
             audioDeviceManager_.removeAudioCallback (audioCallback_.get());
-            // Radio-style semantics (slice 5b): pick exactly one destination.
-            // Zero every existing send, then set the chosen one to unity. For
-            // HardwareOutput, all sends stay zero so refreshOutputDestinations
-            // can infer the choice from a zero-row + the stored pair index.
-            const int busN = outputMixer_->busCount();
-            for (int b = 0; b < busN; ++b)
-                outputMixer_->routeChannelToBus (chId, ida::BusId { static_cast<std::int64_t> (b) }, 0.0f);
+            // Slice E3: routeChannelToBus is now radio-aware for Bus-kind
+            // targets — it sets the new main-out, zeros every other Bus-
+            // kind send (master / aux), and keeps FX-return sends intact.
+            // The manual zero loop slice 5b needed has gone away.
             switch (dest.kind)
             {
                 case OutputMixerPane::DestKind::Bus:
@@ -3625,13 +3622,11 @@ void MainComponent::refreshOutputDestinations()
     masterDest.currentName      = labelForPair (masterDest.currentPairIndex);
     outputMixerPane_->setMasterDestination (masterChoices, masterDest);
 
-    // Phrase-strip picker (slice 5b). One picker per phrase row; choice list
-    // is master + every aux bus + every physical pair (no cycle filter —
-    // phrase channels are leaves in the routing graph). Current destination
-    // is INFERRED from sendMatrix + hardwareOutPair on the radio-style
-    // assumption that onPhraseDestinationChosen is the only mutator: exactly
-    // one send at unity, all others at 0, means "Bus(X)"; all sends at 0
-    // means "HardwareOutput at the stored pair."
+    // Phrase-strip picker. One picker per phrase row; choice list is master
+    // + every aux bus + every physical pair (no cycle filter — phrase
+    // channels are leaves in the routing graph). Current destination is
+    // read DIRECTLY from the engine's main-out manifest (slice E3): no
+    // more "all sends == 0 ⇒ HardwareOutput" inference rule.
     const int pn = static_cast<int> (phraseStripConstituentIds_.size());
     std::vector<std::vector<OutputMixerPane::DestChoice>> perPhraseChoices (static_cast<std::size_t> (pn));
     std::vector<OutputMixerPane::StripDest>               perPhrase (static_cast<std::size_t> (pn));
@@ -3653,19 +3648,18 @@ void MainComponent::refreshOutputDestinations()
         for (const auto& p : hwPairs)
             choices.push_back ({ DestKind::HardwareOutput, /*id*/ 0, p.label, p.pairIndex });
 
-        // Infer current destination. Walk the engine bus list, find the one
-        // with send == 1.0 (radio invariant). If none, the operator's last
-        // choice was HardwareOutput (and the pair is in hardwareOutPair).
         auto& dest = perPhrase[static_cast<std::size_t> (i)];
-        ida::BusId activeBus { -1 };
-        const int bn = outputMixer_->busCount();
-        for (int b = 0; b < bn; ++b)
+        if (outputMixer_->channelMainOut (chId) == ida::OutputMixer::MainOutDest::HardwareOutput)
         {
-            const ida::BusId bid { static_cast<std::int64_t> (b) };
-            if (outputMixer_->sendLevelFor (chId, bid) > 0.0f) { activeBus = bid; break; }
+            const int pair = outputMixer_->channelMainOutHardwareOutPair (chId);
+            dest.currentKind      = DestKind::HardwareOutput;
+            dest.currentId        = 0;
+            dest.currentPairIndex = pair;
+            dest.currentName      = labelForPair (pair);
         }
-        if (activeBus.value() >= 0)
+        else
         {
+            const auto activeBus = outputMixer_->channelMainOutBus (chId);
             dest.currentKind      = DestKind::Bus;
             dest.currentId        = activeBus.value();
             dest.currentPairIndex = 0;
@@ -3673,14 +3667,6 @@ void MainComponent::refreshOutputDestinations()
                 dest.currentName = "Master";
             else if (auto* bus = outputMixer_->busForId (activeBus))
                 dest.currentName = juce::String (bus->config().name);
-        }
-        else
-        {
-            const int pair = outputMixer_->channelMainOutHardwareOutPair (chId);
-            dest.currentKind      = DestKind::HardwareOutput;
-            dest.currentId        = 0;
-            dest.currentPairIndex = pair;
-            dest.currentName      = labelForPair (pair);
         }
     }
 

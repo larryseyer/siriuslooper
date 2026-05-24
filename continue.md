@@ -1,4 +1,4 @@
-# Session Continuation — NEXT: slice E2 || E3 (per-channel sends; channelMainOut + send-zero bypass)
+# Session Continuation — NEXT: slice U (tabbed ChannelDetail UI on both mixers) || slice P (session persistence)
 
 > **For a fresh chat picking this up cold:** memory + project +
 > user CLAUDE.md load automatically. This file is the **forward-looking
@@ -7,135 +7,159 @@
 ## ▶ DO THIS FIRST
 
 1. Read `external/OTTO/CROSS_PROJECT_INBOX.md`. As of session start
-   2026-05-23, all five entries through TAPECOLOR Phase 5 were already
-   acked. Next expected OTTO event is TAPECOLOR Phase 6 (tape-hiss noise
-   floor).
+   2026-05-24, all entries through TAPECOLOR Phase 5 + the "OTTO pin
+   bumped to c4a8ec3" informational notice are acked. Next expected
+   OTTO event is TAPECOLOR Phase 6 (tape-hiss noise floor).
 2. Read the mixer-symmetry design doc —
    `docs/superpowers/specs/2026-05-23-mixer-symmetry-fx-returns-sends-design.md`.
-   Operator approved all five open questions (D1–D5) on 2026-05-23.
-   Decomposition: **E1 → E2 || E3 → U → P**. **E1 is DONE this session
-   (see DONE LAST SESSION below).** Next is E2 || E3 (parallel-safe).
-3. The old Output Mixer phrase-channel design doc
-   (`...-output-mixer-phrase-channels-design.md`) still exists; slice 5c
-   (session persistence for the ConstituentId → OutputChannelId map) is
-   open from it — bundle 5c into Slice P below, OR ship 5c first as a
-   tiny standalone — operator's call when P lands.
+   E1 + **E2 + E3 all landed this session** (see DONE LAST SESSION).
+   Remaining: **slice U** (tabbed `ChannelDetail` UI on both mixers)
+   and **slice P** (session persistence of the slice-5c
+   `ConstituentId → OutputChannelId` map; `preFaderSends` and
+   `mainOutKind` are already on disk via E2 + E3).
 
 ## ▶ DONE LAST SESSION
 
-Slice **E1 — `BusKind::FxReturn` on OutputMixer engine** landed (engine-
-only; no UI, no MainComponent wiring). Spec: E1 section of
-`docs/superpowers/specs/2026-05-23-mixer-symmetry-fx-returns-sends-design.md`.
+Two engine slices in one session: **E2 (per-channel pre-fader send
+toggle, BOTH mixers)** and **E3 (channelMainOut accessor on
+OutputMixer + send-zero bypass on Bus + radio-style
+routeChannelToBus)**.
 
-What shipped:
+### Slice E2 — per-channel pre-fader send toggle on BOTH mixers
 
-- `OutputMixer::addBus(BusConfig{ ..., kind = BusKind::FxReturn })` was
-  already routed to `MixerNodeKind::FxReturn` in the graph and to
-  `MixerBusKind::FxReturn` in export/import — pre-existing but
-  untested. Slice E1 adds the missing message-thread **accessors** that
-  expose this surface to the UI:
-  - `OutputMixer::busIdAt(int)` — was missing entirely on OutputMixer
-    despite InputMixer having had it for a long time (asymmetric gap
-    found while writing E1 tests).
-  - `OutputMixer::busKindAt(int)` — mirror of `InputMixer::busKindAt`;
-    the UI pre-filter accessor the spec calls out.
-- Three new tests under tag `[output-mixer][fx-return]` (25 assertions):
-  - `addBus(FxReturn)` mints a distinct kind; `busKindAt` round-trips
-    at the right index; defensive out-of-range returns `Bus`.
-  - `routeChannelToBus` accumulates into an FX-return identically to a
-    plain bus (engine doesn't branch on kind for the send-matrix —
-    kind only gates UI pre-filter).
-  - `export/importGraphState` round-trips an FX-return bus end to end
-    (kind + inserts), with `busKindAt` re-reporting `FxReturn` after
-    reconstruction (confirms import wires `BusConfig.kind` correctly,
-    not just the persistence shape).
+- `OutputMixer::channelSendIsPreFader(OutputChannelId)` + setter,
+  parallel `channelPreFaderSends_` storage (vector<char> for the
+  std::vector<bool> avoidance), default false.
+- `InputMixer::channelSendIsPreFader(ChannelId)` + setter, sparse
+  `unordered_map<int64_t, char>` (matches the rest of InputMixer's
+  map-based registries).
+- Persistence: `preFaderSends` on `InputChannelState` and
+  `OutputChannelState` (default false; emitted only when true so the
+  on-disk shape stays compact). SessionFormat.cpp round-trips both.
+- Audio thread: a pre-strip scratch is filled BEFORE
+  `ChannelStrip::process` mutates the post-strip scratch. Send-matrix
+  accumulator (OutputMixer Step 2; InputMixer renderInputGraph send
+  loop) picks per-channel between the two scratches. The strip still
+  runs in both modes — only the send tap source switches; meters and
+  the dry-out path stay post-fader.
+- Memory cost: OutputMixer adds 2 MB resident (32 ch × 2 strip ch ×
+  8192 samples × 4 B); InputMixer adds 64 KB. Unconditional
+  allocation in the ctor; mid-block toggles are atomic-free (the
+  flag is the only thing read per-block).
+- Tests: 9 new test cases / 102 assertions under `[send][pre-fader]`
+  spanning both mixers (defaults + setter round-trip + muted-channel
+  behavior + persistence).
 
-TDD cycle observed: RED via compile error (`busKindAt`/`busIdAt` missing
-on OutputMixer) → GREEN (header + cpp accessors, 14+12 lines) → suite
-green.
+### Slice E3 — `channelMainOut` accessor + send-zero bypass
 
-Cap-context: **both mixers become structurally identical** (channels,
-aux buses, FX returns, sends, inserts, main-out picker, tabbed detail
-panel) — they differ only in their I/O bookends. OTTO's `ChannelDetail`
-wrapper (PanWid + EQ + CMP + Sends tabs) becomes IDA's mixer detail
-surface on both panes. Pre-fader send toggle per channel. Send-zero
-turns FX-return processing off (RT optimization).
+- New `OutputMixer::channelMainOut(OutputChannelId)` returning
+  `MainOutDest { Bus, HardwareOutput }` and
+  `channelMainOutBus(OutputChannelId)` (mirror of `busMainOut` /
+  `busMainOutBus`). Default Bus(master).
+- **`OutputMixer::routeChannelToBus` semantics CHANGED**: for a
+  Bus-kind target it now sets the channel's main-out AND
+  radio-zeros every other Bus-kind send (including master). FX-
+  return sends are preserved (sends-tab surface is independent of
+  main-out picker). For an FxReturn-kind target the call is purely
+  additive — main-out untouched.
+- `OutputMixer::setChannelMainOutToHardwareOutput` flips the kind
+  to HardwareOutput AND zeros every Bus-kind send (so master+aux
+  sends never coexist with HardwareOutput).
+- `Bus::sendInputActive()` + `Bus::adjustActiveSenderCount(int)` +
+  atomic `activeSenderCount_`. Counts bumped/decremented by mixer
+  mutators on every 0↔nonzero send transition and main-out hop;
+  reads are `memory_order_relaxed` (mutator contract serializes
+  with the audio thread). Bus::process itself is unchanged — the
+  bypass lives in the mixer render loops:
+  `if (! bus.sendInputActive()) continue;` for both
+  `OutputMixer::renderBuffer` and `InputMixer::renderInputGraph`.
+  Standalone Bus tests don't need to touch the counter.
+- InputMixer mutator wrappers
+  (`setChannelMainOutToBus`/`setBusMainOutToBus`/`setChannelSend`/
+  `setBusSend`/...): now compute the old vs new target and adjust
+  bus counts. `removeChannel` walks send edges + main-out edge
+  before tearing down the node so counts don't leak.
+- MainComponent picker rewrite: the slice-5b inference rule ("if
+  every send is zero, then HardwareOutput") is GONE. The phrase-
+  strip destination panel reads `channelMainOut` directly. The
+  radio mutator (`onPhraseDestinationChosen`) dropped its manual
+  zero-loop — `routeChannelToBus` does it now.
+- Persistence: `OutputChannelState.mainOutKind` (enum
+  `OutputChannelMainOutKind { Bus, HardwareOutput }`) +
+  `mainOutBus`. SessionFormat.cpp emits `mainOutKind:
+  "HardwareOutput"` only when non-default; same minimal-shape
+  pattern as `preFaderSends`. Import flow: replay sends first,
+  then `setChannelMainOutToHardwareOutput` if the persisted kind
+  is HardwareOutput.
+- Tests: 9 new test cases / 50 assertions under
+  `[channel-main-out][send-bypass]`. Plus 4 existing tests
+  updated to use `BusKind::FxReturn` (additive) where they were
+  written under the old additive-Bus semantics.
 
 ## ▶ BASELINE (start of next session)
 
-- `ctest --test-dir build`: **652 pass / 1 not-run / 653 total** (the
-  not-run is the `MainComponentPluginEditorTests_NOT_BUILT` sentinel —
-  unchanged). The +3 vs the prior 649-pass baseline is the three new
-  `[output-mixer][fx-return]` test cases from slice E1. (Heads-up: test
-  85, `permanent bypass: kill every generation, slot bypasses after
-  kMaxRestartAttempts`, was observed flaky once during this session's
-  ctest — fails in bulk run, passes in isolation. Unrelated to E1;
-  pre-existing.)
-- `master` HEAD on origin: bumped this commit (E1 land).
+- `ctest --test-dir build`: **670 pass / 1 not-run / 671 total**
+  (the not-run is the `MainComponentPluginEditorTests_NOT_BUILT`
+  sentinel — unchanged). +18 vs the 652 baseline = E2's 9 cases +
+  E3's 9 cases.
+- `master` HEAD on origin: will be bumped this commit (E3 land).
 - OTTO submodule SHA: `3c84a409` (unchanged).
-- lsfx_tapecolor submodule SHA: `d8b06b1` (Phase 1+2+3+4+5; unchanged).
+- lsfx_tapecolor submodule SHA: `d8b06b1` (Phase 1+2+3+4+5;
+  unchanged).
+- 4 OutputMixer tests were updated to reflect the new radio
+  semantics. Search `BusKind::FxReturn` in tests/OutputMixerTests.cpp
+  if you need the exact list.
 
-## ▶ NEXT — slice E2 || E3 (parallel-safe; pick either, the other unblocks after)
+## ▶ NEXT — slice U (UI) then slice P (the bits not already persisted)
 
-Spec sections E2 and E3 in
+Spec sections U and P in
 `docs/superpowers/specs/2026-05-23-mixer-symmetry-fx-returns-sends-design.md`.
-Both are engine-only. Both gate slice U. Either can land first; landing
-both unblocks U. **TDD per slice (RED → GREEN → refactor → commit).**
+**E1 + E2 + E3 all landed; engine surface is complete.** U is the
+heavy slice now (tabbed `ChannelDetail` on both mixers); P shrunk
+to just the slice-5c map persistence (preFaderSends + mainOutKind
+already round-trip).
 
-### Slice E2 — per-channel pre-fader send toggle, BOTH mixers
+### Slice U — Tabbed `ChannelDetail` on both mixers
 
-- New accessor pair on InputMixer **and** OutputMixer:
-  `bool channelSendIsPreFader(ChannelId|OutputChannelId)` + setter.
-- Persisted as `preFaderSends: bool` (default false = post-fader) on
-  `InputChannelState` and `OutputChannelState` in
-  `core/include/ida/MixerGraphState.h`.
-- Audio-thread render-path change: when computing the per-send
-  accumulator, source is `postStrip` (post-fader, today's default) OR
-  `preStrip` (bypass fader+mute). `preStrip` needs a per-channel
-  scratch — bump conditionally so common-case all-post-fader memory
-  footprint stays unchanged. **RT-safety contract review required**
-  before any edit reachable from the audio callback; see "Risks
-  captured" in the spec.
-- Tests: `[*-mixer][send][pre-fader]` — muted-channel-still-sends
-  pre-fader; gain-bypass; persistence round-trip of the flag (both
-  mixers).
-- Single toggle per channel (all of that channel's sends share the
-  mode); per-send toggle is a future polish slice if operators ask.
+- Replace the bare `ChannelDetailPanWidTab detailPanel_` on
+  `InputMixerPane` + `OutputMixerPane` with
+  `otto::ui::ChannelDetail detailPanel_` (the tabbed wrapper from
+  OTTO via the submodule).
+- Wire each tab listener: `PanWidTabListener` (already live),
+  `EQTabListener`, `CMPTabListener`, `SendsTabListener`.
+- Sends tab UI: pre-filter the FX-return list by the OutputMixer /
+  InputMixer's `busKindAt` + `busMainOutToBusWouldCycle` (cycle
+  prevention — spec D5). Tabs hidden per row type: channel strips
+  show all 4; FX-return strips hide Sends; aux-bus strips hide
+  pan/width.
+- Sends tab fires per-(channel, fxReturn) send-level changes +
+  per-channel pre/post-fader toggle. MainComponent bridges to
+  `routeChannelToBus(chId, fxReturnId, level)` (additive, since
+  the target is FxReturn-kind — see E3 semantics) and
+  `setChannelSendIsPreFader`.
+- Both panes use the same `ChannelDetail` type instanced twice
+  per `project_two_mixers_totally_separate`.
+- Operator eyes-on required (per `feedback_clean_builds`):
+  `rm -rf build && cmake -B build -S . -G Ninja
+   -DCMAKE_BUILD_TYPE=Release && cmake --build build --target
+   IdaTests IDA -j`.
 
-### Slice E3 — `channelMainOut(OutputChannelId)` accessor + send-zero bypass
+### Slice P — Slice-5c (`ConstituentId → OutputChannelId`) persistence
 
-- Add the missing accessor pair on OutputMixer (mirror of `busMainOut`):
-  - `enum class ChannelMainOutDest { Bus, HardwareOutput }`
-  - `ChannelMainOutDest channelMainOut(OutputChannelId)`
-  - `BusId channelMainOutBus(OutputChannelId)` — valid when kind == Bus
-- Storage: parallel vectors `channelMainOutKind_` / `channelMainOutBus_`
-  set by `routeChannelToBus` (writes main-out to target bus AND zeros
-  the channel's non-send destinations radio-style; sends to FX returns
-  are kept) and by `setChannelMainOutToHardwareOutput` (writes kind to
-  HardwareOutput).
-- `Bus::sendInputActive() noexcept` — per-bus
-  `std::atomic<int> activeSenderCount_` incremented when a send level
-  goes 0→nonzero, decremented when nonzero→0; `Bus::process` early-
-  returns when the count is 0. This is the D4 RT optimization that
-  makes "send-level zero = FX-return processing skipped" real.
-- Slice-5b picker-label inference rewrite: stop deriving HardwareOutput
-  from "all sends = 0"; read `channelMainOut` directly. The inference
-  rule disappears entirely.
-- Tests: `[output-mixer][channel-main-out]` + `[bus][send-bypass]`.
+- The phrase-channel map is a MainComponent-side cache today and
+  is rebuilt from constituent ids on session load. Persist it so
+  phrase strips don't reshuffle across reloads. Old design doc
+  reference:
+  `docs/superpowers/specs/2026-05-23-output-mixer-phrase-channels-design.md`
+  (slice 5c).
+- The other two fields the spec listed for slice P
+  (`preFaderSends` + `mainOutKind`) already round-trip end-to-end
+  (E2 + E3). slice P is now a single-concern slice.
 
-### Commit shape (each slice = one focused commit)
+### Commit shape
 
-- `feat: OutputMixer/InputMixer slice E2 — per-channel pre-fader send toggle`
-- `feat: OutputMixer slice E3 — channelMainOut accessor + send-zero bypass`
-
-### After E2 AND E3 land
-
-- **U** (tabbed `ChannelDetail` UI on both mixers — Pan/Width, EQ,
-  CMP, Sends tabs from OTTO's `ChannelDetail*.h`, both instanced
-  twice per `project_two_mixers_totally_separate`).
-- **P** (persistence round-trip — `preFaderSends`, `mainOutKind`,
-  `mainOutBus` on `OutputChannelState`; also a good landing zone for
-  the open slice-5c `ConstituentId → OutputChannelId` map).
+- `feat: ChannelDetail UI slice U — tabbed detail on both mixers`
+- `feat: slice 5c map persistence` (or fold into U if minimal)
 
 ## ▶ HOUSEKEEPING
 
@@ -148,5 +172,6 @@ both unblocks U. **TDD per slice (RED → GREEN → refactor → commit).**
 - **Clean build before any GUI smoke** (`feedback_clean_builds`):
   `rm -rf build && cmake -B build -S . -G Ninja
    -DCMAKE_BUILD_TYPE=Release && cmake --build build --target
-   IdaTests IDA -j`. E1 is engine-only so an incremental build is
-   sufficient; Slice U will need a clean build before operator eyes-on.
+   IdaTests IDA -j`. E2 + E3 are engine-only so the operator-
+   facing change between sessions is invisible until U lands;
+   incremental builds are fine until then.

@@ -26,6 +26,26 @@ namespace
 namespace ida
 {
 
+namespace
+{
+    // Slice E3 helper — adjust the active-sender count on the bus that owns
+    // `node`, by `delta`. No-op when `node` doesn't match any registered
+    // bus (terminals, channels, tape nodes).
+    void adjustBusCountForNode (MixerNodeId node, int delta,
+                                const std::vector<MixerNodeId>& busNodeIds,
+                                std::vector<Bus>& buses) noexcept
+    {
+        for (std::size_t i = 0; i < busNodeIds.size(); ++i)
+        {
+            if (busNodeIds[i] == node)
+            {
+                buses[i].adjustActiveSenderCount (delta);
+                return;
+            }
+        }
+    }
+}
+
 InputMixer::InputMixer()
     : processingScratch_ (kMaxScratchSamples, 0.0f),
       scratchLeft_ (kMaxScratchSamples, 0.0f),
@@ -88,14 +108,29 @@ ChannelId InputMixer::addChannel (InputId source, SignalType type)
 
 void InputMixer::removeChannel (ChannelId id)
 {
+    // Slice E3 — decrement target-bus sender counts for every edge the
+    // channel currently contributes to (main-out target if it's a bus,
+    // plus each nonzero send into an FX return). graph_.removeNode below
+    // tears down the edges; without this scan first the counts would
+    // leak (the buses would think they have phantom senders forever).
+    if (auto it = channelNodeIds_.find (id.value()); it != channelNodeIds_.end())
+    {
+        const auto chNode = it->second;
+        const auto mainDest = graph_.mainOutOf (chNode);
+        adjustBusCountForNode (mainDest, -1, busNodeIds_, buses_);
+        for (const auto& e : graph_.sendEdges())
+        {
+            if (e.source != chNode) continue;
+            if (e.level > 0.0f)
+                adjustBusCountForNode (e.fxReturn, -1, busNodeIds_, buses_);
+        }
+        graph_.removeNode (chNode);
+        channelNodeIds_.erase (it);
+    }
+
     channels_.erase (id.value());
     channelSources_.erase (id.value());
     channelPreFaderSends_.erase (id.value());
-    if (auto it = channelNodeIds_.find (id.value()); it != channelNodeIds_.end())
-    {
-        graph_.removeNode (it->second);
-        channelNodeIds_.erase (it);
-    }
 }
 
 bool InputMixer::channelSendIsPreFader (ChannelId id) const noexcept
@@ -616,21 +651,91 @@ bool InputMixer::busMainOutToBusWouldCycle (BusId from, BusId to) const noexcept
 }
 
 bool InputMixer::setChannelMainOutToBus (ChannelId ch, BusId bus)
-{ return graph_.setMainOut (nodeForChannel (ch), nodeForBus (bus)); }
+{
+    const auto src = nodeForChannel (ch);
+    const auto oldDest = graph_.mainOutOf (src);
+    const auto newDest = nodeForBus (bus);
+    const bool ok = graph_.setMainOut (src, newDest);
+    if (ok && oldDest != newDest)
+    {
+        adjustBusCountForNode (oldDest, -1, busNodeIds_, buses_);
+        adjustBusCountForNode (newDest, +1, busNodeIds_, buses_);
+    }
+    return ok;
+}
 bool InputMixer::setChannelMainOutToHardwareOutput (ChannelId ch)
-{ return graph_.setMainOut (nodeForChannel (ch), graph_.terminalNode (MixerTerminal::HardwareOutput)); }
+{
+    const auto src = nodeForChannel (ch);
+    const auto oldDest = graph_.mainOutOf (src);
+    const auto newDest = graph_.terminalNode (MixerTerminal::HardwareOutput);
+    const bool ok = graph_.setMainOut (src, newDest);
+    if (ok && oldDest != newDest)
+        adjustBusCountForNode (oldDest, -1, busNodeIds_, buses_);
+    return ok;
+}
 bool InputMixer::setChannelMainOutToTape (ChannelId ch)
-{ return graph_.setMainOut (nodeForChannel (ch), graph_.terminalNode (MixerTerminal::Tape)); }
+{
+    const auto src = nodeForChannel (ch);
+    const auto oldDest = graph_.mainOutOf (src);
+    const auto newDest = graph_.terminalNode (MixerTerminal::Tape);
+    const bool ok = graph_.setMainOut (src, newDest);
+    if (ok && oldDest != newDest)
+        adjustBusCountForNode (oldDest, -1, busNodeIds_, buses_);
+    return ok;
+}
 bool InputMixer::setBusMainOutToBus (BusId from, BusId to)
-{ return graph_.setMainOut (nodeForBus (from), nodeForBus (to)); }
+{
+    const auto src = nodeForBus (from);
+    const auto oldDest = graph_.mainOutOf (src);
+    const auto newDest = nodeForBus (to);
+    const bool ok = graph_.setMainOut (src, newDest);
+    if (ok && oldDest != newDest)
+    {
+        adjustBusCountForNode (oldDest, -1, busNodeIds_, buses_);
+        adjustBusCountForNode (newDest, +1, busNodeIds_, buses_);
+    }
+    return ok;
+}
 bool InputMixer::setBusMainOutToHardwareOutput (BusId bus)
-{ return graph_.setMainOut (nodeForBus (bus), graph_.terminalNode (MixerTerminal::HardwareOutput)); }
+{
+    const auto src = nodeForBus (bus);
+    const auto oldDest = graph_.mainOutOf (src);
+    const auto newDest = graph_.terminalNode (MixerTerminal::HardwareOutput);
+    const bool ok = graph_.setMainOut (src, newDest);
+    if (ok && oldDest != newDest)
+        adjustBusCountForNode (oldDest, -1, busNodeIds_, buses_);
+    return ok;
+}
 bool InputMixer::setBusMainOutToTape (BusId bus)
-{ return graph_.setMainOut (nodeForBus (bus), graph_.terminalNode (MixerTerminal::Tape)); }
+{
+    const auto src = nodeForBus (bus);
+    const auto oldDest = graph_.mainOutOf (src);
+    const auto newDest = graph_.terminalNode (MixerTerminal::Tape);
+    const bool ok = graph_.setMainOut (src, newDest);
+    if (ok && oldDest != newDest)
+        adjustBusCountForNode (oldDest, -1, busNodeIds_, buses_);
+    return ok;
+}
 bool InputMixer::setChannelMainOutToTape (ChannelId ch, TapeId tape)
-{ return graph_.setMainOut (nodeForChannel (ch), tapeNodeFor (tape)); }
+{
+    const auto src = nodeForChannel (ch);
+    const auto oldDest = graph_.mainOutOf (src);
+    const auto newDest = tapeNodeFor (tape);
+    const bool ok = graph_.setMainOut (src, newDest);
+    if (ok && oldDest != newDest)
+        adjustBusCountForNode (oldDest, -1, busNodeIds_, buses_);
+    return ok;
+}
 bool InputMixer::setBusMainOutToTape (BusId bus, TapeId tape)
-{ return graph_.setMainOut (nodeForBus (bus), tapeNodeFor (tape)); }
+{
+    const auto src = nodeForBus (bus);
+    const auto oldDest = graph_.mainOutOf (src);
+    const auto newDest = tapeNodeFor (tape);
+    const bool ok = graph_.setMainOut (src, newDest);
+    if (ok && oldDest != newDest)
+        adjustBusCountForNode (oldDest, -1, busNodeIds_, buses_);
+    return ok;
+}
 bool InputMixer::channelMainOutIsTape (ChannelId ch, TapeId tape) const noexcept
 {
     const MixerNodeId node = tapeNodeFor (tape);
@@ -646,9 +751,31 @@ InputMixer::MainOutDest InputMixer::channelMainOut (ChannelId ch) const noexcept
 InputMixer::MainOutDest InputMixer::busMainOut (BusId bus) const noexcept
 { return classifyMainOut (graph_.mainOutOf (nodeForBus (bus))); }
 bool InputMixer::setChannelSend (ChannelId ch, BusId fxReturn, float level)
-{ return graph_.setSend (nodeForChannel (ch), nodeForBus (fxReturn), level); }
+{
+    const auto src = nodeForChannel (ch);
+    const auto tgt = nodeForBus (fxReturn);
+    const float oldLevel = graph_.sendLevel (src, tgt);
+    const bool ok = graph_.setSend (src, tgt, level);
+    if (ok)
+    {
+        if (oldLevel <= 0.0f && level > 0.0f) adjustBusCountForNode (tgt, +1, busNodeIds_, buses_);
+        if (oldLevel >  0.0f && level <= 0.0f) adjustBusCountForNode (tgt, -1, busNodeIds_, buses_);
+    }
+    return ok;
+}
 bool InputMixer::setBusSend (BusId source, BusId fxReturn, float level)
-{ return graph_.setSend (nodeForBus (source), nodeForBus (fxReturn), level); }
+{
+    const auto src = nodeForBus (source);
+    const auto tgt = nodeForBus (fxReturn);
+    const float oldLevel = graph_.sendLevel (src, tgt);
+    const bool ok = graph_.setSend (src, tgt, level);
+    if (ok)
+    {
+        if (oldLevel <= 0.0f && level > 0.0f) adjustBusCountForNode (tgt, +1, busNodeIds_, buses_);
+        if (oldLevel >  0.0f && level <= 0.0f) adjustBusCountForNode (tgt, -1, busNodeIds_, buses_);
+    }
+    return ok;
+}
 float InputMixer::channelSendLevel (ChannelId ch, BusId fxReturn) const noexcept
 { return graph_.sendLevel (nodeForChannel (ch), nodeForBus (fxReturn)); }
 
@@ -784,6 +911,11 @@ void InputMixer::renderInputGraph (const float* const* deviceIn, int numDeviceCh
         if (busIdx >= busNodeIds_.size()) continue; // channel or terminal node
 
         const Bus& bus        = buses_[busIdx];
+
+        // Slice E3 — send-zero bypass: skip the whole per-bus DSP when no
+        // active senders. Mirrors the OutputMixer bypass.
+        if (! bus.sendInputActive()) continue;
+
         const MixerNodeId dest = graph_.mainOutOf (nodeId);
         const int tapeSlot     = tapeSlotForNode (dest);
 

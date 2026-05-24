@@ -38,8 +38,23 @@ Bus::Bus (Bus&& other) noexcept
       muted_ (other.muted_.load (std::memory_order_relaxed)),
       peakLeft_ (other.peakLeft_.load (std::memory_order_relaxed)),
       peakRight_ (other.peakRight_.load (std::memory_order_relaxed)),
+      activeSenderCount_ (other.activeSenderCount_.load (std::memory_order_relaxed)),
       lufsMeter_ (std::move (other.lufsMeter_))
 {
+}
+
+void Bus::adjustActiveSenderCount (int delta) noexcept
+{
+    if (delta == 0) return;
+    const int previous = activeSenderCount_.fetch_add (delta, std::memory_order_relaxed);
+    const int updated  = previous + delta;
+    if (updated < 0)
+    {
+        // Saturate at 0 — a negative count would silently disable the
+        // bypass and break correctness. Fail loud in debug; clamp in release.
+        jassertfalse;
+        activeSenderCount_.store (0, std::memory_order_relaxed);
+    }
 }
 
 void Bus::setEffectChain (EffectChain chain)

@@ -135,21 +135,32 @@ struct InputChannelState
 /// so phrase channels can route direct to a stereo output pair, bypassing
 /// master and aux buses. The destination kind (Bus vs HardwareOutput) is
 /// not persisted in 5a — only the pair index round-trips.
+/// Output-channel main-out destination kind (slice E3, 2026-05-24). Bus =
+/// the channel's main-out is a bus (master or aux); HardwareOutput = the
+/// channel routes direct to a physical pair (slice 5a). FX-return sends are
+/// stored separately in `sends` and are independent of the main-out.
+enum class OutputChannelMainOutKind { Bus, HardwareOutput };
+
 struct OutputChannelState
 {
-    std::int64_t           channelId       { 0 };
-    SignalType             signalType      { SignalType::Audio };
-    std::vector<MixerSend> sends;
-    EffectChain            inserts;
-    int                    hardwareOutPair { 0 };
-    bool                   preFaderSends   { false };
+    std::int64_t             channelId       { 0 };
+    SignalType               signalType      { SignalType::Audio };
+    std::vector<MixerSend>   sends;
+    EffectChain              inserts;
+    int                      hardwareOutPair { 0 };
+    bool                     preFaderSends   { false };
+    OutputChannelMainOutKind mainOutKind     { OutputChannelMainOutKind::Bus };
+    std::int64_t             mainOutBus      { 0 }; // valid when mainOutKind == Bus
 
     bool operator== (const OutputChannelState& o) const noexcept
     {
         return channelId == o.channelId && signalType == o.signalType
             && sends == o.sends && inserts == o.inserts
             && hardwareOutPair == o.hardwareOutPair
-            && preFaderSends == o.preFaderSends;
+            && preFaderSends == o.preFaderSends
+            && mainOutKind == o.mainOutKind
+            && (mainOutKind == OutputChannelMainOutKind::HardwareOutput
+                    || mainOutBus == o.mainOutBus);
     }
     bool operator!= (const OutputChannelState& o) const noexcept { return ! (*this == o); }
 };

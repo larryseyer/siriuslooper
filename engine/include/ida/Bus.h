@@ -222,6 +222,27 @@ public:
     /// per-buffer `numSamples` they intend to mix.
     float* mixBufferChannel (int c) const noexcept;
 
+    /// Slice E3 (2026-05-24) — RT-fast bypass flag. True iff this bus has
+    /// at least one active sender (a channel sending at non-zero level,
+    /// or a sub-bus whose main-out routes here). When false, `process`
+    /// early-returns (no output write, no meter publish — silence stays
+    /// silence). Counter is bumped/decremented by the message-thread
+    /// mutators on `OutputMixer` / `InputMixer` (`routeChannelToBus`,
+    /// `routeBusToBus`, `setBusMainOutToHardwareOutput`, `addChannel`,
+    /// `addBus`, `removeChannel`); reads are `memory_order_relaxed` (the
+    /// mutators serialize externally with the audio thread per the
+    /// mixer's set-once / pre-start contract).
+    bool sendInputActive() const noexcept
+    { return activeSenderCount_.load (std::memory_order_relaxed) > 0; }
+
+    /// Message-thread sender-count adjuster (slice E3). Increment when a
+    /// new active connection is added (`+1`) or decrement when removed
+    /// (`-1`); the caller is responsible for matching ups and downs. The
+    /// audio thread reads via `sendInputActive()`. Saturates at 0 on the
+    /// way down — defensive against any double-decrement bug shipping a
+    /// negative count that would silently disable the bypass.
+    void adjustActiveSenderCount (int delta) noexcept;
+
 private:
     /// Inline (no-effect-chain) DSP path. Applies post-fader gain/mute to
     /// `mixBuffer_` in place (which becomes the LUFS feed), additively writes
@@ -282,6 +303,12 @@ private:
     /// const there), so mutable. Audio-thread writes, UI reads.
     mutable std::atomic<float> peakLeft_  { 0.0f };
     mutable std::atomic<float> peakRight_ { 0.0f };
+
+    /// Slice E3 — active-sender counter. Bumped on each 0→nonzero send
+    /// transition (channel-send or sub-bus main-out into this bus); zero
+    /// → `sendInputActive()` returns false and `process` early-returns.
+    /// Not `mutable` — only message-thread mutators touch it.
+    std::atomic<int> activeSenderCount_ { 0 };
 
     /// LUFS half of the dual meter (OTTO parity). Fed the post-fader signal;
     /// self-no-ops until prepare() runs. Mutable because `process` is const.

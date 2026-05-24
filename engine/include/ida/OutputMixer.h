@@ -67,6 +67,15 @@ public:
     /// at 64"). Includes the master bus at `BusId{0}`.
     static constexpr int kMaxBuses = 64;
 
+    /// Output-side equivalent of `InputMixer::MainOutDest`. The Output Mixer
+    /// has no Tape terminal (tape is the input side's concern), so the
+    /// possible categories are Bus (the main-out is another bus, possibly
+    /// the master) and HardwareOutput (direct out, bypassing master). Used
+    /// by both `busMainOut` and the slice-E3 `channelMainOut`; declared at
+    /// the top of the class so member declarations later in the file can
+    /// reference it in their signatures and storage.
+    enum class MainOutDest { Bus, HardwareOutput };
+
     OutputMixer();
     ~OutputMixer();
 
@@ -111,6 +120,25 @@ public:
     /// for unknown ids — same defensive default as `busHardwareOutPair`.
     /// Message-thread accessor.
     int channelMainOutHardwareOutPair (OutputChannelId id) const noexcept;
+
+    /// Slice E3 (2026-05-24) — output-channel main-out manifest. Mirror of
+    /// `busMainOut`. Returns Bus when the channel routes into a bus (master
+    /// or aux); HardwareOutput when the channel goes direct to a physical
+    /// pair (slice 5a `setChannelMainOutToHardwareOutput`). Unknown ids
+    /// return the safe `Bus` sentinel.
+    ///
+    /// This accessor replaces the slice-5b inference rule ("if every send
+    /// is zero, then HardwareOutput") — the picker label now reads this
+    /// directly. `routeChannelToBus` with a `BusKind::Bus` target is
+    /// radio-style (sets main-out, zeros other Bus-kind sends, keeps
+    /// FX-return sends); with `BusKind::FxReturn` it's a plain send tap
+    /// and the main-out is untouched.
+    MainOutDest channelMainOut (OutputChannelId id) const noexcept;
+
+    /// When `channelMainOut(id) == Bus`, returns the target BusId. Returns
+    /// `BusId{0}` (master, the safe default) for unknown ids or for
+    /// channels whose main-out is HardwareOutput.
+    BusId channelMainOutBus (OutputChannelId id) const noexcept;
 
     /// Non-owning view of the audio ChannelStrip attached to `id` via
     /// `setChannelStrip`. Returns nullptr for unknown ids or for ids whose
@@ -221,12 +249,6 @@ public:
     /// sentinel rather than asserting (callers must not branch destructively
     /// on an unknown index). Message-thread.
     BusKind busKindAt (int index) const noexcept;
-
-    /// Output-side equivalent of `InputMixer::MainOutDest`. The Output Mixer
-    /// has no Tape terminal (tape is the input side's concern), so the
-    /// possible categories are Bus (the main-out is another bus, possibly
-    /// the master) and HardwareOutput (direct out, bypassing master).
-    enum class MainOutDest { Bus, HardwareOutput };
 
     /// Reads bus `id`'s current main-out category. Returns Bus when the id
     /// is unknown — same defensive default as InputMixer (callers must
@@ -343,6 +365,19 @@ private:
     /// inherits the storage. Reserved to `kMaxOutputChannels` in the ctor
     /// so `push_back` in `addChannel` never reallocates.
     std::vector<int>          channelHardwareOutPair_;
+
+    /// Per-channel main-out kind, parallel to `channels_` (slice E3). Values
+    /// match `MainOutDest::Bus` / `MainOutDest::HardwareOutput`. Default
+    /// Bus for a freshly-added channel (since addChannel seeds the master
+    /// send at unity). Updated by `routeChannelToBus` (Bus-kind target →
+    /// Bus) and `setChannelMainOutToHardwareOutput` (→ HardwareOutput).
+    std::vector<MainOutDest>  channelMainOutKind_;
+
+    /// Per-channel main-out target bus when `channelMainOutKind_[i] == Bus`,
+    /// parallel to `channels_` (slice E3). Default `BusId{0}` (master).
+    /// Stable across switches to HardwareOutput and back — the picker UI
+    /// can remember the last bus pick.
+    std::vector<BusId>        channelMainOutBus_;
 
     /// Per-channel pre-fader-send mode, parallel to `channels_` (slice E2).
     /// `char` not `bool` so `std::vector<bool>`'s bit-packing doesn't get

@@ -97,9 +97,13 @@ TEST_CASE ("OutputMixer::addBus hands out sequential BusIds starting at 1 (maste
 TEST_CASE ("OutputMixer::routeChannelToBus stores send levels retrievably",
            "[output-mixer][send-matrix]")
 {
+    using ida::BusKind;
     OutputMixer mixer;
     const auto channel = mixer.addChannel (SignalType::Audio);
-    const auto reverb  = mixer.addBus (BusConfig { 2, "Reverb" });
+    // FX-return-kind: send is additive (slice E3 keeps Bus-kind targets
+    // radio — they zero master). Test intent is read/write of a send
+    // level, which is independent of radio semantics.
+    const auto reverb  = mixer.addBus (BusConfig { 2, "Reverb", BusKind::FxReturn });
 
     // Default: a newly added channel has 0 send to a newly added bus.
     CHECK (mixer.sendLevelFor (channel, reverb) == Catch::Approx (0.0f));
@@ -270,9 +274,14 @@ TEST_CASE ("OutputMixer::renderBuffer is a no-op with no registered channels",
 TEST_CASE ("OutputMixer::renderBuffer accumulates aux-bus sends into master at unity",
            "[output-mixer][render-buffer][bus-send]")
 {
+    using ida::BusKind;
     OutputMixer mixer;
     const auto ch     = mixer.addChannel (SignalType::Audio);
-    const auto reverb = mixer.addBus (BusConfig { 2, "Reverb" });
+    // Use an FX return so the channel's master send survives (slice E3
+    // radio semantics zero master only when targeting another Bus-kind
+    // bus; FX-return targets are additive). Test intent is the bus-into-
+    // master subgroup accumulation: master + reverb subgroup = 1.5×.
+    const auto reverb = mixer.addBus (BusConfig { 2, "Reverb", BusKind::FxReturn });
 
     // No strip on the channel — scratch carries unity-gain source.
     // Send 0.5 of the channel into the reverb bus. Master defaults to 1.0
@@ -606,8 +615,13 @@ TEST_CASE ("OutputMixer::busMainOutToBusWouldCycle mirrors the graph cycle check
 TEST_CASE ("OutputMixer per-output-pair routing writes to the requested pair",
            "[output-mixer][slice3][hardware-output-pair]")
 {
+    using ida::BusKind;
     OutputMixer mixer;
-    const auto aux = mixer.addBus (BusConfig { 2, "Aux" });
+    // FX-return-kind so the channel-send into it is additive (slice E3:
+    // Bus-kind targets are radio and would zero master). Test intent is
+    // pair-routing — using an FX return preserves both the master at
+    // pair 0 and the aux at pair 1 contributions.
+    const auto aux = mixer.addBus (BusConfig { 2, "Aux", BusKind::FxReturn });
 
     // Default pair is 0 (outputs [0,1]).
     CHECK (mixer.busHardwareOutPair (aux) == 0);
@@ -731,25 +745,32 @@ TEST_CASE ("OutputMixer::removeChannel releases the id; next addChannel reuses i
 TEST_CASE ("OutputMixer::removeChannel zeros the freed channel's sendMatrix row",
            "[output-mixer][slice5][remove]")
 {
+    using ida::BusKind;
     OutputMixer mixer;
-    const auto aux = mixer.addBus (BusConfig { 2, "Aux 1" });
+    // Use an FX return so the radio-style routeChannelToBus (slice E3, which
+    // zeros master + other Bus-kind sends when targeting a Bus-kind bus)
+    // doesn't interfere — FX-return sends are additive and survive
+    // alongside master. The test's intent (sendMatrix row cleared on
+    // remove + reused channel starts at addChannel defaults) is the
+    // engine surface we're pinning here.
+    const auto rvb = mixer.addBus (BusConfig { 2, "Reverb", BusKind::FxReturn });
     const auto ch  = mixer.addChannel (SignalType::Audio);
 
-    // Configure non-default sends on both master and aux before removing.
-    mixer.routeChannelToBus (ch, BusId { 0 }, 0.5f);
-    mixer.routeChannelToBus (ch, aux,         0.75f);
+    // Configure non-default sends on both master and the FX return.
+    mixer.routeChannelToBus (ch, BusId { 0 }, 0.5f);   // master, additive (master is Bus-kind but radio targeting master keeps master)
+    mixer.routeChannelToBus (ch, rvb,         0.75f); // FX return, additive (FxReturn kind never radios)
     REQUIRE (mixer.sendLevelFor (ch, BusId { 0 }) == Catch::Approx (0.5f));
-    REQUIRE (mixer.sendLevelFor (ch, aux)         == Catch::Approx (0.75f));
+    REQUIRE (mixer.sendLevelFor (ch, rvb)         == Catch::Approx (0.75f));
 
     mixer.removeChannel (ch);
 
     // After remove + addChannel-from-free-list, the re-minted channel must
-    // start at addChannel's defaults (1.0 into master, 0.0 into aux). The
-    // 0.75 aux send the removed channel had is gone.
+    // start at addChannel's defaults (1.0 into master, 0.0 into the FX
+    // return). The 0.75 FX-return send the removed channel had is gone.
     const auto reused = mixer.addChannel (SignalType::Audio);
     REQUIRE (reused.value() == ch.value());
     CHECK (mixer.sendLevelFor (reused, BusId { 0 }) == Catch::Approx (1.0f));
-    CHECK (mixer.sendLevelFor (reused, aux)         == Catch::Approx (0.0f));
+    CHECK (mixer.sendLevelFor (reused, rvb)         == Catch::Approx (0.0f));
 }
 
 TEST_CASE ("OutputMixer::setChannelMainOutToHardwareOutput round-trips through persistence",
@@ -1052,5 +1073,234 @@ TEST_CASE ("OutputMixer export/import round-trips the preFaderSends flag",
     loaded.importGraphState (exported);
     CHECK (loaded.channelSendIsPreFader (chA));
     CHECK_FALSE (loaded.channelSendIsPreFader (chB));
+    CHECK (loaded.exportGraphState() == exported);
+}
+
+// Slice E3 — channelMainOut(OutputChannelId) accessor pair + radio-style
+// routeChannelToBus + send-zero bypass (mixer-symmetry spec 2026-05-23 §E3).
+// Defines the explicit main-out manifest on output channels (was inferred
+// from "all sends == 0" in slice 5b). routeChannelToBus(ch, busOfKindBus,
+// level) NOW sets the main-out + radio-zeros other Bus-kind sends; FX-
+// return sends are kept (the sends tab is a separate surface). FX-return
+// targets stay additive — they're send taps, not main-outs.
+TEST_CASE ("OutputMixer::channelMainOut defaults to Bus(master) on a fresh channel",
+           "[output-mixer][channel-main-out]")
+{
+    OutputMixer mixer;
+    const auto ch = mixer.addChannel (SignalType::Audio);
+
+    CHECK (mixer.channelMainOut (ch) == OutputMixer::MainOutDest::Bus);
+    CHECK (mixer.channelMainOutBus (ch).value() == 0); // master
+
+    // Unknown ids return safe defaults (Bus + BusId{0}), matching busMainOut.
+    CHECK (mixer.channelMainOut (OutputChannelId { 999 })
+           == OutputMixer::MainOutDest::Bus);
+    CHECK (mixer.channelMainOutBus (OutputChannelId { 999 }).value() == 0);
+}
+
+TEST_CASE ("OutputMixer::routeChannelToBus to a Bus-kind bus is radio: sets main-out, zeros other Bus sends, keeps FX-return sends",
+           "[output-mixer][channel-main-out]")
+{
+    using ida::BusKind;
+    OutputMixer mixer;
+    const auto ch    = mixer.addChannel (SignalType::Audio);
+    const auto drums = mixer.addBus (BusConfig { 2, "Drums",  BusKind::Bus });
+    const auto rvb   = mixer.addBus (BusConfig { 2, "Reverb", BusKind::FxReturn });
+
+    // Pre-state: master send is 1.0 (addChannel default), aux Bus and FX
+    // return are both 0.
+    REQUIRE (mixer.sendLevelFor (ch, BusId { 0 }) == Catch::Approx (1.0f));
+
+    // Drop a send into the FX return BEFORE switching main-out. The FX-
+    // return tap must survive the radio zero on the next routeChannelToBus
+    // (D5 in the spec: sends tab is independent of main-out picker).
+    mixer.routeChannelToBus (ch, rvb, 0.5f);
+    REQUIRE (mixer.sendLevelFor (ch, rvb) == Catch::Approx (0.5f));
+
+    // Route the channel into the Bus-kind aux. Main-out flips to drums;
+    // master goes to 0 (radio), drums goes to 0.75, the FX-return send
+    // stays at 0.5 untouched.
+    mixer.routeChannelToBus (ch, drums, 0.75f);
+
+    CHECK (mixer.channelMainOut (ch) == OutputMixer::MainOutDest::Bus);
+    CHECK (mixer.channelMainOutBus (ch).value() == drums.value());
+
+    CHECK (mixer.sendLevelFor (ch, drums)        == Catch::Approx (0.75f));
+    CHECK (mixer.sendLevelFor (ch, BusId { 0 }) == Catch::Approx (0.0f));   // master zeroed (radio)
+    CHECK (mixer.sendLevelFor (ch, rvb)         == Catch::Approx (0.5f));   // FX return survives
+}
+
+TEST_CASE ("OutputMixer::routeChannelToBus to an FX-return-kind bus is additive (no radio): main-out unchanged",
+           "[output-mixer][channel-main-out]")
+{
+    using ida::BusKind;
+    OutputMixer mixer;
+    const auto ch    = mixer.addChannel (SignalType::Audio);
+    const auto drums = mixer.addBus (BusConfig { 2, "Drums",  BusKind::Bus });
+    const auto rvb   = mixer.addBus (BusConfig { 2, "Reverb", BusKind::FxReturn });
+
+    // Establish drums as main-out (radio zeroed master).
+    mixer.routeChannelToBus (ch, drums, 1.0f);
+    REQUIRE (mixer.channelMainOutBus (ch).value() == drums.value());
+
+    // Sending into an FX return must NOT change main-out and must NOT
+    // disturb the existing Bus-kind sends.
+    mixer.routeChannelToBus (ch, rvb, 0.3f);
+
+    CHECK (mixer.channelMainOut (ch)            == OutputMixer::MainOutDest::Bus);
+    CHECK (mixer.channelMainOutBus (ch).value() == drums.value());
+    CHECK (mixer.sendLevelFor (ch, drums) == Catch::Approx (1.0f));
+    CHECK (mixer.sendLevelFor (ch, rvb)   == Catch::Approx (0.3f));
+}
+
+TEST_CASE ("OutputMixer::setChannelMainOutToHardwareOutput flips channelMainOut to HardwareOutput",
+           "[output-mixer][channel-main-out]")
+{
+    using ida::BusKind;
+    OutputMixer mixer;
+    const auto ch  = mixer.addChannel (SignalType::Audio);
+    const auto rvb = mixer.addBus (BusConfig { 2, "Reverb", BusKind::FxReturn });
+
+    // Send into an FX return first so the radio path doesn't disturb it.
+    mixer.routeChannelToBus (ch, rvb, 0.4f);
+
+    REQUIRE (mixer.setChannelMainOutToHardwareOutput (ch, /*pairIndex*/ 1));
+
+    CHECK (mixer.channelMainOut (ch) == OutputMixer::MainOutDest::HardwareOutput);
+    CHECK (mixer.channelMainOutHardwareOutPair (ch) == 1);
+    // Every Bus-kind send is zeroed when main-out flips to HardwareOutput
+    // (so the picker label inference can read channelMainOut directly
+    // instead of scanning the send matrix).
+    CHECK (mixer.sendLevelFor (ch, BusId { 0 }) == Catch::Approx (0.0f));
+    // FX-return sends survive — they're independent of main-out.
+    CHECK (mixer.sendLevelFor (ch, rvb) == Catch::Approx (0.4f));
+}
+
+// Slice E3 — Bus::sendInputActive() + activeSenderCount_ bypass. A bus with
+// zero active senders skips its process loop entirely (RT optimization for
+// the common "FX return on standby" case). Counter goes 0→1 on a send
+// level 0→nonzero transition, 1→0 on nonzero→0; addChannel bumps master
+// for its default 1.0 send; addBus bumps master for its default subgroup
+// main-out.
+TEST_CASE ("Bus::sendInputActive is false on a fresh aux bus (no senders)",
+           "[bus][send-bypass]")
+{
+    using ida::BusKind;
+    OutputMixer mixer;
+    const auto reverb = mixer.addBus (BusConfig { 2, "Reverb", BusKind::FxReturn });
+
+    auto* rvb = mixer.busForId (reverb);
+    REQUIRE (rvb != nullptr);
+    CHECK_FALSE (rvb->sendInputActive());
+}
+
+TEST_CASE ("Bus::sendInputActive flips on channel-send 0->nonzero and back",
+           "[bus][send-bypass]")
+{
+    using ida::BusKind;
+    OutputMixer mixer;
+    const auto ch     = mixer.addChannel (SignalType::Audio);
+    const auto reverb = mixer.addBus (BusConfig { 2, "Reverb", BusKind::FxReturn });
+
+    auto* rvb = mixer.busForId (reverb);
+    REQUIRE (rvb != nullptr);
+    REQUIRE_FALSE (rvb->sendInputActive());
+
+    mixer.routeChannelToBus (ch, reverb, 0.5f);
+    CHECK (rvb->sendInputActive());
+
+    mixer.routeChannelToBus (ch, reverb, 0.0f);
+    CHECK_FALSE (rvb->sendInputActive());
+}
+
+TEST_CASE ("Bus::sendInputActive on master tracks default unity sends from added channels",
+           "[bus][send-bypass]")
+{
+    OutputMixer mixer;
+    auto* master = mixer.busForId (BusId { 0 });
+    REQUIRE (master != nullptr);
+
+    // No channels yet — master has no senders. (Aux buses default their
+    // main-out to master too, but none have been added.)
+    CHECK_FALSE (master->sendInputActive());
+
+    const auto chA = mixer.addChannel (SignalType::Audio);
+    CHECK (master->sendInputActive());
+
+    const auto chB = mixer.addChannel (SignalType::Audio);
+    CHECK (master->sendInputActive());
+
+    // Re-route both channels off master (radio) — count returns to zero.
+    const auto drums = mixer.addBus (BusConfig { 2, "Drums" }); // bumps master too (subgroup main-out default)
+    mixer.routeChannelToBus (chA, drums, 1.0f);
+    mixer.routeChannelToBus (chB, drums, 1.0f);
+    CHECK (master->sendInputActive()); // drums still routes to master
+
+    // Send drums to hardware-output instead → master loses its last sender.
+    REQUIRE (mixer.setBusMainOutToHardwareOutput (drums));
+    CHECK_FALSE (master->sendInputActive());
+}
+
+TEST_CASE ("renderBuffer skips a bus whose sendInputActive is false (no contribution to outputs)",
+           "[output-mixer][bus][send-bypass][render-buffer]")
+{
+    using ida::BusKind;
+    OutputMixer mixer;
+    // Add a channel + an FX return with NO send into it. The FX return's
+    // sendInputActive must stay false; its process must early-return; its
+    // contribution to master (its default main-out) must be zero. The
+    // channel registration alone is what makes master active; the test
+    // doesn't need to address it by id beyond that.
+    (void) mixer.addChannel (SignalType::Audio);
+    const auto rvb = mixer.addBus (BusConfig { 2, "Reverb", BusKind::FxReturn });
+
+    // Drop a recognizable junk pattern into the FX return's mixBuffer so
+    // we can detect whether process touched it (process zeros the buffer
+    // on the active path; the bypass path leaves it as-is OR also zeros,
+    // depending on impl — but the audible-via-master test is what matters).
+    auto* rvbBus = mixer.busForId (rvb);
+    REQUIRE (rvbBus != nullptr);
+    REQUIRE_FALSE (rvbBus->sendInputActive());
+
+    constexpr int kFrames = 4;
+    std::array<float, kFrames> inLeft;  inLeft.fill (1.0f);
+    const float* inputs[1] = { inLeft.data() };
+
+    std::array<float, kFrames> outLeft;  outLeft.fill (0.0f);
+    std::array<float, kFrames> outRight; outRight.fill (0.0f);
+    float* outputs[2] = { outLeft.data(), outRight.data() };
+
+    mixer.renderBuffer (inputs, 1, outputs, 2, kFrames);
+
+    // Master is active (ch's default 1.0 master send) — its accumulated mix
+    // is source 1.0 × master send 1.0 = 1.0 on both sides. The FX return,
+    // having no senders, must contribute exactly 0 to master.
+    for (float v : outLeft)  CHECK (v == Catch::Approx (1.0f));
+    for (float v : outRight) CHECK (v == Catch::Approx (1.0f));
+}
+
+TEST_CASE ("OutputMixer export/import round-trips channelMainOut (Bus and HardwareOutput)",
+           "[output-mixer][channel-main-out][persistence]")
+{
+    using ida::BusKind;
+    OutputMixer source;
+    const auto chA = source.addChannel (SignalType::Audio);
+    const auto chB = source.addChannel (SignalType::Audio);
+    const auto drums = source.addBus (BusConfig { 2, "Drums", BusKind::Bus });
+
+    // chA → drums (Bus); chB → HardwareOutput pair 2.
+    source.routeChannelToBus (chA, drums, 1.0f);
+    REQUIRE (source.setChannelMainOutToHardwareOutput (chB, /*pair*/ 2));
+
+    const auto exported = source.exportGraphState();
+
+    OutputMixer loaded;
+    loaded.importGraphState (exported);
+
+    CHECK (loaded.channelMainOut (chA)            == OutputMixer::MainOutDest::Bus);
+    CHECK (loaded.channelMainOutBus (chA).value() == drums.value());
+    CHECK (loaded.channelMainOut (chB)            == OutputMixer::MainOutDest::HardwareOutput);
+    CHECK (loaded.channelMainOutHardwareOutPair (chB) == 2);
+
     CHECK (loaded.exportGraphState() == exported);
 }

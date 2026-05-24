@@ -81,6 +81,8 @@ OutputMixer::OutputMixer()
     busHardwareOutPair_.reserve     (static_cast<std::size_t> (kMaxBuses));
     channelHardwareOutPair_.reserve (static_cast<std::size_t> (kMaxOutputChannels));
     channelPreFaderSends_.reserve   (static_cast<std::size_t> (kMaxOutputChannels));
+    channelMainOutKind_.reserve     (static_cast<std::size_t> (kMaxOutputChannels));
+    channelMainOutBus_.reserve      (static_cast<std::size_t> (kMaxOutputChannels));
     freeChannelIds_.reserve         (static_cast<std::size_t> (kMaxOutputChannels));
 
     // Auto-create the master bus at BusId{0} per the M5 Session 2 spec.
@@ -127,14 +129,19 @@ OutputChannelId OutputMixer::addChannel (SignalType type)
     channels_.push_back (ChannelEntry { id, type, nullptr });
 
     // Default master direct level — newly registered channels are audible at
-    // unity into the master without explicit routing configuration.
+    // unity into the master without explicit routing configuration. Slice E3:
+    // bumps master's active-sender count so the bypass keeps master alive.
     const std::size_t masterIdx = sendMatrixIndex (id, BusId { 0 });
     if (masterIdx < sendMatrix_.size())
         sendMatrix_[masterIdx] = 1.0f;
+    if (! buses_.empty())
+        buses_[0].adjustActiveSenderCount (+1);
 
     channelNodeIds_.push_back (graph_.addNode (MixerNodeKind::Channel));
     channelHardwareOutPair_.push_back (0); // new channels default to pair 0
     channelPreFaderSends_.push_back (0);   // slice E2: default post-fader
+    channelMainOutKind_.push_back (MainOutDest::Bus);    // slice E3: default = master
+    channelMainOutBus_.push_back  (BusId { 0 });
 
     return id;
 }
@@ -152,14 +159,19 @@ void OutputMixer::removeChannel (OutputChannelId id)
 
     // Zero the freed channel's row of sendMatrix_ so a re-minted id starts at
     // addChannel's defaults (unity into master, 0 into every aux) rather than
-    // inheriting the removed channel's send levels.
+    // inheriting the removed channel's send levels. Slice E3: decrement each
+    // target bus's active-sender count for every level we're zeroing out.
     const auto channelValue = id.value();
     if (channelValue >= 1 && channelValue <= kMaxOutputChannels)
     {
         const std::size_t row = static_cast<std::size_t> (channelValue - 1);
         const std::size_t cols = static_cast<std::size_t> (kMaxBuses);
         for (std::size_t b = 0; b < cols; ++b)
+        {
+            if (sendMatrix_[row * cols + b] > 0.0f && b < buses_.size())
+                buses_[b].adjustActiveSenderCount (-1);
             sendMatrix_[row * cols + b] = 0.0f;
+        }
     }
 
     // Tear down the graph node so it stops appearing in evaluationOrder().
@@ -174,11 +186,15 @@ void OutputMixer::removeChannel (OutputChannelId id)
         channelNodeIds_[idx]         = channelNodeIds_[last];
         channelHardwareOutPair_[idx] = channelHardwareOutPair_[last];
         channelPreFaderSends_[idx]   = channelPreFaderSends_[last];
+        channelMainOutKind_[idx]     = channelMainOutKind_[last];
+        channelMainOutBus_[idx]      = channelMainOutBus_[last];
     }
     channels_.pop_back();
     channelNodeIds_.pop_back();
     channelHardwareOutPair_.pop_back();
     channelPreFaderSends_.pop_back();
+    channelMainOutKind_.pop_back();
+    channelMainOutBus_.pop_back();
 
     freeChannelIds_.push_back (channelValue);
 }
@@ -222,6 +238,12 @@ BusId OutputMixer::addBus (BusConfig config)
     busNodeIds_.push_back (node);
     graph_.setMainOut (node, busNodeIds_.front()); // aux bus -> master by default
 
+    // Slice E3 — the new bus's default subgroup main-out is master, so
+    // master gains one active subgroup sender. The new bus itself starts
+    // with no senders (operators add channel sends afterwards).
+    if (id.value() != 0) // master itself is BusId{0}; ctor handles its own state
+        buses_[0].adjustActiveSenderCount (+1);
+
     return id;
 }
 
@@ -260,15 +282,78 @@ void OutputMixer::routeChannelToBus (OutputChannelId channel, BusId bus, float s
     // Confirm both ids actually exist in the registries — silently drop
     // configuration attempts against unknown ids rather than scribble into
     // a matrix cell that the audio thread might later read as a real send.
-    const bool channelKnown = std::any_of (channels_.begin(), channels_.end(),
-        [channel] (const ChannelEntry& e) { return e.id == channel; });
-    if (! channelKnown) return;
+    std::size_t channelRow = channels_.size();
+    for (std::size_t i = 0; i < channels_.size(); ++i)
+        if (channels_[i].id == channel) { channelRow = i; break; }
+    if (channelRow >= channels_.size()) return;
 
-    const bool busKnown = std::any_of (buses_.begin(), buses_.end(),
-        [bus] (const Bus& b) { return b.id() == bus; });
-    if (! busKnown) return;
+    std::size_t busIdx = buses_.size();
+    for (std::size_t i = 0; i < buses_.size(); ++i)
+        if (buses_[i].id() == bus) { busIdx = i; break; }
+    if (busIdx >= buses_.size()) return;
 
-    sendMatrix_[idx] = std::clamp (sendLevel, 0.0f, 1.0f);
+    const float clamped = std::clamp (sendLevel, 0.0f, 1.0f);
+    const bool  targetIsBusKind = buses_[busIdx].config().kind == BusKind::Bus;
+
+    if (targetIsBusKind)
+    {
+        // Slice E3 — radio semantics. The channel's main-out becomes this
+        // bus; every OTHER Bus-kind send (including the previous main-out
+        // and the default-unity master) is zeroed; FX-return sends are
+        // kept (they're the sends-tab surface).
+        for (std::size_t bi = 0; bi < buses_.size(); ++bi)
+        {
+            if (bi == busIdx) continue;                                // handled below
+            if (buses_[bi].config().kind != BusKind::Bus) continue;   // skip FX returns
+            const std::size_t otherIdx = sendMatrixIndex (channel, buses_[bi].id());
+            if (otherIdx >= sendMatrix_.size()) continue;
+            if (sendMatrix_[otherIdx] > 0.0f)
+            {
+                buses_[bi].adjustActiveSenderCount (-1);
+                sendMatrix_[otherIdx] = 0.0f;
+            }
+        }
+
+        // Apply the new level + sender-count transition for the target bus.
+        const float previous = sendMatrix_[idx];
+        sendMatrix_[idx] = clamped;
+        if (previous <= 0.0f && clamped > 0.0f) buses_[busIdx].adjustActiveSenderCount (+1);
+        if (previous >  0.0f && clamped <= 0.0f) buses_[busIdx].adjustActiveSenderCount (-1);
+
+        // Update the main-out manifest. The picker UI reads this directly
+        // (slice E3 inference-rule rewrite); the audio thread doesn't look
+        // at it — Step 2 uses the send-matrix as the source of truth.
+        channelMainOutKind_[channelRow] = MainOutDest::Bus;
+        channelMainOutBus_[channelRow]  = bus;
+    }
+    else
+    {
+        // FX return — additive send tap. Main-out manifest is untouched.
+        const float previous = sendMatrix_[idx];
+        sendMatrix_[idx] = clamped;
+        if (previous <= 0.0f && clamped > 0.0f) buses_[busIdx].adjustActiveSenderCount (+1);
+        if (previous >  0.0f && clamped <= 0.0f) buses_[busIdx].adjustActiveSenderCount (-1);
+    }
+}
+
+OutputMixer::MainOutDest OutputMixer::channelMainOut (OutputChannelId id) const noexcept
+{
+    for (std::size_t i = 0; i < channels_.size(); ++i)
+        if (channels_[i].id == id)
+            return channelMainOutKind_[i];
+    return MainOutDest::Bus; // unknown id — safe default (mirror of busMainOut)
+}
+
+BusId OutputMixer::channelMainOutBus (OutputChannelId id) const noexcept
+{
+    for (std::size_t i = 0; i < channels_.size(); ++i)
+        if (channels_[i].id == id)
+        {
+            if (channelMainOutKind_[i] == MainOutDest::Bus)
+                return channelMainOutBus_[i];
+            return BusId { 0 }; // HardwareOutput → safe master sentinel
+        }
+    return BusId { 0 };
 }
 
 bool OutputMixer::routeBusToBus (BusId from, BusId to)
@@ -284,7 +369,25 @@ bool OutputMixer::routeBusToBus (BusId from, BusId to)
     const auto fi = static_cast<std::size_t> (from.value());
     const auto ti = static_cast<std::size_t> (to.value());
     if (fi >= busNodeIds_.size() || ti >= busNodeIds_.size()) return false;
-    return graph_.setMainOut (busNodeIds_[fi], busNodeIds_[ti]);
+
+    // Slice E3 — main-out hop changes who sees `from` as a sender. Identify
+    // the previous main-out target (a bus or the HardwareOutput terminal),
+    // decrement its count if it was a bus, then setMainOut and bump the new
+    // target. Skip everything if the graph mutation fails (no count drift).
+    const auto oldDest = graph_.mainOutOf (busNodeIds_[fi]);
+    const bool graphOk = graph_.setMainOut (busNodeIds_[fi], busNodeIds_[ti]);
+    if (! graphOk) return false;
+
+    for (std::size_t i = 0; i < busNodeIds_.size(); ++i)
+    {
+        if (busNodeIds_[i] == oldDest)
+        {
+            buses_[i].adjustActiveSenderCount (-1);
+            break;
+        }
+    }
+    buses_[ti].adjustActiveSenderCount (+1);
+    return true;
 }
 
 bool OutputMixer::setBusMainOutToHardwareOutput (BusId bus)
@@ -305,9 +408,24 @@ bool OutputMixer::setBusMainOutToHardwareOutput (BusId bus, int pairIndex)
     // setMainOut on the master node is effectively a no-op at the graph
     // layer — but we still record the pair index so renderBuffer reads it
     // in Step 4. For aux buses, the setMainOut call is the meaningful work.
+    // Slice E3: if the previous main-out target was a bus, decrement its
+    // active-sender count (HardwareOutput isn't a bus, no inverse bump).
+    const auto oldDest = graph_.mainOutOf (busNodeIds_[bi]);
     const bool graphOk = graph_.setMainOut (
         busNodeIds_[bi], graph_.terminalNode (MixerTerminal::HardwareOutput));
     if (! graphOk && bus.value() != 0) return false;
+
+    if (bus.value() != 0) // master was already on the terminal — no transition
+    {
+        for (std::size_t i = 0; i < busNodeIds_.size(); ++i)
+        {
+            if (busNodeIds_[i] == oldDest)
+            {
+                buses_[i].adjustActiveSenderCount (-1);
+                break;
+            }
+        }
+    }
 
     busHardwareOutPair_[bi] = std::max (pairIndex, 0);
     return true;
@@ -326,7 +444,24 @@ bool OutputMixer::setChannelMainOutToHardwareOutput (OutputChannelId channel, in
     {
         if (channels_[i].id == channel)
         {
+            // Slice E3 — switching to HardwareOutput zeros every Bus-kind
+            // send for the channel (radio model: HardwareOutput owns the
+            // single non-send route slot). FX-return sends are preserved
+            // — they're the sends-tab surface, independent of main-out.
+            for (std::size_t bi = 0; bi < buses_.size(); ++bi)
+            {
+                if (buses_[bi].config().kind != BusKind::Bus) continue; // skip FX returns
+                const std::size_t idx = sendMatrixIndex (channel, buses_[bi].id());
+                if (idx >= sendMatrix_.size()) continue;
+                if (sendMatrix_[idx] > 0.0f)
+                {
+                    buses_[bi].adjustActiveSenderCount (-1);
+                    sendMatrix_[idx] = 0.0f;
+                }
+            }
+
             channelHardwareOutPair_[i] = std::max (pairIndex, 0);
+            channelMainOutKind_[i]     = MainOutDest::HardwareOutput;
             return true;
         }
     }
@@ -610,6 +745,13 @@ void OutputMixer::renderBuffer (const float* const* inputChannelData,
 
         const Bus& bus = buses_[busIdx];
 
+        // Slice E3 — send-zero bypass. A bus with no active senders has a
+        // silent mixBuffer; skip the per-bus DSP (gain/mute, effect-chain
+        // dispatch, meter publish) entirely. The atomic load is
+        // `memory_order_relaxed` because the mixer mutator contract
+        // serializes the bump/decrement against the audio thread.
+        if (! bus.sendInputActive()) continue;
+
         // Resolve destination:
         //   - master node          -> master's mix buffer (subgroup-into-master)
         //   - terminal (HardwareOutput) -> direct into physical outputs at this
@@ -672,7 +814,10 @@ void OutputMixer::renderBuffer (const float* const* inputChannelData,
         {
             if (bus.id() == BusId { 0 })
             {
-                bus.process (masterDest, masterChannelCount, clampedSamples);
+                // Slice E3 — master is included in the send-zero bypass
+                // path: when no channels and no subgroups feed it, skip.
+                if (bus.sendInputActive())
+                    bus.process (masterDest, masterChannelCount, clampedSamples);
                 break;
             }
         }
@@ -723,6 +868,10 @@ OutputMixerGraphState OutputMixer::exportGraphState() const
         entry.signalType      = ce.signalType;
         entry.hardwareOutPair = channelHardwareOutPair_[ci]; // slice 5a
         entry.preFaderSends   = channelPreFaderSends_[ci] != 0; // slice E2
+        entry.mainOutKind     = (channelMainOutKind_[ci] == MainOutDest::HardwareOutput)
+                                    ? OutputChannelMainOutKind::HardwareOutput
+                                    : OutputChannelMainOutKind::Bus; // slice E3
+        entry.mainOutBus      = channelMainOutBus_[ci].value();
         if (ce.strip != nullptr) entry.inserts = ce.strip->effectChain();
         for (std::size_t b = 0; b < buses_.size(); ++b)
         {
@@ -795,10 +944,32 @@ void OutputMixer::importGraphState (const OutputMixerGraphState& state)
             setChannelStrip (created, std::move (strip));
         }
         for (const auto& s : c.sends) routeChannelToBus (created, BusId (s.busId), s.level);
-        // Slice 5a: restore per-channel hardware-output pair. addChannel just
-        // pushed a default-0 entry; setter overwrites it with the persisted
-        // value. (Destination kind isn't persisted in 5a — only the pair.)
-        setChannelMainOutToHardwareOutput (created, c.hardwareOutPair);
+
+        // Slice E3: restore per-channel main-out kind. The radio behavior of
+        // routeChannelToBus already drove main-out to whichever Bus-kind
+        // send was last applied with a non-zero level; if the persisted
+        // kind is HardwareOutput, flip to that explicitly (which also
+        // zeros every Bus-kind send — already zero in a well-formed
+        // snapshot, so this is a no-op in practice). The hardware pair is
+        // applied via the same setter (slice 5a behavior, preserved).
+        if (c.mainOutKind == OutputChannelMainOutKind::HardwareOutput)
+        {
+            setChannelMainOutToHardwareOutput (created, c.hardwareOutPair);
+        }
+        else
+        {
+            // Persist the hardware pair even for Bus-kind main-outs (slice
+            // 5a invariant: the pair index is remembered across kind
+            // switches so the UI's last HardwareOutput pair survives a
+            // round-trip through a Bus main-out).
+            for (std::size_t i = 0; i < channels_.size(); ++i)
+                if (channels_[i].id == created)
+                {
+                    channelHardwareOutPair_[i] = std::max (c.hardwareOutPair, 0);
+                    break;
+                }
+        }
+
         // Slice E2: restore per-channel pre-fader send mode.
         setChannelSendIsPreFader (created, c.preFaderSends);
     }

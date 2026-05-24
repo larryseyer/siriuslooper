@@ -993,6 +993,18 @@ namespace
         obj->setProperty ("inserts",    effectChainToVar (c.inserts));
         if (c.preFaderSends)
             obj->setProperty ("preFaderSends", true);
+        // Slice E3: persist the main-out manifest. Only emit when non-
+        // default — Bus + master is the addChannel baseline; emitting it
+        // unconditionally would bloat every channel's snapshot.
+        if (c.mainOutKind == OutputChannelMainOutKind::HardwareOutput)
+        {
+            obj->setProperty ("mainOutKind", juce::String ("HardwareOutput"));
+            obj->setProperty ("hardwareOutPair", c.hardwareOutPair);
+        }
+        else if (c.mainOutBus != 0)
+        {
+            obj->setProperty ("mainOutBus", juce::int64 (c.mainOutBus));
+        }
         return objectVar (obj);
     }
     OutputChannelState outputChannelFromVar (const juce::var& v)
@@ -1004,6 +1016,16 @@ namespace
         c.inserts    = effectChainFromVar (requireProperty (v, "inserts"));
         if (const auto p = optionalProperty (v, "preFaderSends"); ! p.isVoid())
             c.preFaderSends = bool (p);
+        if (const auto k = optionalProperty (v, "mainOutKind"); ! k.isVoid())
+        {
+            const auto s = k.toString();
+            if (s == "HardwareOutput") c.mainOutKind = OutputChannelMainOutKind::HardwareOutput;
+            // anything else (or absence) stays at the default Bus.
+        }
+        if (const auto p = optionalProperty (v, "hardwareOutPair"); ! p.isVoid())
+            c.hardwareOutPair = requireInt (p, "channel.hardwareOutPair");
+        if (const auto b = optionalProperty (v, "mainOutBus"); ! b.isVoid())
+            c.mainOutBus = requireInt64 (b, "channel.mainOutBus");
         return c;
     }
 
