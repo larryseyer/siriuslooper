@@ -6,6 +6,7 @@
 #include "ida/AudioCallback.h"
 #include "ida/AudioDeviceCalibration.h"
 #include "ida/CaptureSession.h"
+#include "ida/ChannelDetail.h"
 #include "ida/ChannelStrip.h"
 #include "ida/DirectLayer.h"
 #include "ida/EngineConfig.h"
@@ -156,6 +157,21 @@ private:
     /// Flips the stereo/mono mode of the pair behind `stripIndex` (RME-style
     /// split/collapse) and rebuilds. Message-thread only.
     void toggleInputPairStereo (int stripIndex);
+
+    /// Slice U: snapshot the InputMixer's FX-return roster + the named input
+    /// strip's current send levels + pre-fader-sends flag, ready to push into
+    /// the Sends tab via `InputMixerPane::showDetailFor`. The returned
+    /// `fxReturns` and `sendLevels` vectors are parallel (same order as
+    /// `InputMixer::busIdAt` over FxReturn-kind entries). Out-of-range
+    /// `stripIdx` returns empty + preFader=false. Message-thread only.
+    struct ChannelSendsView
+    {
+        std::vector<ida::ui::FxReturnInfo> fxReturns;
+        std::vector<float>                  sendLevels;
+        bool                                preFader { false };
+    };
+    [[nodiscard]] ChannelSendsView collectInputSendsView  (int stripIdx) const;
+    [[nodiscard]] ChannelSendsView collectOutputSendsView (int phraseIdx) const;
 
     // --- P7 T5 slice 5: per-strip insert chain popup ---
     /// Opens the InsertChainPopup anchored to input strip `stripIdx`'s INS

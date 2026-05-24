@@ -85,7 +85,8 @@ add_library(IdaUi STATIC
     src/PerformanceView.cpp
     src/PreparationView.cpp
     src/TimelineView.cpp
-    src/InsertChainPopup.cpp)
+    src/InsertChainPopup.cpp
+    src/ChannelDetail.cpp)
 
 target_include_directories(IdaUi PUBLIC include)
 

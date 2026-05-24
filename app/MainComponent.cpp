@@ -4,7 +4,9 @@
 #include "components/ChannelDetailPanWidTab.h"
 #include "components/CompactFaderStrip.h"
 #include "ida/CalibrationStore.h"
+#include "ida/ChannelDetail.h"
 #include "ida/ConstituentValidator.h"
+#include "ida/IdaPalette.h"
 #include "ida/InsertChainPopup.h"
 #include "ida/PerformanceViewState.h"
 #include "ida/PreparationView.h"
@@ -444,15 +446,18 @@ private:
 class MainComponent::InputMixerPane final : public juce::Component,
                                             public otto::ui::CompactFaderStripListener,
                                             public otto::ui::ChannelDetailPanWidTabListener,
+                                            public ida::ui::ChannelDetailSendsTabListener,
                                             private juce::Timer
 {
 public:
     InputMixerPane()
     {
-        // The pan/width detail panel sits above the strip row, hidden until a
-        // strip is selected (OTTO's selected-strip model). It owns the two
-        // rotary knobs; its value changes relay back out via onPan/onWidth.
-        detailPanel_.addListener (this);
+        // Tabbed detail panel (slice U): Pan/Wid + Sends real, EQ + CMP placeholder
+        // until the insert-chain UI lands (P7). Hidden until a strip is selected.
+        // Each tab's listener wires independently so the pane only sees the
+        // gestures it actually relays.
+        detailPanel_.panWidTab().addListener (this);
+        detailPanel_.sendsTab() .addListener (this);
         addChildComponent (detailPanel_);
     }
 
@@ -490,6 +495,14 @@ public:
     std::function<void (int idx, float pan)>        onPan;
     /// Detail-panel width knob moved. `width` is [0, 2] (1 = unity stereo).
     std::function<void (int idx, float width)>      onWidth;
+    /// Sends-tab knob moved for the selected channel. `fxReturnIdx` indexes
+    /// into the FX-return list MainComponent passed via `showDetailFor`.
+    /// `level` is linear 0..1. MainComponent translates back to BusId +
+    /// `InputMixer::setChannelSend`.
+    std::function<void (int idx, int fxReturnIdx, float level)> onSendChanged;
+    /// Sends-tab PRE FADER toggle changed for the selected channel.
+    /// MainComponent calls `InputMixer::setChannelSendIsPreFader`.
+    std::function<void (int idx, bool preFader)>    onPreFaderToggled;
     /// A destination was chosen from strip `idx`'s picker. MainComponent applies
     /// the matching engine main-out edit (tape / bus / hardware output).
     std::function<void (int idx, DestChoice dest)> onDestinationChosen;
@@ -523,12 +536,22 @@ public:
 
     /// Populates the detail panel with `idx`'s current values and reveals it.
     /// `panMinus1to1` is the knob-domain pan ([-1, +1]); `width` is [0, 2].
-    void showDetailFor (int idx, float panMinus1to1, float width)
+    /// `fxReturns` is the operator's current FX-return roster; `sendLevels`
+    /// is parallel (same order). `preFader` is the per-channel pre-fader-sends
+    /// flag (E2). The pane is mixer-agnostic — MainComponent collects and
+    /// passes these in.
+    void showDetailFor (int idx, float panMinus1to1, float width,
+                        std::vector<ida::ui::FxReturnInfo> fxReturns,
+                        std::vector<float> sendLevels,
+                        bool preFader)
     {
         if (idx < 0 || idx >= stripCount()) return;
         detailPanel_.setChannel (idx, otto::ui::ChannelType::Instrument);
-        detailPanel_.setPan (panMinus1to1);   // dontSendNotification inside the tab
-        detailPanel_.setWidth (width);
+        detailPanel_.panWidTab().setPan (panMinus1to1);
+        detailPanel_.panWidTab().setWidth (width);
+        detailPanel_.sendsTab().setChannelState ({ std::move (fxReturns),
+                                                   std::move (sendLevels),
+                                                   preFader });
         detailPanel_.setVisible (true);
         resized();
     }
@@ -890,6 +913,18 @@ public:
         if (onWidth && selectedStrip_ >= 0) onWidth (selectedStrip_, width);
     }
 
+    // --- ChannelDetailSendsTabListener (slice U) ---
+    void sendsTabSendChanged (int fxReturnIdx, float level) override
+    {
+        if (onSendChanged && selectedStrip_ >= 0)
+            onSendChanged (selectedStrip_, fxReturnIdx, level);
+    }
+    void sendsTabPreFaderToggled (bool preFader) override
+    {
+        if (onPreFaderToggled && selectedStrip_ >= 0)
+            onPreFaderToggled (selectedStrip_, preFader);
+    }
+
 private:
     static constexpr int kLongPressMs              = 500;
     static constexpr int kLongPressMoveTolerancePx = 8;
@@ -1019,7 +1054,7 @@ private:
     std::vector<StripDest>                                    stripDests_;
     std::vector<DestChoice>                                   choices_;   // shared, stored once
     std::vector<bool>                                         stripStereo_;
-    otto::ui::ChannelDetailPanWidTab                          detailPanel_;
+    ida::ui::ChannelDetail                                    detailPanel_;
     int                                                       selectedStrip_ { -1 };
     int                                                       longPressIdx_ { -1 };
     bool                                                      longPressBlank_ { false };
@@ -1057,6 +1092,7 @@ private:
 class MainComponent::OutputMixerPane final : public juce::Component,
                                              public otto::ui::CompactFaderStripListener,
                                              public otto::ui::ChannelDetailPanWidTabListener,
+                                             public ida::ui::ChannelDetailSendsTabListener,
                                              private juce::Timer
 {
 public:
@@ -1074,11 +1110,11 @@ public:
         master_->addListener (this);
         addAndMakeVisible (*master_);
 
-        // Pan/width detail panel (slice 5b polish) — top-band, hidden until a
-        // phrase strip is selected. Mirrors InputMixerPane's panel; aux buses
-        // and master have no pan/width (stereo buses are already stereo, no
-        // pan/width controls), so the panel is phrase-only on this pane.
-        detailPanel_.addListener (this);
+        // Tabbed detail panel (slice U): mirror InputMixerPane — Pan/Wid + Sends
+        // real, EQ + CMP placeholder until insert-chain UI (P7). Aux buses and
+        // master have no pan/width, so the panel is phrase-only on this pane.
+        detailPanel_.panWidTab().addListener (this);
+        detailPanel_.sendsTab() .addListener (this);
         addChildComponent (detailPanel_);
 
         masterIns_ = std::make_unique<juce::TextButton>();
@@ -1155,6 +1191,16 @@ public:
     /// Detail-panel pan knob moved. `pan` is industry-standard [-1, +1];
     /// MainComponent converts to engine's [0,1] before writing.
     std::function<void (int phraseIdx, float pan)>        onPhrasePan;
+    /// Sends-tab knob moved for the selected phrase strip. `fxReturnIdx`
+    /// indexes into the FX-return list MainComponent passed via
+    /// `showPhraseDetailFor`. `level` is linear 0..1. MainComponent translates
+    /// back to BusId + `OutputMixer::routeChannelToBus` (additive on
+    /// FxReturn-kind targets — see E3 semantics).
+    std::function<void (int phraseIdx, int fxReturnIdx, float level)>
+                                                          onPhraseSendChanged;
+    /// Sends-tab PRE FADER toggle changed for the selected phrase strip.
+    /// MainComponent calls `OutputMixer::setChannelSendIsPreFader`.
+    std::function<void (int phraseIdx, bool preFader)>    onPhrasePreFaderToggled;
     /// Detail-panel width knob moved. `width` is [0, 2] (1 = unity stereo).
     std::function<void (int phraseIdx, float width)>      onPhraseWidth;
 
@@ -1275,13 +1321,20 @@ public:
 
     /// Populates the detail panel with `phraseIdx`'s current values and reveals
     /// it. `panMinus1to1` is the knob-domain pan ([-1, +1]); `width` is [0, 2].
+    /// `fxReturns` + `sendLevels` + `preFader` populate the Sends tab.
     /// Mirrors InputMixerPane::showDetailFor.
-    void showPhraseDetailFor (int phraseIdx, float panMinus1to1, float width)
+    void showPhraseDetailFor (int phraseIdx, float panMinus1to1, float width,
+                              std::vector<ida::ui::FxReturnInfo> fxReturns,
+                              std::vector<float> sendLevels,
+                              bool preFader)
     {
         if (phraseIdx < 0 || phraseIdx >= phraseStripCount()) return;
         detailPanel_.setChannel (phraseIdx, otto::ui::ChannelType::Instrument);
-        detailPanel_.setPan (panMinus1to1);
-        detailPanel_.setWidth (width);
+        detailPanel_.panWidTab().setPan (panMinus1to1);
+        detailPanel_.panWidTab().setWidth (width);
+        detailPanel_.sendsTab().setChannelState ({ std::move (fxReturns),
+                                                   std::move (sendLevels),
+                                                   preFader });
         detailPanel_.setVisible (true);
         resized();
     }
@@ -1546,6 +1599,18 @@ public:
         if (onPhraseWidth && selectedPhrase_ >= 0) onPhraseWidth (selectedPhrase_, width);
     }
 
+    // --- ChannelDetailSendsTabListener (slice U) ------------------------------
+    void sendsTabSendChanged (int fxReturnIdx, float level) override
+    {
+        if (onPhraseSendChanged && selectedPhrase_ >= 0)
+            onPhraseSendChanged (selectedPhrase_, fxReturnIdx, level);
+    }
+    void sendsTabPreFaderToggled (bool preFader) override
+    {
+        if (onPhrasePreFaderToggled && selectedPhrase_ >= 0)
+            onPhrasePreFaderToggled (selectedPhrase_, preFader);
+    }
+
 private:
     static constexpr int kLongPressMs              = 500;
     static constexpr int kLongPressMoveTolerancePx = 8;
@@ -1677,7 +1742,7 @@ private:
 
     // Pan/width detail panel (slice 5b polish) — top band, hidden until a
     // phrase strip is selected. Phrase-only; aux buses + master never select.
-    otto::ui::ChannelDetailPanWidTab                           detailPanel_;
+    ida::ui::ChannelDetail                                     detailPanel_;
     int                                                        selectedPhrase_ { -1 };
 
     bool                                                      longPressBlank_ { false };
@@ -2501,7 +2566,15 @@ MainComponent::MainComponent()
         inputMixerPane_->onSelect = [this] (int idx)
         {
             if (auto* s = inputStripAt (idx))
-                inputMixerPane_->showDetailFor (idx, s->pan() * 2.0f - 1.0f, s->width());
+            {
+                auto sends = collectInputSendsView (idx);
+                inputMixerPane_->showDetailFor (idx,
+                                                s->pan() * 2.0f - 1.0f,
+                                                s->width(),
+                                                std::move (sends.fxReturns),
+                                                std::move (sends.sendLevels),
+                                                sends.preFader);
+            }
         };
         inputMixerPane_->onPan = [this] (int idx, float pan)
         {
@@ -2510,6 +2583,41 @@ MainComponent::MainComponent()
         inputMixerPane_->onWidth = [this] (int idx, float width)
         {
             if (auto* s = inputStripAt (idx)) s->setWidth (width);
+        };
+        // Sends-tab gestures: translate the (stripIdx, fxReturnIdx) the tab fired
+        // back to the engine's (ChannelId, BusId) shape. fxReturnIdx indexes into
+        // the snapshot we built in collectInputSendsView at showDetailFor time;
+        // we re-walk the InputMixer's FxReturn buses in the same order to recover
+        // the BusId. Skipping the live walk would risk a stale index after the
+        // operator adds/removes an FX return between the show and the gesture.
+        inputMixerPane_->onSendChanged =
+            [this] (int stripIdx, int fxReturnIdx, float level)
+        {
+            if (inputMixer_ == nullptr) return;
+            if (stripIdx < 0
+                || stripIdx >= static_cast<int> (inputStripChannelIds_.size())) return;
+            const auto chId = inputStripChannelIds_[static_cast<std::size_t> (stripIdx)];
+            int seen = 0;
+            const int n = inputMixer_->busCount();
+            for (int i = 0; i < n; ++i)
+            {
+                if (inputMixer_->busKindAt (i) != ida::BusKind::FxReturn) continue;
+                if (seen == fxReturnIdx)
+                {
+                    inputMixer_->setChannelSend (chId, inputMixer_->busIdAt (i), level);
+                    return;
+                }
+                ++seen;
+            }
+        };
+        inputMixerPane_->onPreFaderToggled =
+            [this] (int stripIdx, bool preFader)
+        {
+            if (inputMixer_ == nullptr) return;
+            if (stripIdx < 0
+                || stripIdx >= static_cast<int> (inputStripChannelIds_.size())) return;
+            const auto chId = inputStripChannelIds_[static_cast<std::size_t> (stripIdx)];
+            inputMixer_->setChannelSendIsPreFader (chId, preFader);
         };
         // Routing the channel main-out to a tape is a TOPOLOGY mutation, not a
         // strip-local edit: setChannelMainOutToTape -> MixerGraph::setMainOut ->
@@ -2784,7 +2892,15 @@ MainComponent::MainComponent()
         outputMixerPane_->onPhraseSelect = [this, resolvePhraseStrip] (int phraseIdx)
         {
             if (auto* s = resolvePhraseStrip (phraseIdx))
-                outputMixerPane_->showPhraseDetailFor (phraseIdx, s->pan() * 2.0f - 1.0f, s->width());
+            {
+                auto sends = collectOutputSendsView (phraseIdx);
+                outputMixerPane_->showPhraseDetailFor (phraseIdx,
+                                                       s->pan() * 2.0f - 1.0f,
+                                                       s->width(),
+                                                       std::move (sends.fxReturns),
+                                                       std::move (sends.sendLevels),
+                                                       sends.preFader);
+            }
         };
         outputMixerPane_->onPhrasePan = [resolvePhraseStrip] (int phraseIdx, float pan)
         {
@@ -2793,6 +2909,45 @@ MainComponent::MainComponent()
         outputMixerPane_->onPhraseWidth = [resolvePhraseStrip] (int phraseIdx, float width)
         {
             if (auto* s = resolvePhraseStrip (phraseIdx)) s->setWidth (width);
+        };
+        // Sends-tab gestures on the output side. Same fxReturnIdx → BusId walk
+        // as the input pane, but `routeChannelToBus` (additive on FxReturn-kind
+        // targets per E3) is the engine call rather than setChannelSend.
+        outputMixerPane_->onPhraseSendChanged =
+            [this] (int phraseIdx, int fxReturnIdx, float level)
+        {
+            if (outputMixer_ == nullptr) return;
+            if (phraseIdx < 0
+                || phraseIdx >= static_cast<int> (phraseStripConstituentIds_.size())) return;
+            const auto cid = phraseStripConstituentIds_[static_cast<std::size_t> (phraseIdx)];
+            const auto it  = phraseChannelByConstituent_.find (cid.value());
+            if (it == phraseChannelByConstituent_.end()) return;
+            const auto outChId = it->second;
+            int seen = 0;
+            const int n = outputMixer_->busCount();
+            for (int i = 0; i < n; ++i)
+            {
+                if (outputMixer_->busKindAt (i) != ida::BusKind::FxReturn) continue;
+                if (seen == fxReturnIdx)
+                {
+                    outputMixer_->routeChannelToBus (outChId,
+                                                     outputMixer_->busIdAt (i),
+                                                     level);
+                    return;
+                }
+                ++seen;
+            }
+        };
+        outputMixerPane_->onPhrasePreFaderToggled =
+            [this] (int phraseIdx, bool preFader)
+        {
+            if (outputMixer_ == nullptr) return;
+            if (phraseIdx < 0
+                || phraseIdx >= static_cast<int> (phraseStripConstituentIds_.size())) return;
+            const auto cid = phraseStripConstituentIds_[static_cast<std::size_t> (phraseIdx)];
+            const auto it  = phraseChannelByConstituent_.find (cid.value());
+            if (it == phraseChannelByConstituent_.end()) return;
+            outputMixer_->setChannelSendIsPreFader (it->second, preFader);
         };
 
         tabs_.addTab ("Output Mixer", juce::Colours::black, outputMixerPane_.get(), false);
@@ -3071,6 +3226,58 @@ ChannelStrip<SignalType::Audio>* MainComponent::inputStripAt (int index) noexcep
     auto* chain = inputMixer_->processingChainFor (
         inputStripChannelIds_[static_cast<std::size_t> (index)]);
     return dynamic_cast<ChannelStrip<SignalType::Audio>*> (chain);
+}
+
+MainComponent::ChannelSendsView
+MainComponent::collectInputSendsView (int stripIdx) const
+{
+    ChannelSendsView view;
+    if (inputMixer_ == nullptr) return view;
+    if (stripIdx < 0 || stripIdx >= static_cast<int> (inputStripChannelIds_.size()))
+        return view;
+
+    const auto chId = inputStripChannelIds_[static_cast<std::size_t> (stripIdx)];
+    const int n = inputMixer_->busCount();
+    for (int i = 0; i < n; ++i)
+    {
+        if (inputMixer_->busKindAt (i) != ida::BusKind::FxReturn) continue;
+        const auto busId = inputMixer_->busIdAt (i);
+        auto* bus = inputMixer_->busForId (busId);
+        if (bus == nullptr) continue;
+        view.fxReturns.push_back ({ juce::String (bus->config().name),
+                                    ida::palette::hueForId (busId.value()) });
+        view.sendLevels.push_back (inputMixer_->channelSendLevel (chId, busId));
+    }
+    view.preFader = inputMixer_->channelSendIsPreFader (chId);
+    return view;
+}
+
+MainComponent::ChannelSendsView
+MainComponent::collectOutputSendsView (int phraseIdx) const
+{
+    ChannelSendsView view;
+    if (outputMixer_ == nullptr) return view;
+    if (phraseIdx < 0
+        || phraseIdx >= static_cast<int> (phraseStripConstituentIds_.size()))
+        return view;
+    const auto cid = phraseStripConstituentIds_[static_cast<std::size_t> (phraseIdx)];
+    const auto it  = phraseChannelByConstituent_.find (cid.value());
+    if (it == phraseChannelByConstituent_.end()) return view;
+    const auto outChId = it->second;
+
+    const int n = outputMixer_->busCount();
+    for (int i = 0; i < n; ++i)
+    {
+        if (outputMixer_->busKindAt (i) != ida::BusKind::FxReturn) continue;
+        const auto busId = outputMixer_->busIdAt (i);
+        auto* bus = outputMixer_->busForId (busId);
+        if (bus == nullptr) continue;
+        view.fxReturns.push_back ({ juce::String (bus->config().name),
+                                    ida::palette::hueForId (busId.value()) });
+        view.sendLevels.push_back (outputMixer_->sendLevelFor (outChId, busId));
+    }
+    view.preFader = outputMixer_->channelSendIsPreFader (outChId);
+    return view;
 }
 
 namespace
