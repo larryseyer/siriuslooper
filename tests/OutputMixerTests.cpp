@@ -819,3 +819,104 @@ TEST_CASE ("OutputMixer::audioStripForChannel returns the strip attached via set
     CHECK (read->pan()   == Catch::Approx (0.25f));
     CHECK (read->width() == Catch::Approx (1.5f));
 }
+
+// Slice E1 — BusKind::FxReturn on OutputMixer (mixer-symmetry spec
+// 2026-05-23). InputMixer already exposes FxReturn as a first-class bus
+// kind; OutputMixer's addBus accepts the kind today but had no accessor
+// to read it back and no test coverage. These tests pin the surface.
+TEST_CASE ("OutputMixer::addBus with BusKind::FxReturn mints an FX-return distinct from a plain Bus",
+           "[output-mixer][fx-return]")
+{
+    using ida::BusKind;
+
+    OutputMixer mixer;
+
+    const auto drums = mixer.addBus (BusConfig { 2, "Drums",  BusKind::Bus });
+    const auto rvb   = mixer.addBus (BusConfig { 2, "Reverb", BusKind::FxReturn });
+
+    REQUIRE (drums.value() != 0);
+    REQUIRE (rvb.value()   != 0);
+    REQUIRE (drums.value() != rvb.value());
+
+    // busCount = master (index 0) + drums + rvb = 3.
+    REQUIRE (mixer.busCount() == 3);
+
+    // busIdAt is 0-indexed into the full bus vector (master sits at 0).
+    CHECK (mixer.busIdAt (0).value() == 0);              // master
+    CHECK (mixer.busIdAt (1).value() == drums.value());
+    CHECK (mixer.busIdAt (2).value() == rvb.value());
+
+    // Kind read-back at each index — the master + plain bus report Bus,
+    // the FX return reports FxReturn.
+    CHECK (mixer.busKindAt (0) == BusKind::Bus);         // master
+    CHECK (mixer.busKindAt (1) == BusKind::Bus);         // drums
+    CHECK (mixer.busKindAt (2) == BusKind::FxReturn);    // reverb
+
+    // Defensive defaults match InputMixer::busKindAt — out-of-range
+    // returns the safe Bus sentinel rather than asserting in release.
+    CHECK (mixer.busKindAt (-1) == BusKind::Bus);
+    CHECK (mixer.busKindAt (mixer.busCount()) == BusKind::Bus);
+}
+
+TEST_CASE ("OutputMixer::routeChannelToBus targets an FX-return identically to a plain bus",
+           "[output-mixer][fx-return]")
+{
+    using ida::BusKind;
+
+    OutputMixer mixer;
+    const auto ch  = mixer.addChannel (SignalType::Audio);
+    const auto rvb = mixer.addBus (BusConfig { 2, "Reverb", BusKind::FxReturn });
+
+    // Engine doesn't branch on kind for the send-matrix — sends accumulate
+    // into FX returns the same way they do into plain aux buses (the kind
+    // gates UI pre-filter behavior, not engine accumulation).
+    mixer.routeChannelToBus (ch, rvb, 0.75f);
+    CHECK (mixer.sendLevelFor (ch, rvb) == Catch::Approx (0.75f));
+
+    // Sends zero cleanly too — used by the send-zero bypass path (E3).
+    mixer.routeChannelToBus (ch, rvb, 0.0f);
+    CHECK (mixer.sendLevelFor (ch, rvb) == Catch::Approx (0.0f));
+}
+
+TEST_CASE ("OutputMixer export/import round-trips a BusKind::FxReturn end-to-end",
+           "[output-mixer][fx-return][persistence]")
+{
+    using ida::BusKind;
+
+    OutputMixer source;
+    const auto ch    = source.addChannel (SignalType::Audio);
+    const auto drums = source.addBus (BusConfig { 2, "Drums",  BusKind::Bus });
+    const auto rvb   = source.addBus (BusConfig { 2, "Reverb", BusKind::FxReturn });
+    source.routeChannelToBus (ch, drums, 1.0f);
+    source.routeChannelToBus (ch, rvb,   0.5f);
+
+    // Drop an insert on the FX return so the persistence path is exercised
+    // for an FxReturn-kind bus (not just plain Bus).
+    EffectChainEntry comp; comp.displayName = "comp";
+    source.setBusEffectChain (rvb, EffectChain{}.withAppended (comp));
+
+    const auto exported = source.exportGraphState();
+
+    // Three buses: master + drums + reverb.
+    REQUIRE (exported.buses.size() == 3);
+    CHECK (exported.buses[0].busId == 0);
+    CHECK (exported.buses[0].kind  == ida::MixerBusKind::Bus); // master
+    CHECK (exported.buses[1].busId == drums.value());
+    CHECK (exported.buses[1].kind  == ida::MixerBusKind::Bus);
+    CHECK (exported.buses[2].busId == rvb.value());
+    CHECK (exported.buses[2].kind  == ida::MixerBusKind::FxReturn);
+    CHECK (exported.buses[2].inserts.entries().size() == 1);
+
+    // Reconstruct and re-export — fixed point on the FxReturn kind +
+    // insert chain confirms the import path maps MixerBusKind::FxReturn
+    // back into BusKind::FxReturn when minting via addBus.
+    OutputMixer loaded;
+    loaded.importGraphState (exported);
+    CHECK (loaded.exportGraphState() == exported);
+
+    // And the loaded mixer reports the kind via the busKindAt accessor —
+    // confirms importGraphState wired BusConfig.kind correctly, not just
+    // the persistence shape.
+    REQUIRE (loaded.busCount() == 3);
+    CHECK (loaded.busKindAt (2) == BusKind::FxReturn);
+}

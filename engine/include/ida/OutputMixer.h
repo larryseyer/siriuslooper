@@ -208,6 +208,20 @@ public:
     /// layer before calling `addBus`. Mirrors `InputMixer::busCount`.
     int busCount() const noexcept;
 
+    /// Indexed bus accessor (0..busCount()-1). Index 0 is the master.
+    /// Returns the invalid sentinel `BusId{0}` for out-of-range indices
+    /// — same defensive default as `InputMixer::busIdAt`. Message-thread.
+    BusId busIdAt (int index) const noexcept;
+
+    /// Indexed bus-kind accessor (mirror of `InputMixer::busKindAt`). The
+    /// kind distinguishes plain aux buses from FX-return buses so the UI
+    /// can pre-filter pickers (channels' main-out picker excludes FX
+    /// returns; channels' sends tab includes FX returns only). The master
+    /// reports `BusKind::Bus`. Out-of-range indices return the safe `Bus`
+    /// sentinel rather than asserting (callers must not branch destructively
+    /// on an unknown index). Message-thread.
+    BusKind busKindAt (int index) const noexcept;
+
     /// Output-side equivalent of `InputMixer::MainOutDest`. The Output Mixer
     /// has no Tape terminal (tape is the input side's concern), so the
     /// possible categories are Bus (the main-out is another bus, possibly

@@ -367,6 +367,18 @@ int OutputMixer::busCount() const noexcept
     return static_cast<int> (buses_.size());
 }
 
+BusId OutputMixer::busIdAt (int index) const noexcept
+{
+    if (index < 0 || index >= static_cast<int> (buses_.size())) return BusId { 0 };
+    return buses_[static_cast<std::size_t> (index)].id();
+}
+
+BusKind OutputMixer::busKindAt (int index) const noexcept
+{
+    if (index < 0 || index >= static_cast<int> (buses_.size())) return BusKind::Bus;
+    return buses_[static_cast<std::size_t> (index)].config().kind;
+}
+
 OutputMixer::MainOutDest OutputMixer::busMainOut (BusId id) const noexcept
 {
     const auto bi = static_cast<std::size_t> (id.value());
