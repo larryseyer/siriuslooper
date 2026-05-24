@@ -1,4 +1,4 @@
-# Session Continuation — NEXT: TAPECOLOR Slice 2c (param UI / Edit-FX) + Slice 3 (whitepaper §6.7)
+# Session Continuation — NEXT: bump `lsfx_tapecolor` (Phase 6/7/8), then Slice 2c (param UI) + Slice 3 (whitepaper)
 
 > **For a fresh chat picking this up cold:** memory + project + user CLAUDE.md
 > load automatically. This file is the **forward-looking handoff** — only
@@ -6,11 +6,66 @@
 
 ## ▶ DO THIS FIRST
 
-1. Read `external/OTTO/CROSS_PROJECT_INBOX.md`. As of last session OTTO's
-   Claude is actively working on TAPECOLOR (operator FYI 2026-05-24); when
-   reading the inbox watch for any `[FROM OTTO → IDA]` entries that affect
-   the `lsfx_tapecolor` submodule contract. IDA did NOT bump
-   `external/lsfx_tapecolor` this session.
+1. Read `external/OTTO/CROSS_PROJECT_INBOX.md`. **At the time this handoff
+   was written OTTO had NOT yet posted its TAPECOLOR Phase-8 entry**
+   (operator confirmation 2026-05-24); they will post when their work
+   wraps. If a `[FROM OTTO → IDA]` Phase-8 entry IS now present, follow
+   its `For IDA's Claude:` guidance first — it supersedes the inspection
+   notes below.
+2. Re-read auto-memory `[[project_tapecolor_placement]]` — the two-mode
+   design (Mode A per-tape tri-state, Mode B insert-anywhere). Slice 2's
+   audio hook is now LIVE for Mode A (BeforeWrite only — AfterRead is
+   data-model-only until a tape-read path exists).
+3. Operator eyes-on still pending: any deeper soak of `191ef5f` (the .app
+   launched cleanly at the end of the session — boot-hang fix verified).
+
+## ▶ NEXT (FIRST) — Bump `external/lsfx_tapecolor` from `d8b06b1` → `a7ba9c3`
+
+This is the **first action** for the next chat, before any new Slice 2c /
+Slice 3 work. The submodule has progressed 3 phases since IDA was last
+pinned:
+
+| Phase | SHA       | What it adds (lsfx_tapecolor) | What IDA gains |
+|-------|-----------|-------------------------------|----------------|
+| 6     | `8b14034` | `NoiseStage` — tape hiss with HP200+LP6k+LP12k spectral shape + envelope-gated duck (Dolby-NR-style). New `Config` fields `noiseAmount` (default `0.0f`) + `noiseModulation` (default `0.5f`). | Hiss available when operator dials it up in Slice 2c. |
+| 7     | `41a2ae4` | `TapeStopStage` — variable-rate ring-buffer playback with coupled LP sweep + fade-in. New API: `triggerTapeStop()` / `releaseTapeStop()` / `isTapeStopActive()`. New `Config` field `tapeStopTime` (default `0.5f`). Audio-thread-safe trigger (single atomic). | Future performer-facing tape-stop gesture (e.g. a transport "kill" button per tape). |
+| 8     | `a7ba9c3` | UI **meter atomics** exposed: `inputPeak{Left,Right}Db()`, `outputPeak{Left,Right}Db()`, `inputLufs()`, `outputLufs()` — `memory_order_acquire` reads, message-thread / any-thread safe. | Slice 2c can wire these directly into the Edit-FX panel meters. |
+
+**Risk profile — low:**
+* Existing API surface (`prepare/reset/process/scratchConfig/commitConfig/liveConfig`) is **unchanged**; IDA's `TapeColorAdapter` + `TapeColoringSink` compile against the new pin without edits.
+* `TapeColorConfig::enabled` still defaults to `false` → IDA's
+  default-OFF rule for every adapter still holds verbatim.
+* `noiseAmount = 0.0f` default → silent until operator dials up.
+* `tapeStopTime = 0.5f` default → no-op until `triggerTapeStop()` is called from somewhere; IDA calls it nowhere yet, so silent.
+* `convolution_.prepare(...)` still owns the cold-boot resample cost; the boot-hang fix in `TapeColoringSink::setSampleRate` keeps it from running with `sampleRate=0`, so the bump does not re-introduce the hang.
+
+**Steps:**
+1. **If OTTO has posted a `[FROM OTTO → IDA]` Phase-8 entry**: read it,
+   follow its guidance, ack per protocol. (OTTO may have changed the
+   integration contract — e.g. expected channel count, expected lifecycle
+   ordering — that overrides the steps below.)
+2. `cd external/lsfx_tapecolor && git fetch origin && git checkout a7ba9c3 && cd ../..`
+3. `git add external/lsfx_tapecolor`
+4. Clean build + full test suite:
+   ```bash
+   rm -rf build
+   cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release
+   cmake --build build --target IdaTests
+   ctest --test-dir build -E "(PluginEditor|MainComponentPlug)"
+   ```
+   Expect green (708 pass) since the API surface IDA uses is unchanged.
+5. Clean build + launch the .app for ~30 s. Confirm CPU drops to the
+   normal idle band (≤ 15%) — i.e. the IR-resample path still completes
+   cleanly with the new IRs / new stages.
+6. Commit: `chore: bump lsfx_tapecolor d8b06b1 → a7ba9c3 (Phase 6 noise + Phase 7 tape-stop + Phase 8 meter atomics)`
+7. Push to `origin/master`.
+8. Update `[[project_tapecolor_placement]]` memory if the new stages
+   change the operator-visible posture (probably not — default-OFF
+   still holds).
+
+**Do NOT bump `external/OTTO` in the same commit** — OTTO's Claude is
+actively pushing TAPECOLOR Phase-8 work right now; let their next push
+land first, then bump `external/OTTO` separately.
 2. Re-read auto-memory `[[project_tapecolor_placement]]` — the two-mode
    design (Mode A per-tape tri-state, Mode B insert-anywhere). Slice 2's
    audio hook is now LIVE for Mode A (BeforeWrite only — AfterRead is
@@ -80,6 +135,12 @@ One commit on `origin/master`:
 * `ctest -E "(PluginEditor|MainComponentPlug)"`: **708 pass / 0 fail** —
   the exclusion drops the operator-only plugin-editor lifecycle binary
   (still run separately via `bash bash/test-s7.sh`).
+
+## ▶ NEXT (THEN) — Slice 2c, Slice 2b, Slice 3 in operator's preferred order
+
+After the bump lands, the queued TAPECOLOR work resumes (sections below
+are unchanged from the previous handoff, just resequenced after the
+bump-first step above).
 
 ## ▶ NEXT — TAPECOLOR Slice 2b: AfterRead audio hook (BLOCKED)
 
@@ -166,8 +227,12 @@ Implementation:
   `closePluginEditor`) hang from a CLI ctest run (they spawn a real
   plugin-editor window and need an active GUI session) — run them
   separately via `bash bash/test-s7.sh`.
-* **OTTO submodule SHA:** unchanged this session.
-* **lsfx_tapecolor submodule SHA:** unchanged this session.
+* **OTTO submodule SHA:** `d43c540` (unchanged this session; OTTO is
+  actively pushing Phase-8 TAPECOLOR work — bump separately after their
+  next push lands).
+* **lsfx_tapecolor submodule SHA:** `d8b06b1` (3 phases BEHIND
+  `origin/main` = `a7ba9c3` — bump is the **first action** of the next
+  chat, see top of this file).
 * **App on disk:** `build/app/IDA_artefacts/Release/IDA.app`,
   `~/Desktop/IDA` alias points at it. Clean build verified; launches
   to ~5-15% CPU after the boot-hang fix.
@@ -178,6 +243,9 @@ Implementation:
 * **Operator actions still pending** (between sessions): notarytool
   keychain `ida-notary` setup; `automagicart.com/ida` product page +
   `larryseyer.com` rename.
-* **Cross-project note**: OTTO's Claude is actively working on TAPECOLOR
-  (operator FYI 2026-05-24). Watch the inbox for any submodule API
-  changes that need an `lsfx_tapecolor` SHA bump on the IDA side.
+* **Cross-project note**: OTTO's Claude is actively pushing TAPECOLOR
+  Phase 8 (UI panel + per-bus integration + meters). The `lsfx_tapecolor`
+  submodule already published Phases 6/7/8 — see the bump section at
+  the top. OTTO has not yet posted its Phase-8 `CROSS_PROJECT_INBOX.md`
+  entry to IDA; read the inbox on session start in case it has landed
+  by then.
