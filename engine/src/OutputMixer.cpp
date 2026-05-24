@@ -74,7 +74,9 @@ OutputMixer::OutputMixer()
     // size stays 0 until addChannel/addBus is called.
     channels_.reserve (static_cast<std::size_t> (kMaxOutputChannels));
     buses_.reserve   (static_cast<std::size_t> (kMaxBuses));
-    busHardwareOutPair_.reserve (static_cast<std::size_t> (kMaxBuses));
+    busHardwareOutPair_.reserve     (static_cast<std::size_t> (kMaxBuses));
+    channelHardwareOutPair_.reserve (static_cast<std::size_t> (kMaxOutputChannels));
+    freeChannelIds_.reserve         (static_cast<std::size_t> (kMaxOutputChannels));
 
     // Auto-create the master bus at BusId{0} per the M5 Session 2 spec.
     // The master always exists; removing it is not supported in M5.
@@ -101,7 +103,22 @@ OutputChannelId OutputMixer::addChannel (SignalType type)
         return OutputChannelId { 0 }; // sentinel — channel id 0 is unused.
     }
 
-    const OutputChannelId id { nextOutputChannelId_++ };
+    // Slice 5a: prefer a freed id before minting a fresh one so phrase
+    // add/remove churn doesn't burn through kMaxOutputChannels. The freed
+    // id's sendMatrix row was zeroed by removeChannel, so re-applying the
+    // master-unity default below puts the reused channel at addChannel's
+    // canonical starting state regardless of its previous use.
+    OutputChannelId id { 0 };
+    if (! freeChannelIds_.empty())
+    {
+        id = OutputChannelId { freeChannelIds_.back() };
+        freeChannelIds_.pop_back();
+    }
+    else
+    {
+        id = OutputChannelId { nextOutputChannelId_++ };
+    }
+
     channels_.push_back (ChannelEntry { id, type, nullptr });
 
     // Default master direct level — newly registered channels are audible at
@@ -111,8 +128,51 @@ OutputChannelId OutputMixer::addChannel (SignalType type)
         sendMatrix_[masterIdx] = 1.0f;
 
     channelNodeIds_.push_back (graph_.addNode (MixerNodeKind::Channel));
+    channelHardwareOutPair_.push_back (0); // new channels default to pair 0
 
     return id;
+}
+
+void OutputMixer::removeChannel (OutputChannelId id)
+{
+    // Locate the id in channels_; unknown ids are a silent no-op (the UI
+    // never asks for unknown ids in steady state — defensive only).
+    std::size_t idx = channels_.size();
+    for (std::size_t i = 0; i < channels_.size(); ++i)
+    {
+        if (channels_[i].id == id) { idx = i; break; }
+    }
+    if (idx >= channels_.size()) return;
+
+    // Zero the freed channel's row of sendMatrix_ so a re-minted id starts at
+    // addChannel's defaults (unity into master, 0 into every aux) rather than
+    // inheriting the removed channel's send levels.
+    const auto channelValue = id.value();
+    if (channelValue >= 1 && channelValue <= kMaxOutputChannels)
+    {
+        const std::size_t row = static_cast<std::size_t> (channelValue - 1);
+        const std::size_t cols = static_cast<std::size_t> (kMaxBuses);
+        for (std::size_t b = 0; b < cols; ++b)
+            sendMatrix_[row * cols + b] = 0.0f;
+    }
+
+    // Tear down the graph node so it stops appearing in evaluationOrder().
+    graph_.removeNode (channelNodeIds_[idx]);
+
+    // Swap-erase from the three parallel vectors. Order isn't observable
+    // through the public API; iteration uses channels_'s indices directly.
+    const std::size_t last = channels_.size() - 1;
+    if (idx != last)
+    {
+        channels_[idx]               = std::move (channels_[last]);
+        channelNodeIds_[idx]         = channelNodeIds_[last];
+        channelHardwareOutPair_[idx] = channelHardwareOutPair_[last];
+    }
+    channels_.pop_back();
+    channelNodeIds_.pop_back();
+    channelHardwareOutPair_.pop_back();
+
+    freeChannelIds_.push_back (channelValue);
 }
 
 void OutputMixer::setChannelStrip (OutputChannelId id,
@@ -250,6 +310,27 @@ int OutputMixer::busHardwareOutPair (BusId id) const noexcept
     const auto bi = static_cast<std::size_t> (id.value());
     if (bi >= busHardwareOutPair_.size()) return 0;
     return busHardwareOutPair_[bi];
+}
+
+bool OutputMixer::setChannelMainOutToHardwareOutput (OutputChannelId channel, int pairIndex)
+{
+    for (std::size_t i = 0; i < channels_.size(); ++i)
+    {
+        if (channels_[i].id == channel)
+        {
+            channelHardwareOutPair_[i] = std::max (pairIndex, 0);
+            return true;
+        }
+    }
+    return false;
+}
+
+int OutputMixer::channelMainOutHardwareOutPair (OutputChannelId id) const noexcept
+{
+    for (std::size_t i = 0; i < channels_.size(); ++i)
+        if (channels_[i].id == id)
+            return channelHardwareOutPair_[i];
+    return 0;
 }
 
 bool OutputMixer::busMainOutToBusWouldCycle (BusId from, BusId to) const noexcept
@@ -570,11 +651,13 @@ OutputMixerGraphState OutputMixer::exportGraphState() const
 
     // channels_ is a vector — insertion order is already deterministic, so (unlike
     // InputMixer's unordered_map) no sort is needed before export.
-    for (const auto& ce : channels_)
+    for (std::size_t ci = 0; ci < channels_.size(); ++ci)
     {
+        const auto& ce = channels_[ci];
         OutputChannelState entry;
-        entry.channelId  = ce.id.value();
-        entry.signalType = ce.signalType;
+        entry.channelId       = ce.id.value();
+        entry.signalType      = ce.signalType;
+        entry.hardwareOutPair = channelHardwareOutPair_[ci]; // slice 5a
         if (ce.strip != nullptr) entry.inserts = ce.strip->effectChain();
         for (std::size_t b = 0; b < buses_.size(); ++b)
         {
@@ -647,6 +730,10 @@ void OutputMixer::importGraphState (const OutputMixerGraphState& state)
             setChannelStrip (created, std::move (strip));
         }
         for (const auto& s : c.sends) routeChannelToBus (created, BusId (s.busId), s.level);
+        // Slice 5a: restore per-channel hardware-output pair. addChannel just
+        // pushed a default-0 entry; setter overwrites it with the persisted
+        // value. (Destination kind isn't persisted in 5a — only the pair.)
+        setChannelMainOutToHardwareOutput (created, c.hardwareOutPair);
     }
 
     nextBusId_           = std::max (nextBusId_, state.nextBusId);

@@ -124,18 +124,24 @@ struct InputChannelState
 };
 
 /// Output-side channel: routes into buses via the send matrix (no single
-/// main-out, no input source / tape mode).
+/// main-out, no input source / tape mode). Slice 5a adds per-channel
+/// hardware-output pair (mirror of MixerBusState's mainOut.hardwareOutPair)
+/// so phrase channels can route direct to a stereo output pair, bypassing
+/// master and aux buses. The destination kind (Bus vs HardwareOutput) is
+/// not persisted in 5a — only the pair index round-trips.
 struct OutputChannelState
 {
-    std::int64_t           channelId  { 0 };
-    SignalType             signalType { SignalType::Audio };
+    std::int64_t           channelId       { 0 };
+    SignalType             signalType      { SignalType::Audio };
     std::vector<MixerSend> sends;
     EffectChain            inserts;
+    int                    hardwareOutPair { 0 };
 
     bool operator== (const OutputChannelState& o) const noexcept
     {
         return channelId == o.channelId && signalType == o.signalType
-            && sends == o.sends && inserts == o.inserts;
+            && sends == o.sends && inserts == o.inserts
+            && hardwareOutPair == o.hardwareOutPair;
     }
     bool operator!= (const OutputChannelState& o) const noexcept { return ! (*this == o); }
 };

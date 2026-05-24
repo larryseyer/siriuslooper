@@ -684,3 +684,107 @@ TEST_CASE ("OutputMixer::renameBus updates the bus name; master is canonical",
     REQUIRE (loaded.busForId (aux) != nullptr);
     CHECK (loaded.busForId (aux)->config().name == "Headphone Cue");
 }
+
+// --- Slice 5a — phrase-channel engine surface ------------------------------
+// Two additions: (1) removeChannel with id reuse via a free-list so
+// phrase-add/remove churn doesn't burn through kMaxOutputChannels = 32;
+// (2) per-channel hardware-output routing mirroring slice 3's bus-side API.
+// Audio-thread render path is untouched — phrase channels don't feed audio
+// yet (5b is the UI shell, 5c persists the ConstituentId binding).
+
+TEST_CASE ("OutputMixer::removeChannel of an unknown id is a no-op",
+           "[output-mixer][slice5][remove]")
+{
+    OutputMixer mixer;
+    const auto real = mixer.addChannel (SignalType::Audio);
+
+    // Unknown id — must not throw, must not alter any state observable
+    // through the existing accessors. The real channel's master send (the
+    // 1.0 addChannel default) survives untouched.
+    mixer.removeChannel (OutputChannelId { 999 });
+
+    CHECK (mixer.sendLevelFor (real, BusId { 0 }) == Catch::Approx (1.0f));
+}
+
+TEST_CASE ("OutputMixer::removeChannel releases the id; next addChannel reuses it",
+           "[output-mixer][slice5][remove]")
+{
+    OutputMixer mixer;
+    const auto first  = mixer.addChannel (SignalType::Audio);
+    const auto second = mixer.addChannel (SignalType::Audio);
+
+    REQUIRE (first.value()  == 1);
+    REQUIRE (second.value() == 2);
+
+    mixer.removeChannel (first);
+
+    // Free-list pops the freed id; the next add gets id 1 back rather than
+    // incrementing past 2. This is the contract that lets a long session of
+    // phrase add/remove churn stay under kMaxOutputChannels = 32.
+    const auto reused = mixer.addChannel (SignalType::Audio);
+    CHECK (reused.value() == first.value());
+
+    // Original id 2 is unaffected — only the removed id rejoins circulation.
+    CHECK (mixer.sendLevelFor (second, BusId { 0 }) == Catch::Approx (1.0f));
+}
+
+TEST_CASE ("OutputMixer::removeChannel zeros the freed channel's sendMatrix row",
+           "[output-mixer][slice5][remove]")
+{
+    OutputMixer mixer;
+    const auto aux = mixer.addBus (BusConfig { 2, "Aux 1" });
+    const auto ch  = mixer.addChannel (SignalType::Audio);
+
+    // Configure non-default sends on both master and aux before removing.
+    mixer.routeChannelToBus (ch, BusId { 0 }, 0.5f);
+    mixer.routeChannelToBus (ch, aux,         0.75f);
+    REQUIRE (mixer.sendLevelFor (ch, BusId { 0 }) == Catch::Approx (0.5f));
+    REQUIRE (mixer.sendLevelFor (ch, aux)         == Catch::Approx (0.75f));
+
+    mixer.removeChannel (ch);
+
+    // After remove + addChannel-from-free-list, the re-minted channel must
+    // start at addChannel's defaults (1.0 into master, 0.0 into aux). The
+    // 0.75 aux send the removed channel had is gone.
+    const auto reused = mixer.addChannel (SignalType::Audio);
+    REQUIRE (reused.value() == ch.value());
+    CHECK (mixer.sendLevelFor (reused, BusId { 0 }) == Catch::Approx (1.0f));
+    CHECK (mixer.sendLevelFor (reused, aux)         == Catch::Approx (0.0f));
+}
+
+TEST_CASE ("OutputMixer::setChannelMainOutToHardwareOutput round-trips through persistence",
+           "[output-mixer][slice5][hardware-output-pair]")
+{
+    OutputMixer mixer;
+    const auto ch = mixer.addChannel (SignalType::Audio);
+
+    // Default before any setter call is pair 0 — same defensive default as
+    // the bus-side accessor.
+    CHECK (mixer.channelMainOutHardwareOutPair (ch) == 0);
+
+    // Unknown ids are rejected.
+    CHECK_FALSE (mixer.setChannelMainOutToHardwareOutput (OutputChannelId { 999 }, 1));
+    CHECK (mixer.channelMainOutHardwareOutPair (OutputChannelId { 999 }) == 0);
+
+    // Real id accepted; pair index is stored on the message thread.
+    REQUIRE (mixer.setChannelMainOutToHardwareOutput (ch, 3));
+    CHECK (mixer.channelMainOutHardwareOutPair (ch) == 3);
+
+    // Pair index round-trips through the persistence snapshot. Channel ids
+    // are remapped from 1 on import (re-minted by addChannel); the single
+    // channel here keeps id 1 so the lookup is straightforward.
+    const auto exported = mixer.exportGraphState();
+    OutputMixer loaded;
+    loaded.importGraphState (exported);
+    CHECK (loaded.channelMainOutHardwareOutPair (ch) == 3);
+}
+
+TEST_CASE ("OutputMixer::setChannelMainOutToHardwareOutput clamps negative pairIndex to 0",
+           "[output-mixer][slice5][hardware-output-pair]")
+{
+    OutputMixer mixer;
+    const auto ch = mixer.addChannel (SignalType::Audio);
+
+    REQUIRE (mixer.setChannelMainOutToHardwareOutput (ch, -5));
+    CHECK (mixer.channelMainOutHardwareOutPair (ch) == 0);
+}

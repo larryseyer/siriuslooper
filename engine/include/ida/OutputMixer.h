@@ -87,6 +87,31 @@ public:
     void setChannelStrip (OutputChannelId id,
                           std::unique_ptr<ChannelStrip<SignalType::Audio>> strip);
 
+    /// Removes a previously-registered output channel and returns its id to a
+    /// free-list so the next `addChannel` reuses it (slice 5a). Without
+    /// reuse, a session of phrase add/remove churn would burn through
+    /// `kMaxOutputChannels = 32` even though the live channel count stays
+    /// bounded. Implementation is swap-erase from the parallel vectors
+    /// (`channels_`, `channelNodeIds_`, `channelHardwareOutPair_`) plus a
+    /// zero of the freed channel's row of `sendMatrix_` so a re-minted id
+    /// starts from `addChannel`'s defaults rather than the removed channel's
+    /// previous sends. Unknown id → silent no-op (the UI never asks for
+    /// unknown ids in steady state). Message-thread only.
+    void removeChannel (OutputChannelId id);
+
+    /// Pair-indexed routing of an output channel direct to the HardwareOutput
+    /// terminal (slice 5a). Mirror of `setBusMainOutToHardwareOutput`. The
+    /// audio-thread render path is NOT touched in 5a — phrase channels
+    /// don't feed audio yet; this stores the operator intent so 5b's UI can
+    /// surface it and the eventual render-path milestone can read it.
+    /// Negative `pairIndex` clamps to 0. Returns false for unknown ids.
+    bool setChannelMainOutToHardwareOutput (OutputChannelId channel, int pairIndex);
+
+    /// Reads channel `id`'s recorded hardware-output pair index. Returns 0
+    /// for unknown ids — same defensive default as `busHardwareOutPair`.
+    /// Message-thread accessor.
+    int channelMainOutHardwareOutPair (OutputChannelId id) const noexcept;
+
     // Bus and send/return -----------------------------------------------------
 
     /// Adds a session-level effect bus and returns its fresh BusId starting
@@ -271,6 +296,22 @@ private:
     /// Reserved to `kMaxBuses` in the ctor so `push_back` in `addBus` never
     /// reallocates (matches the `buses_` reservation pattern).
     std::vector<int>          busHardwareOutPair_;
+
+    /// Per-channel hardware-output pair index, parallel to `channels_`
+    /// (slice 5a). Default 0 for every newly-added channel. Updated on the
+    /// message thread by `setChannelMainOutToHardwareOutput`. Not read by
+    /// `renderBuffer` in 5a — phrase channels don't feed audio yet — but
+    /// reserved on the same wiring so the eventual render-path milestone
+    /// inherits the storage. Reserved to `kMaxOutputChannels` in the ctor
+    /// so `push_back` in `addChannel` never reallocates.
+    std::vector<int>          channelHardwareOutPair_;
+
+    /// Free-list of OutputChannelId values released by `removeChannel`
+    /// (slice 5a). `addChannel` pops from here before incrementing
+    /// `nextOutputChannelId_`, so phrase add/remove churn doesn't burn
+    /// through `kMaxOutputChannels = 32`. Reserved to `kMaxOutputChannels`
+    /// in the ctor so the free-list never reallocates.
+    std::vector<std::int64_t> freeChannelIds_;
 
     /// Dense send-level matrix sized `kMaxOutputChannels * kMaxBuses` in
     /// the constructor. 32 × 64 = 2048 floats = 8 KB total — small enough
