@@ -465,6 +465,48 @@ TEST_CASE ("a pre-graph mixer document missing all graph keys loads as defaults"
     CHECK (out.nextChannelId == 1);
 }
 
+TEST_CASE ("phrase-channel map round-trips through serialize/deserialize",
+           "[sessionformat][phrase-channel-map]")
+{
+    // Slice P (2026-05-24): the ConstituentId -> OutputChannelId map binds
+    // each phrase-channel strip on the OutputMixer to the Constituent it
+    // renders. Without persistence the binding is rebuilt fresh from pill
+    // order on every load, which reshuffles per-phrase mix state.
+    std::vector<std::pair<std::int64_t, std::int64_t>> entries {
+        { 1,  4 },
+        { 7,  5 },
+        { 42, 6 },
+    };
+
+    const auto json     = ida::persistence::serializePhraseChannelMap (entries);
+    const auto restored = ida::persistence::deserializePhraseChannelMap (json);
+    CHECK (restored == entries);
+    // Byte-stable: serialize -> deserialize -> serialize is identical JSON.
+    CHECK (ida::persistence::serializePhraseChannelMap (restored) == json);
+}
+
+TEST_CASE ("an empty phrase-channel map round-trips as an empty list",
+           "[sessionformat][phrase-channel-map]")
+{
+    const std::vector<std::pair<std::int64_t, std::int64_t>> empty;
+    const auto json     = ida::persistence::serializePhraseChannelMap (empty);
+    const auto restored = ida::persistence::deserializePhraseChannelMap (json);
+    CHECK (restored.empty());
+}
+
+TEST_CASE ("a malformed phrase-channel map document throws",
+           "[sessionformat][phrase-channel-map]")
+{
+    CHECK_THROWS_AS (ida::persistence::deserializePhraseChannelMap ("{not json}"),
+                     std::runtime_error);
+    CHECK_THROWS_AS (ida::persistence::deserializePhraseChannelMap ("[1,2,3]"),
+                     std::runtime_error);
+    // Missing the entries key is a hard error — back-compat callers MUST
+    // detect the absence at the envelope level and skip the call.
+    CHECK_THROWS_AS (ida::persistence::deserializePhraseChannelMap ("{}"),
+                     std::runtime_error);
+}
+
 TEST_CASE ("TapePool round-trips through serialize/deserialize", "[sessionformat][tape-pool]")
 {
     ida::TapePool pool;

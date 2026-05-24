@@ -6,7 +6,10 @@
 
 #include <juce_core/juce_core.h>
 
+#include <cstdint>
 #include <memory>
+#include <utility>
+#include <vector>
 
 namespace ida::persistence
 {
@@ -50,5 +53,20 @@ juce::String serializeTapePool (const TapePool& pool);
 /// this (forward-compat is the caller's responsibility, matching the mixer-graph
 /// convention).
 TapePool deserializeTapePool (const juce::String& json);
+
+/// Serializes the OutputMixer's `ConstituentId -> OutputChannelId` phrase-
+/// channel binding (slice P, 2026-05-24). The list lives outside the mixer
+/// graph because the binding is owned by the MainComponent — the mixer only
+/// sees raw OutputChannelIds. Round-trips exactly through
+/// deserializePhraseChannelMap.
+juce::String serializePhraseChannelMap (
+    const std::vector<std::pair<std::int64_t, std::int64_t>>& entries);
+
+/// Reconstructs a phrase-channel map. Throws std::runtime_error on malformed
+/// input. A missing "entries" key is rejected — back-compat callers must
+/// detect the envelope-level absence and skip the call (matches the
+/// TapePool convention).
+std::vector<std::pair<std::int64_t, std::int64_t>> deserializePhraseChannelMap (
+    const juce::String& json);
 
 } // namespace ida::persistence

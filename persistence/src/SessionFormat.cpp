@@ -1175,4 +1175,46 @@ TapePool deserializeTapePool (const juce::String& json)
     return TapePool (std::move (descriptors));
 }
 
+juce::String serializePhraseChannelMap (
+    const std::vector<std::pair<std::int64_t, std::int64_t>>& entries)
+{
+    juce::Array<juce::var> arr;
+    for (const auto& [cid, chId] : entries)
+    {
+        auto obj = makeObject();
+        obj->setProperty ("constituent_id",     juce::int64 (cid));
+        obj->setProperty ("output_channel_id",  juce::int64 (chId));
+        arr.add (objectVar (obj));
+    }
+    auto root = makeObject();
+    root->setProperty ("entries", arr);
+    return juce::JSON::toString (objectVar (root));
+}
+
+std::vector<std::pair<std::int64_t, std::int64_t>> deserializePhraseChannelMap (
+    const juce::String& json)
+{
+    juce::var parsed;
+    const auto result = juce::JSON::parse (json, parsed);
+    if (result.failed())
+        fail ("invalid phrase-channel map JSON: " + result.getErrorMessage().toStdString());
+    if (! parsed.isObject())
+        fail ("phrase-channel map document must be a JSON object");
+
+    const auto entries = requireProperty (parsed, "entries");
+    if (! entries.isArray())
+        fail ("phrase-channel map must carry an entries array");
+
+    std::vector<std::pair<std::int64_t, std::int64_t>> out;
+    out.reserve (static_cast<std::size_t> (entries.size()));
+    for (int i = 0; i < entries.size(); ++i)
+    {
+        const auto& entry = entries[i];
+        out.emplace_back (
+            requireInt64 (requireProperty (entry, "constituent_id"),    "constituent_id"),
+            requireInt64 (requireProperty (entry, "output_channel_id"), "output_channel_id"));
+    }
+    return out;
+}
+
 } // namespace ida::persistence

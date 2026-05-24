@@ -576,6 +576,46 @@ TEST_CASE ("OutputMixer export/import round-trips buses, sends, subgroups, inser
     CHECK (loaded.exportGraphState() == exported);
 }
 
+TEST_CASE ("OutputMixer importGraphState preserves channelId gaps from removeChannel",
+           "[output-mixer][persistence][slice-p]")
+{
+    // Slice P (2026-05-24) regression: MainComponent's phrase-channel map
+    // stores ConstituentId -> OutputChannelId. After save/load the map's
+    // OutputChannelIds must still address the right channels — even when the
+    // export carries gap ids (1, 3, 5) from intermediate removeChannel calls.
+    // InputMixer::importGraphState already preserves persisted ChannelIds;
+    // OutputMixer must do the same.
+    ida::OutputMixer source;
+    const auto a = source.addChannel (ida::SignalType::Audio); // id 1
+    const auto b = source.addChannel (ida::SignalType::Audio); // id 2
+    const auto c = source.addChannel (ida::SignalType::Audio); // id 3
+    source.removeChannel (b);                                   // frees id 2
+    const auto d = source.addChannel (ida::SignalType::Audio); // reuses id 2
+    source.removeChannel (d);                                   // frees id 2 again
+    // Final state: channels {1, 3} live; nextOutputChannelId_ = 4; free list = [2].
+    juce::ignoreUnused (a, c);
+
+    const auto exported = source.exportGraphState();
+    REQUIRE (exported.channels.size() == 2);
+    // Persisted ids are 1 and 3 (gap at 2). Order may follow swap-erase; check
+    // the set rather than the sequence.
+    std::vector<std::int64_t> exportedIds;
+    for (const auto& ch : exported.channels) exportedIds.push_back (ch.channelId);
+    std::sort (exportedIds.begin(), exportedIds.end());
+    CHECK (exportedIds == std::vector<std::int64_t> { 1, 3 });
+
+    ida::OutputMixer loaded;
+    loaded.importGraphState (exported);
+    const auto reexported = loaded.exportGraphState();
+
+    // The loaded mixer must report the same channelIds as the source.
+    std::vector<std::int64_t> reIds;
+    for (const auto& ch : reexported.channels) reIds.push_back (ch.channelId);
+    std::sort (reIds.begin(), reIds.end());
+    CHECK (reIds == std::vector<std::int64_t> { 1, 3 });
+    CHECK (reexported.nextChannelId == exported.nextChannelId);
+}
+
 TEST_CASE ("OutputMixer import of an empty snapshot keeps only the master bus", "[output-mixer][persistence]")
 {
     ida::OutputMixer mixer;

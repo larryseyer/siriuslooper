@@ -100,6 +100,26 @@ OutputMixer::OutputMixer()
 
 OutputMixer::~OutputMixer() = default;
 
+void OutputMixer::registerChannelWithId (SignalType type, OutputChannelId id)
+{
+    channels_.push_back (ChannelEntry { id, type, nullptr });
+
+    // Default master direct level — newly registered channels are audible at
+    // unity into the master without explicit routing configuration. Slice E3:
+    // bumps master's active-sender count so the bypass keeps master alive.
+    const std::size_t masterIdx = sendMatrixIndex (id, BusId { 0 });
+    if (masterIdx < sendMatrix_.size())
+        sendMatrix_[masterIdx] = 1.0f;
+    if (! buses_.empty())
+        buses_[0].adjustActiveSenderCount (+1);
+
+    channelNodeIds_.push_back (graph_.addNode (MixerNodeKind::Channel));
+    channelHardwareOutPair_.push_back (0); // new channels default to pair 0
+    channelPreFaderSends_.push_back (0);   // slice E2: default post-fader
+    channelMainOutKind_.push_back (MainOutDest::Bus);    // slice E3: default = master
+    channelMainOutBus_.push_back  (BusId { 0 });
+}
+
 OutputChannelId OutputMixer::addChannel (SignalType type)
 {
     if (channels_.size() >= static_cast<std::size_t> (kMaxOutputChannels))
@@ -126,23 +146,7 @@ OutputChannelId OutputMixer::addChannel (SignalType type)
         id = OutputChannelId { nextOutputChannelId_++ };
     }
 
-    channels_.push_back (ChannelEntry { id, type, nullptr });
-
-    // Default master direct level — newly registered channels are audible at
-    // unity into the master without explicit routing configuration. Slice E3:
-    // bumps master's active-sender count so the bypass keeps master alive.
-    const std::size_t masterIdx = sendMatrixIndex (id, BusId { 0 });
-    if (masterIdx < sendMatrix_.size())
-        sendMatrix_[masterIdx] = 1.0f;
-    if (! buses_.empty())
-        buses_[0].adjustActiveSenderCount (+1);
-
-    channelNodeIds_.push_back (graph_.addNode (MixerNodeKind::Channel));
-    channelHardwareOutPair_.push_back (0); // new channels default to pair 0
-    channelPreFaderSends_.push_back (0);   // slice E2: default post-fader
-    channelMainOutKind_.push_back (MainOutDest::Bus);    // slice E3: default = master
-    channelMainOutBus_.push_back  (BusId { 0 });
-
+    registerChannelWithId (type, id);
     return id;
 }
 
@@ -936,7 +940,14 @@ void OutputMixer::importGraphState (const OutputMixerGraphState& state)
 
     for (const auto& c : state.channels)
     {
-        const auto created = addChannel (c.signalType);
+        // Slice P (2026-05-24): register with the persisted OutputChannelId so
+        // removeChannel-induced id gaps round-trip (mirror of
+        // InputMixer::importGraphState behavior). MainComponent's phrase-
+        // channel map persists ConstituentId -> OutputChannelId — without id
+        // preservation, gap exports (1, 3, 5) re-mint as (1, 2, 3) and break
+        // the binding.
+        const OutputChannelId created { c.channelId };
+        registerChannelWithId (c.signalType, created);
         if (c.signalType == SignalType::Audio)
         {
             auto strip = std::make_unique<ChannelStrip<SignalType::Audio>>();

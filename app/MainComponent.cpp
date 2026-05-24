@@ -39,7 +39,11 @@ namespace
     /// (written/read only here) carrying the session and tape-pool documents;
     /// it is distinct from SessionFormat's session/mixer-graph versions. Bumped
     /// only when the envelope's own layout changes.
-    constexpr int kSessionEnvelopeVersion = 1;
+    /// v2 (2026-05-24, slice P): added "input_mixer", "output_mixer", and
+    /// "phrase_channel_map" keys. v1 envelopes load clean — the new keys are
+    /// optional and default to "mixers untouched / map empty" (current pre-v2
+    /// behavior).
+    constexpr int kSessionEnvelopeVersion = 2;
 
     /// Small local Timer subclass — IDA's vendored JUCE has no
     /// FunctionTimer. Holds a captured callable and invokes it on each
@@ -4665,14 +4669,32 @@ void MainComponent::chooseFileAndSave()
                 undoStack_.current(), effectChainHost_, slotLookup(), *notificationBus_);
             const auto sessionJson = persistence::serializeSession (*populated);
             const auto poolJson    = persistence::serializeTapePool (tapePool_);
-            // Embed both sections as string values in a thin envelope so the
-            // session and pool documents stay self-contained and the envelope
-            // itself is forward-compat (unknown top-level keys are ignored on
-            // load). Pre-envelope files are still loadable — see chooseFileAndLoad.
+            // Slice P (2026-05-24): persist both mixer graphs and the
+            // phrase-channel binding so per-phrase mix state (fader, sends,
+            // routing) and the ConstituentId -> OutputChannelId binding
+            // survive save/load. Without this the OutputMixer reset on load
+            // would reshuffle phrase strips into fresh ids.
+            const auto inputMixerJson  = persistence::serializeMixerGraphState (
+                                             inputMixer_->exportGraphState());
+            const auto outputMixerJson = persistence::serializeMixerGraphState (
+                                             outputMixer_->exportGraphState());
+            std::vector<std::pair<std::int64_t, std::int64_t>> phraseMapEntries;
+            phraseMapEntries.reserve (phraseChannelByConstituent_.size());
+            for (const auto& kv : phraseChannelByConstituent_)
+                phraseMapEntries.emplace_back (kv.first, kv.second.value());
+            const auto phraseMapJson = persistence::serializePhraseChannelMap (phraseMapEntries);
+
+            // Embed all sections as string values in a thin envelope so each
+            // sub-document stays self-contained and the envelope itself is
+            // forward-compat (unknown top-level keys are ignored on load).
+            // Pre-envelope files are still loadable — see chooseFileAndLoad.
             auto envelope = juce::DynamicObject::Ptr { new juce::DynamicObject() };
-            envelope->setProperty ("ida_version", kSessionEnvelopeVersion);
-            envelope->setProperty ("session",        sessionJson);
-            envelope->setProperty ("pool",           poolJson);
+            envelope->setProperty ("ida_version",         kSessionEnvelopeVersion);
+            envelope->setProperty ("session",             sessionJson);
+            envelope->setProperty ("pool",                poolJson);
+            envelope->setProperty ("input_mixer",         inputMixerJson);
+            envelope->setProperty ("output_mixer",        outputMixerJson);
+            envelope->setProperty ("phrase_channel_map",  phraseMapJson);
             const auto fileText = juce::JSON::toString (juce::var (envelope.get()));
             if (target.replaceWithText (fileText))
                 preparationPane_->setStatus ("Saved to " + target.getFullPathName());
@@ -4703,6 +4725,12 @@ void MainComponent::chooseFileAndLoad()
                 // carries a "ida_version" key; legacy files carry "version".
                 juce::String sessionJson;
                 TapePool loadedPool;                    // default: 1 tape, id=1
+                // Slice P (2026-05-24): envelope v2 carries mixer graphs + the
+                // phrase-channel binding. Default-constructed = "no change to
+                // current mixer state / map" (v1 and pre-envelope back-compat).
+                std::optional<ida::InputMixerGraphState>  loadedInputMixer;
+                std::optional<ida::OutputMixerGraphState> loadedOutputMixer;
+                std::vector<std::pair<std::int64_t, std::int64_t>> loadedPhraseMap;
 
                 juce::var envelope;
                 if (juce::JSON::parse (fileText, envelope).wasOk()
@@ -4716,6 +4744,18 @@ void MainComponent::chooseFileAndLoad()
                     const auto poolStr = envelope.getProperty ("pool", {}).toString();
                     if (poolStr.isNotEmpty())
                         loadedPool = persistence::deserializeTapePool (poolStr);
+
+                    // v2 keys — absent on v1 envelopes, in which case the
+                    // mixers stay at their pre-load state (current behavior).
+                    const auto inMixStr = envelope.getProperty ("input_mixer", {}).toString();
+                    if (inMixStr.isNotEmpty())
+                        loadedInputMixer = persistence::deserializeInputMixerGraphState (inMixStr);
+                    const auto outMixStr = envelope.getProperty ("output_mixer", {}).toString();
+                    if (outMixStr.isNotEmpty())
+                        loadedOutputMixer = persistence::deserializeOutputMixerGraphState (outMixStr);
+                    const auto mapStr = envelope.getProperty ("phrase_channel_map", {}).toString();
+                    if (mapStr.isNotEmpty())
+                        loadedPhraseMap = persistence::deserializePhraseChannelMap (mapStr);
                 }
                 else
                 {
@@ -4770,6 +4810,13 @@ void MainComponent::chooseFileAndLoad()
                 // any channel that pointed at a removed terminal to the primary
                 // (see MixerGraph::removeTerminal), so terminals being referenced
                 // stay valid throughout.
+                //
+                // Slice P (2026-05-24): mixer graph imports share the same
+                // bracket — importGraphState mutates the routing graph the
+                // audio thread reads. Order: stop callback → tape pool →
+                // mixer imports → restart callback. The freshly-constructed
+                // mixer precondition that importGraphState relies on is met
+                // by replacing the mixer instances with brand-new ones.
                 {
                     audioDeviceManager_.removeAudioCallback (audioCallback_.get());
                     for (const auto& tape : tapePool_.tapes())
@@ -4779,9 +4826,49 @@ void MainComponent::chooseFileAndLoad()
                     }
                     tapePool_ = std::move (loadedPool);
                     ida::mirrorTapePool (tapePool_, *inputMixer_);
+
+                    if (loadedInputMixer.has_value() || loadedOutputMixer.has_value())
+                    {
+                        // The mixers' importGraphState requires a fresh
+                        // instance (asserts no bus collisions on the input
+                        // side). Replace the wiring around the audio
+                        // callback while it's detached.
+                        if (loadedInputMixer.has_value())
+                        {
+                            inputMixer_ = std::make_unique<ida::InputMixer>();
+                            inputMixer_->setNotificationBus (notificationBus_.get());
+                            inputMixer_->setTapeSink (flacTapeSink_.get());
+                            inputMixer_->setEffectChainHost (&effectChainHost_);
+                            ida::mirrorTapePool (tapePool_, *inputMixer_);
+                            inputMixer_->importGraphState (*loadedInputMixer);
+                        }
+                        if (loadedOutputMixer.has_value())
+                        {
+                            outputMixer_ = std::make_unique<ida::OutputMixer>();
+                            outputMixer_->setEffectChainHost (&effectChainHost_);
+                            outputMixer_->importGraphState (*loadedOutputMixer);
+                        }
+                        // The AudioCallback holds raw pointers to the mixers;
+                        // re-bind it to the new instances before re-arming.
+                        audioCallback_->setInputMixer  (inputMixer_.get());
+                        audioCallback_->setOutputMixer (outputMixer_.get());
+                    }
                     audioDeviceManager_.addAudioCallback (audioCallback_.get());
                 }
                 refreshTapesPane();
+
+                // Slice P (2026-05-24): restore the phrase-channel binding
+                // BEFORE refreshPreparation/refreshPerformance — those
+                // cascade into refreshOutputMixerPhraseChannels, which adds
+                // channels for any ConstituentId not already in the map. A
+                // pre-populated map means surviving Constituents bind back
+                // to their saved OutputChannelId rather than minting fresh
+                // ones (which would orphan the saved per-channel mix state).
+                phraseChannelByConstituent_.clear();
+                for (const auto& [cid, chId] : loadedPhraseMap)
+                    phraseChannelByConstituent_.emplace (
+                        cid, ida::OutputChannelId (chId));
+
                 // The white paper Part 14.7 rule: load is an edit; preserve
                 // the existing undo history rather than wiping it. The
                 // operator can undo back to whatever was on screen before.

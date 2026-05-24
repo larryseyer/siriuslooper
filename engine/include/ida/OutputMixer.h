@@ -342,6 +342,14 @@ private:
     /// bounds-check before indexing.
     std::size_t sendMatrixIndex (OutputChannelId channel, BusId bus) const noexcept;
 
+    /// Shared body of addChannel and importGraphState. Wires every parallel
+    /// vector for a freshly-registered channel at `id`, defaults its
+    /// sendMatrix row to unity-into-master, and bumps master's active-sender
+    /// counter. addChannel allocates `id` (free-list or counter);
+    /// importGraphState passes the persisted id verbatim so removeChannel-
+    /// induced gaps round-trip.
+    void registerChannelWithId (SignalType type, OutputChannelId id);
+
     MixerGraph                graph_ { MixerTerminal::HardwareOutput };
     std::vector<MixerNodeId>  channelNodeIds_; // parallel to channels_
     std::vector<MixerNodeId>  busNodeIds_;     // parallel to buses_ (index 0 = master)
