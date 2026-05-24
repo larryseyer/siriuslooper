@@ -476,6 +476,12 @@ public:
         // mode where the strip row is hidden and there's no other
         // visible way to back out.
         setWantsKeyboardFocus (true);
+
+        // Touch-friendly back affordance for the same gesture — visible
+        // only in EQ / CMP full-screen mode (resized() controls visibility).
+        backButton_ = std::make_unique<juce::TextButton> ("Back");
+        backButton_->onClick = [this] { deselectAll(); };
+        addChildComponent (*backButton_);
     }
 
     /// Clear any current selection + hide the detail panel + restore strip
@@ -706,6 +712,16 @@ public:
         }
         rebuildChannelPills();
         resized();
+
+        // First non-empty strip set after launch → default-select strip 0 so
+        // the operator sees a populated detail panel without having to click.
+        // Operator intent (Escape, or a manual selection elsewhere) wins on
+        // subsequent rebuilds.
+        if (! defaultSelectionDone_ && ! infos.empty() && onSelect)
+        {
+            defaultSelectionDone_ = true;
+            onSelect (0);
+        }
     }
 
     /// Pushes the destination state: the shared `choices` list (stored once for
@@ -989,6 +1005,21 @@ public:
             area.removeFromBottom (kGap);
             detailPanel_.setBounds (area);
 
+            // Back button overlays the top-right corner of the panel. Same
+            // gesture as Escape; load-bearing on touch devices that have no
+            // keyboard.
+            if (backButton_)
+            {
+                constexpr int kBackW = 72;
+                constexpr int kBackH = 28;
+                constexpr int kBackMargin = 6;
+                backButton_->setBounds (area.getRight() - kBackW - kBackMargin,
+                                        area.getY()     + kBackMargin,
+                                        kBackW, kBackH);
+                backButton_->setVisible (true);
+                backButton_->toFront (false);
+            }
+
             const int n = static_cast<int> (channelPills_.size());
             if (n > 0)
             {
@@ -1024,6 +1055,7 @@ public:
         for (auto& b : busStripInsButtons_)  b->setVisible (true);
         for (auto& o : busNameOverlays_)     o->setVisible (true);
         for (auto& p : channelPills_)        if (p) p->setVisible (false);
+        if (backButton_) backButton_->setVisible (false);
 
         // The detail panel (when a strip is selected) takes a fixed band across
         // the top; the strip row fills the remainder below it.
@@ -1346,6 +1378,14 @@ private:
     int                                                       selectedStrip_ { -1 };
     int                                                       selectedBus_   { -1 };
     std::vector<std::unique_ptr<juce::TextButton>>            channelPills_;
+    /// Back button — only visible in EQ/CMP full-screen mode. Clicking it
+    /// calls deselectAll() (same as Escape key) so the operator can exit
+    /// full-screen without needing the keyboard.
+    std::unique_ptr<juce::TextButton>                         backButton_;
+    /// True once the pane has fired its initial default-selection
+    /// (`onSelect(0)`) after the first non-empty setStrips. Subsequent
+    /// rebuilds don't re-trigger — operator intent wins.
+    bool                                                      defaultSelectionDone_ { false };
     int                                                       longPressIdx_ { -1 };
     bool                                                      longPressBlank_ { false };
     juce::Point<int>                                          longPressScreenPos_;
@@ -1419,6 +1459,12 @@ public:
         // Escape-to-deselect — required when the operator lands in
         // full-screen EQ / CMP and needs out.
         setWantsKeyboardFocus (true);
+
+        // Touch-friendly back affordance for the same gesture — only
+        // visible in EQ / CMP full-screen mode (resized() gates this).
+        backButton_ = std::make_unique<juce::TextButton> ("Back");
+        backButton_->onClick = [this] { deselectAll(); };
+        addChildComponent (*backButton_);
 
         masterIns_ = std::make_unique<juce::TextButton>();
         masterIns_->setButtonText ("INS");
@@ -1752,6 +1798,22 @@ public:
         resized();
     }
 
+    /// Default-select Master on first launch. MainComponent calls this once,
+    /// after all output-pane callbacks are wired AND output mixer init has
+    /// run, so onMasterSelect can populate the EQ/CMP probes safely.
+    /// Subsequent calls no-op — operator intent wins on later interactions.
+    void triggerDefaultMasterSelection()
+    {
+        if (defaultSelectionDone_) return;
+        if (! onMasterSelect)      return;
+        defaultSelectionDone_ = true;
+        if (master_) master_->setSelected (true);
+        selectedPhrase_ = -1;
+        selectedBus_    = -1;
+        selectedMaster_ = true;
+        onMasterSelect();
+    }
+
     /// Rebuilds the LEFT-band phrase-strip row from `infos` (slice 5b). Order
     /// matches PillState (DFS) order — MainComponent owns the enumeration.
     /// One strip per phrase, name read-only in 5b. Mirrors setBusStrips shape
@@ -1928,6 +1990,20 @@ public:
             auto pillRow = area.removeFromBottom (kPillRowHeight);
             area.removeFromBottom (kGap);
             detailPanel_.setBounds (area);
+
+            // Back button overlays the top-right corner of the detail panel.
+            // Same gesture as Escape; load-bearing on touch devices.
+            if (backButton_)
+            {
+                constexpr int kBackW = 72;
+                constexpr int kBackH = 28;
+                constexpr int kBackMargin = 6;
+                backButton_->setBounds (area.getRight() - kBackW - kBackMargin,
+                                        area.getY()     + kBackMargin,
+                                        kBackW, kBackH);
+                backButton_->setVisible (true);
+                backButton_->toFront (false);
+            }
 
             const int n = static_cast<int> (channelPills_.size());
             if (n > 0)
@@ -2369,6 +2445,11 @@ private:
     int                                                        selectedBus_    { -1 };
     bool                                                       selectedMaster_ { false };
     std::vector<std::unique_ptr<juce::TextButton>>             channelPills_;
+    /// Back button — only visible in EQ/CMP full-screen mode. Clicking
+    /// it calls deselectAll() (same as Escape).
+    std::unique_ptr<juce::TextButton>                          backButton_;
+    /// True once initial default-select fired (Master on first run).
+    bool                                                       defaultSelectionDone_ { false };
 
     bool                                                      longPressBlank_ { false };
     juce::Point<int>                                          longPressScreenPos_;
@@ -3908,6 +3989,12 @@ MainComponent::MainComponent()
         tabs_.addTab ("Output Mixer", juce::Colours::black, outputMixerPane_.get(), false);
         rebuildOutputBusStrips();          // no-ops at construction time (zero aux buses)
         refreshOutputDestinations();
+
+        // Default-select Master on first launch — operator sees a populated
+        // detail panel instead of the blank pane. All callbacks are now wired
+        // and the output mixer is initialized, so collectOutputMaster*View()
+        // probes are safe to call.
+        outputMixerPane_->triggerDefaultMasterSelection();
     }
 
     // --- Tapes tab (tape-UI T5 — the operator-facing tape-pool management
