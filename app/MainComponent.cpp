@@ -1095,6 +1095,12 @@ public:
     /// (no input-side returns) — every entry here is a plain bus.
     struct BusInfo { juce::String name; };
 
+    /// One phrase-channel strip's display state (slice 5b). LEFT-band strip
+    /// in PillState (DFS) order; name is read-only (phrase rename is a
+    /// separate future slice). The Constituent id is round-tripped so the
+    /// pane-side callbacks can identify which phrase the operator touched.
+    struct PhraseStripInfo { ida::ConstituentId id { 0 }; juce::String name; };
+
     /// A bus destination kind. Output buses have no Tape option (the Output
     /// Mixer is the mixdown side; tape is the Input Mixer's terminal).
     enum class DestKind { Bus, HardwareOutput };
@@ -1127,6 +1133,14 @@ public:
     std::function<void (int busIdx)>                   onBusInsertChainClicked;
     std::function<void (int busIdx, DestChoice dest)>  onBusDestinationChosen;
     std::function<void (int busIdx, juce::String newName)> onBusRename;
+
+    // --- Phrase-channel gesture relays (slice 5b; idx = phrase-strip row index,
+    // parallel to setPhraseStrips). ChannelType::Instrument distinguishes
+    // phrase strips from aux buses in the shared CompactFaderStripListener.
+    std::function<void (int phraseIdx, float gainLinear)> onPhraseGain;
+    std::function<void (int phraseIdx, bool muted)>       onPhraseMute;
+    std::function<void (int phraseIdx)>                   onPhraseInsertChainClicked;
+    std::function<void (int phraseIdx, DestChoice dest)>  onPhraseDestinationChosen;
 
     void setMasterLevelDb (float dbL, float dbR)
     {
@@ -1243,6 +1257,77 @@ public:
         busStrips_[static_cast<std::size_t> (busIdx)]->setChannelName (newName);
     }
 
+    /// Rebuilds the LEFT-band phrase-strip row from `infos` (slice 5b). Order
+    /// matches PillState (DFS) order — MainComponent owns the enumeration.
+    /// One strip per phrase, name read-only in 5b. Mirrors setBusStrips shape
+    /// minus the name overlay (no rename gesture in this slice).
+    void setPhraseStrips (const std::vector<PhraseStripInfo>& infos)
+    {
+        phraseStrips_.clear();
+        phraseDestButtons_.clear();
+        phraseInsButtons_.clear();
+        phraseStripDests_.clear();
+        phraseChoices_.clear();
+        for (int i = 0; i < static_cast<int> (infos.size()); ++i)
+        {
+            auto strip = std::make_unique<otto::ui::CompactFaderStrip> (
+                i, otto::ui::ChannelType::Instrument);
+            strip->setChannelName (infos[static_cast<std::size_t> (i)].name);
+            strip->setOutputComboVisible (false);   // pane owns routing, not the combo
+            strip->addListener (this);
+            addAndMakeVisible (*strip);
+            phraseStrips_.push_back (std::move (strip));
+
+            auto destBtn = std::make_unique<juce::TextButton>();
+            destBtn->setButtonText ("—");
+            const int idx = i;
+            destBtn->onClick = [this, idx] { showPhraseDestinationMenu (idx); };
+            addAndMakeVisible (*destBtn);
+            phraseDestButtons_.push_back (std::move (destBtn));
+            phraseStripDests_.push_back ({});
+
+            auto ins = std::make_unique<juce::TextButton>();
+            ins->setButtonText ("INS");
+            ins->onClick = [this, idx]
+            {
+                if (onPhraseInsertChainClicked) onPhraseInsertChainClicked (idx);
+            };
+            addAndMakeVisible (*ins);
+            phraseInsButtons_.push_back (std::move (ins));
+        }
+        resized();
+    }
+
+    /// Mirrors setBusDestinations for phrase strips. `perPhraseChoices[i]` is
+    /// phrase `i`'s picker contents; `perPhrase[i]` is its current destination
+    /// (drives button label + ticked item in the popup). Phrase→bus routing
+    /// has no cycle filter in 5b (phrases are leaves in the routing graph).
+    void setPhraseDestinations (const std::vector<std::vector<DestChoice>>& perPhraseChoices,
+                                const std::vector<StripDest>& perPhrase)
+    {
+        phraseChoices_ = perPhraseChoices;
+        jassert (static_cast<int> (perPhrase.size()) == phraseStripCount());
+        for (int i = 0; i < phraseStripCount() && i < static_cast<int> (perPhrase.size()); ++i)
+        {
+            phraseStripDests_[static_cast<std::size_t> (i)] = perPhrase[static_cast<std::size_t> (i)];
+            const auto& label = perPhrase[static_cast<std::size_t> (i)].currentName;
+            phraseDestButtons_[static_cast<std::size_t> (i)]->setButtonText (label.isEmpty() ? "—" : label);
+        }
+    }
+
+    [[nodiscard]] int phraseStripCount() const noexcept
+    {
+        return static_cast<int> (phraseStrips_.size());
+    }
+
+    /// Screen bounds of phrase strip `phraseIdx`'s INS button, used to anchor
+    /// the InsertChainPopup CallOutBox. Empty rect if out of range.
+    juce::Rectangle<int> phraseInsButtonScreenArea (int phraseIdx) const
+    {
+        if (phraseIdx < 0 || phraseIdx >= static_cast<int> (phraseInsButtons_.size())) return {};
+        return phraseInsButtons_[static_cast<std::size_t> (phraseIdx)]->getScreenBounds();
+    }
+
     [[nodiscard]] int busStripCount() const noexcept
     {
         return static_cast<int> (busStrips_.size());
@@ -1356,19 +1441,44 @@ public:
                 pickerRow.removeFromRight (kGap);
             }
         }
+
+        // Phrase strips (slice 5b) fill the remaining LEFT band, left-to-right,
+        // in PillState (DFS) order — MainComponent::refreshOutputMixerPhraseChannels
+        // owns the enumeration. No inter-strip gap after the last (rightmost)
+        // strip so the phrase group has no trailing gap before the bus divider.
+        for (int i = 0; i < phraseStripCount(); ++i)
+        {
+            auto stripBounds = area.removeFromLeft (kStripW);
+            phraseStrips_[static_cast<std::size_t> (i)]->setBounds (stripBounds);
+            phraseInsButtons_[static_cast<std::size_t> (i)]->setBounds (insRow.removeFromLeft (kStripW));
+            phraseDestButtons_[static_cast<std::size_t> (i)]->setBounds (pickerRow.removeFromLeft (kStripW));
+            if (i + 1 < phraseStripCount())
+            {
+                area.removeFromLeft (kGap);
+                insRow.removeFromLeft (kGap);
+                pickerRow.removeFromLeft (kGap);
+            }
+        }
     }
 
     void paint (juce::Graphics& g) override { g.fillAll (otto::Colours::bg2); }
 
-    // --- CompactFaderStripListener — master (idx == kMasterStripId) vs aux ---
-    void stripGainChanged (int idx, otto::ui::ChannelType, float gain) override
+    // --- CompactFaderStripListener — master (idx == kMasterStripId) vs aux vs
+    // phrase. Phrase strips are distinguished from aux buses by their
+    // ChannelType::Instrument tag (aux buses use ChannelType::Bus); the row
+    // index alone can collide because both rows are 0-based.
+    void stripGainChanged (int idx, otto::ui::ChannelType type, float gain) override
     {
         if (idx == kMasterStripId) { if (onMasterGain) onMasterGain (gain); }
+        else if (type == otto::ui::ChannelType::Instrument)
+        { if (onPhraseGain) onPhraseGain (idx, gain); }
         else if (onBusGain)        onBusGain (idx, gain);
     }
-    void stripMuteChanged (int idx, otto::ui::ChannelType, bool muted) override
+    void stripMuteChanged (int idx, otto::ui::ChannelType type, bool muted) override
     {
         if (idx == kMasterStripId) { if (onMasterMute) onMasterMute (muted); }
+        else if (type == otto::ui::ChannelType::Instrument)
+        { if (onPhraseMute) onPhraseMute (idx, muted); }
         else if (onBusMute)        onBusMute (idx, muted);
     }
     void stripSoloChanged (int, otto::ui::ChannelType, bool) override {}
@@ -1443,6 +1553,25 @@ private:
             masterDestButton_.get()));
     }
 
+    void showPhraseDestinationMenu (int idx)
+    {
+        if (idx < 0 || idx >= phraseStripCount()) return;
+        if (idx >= static_cast<int> (phraseChoices_.size())) return;
+        const auto& choices = phraseChoices_[static_cast<std::size_t> (idx)];
+        if (choices.empty()) return;
+        const auto& cur = phraseStripDests_[static_cast<std::size_t> (idx)];
+        juce::PopupMenu menu;
+        for (const auto& choice : choices)
+        {
+            const bool ticked = destMatches (choice, cur);
+            const DestChoice d = choice;
+            menu.addItem (choice.name, /*enabled*/ true, ticked,
+                          [this, idx, d] { if (onPhraseDestinationChosen) onPhraseDestinationChosen (idx, d); });
+        }
+        menu.showMenuAsync (juce::PopupMenu::Options{}.withTargetComponent (
+            phraseDestButtons_[static_cast<std::size_t> (idx)].get()));
+    }
+
     /// Per-aux-strip context menu — currently just "Rename…". Triggered by
     /// the StripContextOverlay's right-click or long-press gesture.
     void showBusContextMenu (int idx)
@@ -1475,6 +1604,13 @@ private:
     std::vector<std::unique_ptr<ida::app::StripContextOverlay>> busNameOverlays_;
     std::vector<StripDest>                                     busStripDests_;
     std::vector<std::vector<DestChoice>>                       busChoices_;
+
+    // Phrase-channel row (slice 5b) — LEFT-anchored, no name overlay
+    std::vector<std::unique_ptr<otto::ui::CompactFaderStrip>>  phraseStrips_;
+    std::vector<std::unique_ptr<juce::TextButton>>             phraseDestButtons_;
+    std::vector<std::unique_ptr<juce::TextButton>>             phraseInsButtons_;
+    std::vector<StripDest>                                     phraseStripDests_;
+    std::vector<std::vector<DestChoice>>                       phraseChoices_;
 
     bool                                                      longPressBlank_ { false };
     juce::Point<int>                                          longPressScreenPos_;
@@ -2524,6 +2660,48 @@ MainComponent::MainComponent()
             // old name — refresh so their labels and menu entries update too.
             refreshOutputDestinations();
         };
+
+        // --- Phrase-channel relays (slice 5b) --------------------------------
+        // Gain + mute are visual-only in 5b: phrase channels don't feed audio
+        // yet (5a left the render path untouched, per design doc §5a). The
+        // CompactFaderStrip owns the visual state; engine wiring lights up
+        // when the render path lands. INS-button popup is a separate slice.
+        outputMixerPane_->onPhraseGain               = [] (int, float) {};
+        outputMixerPane_->onPhraseMute               = [] (int, bool)  {};
+        outputMixerPane_->onPhraseInsertChainClicked = [] (int)        {};
+        outputMixerPane_->onPhraseDestinationChosen = [this]
+            (int phraseIdx, OutputMixerPane::DestChoice dest)
+        {
+            // Resolve the phrase row to its OutputChannelId. Out-of-range guards
+            // defend against a stale callback firing during a mid-refresh race.
+            if (phraseIdx < 0
+                || phraseIdx >= static_cast<int> (phraseStripConstituentIds_.size())) return;
+            const auto cid = phraseStripConstituentIds_[static_cast<std::size_t> (phraseIdx)];
+            const auto it  = phraseChannelByConstituent_.find (cid.value());
+            if (it == phraseChannelByConstituent_.end()) return;
+            const auto chId = it->second;
+
+            audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+            // Radio-style semantics (slice 5b): pick exactly one destination.
+            // Zero every existing send, then set the chosen one to unity. For
+            // HardwareOutput, all sends stay zero so refreshOutputDestinations
+            // can infer the choice from a zero-row + the stored pair index.
+            const int busN = outputMixer_->busCount();
+            for (int b = 0; b < busN; ++b)
+                outputMixer_->routeChannelToBus (chId, ida::BusId { static_cast<std::int64_t> (b) }, 0.0f);
+            switch (dest.kind)
+            {
+                case OutputMixerPane::DestKind::Bus:
+                    outputMixer_->routeChannelToBus (chId, ida::BusId { dest.id }, 1.0f);
+                    break;
+                case OutputMixerPane::DestKind::HardwareOutput:
+                    outputMixer_->setChannelMainOutToHardwareOutput (chId, dest.pairIndex);
+                    break;
+            }
+            audioDeviceManager_.addAudioCallback (audioCallback_.get());
+            refreshOutputDestinations();
+        };
+
         tabs_.addTab ("Output Mixer", juce::Colours::black, outputMixerPane_.get(), false);
         rebuildOutputBusStrips();          // no-ops at construction time (zero aux buses)
         refreshOutputDestinations();
@@ -3173,6 +3351,86 @@ void MainComponent::rebuildOutputBusStrips()
     outputMixerPane_->setBusStrips (infos);
 }
 
+void MainComponent::refreshOutputMixerPhraseChannels()
+{
+    if (outputMixerPane_ == nullptr) return;
+
+    // Pull the current pill list from the same selector the Preparation tab
+    // uses (TimelineViewState::pills is DFS order via the constituent walk).
+    // This is called from both refreshPreparation and refreshPerformance so
+    // it stays in lockstep with timeline edits.
+    const auto timeline = selectTimelineView (*undoStack_.current(),
+                                              demo_.sessionToLmc,
+                                              inputs_,
+                                              armedTapesVec(),
+                                              focusedTape_);
+
+    // Build the new pane-row order (one strip per pill, in pill order).
+    std::vector<ida::ConstituentId> newOrder;
+    newOrder.reserve (timeline.pills.size());
+    for (const auto& pill : timeline.pills) newOrder.push_back (pill.id);
+
+    // Compute the set of pills for delta detection.
+    std::unordered_set<std::int64_t> newSet;
+    newSet.reserve (newOrder.size());
+    for (const auto& id : newOrder) newSet.insert (id.value());
+
+    // Engine mutations (add / remove channels) bracket the audio callback —
+    // OutputMixer::addChannel / removeChannel are message-thread only and the
+    // free-list / parallel-vector swap-erase isn't safe against a concurrent
+    // renderBuffer. Skip the bracket entirely when there's nothing to mutate.
+    std::vector<std::int64_t> toRemove;
+    for (const auto& kv : phraseChannelByConstituent_)
+        if (newSet.find (kv.first) == newSet.end()) toRemove.push_back (kv.first);
+    std::vector<ida::ConstituentId> toAdd;
+    for (const auto& id : newOrder)
+        if (phraseChannelByConstituent_.find (id.value()) == phraseChannelByConstituent_.end())
+            toAdd.push_back (id);
+
+    if (! toRemove.empty() || ! toAdd.empty())
+    {
+        audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+        for (auto cidValue : toRemove)
+        {
+            outputMixer_->removeChannel (phraseChannelByConstituent_.at (cidValue));
+            phraseChannelByConstituent_.erase (cidValue);
+        }
+        for (const auto& cid : toAdd)
+        {
+            const auto chId = outputMixer_->addChannel (ida::SignalType::Audio);
+            if (chId.value() == 0) continue; // engine at kMaxOutputChannels cap
+            outputMixer_->setChannelStrip (chId,
+                std::make_unique<ChannelStrip<SignalType::Audio>>());
+            phraseChannelByConstituent_.emplace (cid.value(), chId);
+        }
+        audioDeviceManager_.addAudioCallback (audioCallback_.get());
+    }
+
+    // Skip the pane rebuild when nothing structural changed — setPhraseStrips
+    // recreates CompactFaderStrip instances and would nuke an in-progress
+    // fader drag's visual state. Order matters: a pure pill reorder still
+    // requires rebuild because phrase strips render left-to-right in pill
+    // order.
+    if (newOrder == phraseStripConstituentIds_)
+    {
+        // Still refresh destination labels in case the operator added/removed
+        // an aux bus that's now (un)available as a phrase target — no-op when
+        // the bus list also didn't change.
+        refreshOutputDestinations();
+        return;
+    }
+
+    phraseStripConstituentIds_ = newOrder;
+
+    std::vector<OutputMixerPane::PhraseStripInfo> infos;
+    infos.reserve (timeline.pills.size());
+    for (const auto& pill : timeline.pills)
+        infos.push_back ({ pill.id, juce::String (pill.name) });
+    outputMixerPane_->setPhraseStrips (infos);
+
+    refreshOutputDestinations();
+}
+
 void MainComponent::refreshOutputDestinations()
 {
     if (outputMixerPane_ == nullptr) return;
@@ -3270,6 +3528,67 @@ void MainComponent::refreshOutputDestinations()
     masterDest.currentPairIndex = outputMixer_->busHardwareOutPair (ida::BusId{ 0 });
     masterDest.currentName      = labelForPair (masterDest.currentPairIndex);
     outputMixerPane_->setMasterDestination (masterChoices, masterDest);
+
+    // Phrase-strip picker (slice 5b). One picker per phrase row; choice list
+    // is master + every aux bus + every physical pair (no cycle filter —
+    // phrase channels are leaves in the routing graph). Current destination
+    // is INFERRED from sendMatrix + hardwareOutPair on the radio-style
+    // assumption that onPhraseDestinationChosen is the only mutator: exactly
+    // one send at unity, all others at 0, means "Bus(X)"; all sends at 0
+    // means "HardwareOutput at the stored pair."
+    const int pn = static_cast<int> (phraseStripConstituentIds_.size());
+    std::vector<std::vector<OutputMixerPane::DestChoice>> perPhraseChoices (static_cast<std::size_t> (pn));
+    std::vector<OutputMixerPane::StripDest>               perPhrase (static_cast<std::size_t> (pn));
+
+    for (int i = 0; i < pn; ++i)
+    {
+        const auto cid = phraseStripConstituentIds_[static_cast<std::size_t> (i)];
+        const auto it  = phraseChannelByConstituent_.find (cid.value());
+        if (it == phraseChannelByConstituent_.end()) continue;
+        const auto chId = it->second;
+
+        auto& choices = perPhraseChoices[static_cast<std::size_t> (i)];
+        choices.push_back ({ DestKind::Bus, /*id*/ 0, "Master", /*pairIndex*/ 0 });
+        for (const auto& busId : outputBusStripIds_)
+            if (auto* bus = outputMixer_->busForId (busId))
+                choices.push_back ({ DestKind::Bus, busId.value(),
+                                     juce::String (bus->config().name),
+                                     /*pairIndex*/ 0 });
+        for (const auto& p : hwPairs)
+            choices.push_back ({ DestKind::HardwareOutput, /*id*/ 0, p.label, p.pairIndex });
+
+        // Infer current destination. Walk the engine bus list, find the one
+        // with send == 1.0 (radio invariant). If none, the operator's last
+        // choice was HardwareOutput (and the pair is in hardwareOutPair).
+        auto& dest = perPhrase[static_cast<std::size_t> (i)];
+        ida::BusId activeBus { -1 };
+        const int bn = outputMixer_->busCount();
+        for (int b = 0; b < bn; ++b)
+        {
+            const ida::BusId bid { static_cast<std::int64_t> (b) };
+            if (outputMixer_->sendLevelFor (chId, bid) > 0.0f) { activeBus = bid; break; }
+        }
+        if (activeBus.value() >= 0)
+        {
+            dest.currentKind      = DestKind::Bus;
+            dest.currentId        = activeBus.value();
+            dest.currentPairIndex = 0;
+            if (activeBus.value() == 0)
+                dest.currentName = "Master";
+            else if (auto* bus = outputMixer_->busForId (activeBus))
+                dest.currentName = juce::String (bus->config().name);
+        }
+        else
+        {
+            const int pair = outputMixer_->channelMainOutHardwareOutPair (chId);
+            dest.currentKind      = DestKind::HardwareOutput;
+            dest.currentId        = 0;
+            dest.currentPairIndex = pair;
+            dest.currentName      = labelForPair (pair);
+        }
+    }
+
+    outputMixerPane_->setPhraseDestinations (perPhraseChoices, perPhrase);
 }
 
 // Resolves each strip's current main-out destination and builds the full choice
@@ -3556,6 +3875,7 @@ void MainComponent::toggleInputPairStereo (int stripIndex)
 
 void MainComponent::refreshPreparation()
 {
+    refreshOutputMixerPhraseChannels();   // slice 5b: keep phrase strips in lockstep with the pill list
     preparationPane_->setState (selectPreparationView (*undoStack_.current()));
     refreshTimeline();
     refreshDiagnostics();

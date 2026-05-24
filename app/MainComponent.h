@@ -34,6 +34,7 @@
 #include <cstdint>
 #include <deque>
 #include <memory>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -112,8 +113,18 @@ private:
     void rebuildOutputBusStrips();
     /// Resolves each aux bus's current main-out destination + builds its
     /// per-bus picker choice list (every OTHER aux bus + master + "Direct
-    /// out"). Pushed into the pane via setBusDestinations. Message-thread only.
+    /// out"). Pushed into the pane via setBusDestinations. Phrase strips
+    /// (slice 5b) get the same treatment via setPhraseDestinations — phrase
+    /// channels have no cycle filter (they're leaves in the routing graph).
+    /// Message-thread only.
     void refreshOutputDestinations();
+    /// Walks the current pill list (PillState DFS order via selectTimelineView),
+    /// adds/removes OutputMixer channels to match, and pushes the resulting
+    /// PhraseStripInfo array to the pane. Skips the pane rebuild when the
+    /// pill set + order are unchanged (avoids nuking fader state on every
+    /// refresh tick). Engine mutations are bracketed by audio-callback pause.
+    /// Message-thread only; called from refreshPreparation + refreshPerformance.
+    void refreshOutputMixerPhraseChannels();
     /// Opens the InsertChainPopup anchored to aux bus `busIdx`'s INS button.
     /// Same detach/setEffectChain/re-attach shape as the input variants —
     /// see openInsertChainPopupForMasterBus.
@@ -336,6 +347,23 @@ private:
     /// NOT in this vector — it's tracked separately by the pane's master_.
     /// Kept in sync by rebuildOutputBusStrips().
     std::vector<ida::BusId>      outputBusStripIds_;
+
+    // --- slice 5b: phrase-channel binding ----------------------------------
+    /// Pane-row order for the LEFT-band phrase strips, parallel to
+    /// OutputMixerPane::phraseStrips_. Each entry is the ConstituentId of the
+    /// phrase rendered at that row. Kept in sync by
+    /// refreshOutputMixerPhraseChannels(). Empty on startup (no phrases yet).
+    std::vector<ida::ConstituentId> phraseStripConstituentIds_;
+    /// ConstituentId → OutputChannelId binding for phrase-channel engine
+    /// strips. Keyed by ConstituentId.value() because ConstituentId is not
+    /// hashable. Survives pill ordering changes (id is stable across CoW
+    /// edits); the (ConstituentId, OutputChannelId) pair is not persisted in
+    /// 5b — that lands in 5c. Current destination is INFERRED at refresh
+    /// time from sendMatrix + hardwareOutPair (no separate state map needed
+    /// because the picker is radio-style: a single send at unity, all
+    /// others at 0; hardware-output choice zeroes every send).
+    std::unordered_map<std::int64_t, ida::OutputChannelId>
+                                 phraseChannelByConstituent_;
 
     // --- Plugins tab ---
     class PluginListBox;
