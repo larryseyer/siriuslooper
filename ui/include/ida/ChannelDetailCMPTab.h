@@ -84,7 +84,9 @@ private:
     static constexpr int kAddButtonHeight    = 48;
     static constexpr int kKnobTitleHeight    = 16;
     static constexpr int kReadoutHeight      = 14;
-    static constexpr int kKnobMinSize        = 40;
+    static constexpr int kKnobMinSize        = 36;
+    static constexpr int kSidechainToggleW   = 160;
+    static constexpr int kSidechainToggleH   = 32;
     static constexpr int kColGap             = 6;
     static constexpr int kRowGap             = 4;
 

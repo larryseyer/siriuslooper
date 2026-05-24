@@ -33,7 +33,7 @@ juce::String formatMix (float mix)
 
 ChannelDetailCMPTab::ChannelDetailCMPTab()
 {
-    enableToggle_ = std::make_unique<juce::ToggleButton> ("ENABLE");
+    enableToggle_ = std::make_unique<juce::ToggleButton> ("CMP ENABLED");
     enableToggle_->setColour (juce::ToggleButton::textColourId, otto::Colours::textPrimary);
     enableToggle_->onClick = [this]
     {
@@ -242,10 +242,11 @@ void ChannelDetailCMPTab::resized()
         return;
     }
 
-    // Top row: ENABLE on the left, SIDECHAIN HPF on the right.
+    // Top row: CMP ENABLED on the left only — mirrors EQ tab's top band
+    // which has no right-corner control. Sidechain HPF moves to the
+    // right end of the knob row below.
     auto topRow = bounds.removeFromTop (kEnableToggleHeight);
-    enableToggle_->setBounds       (topRow.removeFromLeft  (90));
-    sidechainHpfToggle_->setBounds (topRow.removeFromRight (200));
+    enableToggle_->setBounds (topRow.removeFromLeft (120));
     bounds.removeFromTop (kRowGap);
 
     // Meter view dominates when there's room (full-screen tab mode); in
@@ -260,7 +261,16 @@ void ChannelDetailCMPTab::resized()
         bounds.removeFromTop (kRowGap);
     }
 
-    // 6 equal-width knob columns.
+    // Knob row: 6 equal-width knob columns on the left, sidechain HPF
+    // toggle pinned to the right (mirrors EQ contextual row's Bypass on
+    // the right of the shelf knob trio).
+    auto sidechainCell = bounds.removeFromRight (kSidechainToggleW);
+    bounds.removeFromRight (kColGap);
+    const int sidechainY = sidechainCell.getY()
+                         + (sidechainCell.getHeight() - kSidechainToggleH) / 2;
+    sidechainHpfToggle_->setBounds (sidechainCell.getX(), sidechainY,
+                                    sidechainCell.getWidth(), kSidechainToggleH);
+
     const int totalGap = kColGap * (kKnobCount - 1);
     const int colW = (bounds.getWidth() - totalGap) / kKnobCount;
     for (int k = 0; k < kKnobCount; ++k)
