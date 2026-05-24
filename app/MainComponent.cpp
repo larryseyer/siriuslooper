@@ -704,6 +704,7 @@ public:
             addAndMakeVisible (*ins);
             inputStripInsButtons_.push_back (std::move (ins));
         }
+        rebuildChannelPills();
         resized();
     }
 
@@ -821,6 +822,7 @@ public:
             addAndMakeVisible (*overlay);
             busNameOverlays_.push_back (std::move (overlay));
         }
+        rebuildChannelPills();
         resized();
     }
 
@@ -914,6 +916,35 @@ public:
             strips_[static_cast<std::size_t> (idx)]->setEffectivelyMuted (effectivelyMuted);
     }
 
+    /// Slice EC-Polish-fix: build the bottom-of-screen channel selector
+    /// pill row that mirrors OTTO's iPad EQ-tab kit-piece selector. Pills
+    /// show channel-strip names first, then bus / FX-return names.
+    /// Visible only in full-screen detail mode where the operator can't
+    /// see the normal strip row.
+    void rebuildChannelPills()
+    {
+        channelPills_.clear();
+        auto makePill = [this] (juce::String name, int idx, otto::ui::ChannelType type)
+        {
+            auto pill = std::make_unique<juce::TextButton> (name);
+            pill->setClickingTogglesState (true);
+            pill->setRadioGroupId (3);
+            pill->setColour (juce::TextButton::buttonColourId,   otto::Colours::bg3);
+            pill->setColour (juce::TextButton::buttonOnColourId, otto::Colours::accent);
+            pill->setColour (juce::TextButton::textColourOffId,  otto::Colours::textSecondary);
+            pill->setColour (juce::TextButton::textColourOnId,   otto::Colours::textPrimary);
+            pill->onClick = [this, idx, type] { stripChannelSelected (idx, type); };
+            addChildComponent (*pill);
+            channelPills_.push_back (std::move (pill));
+        };
+        for (int i = 0; i < stripCount(); ++i)
+            makePill (strips_[static_cast<std::size_t> (i)]->getChannelName(),
+                      i, otto::ui::ChannelType::Instrument);
+        for (int i = 0; i < busStripCount(); ++i)
+            makePill (busStrips_[static_cast<std::size_t> (i)]->getChannelName(),
+                      i, busStrips_[static_cast<std::size_t> (i)]->getChannelType());
+    }
+
     /// Full-screen detail trigger: when EQ or CMP is the active tab AND
     /// the slot is actually wired, the graphical curve / meter needs the
     /// whole pane. Empty-slot (showing "+ Add EQ" / "+ Add CMP") stays at
@@ -936,13 +967,13 @@ public:
         constexpr int kGroupDividerW = kGap * 3;   // visual gap between channel + bus strip groups
         auto area = getLocalBounds().reduced (kGap);
 
-        // Full-screen detail (EQ / CMP active): the panel takes the entire
-        // pane; strips + INS + picker rows hide. resized() is re-entered on
-        // every tab change via channelDetailTabChanged so the layout flips
-        // both ways cleanly.
+        // Full-screen detail (EQ / CMP active): the panel takes the bulk
+        // of the pane; strips + INS + picker rows hide. A bottom channel-pill
+        // row mirrors OTTO's iPad EQ-tab kit-piece selector so the operator
+        // can switch channels without leaving full-screen.
+        constexpr int kPillRowHeight = 36;
         if (isDetailFullScreen())
         {
-            detailPanel_.setBounds (area);
             for (auto& s : strips_)              s->setVisible (false);
             for (auto& b : destButtons_)         b->setVisible (false);
             for (auto& b : inputStripInsButtons_) b->setVisible (false);
@@ -950,6 +981,37 @@ public:
             for (auto& b : busDestButtons_)      b->setVisible (false);
             for (auto& b : busStripInsButtons_)  b->setVisible (false);
             for (auto& o : busNameOverlays_)     o->setVisible (false);
+
+            // Channel pill row at the bottom of the pane — slice EC-Polish-fix.
+            // Pills are radio-grouped; the currently-selected channel pill is
+            // toggled on so the operator sees which channel they're editing.
+            auto pillRow = area.removeFromBottom (kPillRowHeight);
+            area.removeFromBottom (kGap);
+            detailPanel_.setBounds (area);
+
+            const int n = static_cast<int> (channelPills_.size());
+            if (n > 0)
+            {
+                const int totalPillGap = 4 * (n - 1);
+                const int pillW = juce::jmax (40,
+                                              (pillRow.getWidth() - totalPillGap) / n);
+                int px = pillRow.getX();
+                for (int i = 0; i < n; ++i)
+                {
+                    if (! channelPills_[static_cast<std::size_t> (i)]) continue;
+                    auto& pill = *channelPills_[static_cast<std::size_t> (i)];
+                    pill.setBounds (px, pillRow.getY(), pillW, pillRow.getHeight());
+                    pill.setVisible (true);
+                    // Sync toggle state: pill `i` lights up when it points at
+                    // the currently-bound channel or bus.
+                    const bool isChannelPill = (i < stripCount());
+                    const bool selected = isChannelPill
+                                            ? (i == selectedStrip_)
+                                            : ((i - stripCount()) == selectedBus_);
+                    pill.setToggleState (selected, juce::dontSendNotification);
+                    px += pillW + 4;
+                }
+            }
             return;
         }
 
@@ -961,6 +1023,7 @@ public:
         for (auto& b : busDestButtons_)      b->setVisible (true);
         for (auto& b : busStripInsButtons_)  b->setVisible (true);
         for (auto& o : busNameOverlays_)     o->setVisible (true);
+        for (auto& p : channelPills_)        if (p) p->setVisible (false);
 
         // The detail panel (when a strip is selected) takes a fixed band across
         // the top; the strip row fills the remainder below it.
@@ -1282,6 +1345,7 @@ private:
     ida::ui::ChannelDetail                                    detailPanel_;
     int                                                       selectedStrip_ { -1 };
     int                                                       selectedBus_   { -1 };
+    std::vector<std::unique_ptr<juce::TextButton>>            channelPills_;
     int                                                       longPressIdx_ { -1 };
     bool                                                      longPressBlank_ { false };
     juce::Point<int>                                          longPressScreenPos_;
@@ -1338,6 +1402,7 @@ public:
         master_->setOutputComboVisible (false);   // master is terminal — no destination picker
         master_->addListener (this);
         addAndMakeVisible (*master_);
+        rebuildChannelPills();   // master pill exists from startup
 
         // Tabbed detail panel: same shape as InputMixerPane post slice EC.
         // After slice EC-Polish aux buses + master CAN select (EQ+CMP only)
@@ -1479,6 +1544,34 @@ public:
         if (master_) master_->setLUFSLevel (lufs);
     }
 
+    /// Channel pill row builder — mirrors InputMixerPane::rebuildChannelPills.
+    /// Order: phrase strips, then aux buses, then master.
+    void rebuildChannelPills()
+    {
+        channelPills_.clear();
+        auto makePill = [this] (juce::String name, int idx, otto::ui::ChannelType type)
+        {
+            auto pill = std::make_unique<juce::TextButton> (name);
+            pill->setClickingTogglesState (true);
+            pill->setRadioGroupId (4);
+            pill->setColour (juce::TextButton::buttonColourId,   otto::Colours::bg3);
+            pill->setColour (juce::TextButton::buttonOnColourId, otto::Colours::accent);
+            pill->setColour (juce::TextButton::textColourOffId,  otto::Colours::textSecondary);
+            pill->setColour (juce::TextButton::textColourOnId,   otto::Colours::textPrimary);
+            pill->onClick = [this, idx, type] { stripChannelSelected (idx, type); };
+            addChildComponent (*pill);
+            channelPills_.push_back (std::move (pill));
+        };
+        for (int i = 0; i < phraseStripCount(); ++i)
+            makePill (phraseStrips_[static_cast<std::size_t> (i)]->getChannelName(),
+                      i, otto::ui::ChannelType::Instrument);
+        for (int i = 0; i < busStripCount(); ++i)
+            makePill (busStrips_[static_cast<std::size_t> (i)]->getChannelName(),
+                      i, otto::ui::ChannelType::Bus);
+        if (master_)
+            makePill (master_->getChannelName(), kMasterStripId, otto::ui::ChannelType::Bus);
+    }
+
     juce::Rectangle<int> masterInsButtonScreenArea() const
     {
         return masterIns_ ? masterIns_->getScreenBounds() : juce::Rectangle<int>{};
@@ -1554,6 +1647,7 @@ public:
             addAndMakeVisible (*overlay);
             busNameOverlays_.push_back (std::move (overlay));
         }
+        rebuildChannelPills();
         resized();
     }
 
@@ -1702,6 +1796,7 @@ public:
             addAndMakeVisible (*ins);
             phraseInsButtons_.push_back (std::move (ins));
         }
+        rebuildChannelPills();
         resized();
     }
 
@@ -1812,11 +1907,13 @@ public:
         constexpr int kGroupDividerW = kGap * 3;
         auto area = getLocalBounds().reduced (kGap);
 
-        // Full-screen detail (EQ / CMP) — panel fills the pane; every other
-        // child hides until a non-fullscreen tab is selected again.
+        // Full-screen detail (EQ / CMP) — panel fills the bulk of the pane.
+        // A channel-pill row at the bottom mirrors OTTO's iPad EQ-tab kit
+        // selector so the operator can switch channels without leaving
+        // full-screen.
+        constexpr int kPillRowHeight = 36;
         if (isDetailFullScreen())
         {
-            detailPanel_.setBounds (area);
             for (auto& s : phraseStrips_)        s->setVisible (false);
             for (auto& b : phraseDestButtons_)   b->setVisible (false);
             for (auto& b : phraseInsButtons_)    b->setVisible (false);
@@ -1827,6 +1924,38 @@ public:
             if (master_)             master_           ->setVisible (false);
             if (masterIns_)          masterIns_        ->setVisible (false);
             if (masterDestButton_)   masterDestButton_ ->setVisible (false);
+
+            auto pillRow = area.removeFromBottom (kPillRowHeight);
+            area.removeFromBottom (kGap);
+            detailPanel_.setBounds (area);
+
+            const int n = static_cast<int> (channelPills_.size());
+            if (n > 0)
+            {
+                const int totalPillGap = 4 * (n - 1);
+                const int pillW = juce::jmax (40,
+                                              (pillRow.getWidth() - totalPillGap) / n);
+                int px = pillRow.getX();
+                for (int i = 0; i < n; ++i)
+                {
+                    if (! channelPills_[static_cast<std::size_t> (i)]) continue;
+                    auto& pill = *channelPills_[static_cast<std::size_t> (i)];
+                    pill.setBounds (px, pillRow.getY(), pillW, pillRow.getHeight());
+                    pill.setVisible (true);
+                    // Toggle state: phrases first, then buses, then master.
+                    const int phraseN = phraseStripCount();
+                    const int busN    = busStripCount();
+                    bool selected = false;
+                    if (i < phraseN)
+                        selected = (i == selectedPhrase_);
+                    else if (i < phraseN + busN)
+                        selected = ((i - phraseN) == selectedBus_);
+                    else
+                        selected = selectedMaster_;
+                    pill.setToggleState (selected, juce::dontSendNotification);
+                    px += pillW + 4;
+                }
+            }
             return;
         }
 
@@ -1839,6 +1968,7 @@ public:
         for (auto& b : busDestButtons_)      b->setVisible (true);
         for (auto& b : busInsButtons_)       b->setVisible (true);
         for (auto& o : busNameOverlays_)     o->setVisible (true);
+        for (auto& p : channelPills_)        if (p) p->setVisible (false);
         if (master_)    master_   ->setVisible (true);
         if (masterIns_) masterIns_->setVisible (true);
         if (masterDestButton_)
@@ -2238,6 +2368,7 @@ private:
     int                                                        selectedPhrase_ { -1 };
     int                                                        selectedBus_    { -1 };
     bool                                                       selectedMaster_ { false };
+    std::vector<std::unique_ptr<juce::TextButton>>             channelPills_;
 
     bool                                                      longPressBlank_ { false };
     juce::Point<int>                                          longPressScreenPos_;

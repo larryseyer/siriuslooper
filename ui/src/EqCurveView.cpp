@@ -61,6 +61,14 @@ void EqCurveView::setAccentColour (juce::Colour c)
     repaint();
 }
 
+void EqCurveView::setSelectedBand (int band)
+{
+    if (band < 0 || band >= kBandCount) return;
+    if (selectedBand_ == band) return;
+    selectedBand_ = band;
+    repaint();
+}
+
 float EqCurveView::bandFreq (int band) const noexcept
 {
     switch (band)
@@ -376,15 +384,27 @@ void EqCurveView::drawCurve (juce::Graphics& g) const
 
 void EqCurveView::drawNodes (juce::Graphics& g) const
 {
+    // OTTO emphasis rule (mirrors drawCurveForeground): dragging > selected
+    // > unselected. Dragging is brightest + largest; selected is brighter +
+    // medium; unselected is dim + small.
     for (int b = 0; b < kBandCount; ++b)
     {
         const auto pos = juce::Point<float> (frequencyToX (bandFreq (b)),
                                              gainToY (bandGain (b)));
-        const float r = (b == draggingBand_) ? 10.0f : 8.0f;
-        g.setColour (colourForBand (b).withAlpha (0.9f));
+        const bool isDragging = (b == draggingBand_);
+        const bool isSelected = (b == selectedBand_);
+        const float r = isDragging ? 11.0f : isSelected ? 9.0f : 7.0f;
+        const auto base = colourForBand (b);
+        const auto fill = isDragging ? otto::Colours::textPrimary
+                       : isSelected ? base.brighter (0.3f)
+                                    : base.withAlpha (0.7f);
+        g.setColour (fill);
         g.fillEllipse (pos.x - r, pos.y - r, r * 2.0f, r * 2.0f);
-        g.setColour (otto::Colours::textPrimary);
-        g.drawEllipse (pos.x - r, pos.y - r, r * 2.0f, r * 2.0f, 1.5f);
+        if (isSelected || isDragging)
+        {
+            g.setColour (isDragging ? base : otto::Colours::textPrimary);
+            g.drawEllipse (pos.x - r, pos.y - r, r * 2.0f, r * 2.0f, 1.8f);
+        }
     }
 }
 

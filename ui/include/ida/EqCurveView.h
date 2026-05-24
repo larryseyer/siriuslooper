@@ -50,6 +50,11 @@ public:
     /// reads as theirs.
     void setAccentColour (juce::Colour c);
 
+    /// The host tab's currently-selected band. The matching node renders
+    /// larger / outlined so it reads as the active focus (mirrors OTTO's
+    /// `drawCurveForeground::isSelected` branch). Defaults to HP.
+    void setSelectedBand (int band);
+
     void addListener    (Listener* l) { listeners_.add (l); }
     void removeListener (Listener* l) { listeners_.remove (l); }
 
@@ -95,7 +100,8 @@ private:
     juce::Colour             accent_ { juce::Colour (0xFFD9534F) }; // IDA accent default
     juce::Rectangle<int>     curveBounds_;
 
-    int                      draggingBand_ { -1 };
+    int                      draggingBand_  { -1 };
+    int                      selectedBand_  { kHP };
 
     juce::ListenerList<Listener> listeners_;
 

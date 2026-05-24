@@ -30,7 +30,7 @@ juce::String formatQ (float q)
 
 ChannelDetailEQTab::ChannelDetailEQTab()
 {
-    enableToggle_ = std::make_unique<juce::ToggleButton> ("ENABLE");
+    enableToggle_ = std::make_unique<juce::ToggleButton> ("EQ ENABLED");
     enableToggle_->setColour (juce::ToggleButton::textColourId, otto::Colours::textPrimary);
     enableToggle_->onClick = [this]
     {
@@ -50,13 +50,88 @@ ChannelDetailEQTab::ChannelDetailEQTab()
     addChildComponent (*addSlotButton_);
 
     // Slice EC-Polish: graphical curve display — dominant element of the
-    // tab once a slot is wired. Mirrors OTTO's EQPanel visual idiom; the
-    // band-knob row beneath supplies precise numeric control for fields
-    // (HP/LP frequency, all Qs, shelf slope toggles) the curve gesture
-    // alone doesn't cover.
+    // tab once a slot is wired. Same response math as OTTO's EQPanel.
     curveView_ = std::make_unique<EqCurveView>();
     curveView_->addListener (this);
     addChildComponent (*curveView_);
+
+    // Slice EC-Polish-fix: band selector row + contextual controls (OTTO
+    // idiom). Exactly one band selector is "on" at a time — drives which
+    // contextual controls appear in the row below.
+    static const char* kBandLabels[kBandCount] = { "HP", "Low", "Mid", "High", "LP" };
+    for (int b = 0; b < kBandCount; ++b)
+    {
+        auto btn = std::make_unique<juce::TextButton> (kBandLabels[b]);
+        btn->setClickingTogglesState (true);
+        btn->setRadioGroupId (1);
+        btn->setColour (juce::TextButton::buttonColourId,   otto::Colours::bg3);
+        btn->setColour (juce::TextButton::buttonOnColourId, otto::Colours::accent);
+        btn->setColour (juce::TextButton::textColourOffId,  otto::Colours::textSecondary);
+        btn->setColour (juce::TextButton::textColourOnId,   otto::Colours::textPrimary);
+        const int idx = b;
+        btn->onClick = [this, idx]
+        {
+            if (suppressNotify_) return;
+            if (bandButtons_[static_cast<std::size_t> (idx)]->getToggleState())
+                setSelectedBand (idx);
+        };
+        addChildComponent (*btn);
+        bandButtons_[static_cast<std::size_t> (b)] = std::move (btn);
+    }
+
+    // HP/LP slope buttons — 4 in a row (6/12/18/24 dB-per-oct), radio-grouped.
+    // Visible only when HP or LP is the selected band.
+    static const char* kSlopeLabels[4] = { "6", "12", "18", "24" };
+    static const std::uint8_t kSlopeValues[4] = { 6, 12, 18, 24 };
+    for (int s = 0; s < 4; ++s)
+    {
+        auto btn = std::make_unique<juce::TextButton> (kSlopeLabels[s]);
+        btn->setClickingTogglesState (true);
+        btn->setRadioGroupId (2);
+        btn->setColour (juce::TextButton::buttonColourId,   otto::Colours::bg3);
+        btn->setColour (juce::TextButton::buttonOnColourId, otto::Colours::accent);
+        btn->setColour (juce::TextButton::textColourOffId,  otto::Colours::textSecondary);
+        btn->setColour (juce::TextButton::textColourOnId,   otto::Colours::textPrimary);
+        const auto val = kSlopeValues[s];
+        btn->onClick = [this, val]
+        {
+            if (suppressNotify_) return;
+            if (selectedBand_ == kHP)      cachedConfig_.hpSlopeDbPerOct = val;
+            else if (selectedBand_ == kLP) cachedConfig_.lpSlopeDbPerOct = val;
+            publishCurrentConfig();
+        };
+        addChildComponent (*btn);
+        slopeButtons_[static_cast<std::size_t> (s)] = std::move (btn);
+    }
+
+    bypassBandButton_ = std::make_unique<juce::TextButton> ("Bypass");
+    bypassBandButton_->setClickingTogglesState (true);
+    bypassBandButton_->setColour (juce::TextButton::buttonColourId,   otto::Colours::bg3);
+    bypassBandButton_->setColour (juce::TextButton::buttonOnColourId, otto::Colours::accent);
+    bypassBandButton_->setColour (juce::TextButton::textColourOffId,  otto::Colours::textSecondary);
+    bypassBandButton_->setColour (juce::TextButton::textColourOnId,   otto::Colours::textPrimary);
+    // Bypass is a UI affordance for the selected band only. The engine
+    // doesn't model per-band bypass yet (PlayerEffectsConfig has only a
+    // single eqEnabled flag); for HP/LP, "Bypass" parks the cutoff at
+    // 20 Hz / 20 kHz (the engine's bypass-equivalent value). For shelves
+    // it parks gain at 0. A real per-band flag is a follow-up.
+    bypassBandButton_->onClick = [this]
+    {
+        if (suppressNotify_) return;
+        const bool bypassed = bypassBandButton_->getToggleState();
+        switch (selectedBand_)
+        {
+            case kHP:   cachedConfig_.hpFreq  = bypassed ? 20.0f    : cachedConfig_.hpFreq;
+                        if (bypassed) cachedConfig_.hpFreq = 20.0f; break;
+            case kLP:   if (bypassed) cachedConfig_.lpFreq = 20000.0f; break;
+            case kLow:  if (bypassed) cachedConfig_.lowGain  = 0.0f; break;
+            case kMid:  if (bypassed) cachedConfig_.midGain  = 0.0f; break;
+            case kHigh: if (bypassed) cachedConfig_.highGain = 0.0f; break;
+            default: break;
+        }
+        publishCurrentConfig();
+    };
+    addChildComponent (*bypassBandButton_);
 
     buildColumns();
 }
@@ -159,20 +234,36 @@ void ChannelDetailEQTab::setChannelState (const ChannelState& state)
         pushConfigToControls (cachedConfig_);
     }
 
-    enableToggle_->setVisible (hasEqSlot_);
+    enableToggle_->setVisible  (hasEqSlot_);
     addSlotButton_->setVisible (! hasEqSlot_);
     if (curveView_) curveView_->setVisible (hasEqSlot_);
+
+    // Band selector + contextual controls — slice EC-Polish-fix (OTTO layout).
+    // The contextual visibility is driven by `selectedBand_`; setSelectedBand
+    // handles per-band show/hide. We just toggle the SHARED visibility (all
+    // hidden when no slot, all eligible to show when slot exists).
+    for (auto& btn : bandButtons_)
+        if (btn) btn->setVisible (hasEqSlot_);
     for (auto& col : bands_)
     {
-        if (col.title)        col.title       ->setVisible (hasEqSlot_);
-        if (col.freq)         col.freq        ->setVisible (hasEqSlot_);
-        if (col.gain)         col.gain        ->setVisible (hasEqSlot_);
-        if (col.q)            col.q           ->setVisible (hasEqSlot_);
-        if (col.slopeToggle)  col.slopeToggle ->setVisible (hasEqSlot_);
-        if (col.readoutFreq)  col.readoutFreq ->setVisible (hasEqSlot_);
-        if (col.readoutGain)  col.readoutGain ->setVisible (hasEqSlot_);
-        if (col.readoutQ)     col.readoutQ    ->setVisible (hasEqSlot_);
+        // Existing band columns retain their internal sub-widgets but the
+        // OTTO-style contextual row uses freq/gain/Q only for the selected
+        // band. Hide everything here; setSelectedBand re-shows the right ones.
+        if (col.title)        col.title       ->setVisible (false);
+        if (col.freq)         col.freq        ->setVisible (false);
+        if (col.gain)         col.gain        ->setVisible (false);
+        if (col.q)            col.q           ->setVisible (false);
+        if (col.slopeToggle)  col.slopeToggle ->setVisible (false);   // legacy 12/24 toggle
+        if (col.readoutFreq)  col.readoutFreq ->setVisible (false);
+        if (col.readoutGain)  col.readoutGain ->setVisible (false);
+        if (col.readoutQ)     col.readoutQ    ->setVisible (false);
     }
+    for (auto& btn : slopeButtons_)
+        if (btn) btn->setVisible (false);  // setSelectedBand re-shows for HP/LP
+    if (bypassBandButton_) bypassBandButton_->setVisible (false);
+
+    if (hasEqSlot_)
+        setSelectedBand (selectedBand_);   // re-show contextual controls
 
     resized();
     repaint();
@@ -196,6 +287,69 @@ void ChannelDetailEQTab::clearChannelState()
         if (col.readoutGain)  col.readoutGain ->setVisible (false);
         if (col.readoutQ)     col.readoutQ    ->setVisible (false);
     }
+    for (auto& btn : bandButtons_)  if (btn) btn->setVisible (false);
+    for (auto& btn : slopeButtons_) if (btn) btn->setVisible (false);
+    if (bypassBandButton_)              bypassBandButton_->setVisible (false);
+    repaint();
+}
+
+void ChannelDetailEQTab::setSelectedBand (int band)
+{
+    if (band < 0 || band >= kBandCount) return;
+    selectedBand_ = band;
+
+    // Update curve view so the selected node renders larger / outlined
+    // (mirrors OTTO's drawCurveForeground's isSelected branch).
+    if (curveView_) curveView_->setSelectedBand (band);
+
+    // Band-selector buttons: ensure exactly the selected one is "on".
+    suppressNotify_ = true;
+    for (int b = 0; b < kBandCount; ++b)
+        if (bandButtons_[static_cast<std::size_t> (b)])
+            bandButtons_[static_cast<std::size_t> (b)]->setToggleState (
+                b == band, juce::dontSendNotification);
+    suppressNotify_ = false;
+
+    // Contextual row visibility: HP / LP show slope buttons + bypass;
+    // Low / Mid / High show freq + gain + Q knobs + bypass.
+    const bool isHpLp = (band == kHP || band == kLP);
+    for (auto& btn : slopeButtons_)
+        if (btn) btn->setVisible (hasEqSlot_ && isHpLp);
+    if (bypassBandButton_) bypassBandButton_->setVisible (hasEqSlot_);
+
+    for (int b = 0; b < kBandCount; ++b)
+    {
+        auto& col = bands_[static_cast<std::size_t> (b)];
+        const bool isThisBand = (b == band) && hasEqSlot_;
+        const bool isShelfBand = (b == kLow || b == kMid || b == kHigh);
+        // Only show shelf controls when a shelf band is selected; HP / LP
+        // controls go through the slope buttons + drag-on-curve instead.
+        const bool showShelfKnobs = isThisBand && isShelfBand;
+        if (col.freq)        col.freq       ->setVisible (showShelfKnobs);
+        if (col.gain)        col.gain       ->setVisible (showShelfKnobs);
+        if (col.q)           col.q          ->setVisible (showShelfKnobs);
+        if (col.readoutFreq) col.readoutFreq->setVisible (showShelfKnobs);
+        if (col.readoutGain) col.readoutGain->setVisible (showShelfKnobs);
+        if (col.readoutQ)    col.readoutQ   ->setVisible (showShelfKnobs);
+        if (col.title)       col.title      ->setVisible (false);  // band label now lives in selector button
+        if (col.slopeToggle) col.slopeToggle->setVisible (false);  // legacy widget hidden
+    }
+
+    // Sync the slope buttons to the cached config for HP / LP.
+    if (isHpLp)
+    {
+        const auto slope = (band == kHP) ? cachedConfig_.hpSlopeDbPerOct
+                                         : cachedConfig_.lpSlopeDbPerOct;
+        const std::uint8_t kSlopeValues[4] = { 6, 12, 18, 24 };
+        suppressNotify_ = true;
+        for (int s = 0; s < 4; ++s)
+            if (slopeButtons_[static_cast<std::size_t> (s)])
+                slopeButtons_[static_cast<std::size_t> (s)]->setToggleState (
+                    slope == kSlopeValues[s], juce::dontSendNotification);
+        suppressNotify_ = false;
+    }
+
+    resized();
     repaint();
 }
 
@@ -332,65 +486,105 @@ void ChannelDetailEQTab::resized()
     enableToggle_->setBounds (topRow.removeFromLeft (90));
     bounds.removeFromTop (kRowGap);
 
-    // Curve view dominates when there's room: ~60% of remaining vertical,
-    // capped so the knob row stays legible. The detail panel in normal
-    // mode is only ~140 px tall — too small for a meaningful curve, so
-    // we hide it then and let the knob row use the full height. In
-    // full-screen tab mode the panel is the whole pane (~700+ px) and
-    // the curve takes the dominant share.
-    const bool showCurve = (curveView_ != nullptr) && (bounds.getHeight() > 240);
-    if (curveView_) curveView_->setVisible (showCurve);
-    if (showCurve)
-    {
-        const int knobRowH = juce::jlimit (180, 260, bounds.getHeight() * 4 / 10);
-        const int curveH   = bounds.getHeight() - knobRowH - kRowGap;
-        curveView_->setBounds (bounds.removeFromTop (curveH));
-        bounds.removeFromTop (kRowGap);
-    }
+    // OTTO layout (slice EC-Polish-fix):
+    //   row 1: curve view (dominant — takes remaining vertical room minus
+    //          the two button rows + a knob row when a shelf band is selected)
+    //   row 2: band selector  (5 buttons, full width, ~36 px tall)
+    //   row 3: contextual controls — slope buttons + Bypass when HP/LP is
+    //          selected; freq + gain + Q knobs + Bypass when a shelf is
+    //          selected
+    const bool isShelfSelected = (selectedBand_ == kLow
+                               || selectedBand_ == kMid
+                               || selectedBand_ == kHigh);
+    const int contextualH = isShelfSelected
+                                ? juce::jmax (90, bounds.getHeight() / 3)
+                                : kSlopeButtonHeight;
 
-    // 5 equal band columns.
+    // Bottom-up: contextual row at the bottom.
+    auto contextualRow = bounds.removeFromBottom (contextualH);
+    bounds.removeFromBottom (kRowGap);
+
+    // Band selector row above contextual.
+    auto selectorRow = bounds.removeFromBottom (kBandSelectorHeight);
+    bounds.removeFromBottom (kRowGap);
+
+    // Curve view fills what's left.
+    if (curveView_)
+        curveView_->setBounds (bounds);
+
+    // Lay out the band selector buttons across the row.
     const int totalGap = kBandGap * (kBandCount - 1);
-    const int colW = (bounds.getWidth() - totalGap) / kBandCount;
+    const int colW = (selectorRow.getWidth() - totalGap) / kBandCount;
     for (int b = 0; b < kBandCount; ++b)
     {
-        auto& col = bands_[static_cast<std::size_t> (b)];
-        const int x = bounds.getX() + b * (colW + kBandGap);
-        auto colBounds = juce::Rectangle<int> (x, bounds.getY(), colW, bounds.getHeight());
+        if (! bandButtons_[static_cast<std::size_t> (b)]) continue;
+        const int x = selectorRow.getX() + b * (colW + kBandGap);
+        bandButtons_[static_cast<std::size_t> (b)]->setBounds (
+            x, selectorRow.getY(), colW, selectorRow.getHeight());
+    }
 
-        col.title->setBounds (colBounds.removeFromTop (kBandTitleHeight));
-        colBounds.removeFromTop (kRowGap);
+    layoutContextualRow (contextualRow);
+}
 
-        const bool isShelf = (b == kLow || b == kMid || b == kHigh);
-        if (isShelf)
+void ChannelDetailEQTab::layoutContextualRow (juce::Rectangle<int> row)
+{
+    const bool isHpLp = (selectedBand_ == kHP || selectedBand_ == kLP);
+    if (isHpLp)
+    {
+        // OTTO HP/LP layout: 4 slope buttons (6/12/18/24) on the left,
+        // Bypass button on the right with a small gap separating them.
+        const int bypassW = 100;
+        const int slopeRowW = row.getWidth() - bypassW - kBandGap * 2;
+        const int slopeBtnW = (slopeRowW - kBandGap * 3) / 4;
+        int x = row.getX();
+        const int y = row.getY() + (row.getHeight() - kSlopeButtonHeight) / 2;
+        for (int s = 0; s < 4; ++s)
         {
-            // Three knob rows: Gain, Freq, Q — each with a readout under it.
-            const int rowH = colBounds.getHeight() / 3;
-            for (int r = 0; r < 3; ++r)
-            {
-                auto rowBounds = colBounds.removeFromTop (rowH);
-                auto readout = rowBounds.removeFromBottom (kReadoutHeight);
-                const int knobSide = juce::jmax (kKnobMinSize,
-                                                  juce::jmin (rowBounds.getWidth(), rowBounds.getHeight()));
-                auto knob = juce::Rectangle<int> (0, 0, knobSide, knobSide)
-                               .withCentre (rowBounds.getCentre());
-                if (r == 0) { col.gain->setBounds (knob); col.readoutGain->setBounds (readout); }
-                if (r == 1) { col.freq->setBounds (knob); col.readoutFreq->setBounds (readout); }
-                if (r == 2) { col.q   ->setBounds (knob); col.readoutQ   ->setBounds (readout); }
-            }
+            if (slopeButtons_[static_cast<std::size_t> (s)])
+                slopeButtons_[static_cast<std::size_t> (s)]->setBounds (
+                    x, y, slopeBtnW, kSlopeButtonHeight);
+            x += slopeBtnW + kBandGap;
         }
-        else
+        if (bypassBandButton_)
+            bypassBandButton_->setBounds (row.getRight() - bypassW, y,
+                                          bypassW, kSlopeButtonHeight);
+    }
+    else
+    {
+        // Shelf band selected — show 3 knobs (freq/gain/Q) + Bypass on right.
+        const int bypassW = 100;
+        const int knobsRowW = row.getWidth() - bypassW - kBandGap * 2;
+        const int knobColW = (knobsRowW - kBandGap * 2) / 3;
+        auto& col = bands_[static_cast<std::size_t> (selectedBand_)];
+
+        // Each column gets a label-on-top + knob + readout-on-bottom stack.
+        auto layoutKnob = [&] (int colX, juce::Slider* knob,
+                               juce::Label* readout)
         {
-            // HP/LP: freq knob + slope toggle.
-            auto slopeArea = colBounds.removeFromBottom (kSlopeToggleHeight);
-            col.slopeToggle->setBounds (slopeArea);
-            auto readout = colBounds.removeFromBottom (kReadoutHeight);
-            col.readoutFreq->setBounds (readout);
+            if (knob == nullptr) return;
+            auto colRect = juce::Rectangle<int> (colX, row.getY(),
+                                                  knobColW, row.getHeight());
+            auto readoutRow = colRect.removeFromBottom (kReadoutHeight);
             const int knobSide = juce::jmax (kKnobMinSize,
-                                              juce::jmin (colBounds.getWidth(), colBounds.getHeight()));
-            auto knob = juce::Rectangle<int> (0, 0, knobSide, knobSide)
-                           .withCentre (colBounds.getCentre());
-            col.freq->setBounds (knob);
-        }
+                                              juce::jmin (colRect.getWidth(),
+                                                          colRect.getHeight()));
+            auto knobRect = juce::Rectangle<int> (0, 0, knobSide, knobSide)
+                                .withCentre (colRect.getCentre());
+            knob->setBounds (knobRect);
+            if (readout) readout->setBounds (readoutRow);
+        };
+
+        int x = row.getX();
+        layoutKnob (x, col.gain.get(), col.readoutGain.get());
+        x += knobColW + kBandGap;
+        layoutKnob (x, col.freq.get(), col.readoutFreq.get());
+        x += knobColW + kBandGap;
+        layoutKnob (x, col.q.get(),    col.readoutQ.get());
+
+        const int y = row.getY() + (row.getHeight() - kSlopeButtonHeight) / 2;
+        if (bypassBandButton_)
+            bypassBandButton_->setBounds (row.getRight() - bypassW, y,
+                                          bypassW, kSlopeButtonHeight);
     }
 }
 

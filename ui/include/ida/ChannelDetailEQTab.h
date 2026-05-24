@@ -27,19 +27,24 @@ public:
     virtual void eqTabRequestSlotAdd() {}
 };
 
-/// IDA-native EQ parameter editor — slice EC. One instance per
-/// `ChannelDetail`; both InputMixerPane and OutputMixerPane host an
-/// identical component per the parity invariant in
-/// `project_two_mixers_totally_separate`. Visual idiom mirrors
-/// `ChannelDetailSendsTab` (cards + central knob + dB readout) but the
-/// payload here is a structured 5-band EQ panel instead of dynamic-N
-/// FX-return sends.
+/// IDA-native EQ parameter editor — slice EC + EC-Polish.
+///
+/// Layout mirrors OTTO's `EQPanel` byte-for-byte at the operator-facing
+/// level: ENABLE toggle (top), curve view (dominant), band-selector row
+/// of 5 buttons (HP / Low / Mid / High / LP) below the curve, and a
+/// contextual control row for the SELECTED band only (HP / LP: slope
+/// buttons 6 / 12 / 18 / 24; Low / Mid / High: freq / gain / Q knobs).
+/// IDA does not embed OTTO's `EQPanel.cpp` (which depends on
+/// PresetManager + SpectrumDisplay + binding-adapter base classes
+/// that IDA hasn't grown yet) — we replicate the visual idiom against
+/// IDA's existing EqAdapter so adapters propagate cleanly through the
+/// host's typed setter.
 ///
 /// Three display states:
 ///   1. No channel bound        — "Select a channel" hint.
 ///   2. Channel bound, no slot  — big centered "+ Add EQ" button that
 ///                                fires `eqTabRequestSlotAdd`.
-///   3. Channel bound + slot    — full 5-band editor.
+///   3. Channel bound + slot    — full editor with the OTTO layout.
 class ChannelDetailEQTab : public juce::Component,
                            public EqCurveView::Listener
 {
@@ -95,6 +100,22 @@ private:
     std::unique_ptr<juce::TextButton>              addSlotButton_;
     std::unique_ptr<EqCurveView>                   curveView_;
 
+    /// Band-selector row buttons (HP / Low / Mid / High / LP). Radio-grouped
+    /// so exactly one is "on" at a time — mirrors OTTO's `drawBandSelector`.
+    std::array<std::unique_ptr<juce::TextButton>, kBandCount> bandButtons_;
+
+    /// HP / LP slope-button row (6 / 12 / 18 / 24 dB-per-oct). Visible only
+    /// when the selected band is HP or LP. The fifth element is a Bypass
+    /// toggle for the selected band (mirrors OTTO's slope row).
+    std::array<std::unique_ptr<juce::TextButton>, 4> slopeButtons_;
+    std::unique_ptr<juce::TextButton>               bypassBandButton_;
+
+    /// Currently selected band. Drives which contextual controls are visible
+    /// in the row below the band selector. Defaults to HP (matches OTTO).
+    int                                            selectedBand_ { kHP };
+    void setSelectedBand (int band);
+    void layoutContextualRow (juce::Rectangle<int> row);
+
     // EqCurveView::Listener — the curve view drives operator gestures on the
     // graphical surface; this callback unifies them with knob-driven edits.
     void eqCurveConfigChanged (const EqConfig& cfg) override;
@@ -108,9 +129,10 @@ private:
 
     static constexpr int kEnableToggleHeight = 24;
     static constexpr int kAddButtonHeight    = 48;
+    static constexpr int kBandSelectorHeight = 36;   // matches OTTO band-button row
+    static constexpr int kSlopeButtonHeight  = 32;
     static constexpr int kBandTitleHeight    = 18;
     static constexpr int kReadoutHeight      = 14;
-    static constexpr int kSlopeToggleHeight  = 18;
     static constexpr int kKnobMinSize        = 36;
     static constexpr int kBandGap            = 6;
     static constexpr int kRowGap             = 4;

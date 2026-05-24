@@ -140,9 +140,16 @@ void EqAdapter::setEqConfig (const EqConfig& cfg) noexcept
     scratch.eqEnabled = cfg.enabled;
 
     scratch.eqHPFreq  = cfg.hpFreq;
-    scratch.eqHPSlope = (cfg.hpSlopeDbPerOct == 24
-                            ? otto::effects::FilterSlope::Slope24dB
-                            : otto::effects::FilterSlope::Slope12dB);
+    // Slice EC-Polish-fix: support all four OTTO FilterSlope values (6/12/18/24)
+    // so the UI's slope-button row maps cleanly onto the engine. Any other
+    // value falls back to 12 dB/oct (the most common default).
+    switch (cfg.hpSlopeDbPerOct)
+    {
+        case 6:  scratch.eqHPSlope = otto::effects::FilterSlope::Slope6dB;  break;
+        case 18: scratch.eqHPSlope = otto::effects::FilterSlope::Slope18dB; break;
+        case 24: scratch.eqHPSlope = otto::effects::FilterSlope::Slope24dB; break;
+        default: scratch.eqHPSlope = otto::effects::FilterSlope::Slope12dB; break;
+    }
 
     scratch.eqLowGain = cfg.lowGain;
     scratch.eqLowFreq = cfg.lowFreq;
@@ -157,9 +164,13 @@ void EqAdapter::setEqConfig (const EqConfig& cfg) noexcept
     scratch.eqHighQ    = cfg.highQ;
 
     scratch.eqLPFreq  = cfg.lpFreq;
-    scratch.eqLPSlope = (cfg.lpSlopeDbPerOct == 24
-                            ? otto::effects::FilterSlope::Slope24dB
-                            : otto::effects::FilterSlope::Slope12dB);
+    switch (cfg.lpSlopeDbPerOct)
+    {
+        case 6:  scratch.eqLPSlope = otto::effects::FilterSlope::Slope6dB;  break;
+        case 18: scratch.eqLPSlope = otto::effects::FilterSlope::Slope18dB; break;
+        case 24: scratch.eqLPSlope = otto::effects::FilterSlope::Slope24dB; break;
+        default: scratch.eqLPSlope = otto::effects::FilterSlope::Slope12dB; break;
+    }
 
     commitConfig();
 }
@@ -171,7 +182,14 @@ EqConfig EqAdapter::eqConfig() const noexcept
     out.enabled = live.eqEnabled;
 
     out.hpFreq          = live.eqHPFreq;
-    out.hpSlopeDbPerOct = (live.eqHPSlope == otto::effects::FilterSlope::Slope24dB ? 24 : 12);
+    switch (live.eqHPSlope)
+    {
+        case otto::effects::FilterSlope::Slope6dB:  out.hpSlopeDbPerOct = 6;  break;
+        case otto::effects::FilterSlope::Slope18dB: out.hpSlopeDbPerOct = 18; break;
+        case otto::effects::FilterSlope::Slope24dB: out.hpSlopeDbPerOct = 24; break;
+        case otto::effects::FilterSlope::Slope12dB:
+        default:                                    out.hpSlopeDbPerOct = 12; break;
+    }
 
     out.lowGain  = live.eqLowGain;
     out.lowFreq  = live.eqLowFreq;
@@ -186,7 +204,14 @@ EqConfig EqAdapter::eqConfig() const noexcept
     out.highQ    = live.eqHighQ;
 
     out.lpFreq          = live.eqLPFreq;
-    out.lpSlopeDbPerOct = (live.eqLPSlope == otto::effects::FilterSlope::Slope24dB ? 24 : 12);
+    switch (live.eqLPSlope)
+    {
+        case otto::effects::FilterSlope::Slope6dB:  out.lpSlopeDbPerOct = 6;  break;
+        case otto::effects::FilterSlope::Slope18dB: out.lpSlopeDbPerOct = 18; break;
+        case otto::effects::FilterSlope::Slope24dB: out.lpSlopeDbPerOct = 24; break;
+        case otto::effects::FilterSlope::Slope12dB:
+        default:                                    out.lpSlopeDbPerOct = 12; break;
+    }
 
     return out;
 }
