@@ -4,6 +4,7 @@
 #include "fx/DlyAdapter.h"
 #include "fx/EqAdapter.h"
 #include "fx/RvbAdapter.h"
+#include "fx/TapeColorAdapter.h"
 
 namespace ida
 {
@@ -41,6 +42,18 @@ std::unique_ptr<IInternalFxAdapter> makeInternalFxAdapter (InternalFxId id)
         // doesn't plumb yet.
         case InternalFxId::kDly:
             return std::make_unique<DlyAdapter>();
+
+        // TAPECOLOR — wraps lsfx::TapeColorProcessor from the
+        // lsfx_tapecolor submodule (Phase 5: DC blocker + emphasis EQ +
+        // IR convolution + Jiles-Atherton hysteresis + wow/flutter/scrape
+        // modulation). Unlike the other four, the adapter ctor does NOT
+        // flip enabled=true — TAPECOLOR is default-OFF everywhere per the
+        // 2026-05-24 operator design lock; a freshly-inserted slot is
+        // silent passthrough until the operator turns it on. The (future
+        // slice) param-UI commits config swaps via TapeColorProcessor's
+        // scratchConfig / commitConfig pattern.
+        case InternalFxId::kTapeColor:
+            return std::make_unique<TapeColorAdapter>();
     }
 
     // Unreachable for the four declared enum values; return nullptr to keep

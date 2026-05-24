@@ -20,10 +20,11 @@ namespace ida
 /// Internal slot with that id.
 enum class InternalFxId : std::uint8_t
 {
-    kEq  = 0,
-    kCmp = 1,
-    kRvb = 2,
-    kDly = 3,
+    kEq        = 0,
+    kCmp       = 1,
+    kRvb       = 2,
+    kDly       = 3,
+    kTapeColor = 4,
     // reserved up to 15 for future built-ins
 };
 
@@ -35,20 +36,22 @@ inline const char* internalFxIdToString (InternalFxId id) noexcept
 {
     switch (id)
     {
-        case InternalFxId::kEq:  return "EQ";
-        case InternalFxId::kCmp: return "CMP";
-        case InternalFxId::kRvb: return "RVB";
-        case InternalFxId::kDly: return "DLY";
+        case InternalFxId::kEq:        return "EQ";
+        case InternalFxId::kCmp:       return "CMP";
+        case InternalFxId::kRvb:       return "RVB";
+        case InternalFxId::kDly:       return "DLY";
+        case InternalFxId::kTapeColor: return "TAPECOLOR";
     }
     return ""; // unreachable; noexcept prevents throw
 }
 
 inline InternalFxId internalFxIdFromString (std::string_view s)
 {
-    if (s == "EQ")  return InternalFxId::kEq;
-    if (s == "CMP") return InternalFxId::kCmp;
-    if (s == "RVB") return InternalFxId::kRvb;
-    if (s == "DLY") return InternalFxId::kDly;
+    if (s == "EQ")        return InternalFxId::kEq;
+    if (s == "CMP")       return InternalFxId::kCmp;
+    if (s == "RVB")       return InternalFxId::kRvb;
+    if (s == "DLY")       return InternalFxId::kDly;
+    if (s == "TAPECOLOR") return InternalFxId::kTapeColor;
     throw std::invalid_argument ("ida::internalFxIdFromString: unknown id \"" + std::string (s) + "\"");
 }
 

@@ -47,7 +47,8 @@ add_library(IdaEngine STATIC
     src/fx/EqAdapter.cpp
     src/fx/CmpAdapter.cpp
     src/fx/DlyAdapter.cpp
-    src/fx/RvbAdapter.cpp)
+    src/fx/RvbAdapter.cpp
+    src/fx/TapeColorAdapter.cpp)
 
 target_include_directories(IdaEngine PUBLIC include)
 
@@ -80,6 +81,7 @@ target_link_libraries(IdaEngine
             juce::juce_dsp
             Ida::Persistence
             Ida::Host
-            soxr)
+            soxr
+            lsfx::lsfx_tapecolor)
 
 add_library(Ida::Engine ALIAS IdaEngine)

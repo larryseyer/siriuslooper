@@ -97,6 +97,11 @@ add_executable(IdaTests
     # timeout and SKIPs cleanly when assets are unavailable so CI stays
     # green without bundled OTTO assets.
     RvbAdapterTests.cpp
+    # TAPECOLOR — 5th internal FX adapter (lsfx::TapeColorProcessor wrapper).
+    # Slice 1 of the TAPECOLOR placement (2026-05-24 design lock): insert-
+    # anywhere plumbing only; default-OFF semantics; param surface lands in
+    # a follow-on slice. Same include-path pattern as EqAdapterTests above.
+    TapeColorAdapterTests.cpp
     # P7 T3a-C — end-to-end Bus → host → adapter dispatch test.
     BusInternalFxEndToEndTests.cpp
     # P7 T3a I-2 — end-to-end InputMixer → Bus → host → adapter dispatch.
@@ -134,6 +139,11 @@ target_link_libraries(IdaTests PRIVATE
     # picks them up here.
     juce::juce_audio_basics
     juce::juce_dsp
+    # TAPECOLOR Slice 1: TapeColorAdapterTests includes "fx/TapeColorAdapter.h"
+    # (engine-private), which transitively #includes <lsfx_tapecolor/
+    # lsfx_tapecolor.h>. Engine links lsfx_tapecolor PRIVATE — test target
+    # picks it up here, same pattern as the OTTO includes above.
+    lsfx::lsfx_tapecolor
     Catch2::Catch2WithMain
     Threads::Threads)
 

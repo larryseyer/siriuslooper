@@ -9,6 +9,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <string>
 #include <vector>
 
 using ida::InternalFxId;
@@ -137,4 +138,43 @@ TEST_CASE ("makeInternalFxAdapter returns a usable adapter for kRvb",
         REQUIRE (outLeft[i]  == -3.0f);
         REQUIRE (outRight[i] == -3.0f);
     }
+}
+
+TEST_CASE ("makeInternalFxAdapter returns a usable adapter for kTapeColor",
+           "[internal-fx][factory]")
+{
+    auto adapter = makeInternalFxAdapter (InternalFxId::kTapeColor);
+    REQUIRE (adapter != nullptr);
+
+    // Mirrors the miss-contract smoke-check for kRvb / kDly above —
+    // un-prepared, process must return false and leave outChannels
+    // untouched. Verifies the polymorphic dispatch is wired for the 5th
+    // internal-FX kind (TAPECOLOR Slice 1, 2026-05-24 design lock).
+    constexpr int kNumSamples  = 64;
+    constexpr int kNumChannels = 2;
+
+    std::vector<float> inLeft  (kNumSamples, 0.25f);
+    std::vector<float> inRight (kNumSamples, 0.25f);
+    std::vector<float> outLeft (kNumSamples, -3.0f);
+    std::vector<float> outRight(kNumSamples, -3.0f);
+
+    const float* inPtrs[kNumChannels]  = { inLeft.data(),  inRight.data() };
+    float*       outPtrs[kNumChannels] = { outLeft.data(), outRight.data() };
+
+    const bool ok = adapter->process (inPtrs, outPtrs, kNumChannels, kNumSamples);
+    CHECK_FALSE (ok);
+    for (int i = 0; i < kNumSamples; ++i)
+    {
+        REQUIRE (outLeft[i]  == -3.0f);
+        REQUIRE (outRight[i] == -3.0f);
+    }
+}
+
+TEST_CASE ("internalFxIdFromString round-trips TAPECOLOR",
+           "[internal-fx][factory][serialization]")
+{
+    using ida::internalFxIdToString;
+    using ida::internalFxIdFromString;
+    REQUIRE (std::string (internalFxIdToString (InternalFxId::kTapeColor)) == "TAPECOLOR");
+    REQUIRE (internalFxIdFromString ("TAPECOLOR") == InternalFxId::kTapeColor);
 }
