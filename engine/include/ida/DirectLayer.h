@@ -2,6 +2,7 @@
 
 #include "ida/Channel.h"
 
+#include <atomic>
 #include <cstdint>
 #include <span>
 #include <vector>
@@ -120,8 +121,19 @@ public:
 
     // Manual route registration (message thread; may throw on allocation).
     // Returns a RouteId the caller stashes for later removeRoute.
-    RouteId addRawRoute       (InputId   source, OutputChannelId destination);
-    RouteId addProcessedRoute (ChannelId source, OutputChannelId destination);
+    //
+    // `muteFlag` (optional) is a non-owning pointer to a mute atomic the
+    // audio-thread `routeBuffers` reads to decide whether to accumulate this
+    // route's signal. nullptr (default) preserves the pre-2026-05-24 behavior
+    // (route always contributes). A non-null pointer makes the operator's
+    // mute on the source channel a kill-switch for the monitor signal too —
+    // see ChannelStrip::mutedAtomic. The pointer MUST outlive every audio-
+    // thread call until removeRoute returns; InputMixer manages this by
+    // removing the route before destroying the strip that owns the atomic.
+    RouteId addRawRoute       (InputId   source, OutputChannelId destination,
+                               const std::atomic<bool>* muteFlag = nullptr);
+    RouteId addProcessedRoute (ChannelId source, OutputChannelId destination,
+                               const std::atomic<bool>* muteFlag = nullptr);
 
     // Removes a previously-added route. Message thread. Looks up the
     // matching entry by generation and does swap-and-pop. A double-remove
@@ -180,6 +192,9 @@ private:
         InputId         source;
         OutputChannelId destination;
         std::int64_t    generation;   // stamped at insertion; matches RouteId::generation_
+        // nullptr = always contributes (legacy/test seam). Non-null = audio
+        // thread reads it once per block; non-zero skips this route.
+        const std::atomic<bool>* muteFlag { nullptr };
     };
 
     struct ProcessedRoute
@@ -187,6 +202,7 @@ private:
         ChannelId       source;
         OutputChannelId destination;
         std::int64_t    generation;
+        const std::atomic<bool>* muteFlag { nullptr };
     };
 
     std::vector<RawRoute>       rawRoutes_;

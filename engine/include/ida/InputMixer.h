@@ -3,16 +3,19 @@
 #include "ida/Bus.h"
 #include "ida/Channel.h"
 #include "ida/ChannelDefaults.h"
+#include "ida/DirectLayer.h"
 #include "ida/InputDescriptor.h"
 #include "ida/ITapeSink.h"
 #include "ida/MixerGraph.h"
 #include "ida/MixerGraphState.h"
+#include "ida/MonitorMode.h"
 #include "ida/SignalType.h"
 #include "ida/TapeId.h"
 #include "ida/TapeMode.h"
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -38,6 +41,11 @@ class InputMixer
 {
 public:
     InputMixer();
+    /// Non-default — the destructor must remove every DirectLayer monitor
+    /// route the mixer is currently driving, otherwise the routes outlive
+    /// the strips that own the mute atomic pointer (the
+    /// project-load path destroys+rebuilds the InputMixer in place, and
+    /// DirectLayer is owned by MainComponent so it survives the swap).
     ~InputMixer();
 
     static constexpr int kMaxInputChannels = 32;
@@ -172,6 +180,16 @@ public:
     void setTapeWriter (TapeWriter* writer) noexcept;
     void setOverloadProtection (OverloadProtection* overload) noexcept;
     void setTapeStore (ida::persistence::TapeStore* store) noexcept;
+
+    /// Message-thread setter — binds the DirectLayer this input mixer drives
+    /// per-channel monitor routes through. Set-once before the audio thread
+    /// starts; non-owning. When unset, `setChannelMonitorMode` becomes a no-op
+    /// at the route-lifecycle layer (the per-channel state still updates so a
+    /// later DirectLayer attach can replay), and channels that have a non-Off
+    /// mode never reach the operator's monitor outputs. Mirrors the
+    /// set-once-non-owning pattern used by `setTapeSink` / `setNotificationBus`.
+    /// 2026-05-24 monitor-leak fix.
+    void setDirectLayer (DirectLayer* layer) noexcept;
     /// M6 Session 2 — attach the engine→UI truthfulness channel. When bound,
     /// the queue-full branch of `processBuffer` posts a `Warning/CpuPressure`
     /// notification alongside the existing `OverloadProtection::reportLoad`
@@ -196,6 +214,29 @@ public:
     ChannelId addChannel (InputId source, SignalType type);
     void removeChannel (ChannelId);
     void setChannelTapeMode (ChannelId, TapeMode);
+
+    // Per-channel direct-layer monitoring (whitepaper §7.1 — "A channel can
+    // write to tape, feed direct, both, or neither — independent per-channel
+    // choices"). Set on the message thread; the InputMixer owns the
+    // DirectLayer route lifecycle (add / swap / remove) so the operator's
+    // Monitor toggle is one engine call. Unknown channel id = silent no-op
+    // (defensive, mirrors `setChannelSendIsPreFader`). Default mode for
+    // every newly-added channel is `MonitorMode::Off` — the operator opts
+    // in explicitly. The route's mute flag is the strip's mute atomic, so
+    // muting the channel kills the monitor signal regardless of mode (the
+    // 2026-05-24 mute-leak fix). `outputPair` selects which Output-Mixer
+    // channel pair receives the route (default 0 = the first stereo pair,
+    // matching the prior identity-route behavior). Allocates on route
+    // append; call before the audio device starts, or while bracketed.
+    void setChannelMonitorMode (ChannelId, MonitorMode, int outputPair = 0);
+
+    /// Message-thread accessor. Unknown id reads as `MonitorMode::Off`.
+    MonitorMode channelMonitorMode (ChannelId) const noexcept;
+
+    /// Message-thread accessor. The OutputChannelId pair the channel's monitor
+    /// route currently targets (0 = the default), or 0 when the channel has
+    /// no active monitor route. Diagnostic / test seam.
+    int channelMonitorOutputPair (ChannelId) const noexcept;
 
     // Mixer-strip input source (whitepaper §6.1/§6.2) -----------------------
     /// Assigns which physical device channel(s) feed this mixer channel's
@@ -284,6 +325,20 @@ private:
     /// unset entry (channel never had its flag flipped) reads as
     /// post-fader (0) — same default as freshly minted channels.
     std::unordered_map<std::int64_t, char> channelPreFaderSends_;
+    /// 2026-05-24 monitor slice: per-channel direct-layer monitor mode +
+    /// active route handle + output pair. An entry is present only when a
+    /// route is currently registered on `directLayer_`; mode `Off` removes
+    /// the entry entirely. `outputPair` is the OutputChannelId raw value.
+    /// `route` is std::optional because DirectLayer::RouteId has no public
+    /// default ctor (intentional — only addRawRoute / addProcessedRoute
+    /// can mint one); a populated entry's route is always engaged.
+    struct MonitorRouteState
+    {
+        MonitorMode                         mode { MonitorMode::Off };
+        std::optional<DirectLayer::RouteId> route;
+        int                                 outputPair { 0 };
+    };
+    std::unordered_map<std::int64_t, MonitorRouteState> channelMonitorRoutes_;
     std::int64_t nextChannelId_ { 1 };
 
     MixerGraph graph_ { { MixerTerminal::Tape, MixerTerminal::HardwareOutput } };
@@ -319,6 +374,7 @@ private:
     ida::persistence::TapeStore* tapeStore_ { nullptr };
     NotificationBus* notificationBus_ { nullptr };
     ITapeSink* tapeSink_ { nullptr };
+    DirectLayer* directLayer_ { nullptr };
 
     /// Stashed `IEffectChainHost*` (P7 T3a I-2) — null = no audio-thread
     /// dispatch, every bus falls back to the M5 inline path. Forwarded to

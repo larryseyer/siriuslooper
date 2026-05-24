@@ -946,6 +946,27 @@ namespace
         return b;
     }
 
+    // Wire-stable tokens for MonitorMode (2026-05-24 monitor slice). Changing
+    // these strings is an on-disk format break.
+    const char* monitorModeToken (MonitorMode mode) noexcept
+    {
+        switch (mode)
+        {
+            case MonitorMode::Off:       return "Off";
+            case MonitorMode::Raw:       return "Raw";
+            case MonitorMode::Processed: return "Processed";
+        }
+        return "Off"; // unreachable; defensive
+    }
+
+    MonitorMode monitorModeFromString (const juce::String& s)
+    {
+        if (s == "Off")       return MonitorMode::Off;
+        if (s == "Raw")       return MonitorMode::Raw;
+        if (s == "Processed") return MonitorMode::Processed;
+        fail (std::string ("unknown monitor_mode \"") + s.toStdString() + "\"");
+    }
+
     juce::var inputChannelToVar (const InputChannelState& c)
     {
         auto src = makeObject();
@@ -963,6 +984,14 @@ namespace
         obj->setProperty ("inserts",       effectChainToVar (c.inserts));
         if (c.preFaderSends)
             obj->setProperty ("preFaderSends", true);
+        // Only emit when non-default (the operator-opt-in default per
+        // whitepaper §7.3 keeps freshly-saved projects compact).
+        if (c.monitorMode != MonitorMode::Off)
+        {
+            obj->setProperty ("monitorMode", juce::String (monitorModeToken (c.monitorMode)));
+            if (c.monitorOutputPair != 0)
+                obj->setProperty ("monitorOutputPair", c.monitorOutputPair);
+        }
         return objectVar (obj);
     }
     InputChannelState inputChannelFromVar (const juce::var& v)
@@ -981,6 +1010,12 @@ namespace
         c.inserts       = effectChainFromVar (requireProperty (v, "inserts"));
         if (const auto p = optionalProperty (v, "preFaderSends"); ! p.isVoid())
             c.preFaderSends = bool (p);
+        // monitorMode is optional for back-compat: projects saved before the
+        // 2026-05-24 monitor slice have no such field and must reload as Off.
+        if (const auto m = optionalProperty (v, "monitorMode"); ! m.isVoid())
+            c.monitorMode = monitorModeFromString (m.toString());
+        if (const auto op = optionalProperty (v, "monitorOutputPair"); ! op.isVoid())
+            c.monitorOutputPair = requireInt (op, "channel.monitorOutputPair");
         return c;
     }
 

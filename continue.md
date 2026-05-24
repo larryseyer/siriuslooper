@@ -16,10 +16,94 @@
    design (Mode A per-tape tri-state, Mode B insert-anywhere). Slice 2's
    audio hook is now LIVE for Mode A (BeforeWrite only — AfterRead is
    data-model-only until a tape-read path exists).
-3. Operator eyes-on still pending: any deeper soak of `191ef5f` (the .app
-   launched cleanly at the end of the session — boot-hang fix verified).
+3. Operator eyes-on still pending for **both** this session's slices:
+   * `191ef5f` (TAPECOLOR Slice 2 — deeper soak of the boot-hang fix
+     under longer playback).
+   * `<new>` (monitor slice, this session — verify mute kills the master
+     meter; see the **NEW THIS SESSION** block below).
 
-## ▶ NEXT (FIRST) — Bump `external/lsfx_tapecolor` from `d8b06b1` → `a7ba9c3`
+## ▶ NEW THIS SESSION — Per-channel Monitor + mute kill-switch
+
+Operator-reported bug (2026-05-24): muted Input channel 1 → Output Mixer
+master meter still moved. Root cause was a startup auto-wire of identity
+`DirectLayer::addRawRoute` for every input pair (in `MainComponent::initialiseAudio`)
+that bypassed the InputMixer strip entirely. The slice fixes the bug AND
+turns the per-channel direct-layer choice into a first-class operator-
+visible control (whitepaper §7.1 "A channel can write to tape, feed direct,
+both, or neither — independent per-channel choices").
+
+**What landed:**
+
+* New `core/include/ida/MonitorMode.h` enum (Off / Raw / Processed) with
+  wire-stable string tokens, mirroring the TapeColorMode pattern.
+* `ChannelStrip<Audio>::mutedAtomic()` — non-owning pointer to the strip's
+  mute atomic that DirectLayer reads to honour the operator's kill-switch.
+* `DirectLayer::addRawRoute` / `addProcessedRoute` extended with an
+  optional `const std::atomic<bool>* muteFlag = nullptr` parameter. Audio-
+  thread `routeBuffers` checks the flag before accumulating; nullptr
+  preserves the legacy passthrough behaviour for any caller that doesn't
+  want mute-gating.
+* `InputMixer` gained `setDirectLayer` (set-once non-owning collaborator),
+  `setChannelMonitorMode` (manages route lifecycle: add / swap / remove
+  on transition), `channelMonitorMode` / `channelMonitorOutputPair`
+  accessors. Per-channel state lives in a new
+  `channelMonitorRoutes_` unordered_map. The destructor sweeps + removes
+  all routes (the project-load path destroys+rebuilds the InputMixer in
+  place while DirectLayer survives — without the sweep, dangling muteFlag
+  pointers would crash on the next audio-callback resume).
+* `removeChannel` tears down the channel's monitor route BEFORE the
+  strip destructs.
+* Persistence: `InputChannelState` gained `monitorMode` +
+  `monitorOutputPair` fields; SessionFormat emits the JSON only when
+  non-default (compact), reads as Off when absent (back-compat),
+  fails-loud on unknown tokens.
+* `app/MainComponent.cpp`:
+  - The startup auto-wire `for (int ch = 0; ch < kDefaultStereoChannels; ++ch)
+    directLayer_->addRawRoute(InputId(ch), OutputChannelId(ch));` was
+    **DELETED**. Operators now opt in per channel via the Monitor button.
+  - `inputMixer_->setDirectLayer(directLayer_.get())` is called at init
+    and again on project load (after replacing inputMixer_).
+  - InputMixerPane gained a Monitor button per strip (a third bottom band
+    above the INS + Dest rows). Single click cycles **Off → Monitor →
+    Direct → Off**; label + tooltip use musician-facing pro-audio terms
+    (operator feedback 2026-05-24 — "Mon" / "Raw" was engineer-speak).
+    "Monitor" = with channel processing; "Direct" = no processing, lowest
+    latency (matches every hardware audio-interface UI: RME, UA Apollo,
+    Focusrite). Default Off.
+  - "Direct out" was dropped from the channel + bus main-out pickers
+    (engine-level `MainOutDest::HardwareOutput` retained for legacy /
+    back-compat — separate cleanup slice queued; see todo.md).
+  - `refreshInputDestinations` now pushes Monitor state too.
+
+**Tests:** 20 new cases in three files (all in the `[monitor]` Catch2
+tag). `ctest -E "(PluginEditor|MainComponentPlug)"` → **728 pass / 0
+fail** (was 708).
+
+* `tests/InputMixerMonitorModeLifecycleTests.cpp` — engine-level mode
+  state machine (default Off, route creation/removal/swap, removeChannel
+  cleanup, destructor sweep, output-pair round-trip, unset-DirectLayer
+  no-op).
+* `tests/InputMixerMonitorMuteLeakTests.cpp` — **the operator's failing
+  case**: a muted source's monitor signal is silent on the audio thread
+  regardless of mode. Per-route mute scoping (one route muted doesn't
+  affect another), Raw + Processed coverage.
+* `tests/SessionFormatMonitorModeTests.cpp` — round-trip Off / Raw /
+  Processed, monitorOutputPair when non-zero, compact-when-Off, fail-
+  loud on unknown token.
+
+**Operator eyes-on protocol (do this when next at the keyboard):**
+
+1. Launch `~/Desktop/IDA`, send signal to input pair 1, leave the strip's
+   third button (default label **Off**) alone → master meter is **still**
+   (no auto-wire anymore).
+2. Click the button on strip 1 → label flips to **Monitor** (processed),
+   master meter moves.
+3. Mute strip 1 → master meter **goes still immediately** (the fix).
+4. Unmute → meter resumes. Click again → **Direct** (low-latency raw
+   tap), meter behaviour same. Mute → still silent.
+5. Save the project, reopen → button state + output pair survive.
+
+## ▶ NEXT (FIRST when picking up cold) — Bump `external/lsfx_tapecolor` from `d8b06b1` → `a7ba9c3`
 
 This is the **first action** for the next chat, before any new Slice 2c /
 Slice 3 work. The submodule has progressed 3 phases since IDA was last
@@ -41,9 +125,7 @@ pinned:
 
 **Steps:**
 1. **If OTTO has posted a `[FROM OTTO → IDA]` Phase-8 entry**: read it,
-   follow its guidance, ack per protocol. (OTTO may have changed the
-   integration contract — e.g. expected channel count, expected lifecycle
-   ordering — that overrides the steps below.)
+   follow its guidance, ack per protocol.
 2. `cd external/lsfx_tapecolor && git fetch origin && git checkout a7ba9c3 && cd ../..`
 3. `git add external/lsfx_tapecolor`
 4. Clean build + full test suite:
@@ -53,96 +135,21 @@ pinned:
    cmake --build build --target IdaTests
    ctest --test-dir build -E "(PluginEditor|MainComponentPlug)"
    ```
-   Expect green (708 pass) since the API surface IDA uses is unchanged.
+   Expect green (728 pass; this session lifted the baseline) since the API surface IDA uses is unchanged.
 5. Clean build + launch the .app for ~30 s. Confirm CPU drops to the
-   normal idle band (≤ 15%) — i.e. the IR-resample path still completes
-   cleanly with the new IRs / new stages.
+   normal idle band (≤ 15%).
 6. Commit: `chore: bump lsfx_tapecolor d8b06b1 → a7ba9c3 (Phase 6 noise + Phase 7 tape-stop + Phase 8 meter atomics)`
 7. Push to `origin/master`.
-8. Update `[[project_tapecolor_placement]]` memory if the new stages
-   change the operator-visible posture (probably not — default-OFF
-   still holds).
 
 **Do NOT bump `external/OTTO` in the same commit** — OTTO's Claude is
 actively pushing TAPECOLOR Phase-8 work right now; let their next push
 land first, then bump `external/OTTO` separately.
-2. Re-read auto-memory `[[project_tapecolor_placement]]` — the two-mode
-   design (Mode A per-tape tri-state, Mode B insert-anywhere). Slice 2's
-   audio hook is now LIVE for Mode A (BeforeWrite only — AfterRead is
-   data-model-only until a tape-read path exists).
-3. Operator eyes-on still pending: any deeper soak of `191ef5f` (the .app
-   launched cleanly at the end of the session — boot-hang fix verified).
 
-## ▶ DONE THIS SESSION
+## ▶ NEXT (THEN) — TAPECOLOR Slice 2c / 2b / 3 in operator's preferred order
 
-One commit on `origin/master`:
+After the bump lands, the queued TAPECOLOR work resumes.
 
-### `191ef5f` — TAPECOLOR Slice 2: per-tape tri-state + BeforeWrite hook
-
-**Data model (core/persistence):**
-* `core/include/ida/TapeColorMode.h` — new enum
-  `TapeColorMode { None, BeforeWrite, AfterRead }`. Wire-stable tokens
-  ("None" / "BeforeWrite" / "AfterRead").
-* `TapeDescriptor` gains a `tapeColor` field, default `None`.
-* `SessionFormat::serializeTapePool/deserializeTapePool` round-trip the
-  new field. Back-compat: a missing `tape_color` key reads as `None`.
-  An unknown token throws (fail loud, not silently snap to default).
-
-**Audio path (engine):**
-* New `ida::TapeColoringSink` (`engine/include/ida/TapeColoringSink.h` +
-  `engine/src/TapeColoringSink.cpp`). Decorator that wraps `ITapeSink`,
-  owns one `TapeColorAdapter` per registered tape, and intercepts
-  `deliverTapeBlock`:
-  - mode `None` / `AfterRead` / unknown tape → bit-identical passthrough
-  - mode `BeforeWrite` → adapter runs in-place on a pre-allocated
-    scratch, then forwards colored bytes to the inner sink
-* Pre-reserves `kMaxTapes = 64` entries so the audio thread never
-  observes a reallocation (matches `InputMixer::tapeTerminals_`).
-* `TapeColorAdapter` now exposes `scratchConfig()` / `commitConfig()` /
-  `liveConfig()` (forwarders into `lsfx::TapeColorProcessor`), matching
-  the other internal-FX adapters and used by `TapeColoringSink` to
-  publish per-tape parameters under the config-swap pattern.
-
-**MainComponent wiring (app):**
-* Standalone app's audio graph now reads:
-  `InputMixer → TapeColoringSink → FlacTapeSink`.
-* `addTape` / `removeTape` keep the decorator's tape registry in lockstep
-  with `tapePool_` / `inputMixer_` inside the same audio-callback-detached
-  bracket. New tapes' mode follows `TapeDescriptor::tapeColor` (None on
-  fresh adds; honors loaded-project values).
-* Project-load path re-seeds the decorator from the loaded pool.
-* `rebuildInputStrips` calls `tapeColoringSink_->setSampleRate(...)`
-  symmetrically with the existing `flacTapeSink_->setSampleRate`.
-
-**Boot-hang fix (the only non-trivial detour):**
-* Initial wiring hung the .app at 99% CPU. Root cause: `rebuildInputStrips`
-  fires `setSampleRate` with `audioCallback_->currentSampleRate()`, which
-  is **0 before the callback has started**. Forwarding `sampleRate=0` to
-  `juce::dsp::Convolution::prepare` divides by zero inside its
-  `ResamplingAudioSource` and never returns.
-* Fixed in `TapeColoringSink::setSampleRate` with two guards: drop
-  bogus values (rate ≤ 0 or block ≤ 0) and short-circuit when params
-  are unchanged (also dodges a juce-internal race when re-prepare
-  collides with an in-flight IR worker load).
-
-**Tests:**
-* 4 new TapePool/persistence cases (default value, round-trip, missing-field
-  back-compat, unknown-token reject).
-* 8 new `TapeColoringSink` cases (passthrough × modes, BeforeWrite
-  alters signal only when processor enabled, AfterRead never colors on
-  write path, removeTape lifecycle, multi-tape independence,
-  unknown-tape no-op).
-* `ctest -E "(PluginEditor|MainComponentPlug)"`: **708 pass / 0 fail** —
-  the exclusion drops the operator-only plugin-editor lifecycle binary
-  (still run separately via `bash bash/test-s7.sh`).
-
-## ▶ NEXT (THEN) — Slice 2c, Slice 2b, Slice 3 in operator's preferred order
-
-After the bump lands, the queued TAPECOLOR work resumes (sections below
-are unchanged from the previous handoff, just resequenced after the
-bump-first step above).
-
-## ▶ NEXT — TAPECOLOR Slice 2b: AfterRead audio hook (BLOCKED)
+### Slice 2b — AfterRead audio hook (BLOCKED)
 
 Skipped this session because **no tape-read / phrase-audio-source path
 exists yet**. The decorator forwards AfterRead bit-identical on the
@@ -154,12 +161,7 @@ when a tape-read path lands. Implement when:
    applies the per-tape `TapeColorAdapter` for tapes whose mode is
    `AfterRead`.
 
-The per-tape `TapeColorAdapter` instances on `TapeColoringSink` could
-be shared with `TapeColoringSource` (single DSP unit per tape), or
-each side could own its own (cleaner lifecycle, slightly more state).
-Decide when the playback path lands.
-
-## ▶ NEXT — TAPECOLOR Slice 2c: param-UI surface (operator visibility)
+### Slice 2c — Edit-FX param UI surface
 
 The Edit-FX panel for `kTapeColor` is still default-OFF with no
 operator-facing knobs. Slice 2c brings the full Phase-5 parameter set
@@ -168,10 +170,9 @@ into the existing internal-FX Edit-FX flow, both for:
 * Mode B (insert-anywhere) — the existing internal-FX edit pane.
 * Mode A (per-tape) — a Tapes-tab control surface; ties the per-tape
   mode tri-state + the per-tape adapter's `scratchConfig` to operator
-  gestures. Note: the Tapes-tab UI itself is still gated behind the
-  broader tape-subsystem UI slice (`[[project_tape_pool_and_phase6_gating]]`).
+  gestures.
 
-## ▶ NEXT — TAPECOLOR Slice 3: whitepaper §6.7 + user guide
+### Slice 3 — whitepaper §6.7 + user guide
 
 `docs/IDA_Whitepaper_V8.md`:
 * New §6.7 "Tape coloration (TAPECOLOR)".
@@ -185,30 +186,28 @@ Plus a user-guide section (per `[[project_user_guide_alongside_whitepaper]]`).
 
 Carried from earlier sessions. When an FX-return strip is selected, the
 Sends tab's label becomes "Edit FX" and content becomes a single big
-button that opens the FX edit surface. Currently FX-return selection
-still hides Sends entirely on the output side (InputMixerPane already
-shows real sends since `b1f2d08`).
-
-Implementation:
-1. `ChannelDetail`: per-tab label override.
-2. `ChannelDetailSendsTab::setEditFxMode(bool)`: hide send cards +
-   pre-fader toggle, show a single Edit-FX button.
-3. New listener method `sendsTabEditFxRequested()`.
-4. Wire from both panes; MainComponent routes to the FX edit surface.
+button that opens the FX edit surface.
 
 ## ▶ QUEUED — explicit follow-ups (see todo.md)
 
-* **Output Mixer master meter while inputs route ONLY to tape**
-  (operator-flagged 2026-05-24): if Direct Layer monitoring is OFF for
-  every input pair and the master still moves, that's a leak in the
-  Output Mixer routing — investigate.
+* **MainOutDest::HardwareOutput full removal (engine cleanup)** — added
+  this session. The operator-facing UI no longer surfaces it; engine /
+  persistence / tests still reference it. 30+ test refs; touches
+  MixerGraph constructor terminals, persistence migration, classifyMainOut,
+  applyChannel/BusMainOut, renderInputGraph hwNode branch. Own slice.
 * **Hide EQ + CMP from insert-slot picker** (operator design lock
   2026-05-24): every channel has built-in EQ + CMP on the strip's tabs,
-  so they must NOT appear in the insert picker. UI-side filter + test
-  to pin the contract. (`todo.md`.)
+  so they must NOT appear in the insert picker.
 * **TAPECOLOR IRs — offline pre-bake** instead of runtime resample
-  (cold-boot / per-rate optimization; defer until measurable). Touches
-  the `lsfx_tapecolor` submodule, coordinate with OTTO. (`todo.md`.)
+  (cold-boot / per-rate optimization; defer until measurable).
+* **Anticipatory direct routing (whitepaper §7.3)** — system infers
+  monitor from arm-state, playback overlap, utility-signal hints. The
+  explicit operator opt-in landed this session; auto-inference is a
+  later layer on top.
+* **Per-channel monitor output-pair picker** — `outputPair` defaults to
+  0 (the first stereo pair). The Monitor button cycles modes; a
+  follow-on picker lets the operator route to any pair (parity with
+  master destination per `[[project_master_routable_to_any_pair]]`).
 * **EC7 (carried)** — persistence of operator-tuned EQ + CMP values.
 * **Per-band bypass for EQ** — engine flag.
 * **Q drag on curve** — EqCurveView gesture polish.
@@ -219,23 +218,22 @@ Implementation:
 
 ## ▶ BASELINE (start of next session)
 
-* **HEAD on origin/master:** `191ef5f` (TAPECOLOR Slice 2: per-tape
-  tri-state + BeforeWrite hook).
-* **ctest baseline:** 708 pass / 0 fail with
+* **HEAD on origin/master:** `<new>` (per-channel Monitor +
+  direct-layer mute kill-switch).
+* **ctest baseline:** 728 pass / 0 fail with
   `ctest -E "(PluginEditor|MainComponentPlug)"`. The two
   `MainComponentPluginEditorTests` cases (`openPluginEditor` /
   `closePluginEditor`) hang from a CLI ctest run (they spawn a real
-  plugin-editor window and need an active GUI session) — run them
-  separately via `bash bash/test-s7.sh`.
+  plugin-editor window) — run them separately via `bash bash/test-s7.sh`.
 * **OTTO submodule SHA:** `d43c540` (unchanged this session; OTTO is
   actively pushing Phase-8 TAPECOLOR work — bump separately after their
   next push lands).
-* **lsfx_tapecolor submodule SHA:** `d8b06b1` (3 phases BEHIND
+* **lsfx_tapecolor submodule SHA:** `d8b06b1` (still 3 phases BEHIND
   `origin/main` = `a7ba9c3` — bump is the **first action** of the next
-  chat, see top of this file).
+  chat).
 * **App on disk:** `build/app/IDA_artefacts/Release/IDA.app`,
   `~/Desktop/IDA` alias points at it. Clean build verified; launches
-  to ~5-15% CPU after the boot-hang fix.
+  cleanly (no boot-hang regression).
 
 ## ▶ HOUSEKEEPING
 
@@ -245,7 +243,6 @@ Implementation:
   `larryseyer.com` rename.
 * **Cross-project note**: OTTO's Claude is actively pushing TAPECOLOR
   Phase 8 (UI panel + per-bus integration + meters). The `lsfx_tapecolor`
-  submodule already published Phases 6/7/8 — see the bump section at
-  the top. OTTO has not yet posted its Phase-8 `CROSS_PROJECT_INBOX.md`
-  entry to IDA; read the inbox on session start in case it has landed
-  by then.
+  submodule already published Phases 6/7/8 — see the bump section. OTTO
+  has not yet posted its Phase-8 `CROSS_PROJECT_INBOX.md` entry to IDA;
+  read the inbox on session start in case it has landed by then.

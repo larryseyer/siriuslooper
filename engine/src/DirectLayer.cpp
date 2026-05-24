@@ -66,17 +66,19 @@ float* findOutput (std::span<const OutputBufferView> outputs,
 DirectLayer::DirectLayer()  = default;
 DirectLayer::~DirectLayer() = default;
 
-DirectLayer::RouteId DirectLayer::addRawRoute (InputId source, OutputChannelId destination)
+DirectLayer::RouteId DirectLayer::addRawRoute (InputId source, OutputChannelId destination,
+                                               const std::atomic<bool>* muteFlag)
 {
     const auto gen = nextRawGeneration_++;
-    rawRoutes_.push_back (RawRoute { source, destination, gen });
+    rawRoutes_.push_back (RawRoute { source, destination, gen, muteFlag });
     return RouteId (RouteId::Kind::Raw, gen);
 }
 
-DirectLayer::RouteId DirectLayer::addProcessedRoute (ChannelId source, OutputChannelId destination)
+DirectLayer::RouteId DirectLayer::addProcessedRoute (ChannelId source, OutputChannelId destination,
+                                                     const std::atomic<bool>* muteFlag)
 {
     const auto gen = nextProcessedGeneration_++;
-    processedRoutes_.push_back (ProcessedRoute { source, destination, gen });
+    processedRoutes_.push_back (ProcessedRoute { source, destination, gen, muteFlag });
     return RouteId (RouteId::Kind::Processed, gen);
 }
 
@@ -122,6 +124,12 @@ void DirectLayer::routeBuffers (std::span<const RawInputBufferView>         rawI
 {
     for (const auto& route : rawRoutes_)
     {
+        // Operator's mute on the source channel is a kill-switch for the
+        // monitor signal too — even on Raw routes that tap pre-strip. One
+        // relaxed atomic read per route per block; bounded by route count.
+        if (route.muteFlag != nullptr && route.muteFlag->load (std::memory_order_relaxed))
+            continue;
+
         int          srcCount = 0;
         int          dstCount = 0;
         const float* src      = findRawInput (rawInputs, route.source,      srcCount);
@@ -137,6 +145,9 @@ void DirectLayer::routeBuffers (std::span<const RawInputBufferView>         rawI
 
     for (const auto& route : processedRoutes_)
     {
+        if (route.muteFlag != nullptr && route.muteFlag->load (std::memory_order_relaxed))
+            continue;
+
         int          srcCount = 0;
         int          dstCount = 0;
         const float* src      = findProcessed (processedChannels, route.source,      srcCount);

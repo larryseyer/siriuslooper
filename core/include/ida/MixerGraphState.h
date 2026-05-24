@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ida/EffectChain.h"
+#include "ida/MonitorMode.h"
 #include "ida/SignalType.h"
 #include "ida/TapeMode.h"
 
@@ -109,22 +110,29 @@ struct MixerBusState
 /// its FX returns; reverb-on-cans / live-cue use cases).
 struct InputChannelState
 {
-    std::int64_t           channelId      { 0 };
-    SignalType             signalType     { SignalType::Audio };
-    std::int64_t           inputSourceId  { 0 };
+    std::int64_t           channelId         { 0 };
+    SignalType             signalType        { SignalType::Audio };
+    std::int64_t           inputSourceId     { 0 };
     MixerChannelSource     source;
-    TapeMode               tapeMode       { TapeMode::NoTape };
+    TapeMode               tapeMode          { TapeMode::NoTape };
     MixerMainOut           mainOut;
     std::vector<MixerSend> sends;
     EffectChain            inserts;
-    bool                   preFaderSends  { false };
+    bool                   preFaderSends     { false };
+    /// 2026-05-24 monitor slice: per-channel direct-layer monitor mode.
+    /// Default Off (whitepaper §7.3 — explicit operator opt-in). When non-Off,
+    /// `monitorOutputPair` selects the destination OutputChannelId pair.
+    MonitorMode            monitorMode       { MonitorMode::Off };
+    int                    monitorOutputPair { 0 };
 
     bool operator== (const InputChannelState& o) const noexcept
     {
         return channelId == o.channelId && signalType == o.signalType
             && inputSourceId == o.inputSourceId && source == o.source
             && tapeMode == o.tapeMode && mainOut == o.mainOut && sends == o.sends
-            && inserts == o.inserts && preFaderSends == o.preFaderSends;
+            && inserts == o.inserts && preFaderSends == o.preFaderSends
+            && monitorMode == o.monitorMode
+            && (monitorMode == MonitorMode::Off || monitorOutputPair == o.monitorOutputPair);
     }
     bool operator!= (const InputChannelState& o) const noexcept { return ! (*this == o); }
 };

@@ -609,6 +609,11 @@ public:
     /// The INS (insert chain) button on input strip `idx` was clicked. MainComponent
     /// opens the per-strip InsertChainPopup anchored to the button (P7 T5 slice 5).
     std::function<void (int idx)>                      onInputInsertChainClicked;
+    /// 2026-05-24 monitor slice. Operator changed the Monitor button state on
+    /// input strip `idx`. `mode` is the new MonitorMode (Off/Raw/Processed).
+    /// MainComponent applies it via `InputMixer::setChannelMonitorMode` inside
+    /// the audio-callback-detached bracket (same pattern as `onDestinationChosen`).
+    std::function<void (int idx, ida::MonitorMode mode)> onMonitorModeChanged;
     /// The INS button on bus strip `busIdx` was clicked. Same shape as the channel
     /// callback; MainComponent reads the bus's EffectChain instead of a channel's.
     std::function<void (int busIdx)>                   onBusInsertChainClicked;
@@ -691,6 +696,8 @@ public:
         stripStereo_.clear();
         destButtons_.clear();
         inputStripInsButtons_.clear();
+        monitorButtons_.clear();
+        monitorModes_.clear();
         stripDests_.clear();
         // Channel identities change on a rebuild, so the prior channel
         // selection no longer maps to a strip — drop it. The detail panel
@@ -733,6 +740,21 @@ public:
             };
             addAndMakeVisible (*ins);
             inputStripInsButtons_.push_back (std::move (ins));
+
+            // 2026-05-24 monitor slice — Monitor button. Operator-facing
+            // direct-layer toggle. A single click cycles through all three
+            // whitepaper-defined states: Off → Processed → Raw → Off. One
+            // gesture for desktop + touch — no separate right-click/long-
+            // press path needed since the cycle is short and the current
+            // state shows in the label + tooltip. Default Off (whitepaper
+            // §7.3 — operator opts in explicitly).
+            auto mon = std::make_unique<juce::TextButton>();
+            mon->setButtonText ("Off");
+            mon->setTooltip ("Monitoring off");
+            mon->onClick = [this, idx] { cycleMonitorModeAt (idx); };
+            addAndMakeVisible (*mon);
+            monitorButtons_.push_back (std::move (mon));
+            monitorModes_.push_back (ida::MonitorMode::Off);
         }
         rebuildChannelPills();
         resized();
@@ -764,6 +786,18 @@ public:
             const auto& label = perStrip[static_cast<std::size_t> (i)].currentName;
             destButtons_[static_cast<std::size_t> (i)]->setButtonText (label.isEmpty() ? "—" : label);
         }
+    }
+
+    /// 2026-05-24 monitor slice — refresh the per-strip Monitor button state.
+    /// Length must equal stripCount() (jassert; production-fallback guards
+    /// just take the prefix that fits). Called from MainComponent on engine
+    /// state changes (e.g. after a project load) so the buttons reflect the
+    /// channel's actual MonitorMode.
+    void setMonitorModes (const std::vector<ida::MonitorMode>& modes)
+    {
+        jassert (static_cast<int> (modes.size()) == stripCount());
+        for (int i = 0; i < stripCount() && i < static_cast<int> (modes.size()); ++i)
+            setMonitorModeAt (i, modes[static_cast<std::size_t> (i)], /*notify*/ false);
     }
 
     /// Pushes the bus-row destination state. Unlike the channel picker, each bus
@@ -1017,6 +1051,7 @@ public:
             for (auto& s : strips_)              s->setVisible (false);
             for (auto& b : destButtons_)         b->setVisible (false);
             for (auto& b : inputStripInsButtons_) b->setVisible (false);
+            for (auto& b : monitorButtons_)      b->setVisible (false);
             for (auto& s : busStrips_)           s->setVisible (false);
             for (auto& b : busDestButtons_)      b->setVisible (false);
             for (auto& b : busStripInsButtons_)  b->setVisible (false);
@@ -1074,6 +1109,7 @@ public:
         for (auto& s : strips_)              s->setVisible (true);
         for (auto& b : destButtons_)         b->setVisible (true);
         for (auto& b : inputStripInsButtons_) b->setVisible (true);
+        for (auto& b : monitorButtons_)      b->setVisible (true);
         for (auto& s : busStrips_)           s->setVisible (true);
         for (auto& b : busDestButtons_)      b->setVisible (true);
         for (auto& b : busStripInsButtons_)  b->setVisible (true);
@@ -1089,13 +1125,16 @@ public:
             area.removeFromTop (kGap);
         }
 
-        // Two fixed bands at the bottom: destination picker (lowest) + INS
-        // button (just above). Stacking vertically keeps each per-strip control
-        // the full strip width — narrow iPhone strips can't fit two buttons
+        // Three fixed bands at the bottom: destination picker (lowest),
+        // INS button (middle), Monitor button (top — 2026-05-24 monitor
+        // slice). Stacking vertically keeps each per-strip control the full
+        // strip width — narrow iPhone strips can't fit multiple buttons
         // side-by-side (risk #2 in the T5 plan).
-        auto pickerRow = area.removeFromBottom (kDestHeight);
+        auto pickerRow  = area.removeFromBottom (kDestHeight);
         area.removeFromBottom (kGap);
-        auto insRow    = area.removeFromBottom (kInsHeight);
+        auto insRow     = area.removeFromBottom (kInsHeight);
+        area.removeFromBottom (kGap);
+        auto monitorRow = area.removeFromBottom (kMonitorHeight);
         area.removeFromBottom (kGap);
 
         // Left-to-right row of fixed-width strips. A few strips fit a typical
@@ -1104,9 +1143,11 @@ public:
         for (int i = 0; i < stripCount(); ++i)
         {
             strips_[static_cast<std::size_t> (i)]->setBounds (area.removeFromLeft (kStripW));
+            monitorButtons_[static_cast<std::size_t> (i)]->setBounds (monitorRow.removeFromLeft (kStripW));
             inputStripInsButtons_[static_cast<std::size_t> (i)]->setBounds (insRow.removeFromLeft (kStripW));
             destButtons_[static_cast<std::size_t> (i)]->setBounds (pickerRow.removeFromLeft (kStripW));
             area.removeFromLeft (kGap);
+            monitorRow.removeFromLeft (kGap);
             insRow.removeFromLeft (kGap);
             pickerRow.removeFromLeft (kGap);
         }
@@ -1114,9 +1155,13 @@ public:
         // Bus / FX-return strips sit to the right of the channel strips, after a
         // wider divider gap. Each gets a picker button in the same bottom band as
         // the channel pickers (pickerRow has tracked the column cursor in lock-step).
+        // Buses have no Monitor button — the per-channel direct-layer decision
+        // lives on input channels per whitepaper §7.1 ("A channel can ... feed
+        // direct ..."), not on intermediate subgroups.
         if (busStripCount() > 0)
         {
             area.removeFromLeft (kGroupDividerW);       // visual divider between the two groups
+            monitorRow.removeFromLeft (kGroupDividerW); // keep the monitor band column-aligned
             insRow.removeFromLeft (kGroupDividerW);     // keep the INS band column-aligned
             pickerRow.removeFromLeft (kGroupDividerW);  // keep the picker band column-aligned
         }
@@ -1132,6 +1177,7 @@ public:
             busStripInsButtons_[static_cast<std::size_t> (i)]->setBounds (insRow.removeFromLeft (kStripW));
             busDestButtons_[static_cast<std::size_t> (i)]->setBounds (pickerRow.removeFromLeft (kStripW));
             area.removeFromLeft (kGap);
+            monitorRow.removeFromLeft (kGap);
             insRow.removeFromLeft (kGap);
             pickerRow.removeFromLeft (kGap);
         }
@@ -1293,6 +1339,7 @@ private:
     static constexpr int kDetailHeight             = 180;
     static constexpr int kDestHeight               = 26;
     static constexpr int kInsHeight                = 26;
+    static constexpr int kMonitorHeight            = 22;   // 2026-05-24 monitor slice — third bottom band
     static constexpr int kNameOverlayHeight        = 22;   // strip name band height
 
     void timerCallback() override
@@ -1409,10 +1456,65 @@ private:
         return -1;
     }
 
+    // 2026-05-24 monitor slice — central setter. Updates the cached mode,
+    // syncs the button label/tooltip, and (when `notify`) fires the
+    // engine-bound callback. Called from the click handler and the
+    // message-thread setMonitorModes refresh. Labels deliberately use the
+    // musician-facing pro-audio convention — "Direct" is the universal
+    // term every hardware audio interface (RME, UA Apollo, Focusrite, etc.)
+    // uses for low-latency hardware-routed monitoring; "Monitor" is the
+    // operator-facing word for "I want to hear this in my headphones."
+    void setMonitorModeAt (int idx, ida::MonitorMode mode, bool notify)
+    {
+        if (idx < 0 || idx >= static_cast<int> (monitorModes_.size())) return;
+        monitorModes_[static_cast<std::size_t> (idx)] = mode;
+        auto& button = *monitorButtons_[static_cast<std::size_t> (idx)];
+        const char* label   = nullptr;
+        const char* tooltip = nullptr;
+        switch (mode)
+        {
+            case ida::MonitorMode::Off:
+                label   = "Off";
+                tooltip = "Monitoring off";
+                break;
+            case ida::MonitorMode::Processed:
+                label   = "Monitor";
+                tooltip = "Monitoring with channel processing (EQ, dynamics, FX)";
+                break;
+            case ida::MonitorMode::Raw:
+                label   = "Direct";
+                tooltip = "Direct monitoring (no processing, lowest latency)";
+                break;
+        }
+        button.setButtonText (label);
+        button.setTooltip (tooltip);
+        if (notify && onMonitorModeChanged) onMonitorModeChanged (idx, mode);
+    }
+
+    // 2026-05-24 monitor slice — cycle through Off → Processed → Raw → Off,
+    // invoked from right-click and long-press paths. Pairs the two gestures
+    // per the long-press-mirrors-right-click rule (every right-click action
+    // on touch needs a long-press partner).
+    void cycleMonitorModeAt (int idx)
+    {
+        if (idx < 0 || idx >= static_cast<int> (monitorModes_.size())) return;
+        const auto cur  = monitorModes_[static_cast<std::size_t> (idx)];
+        const auto next = (cur == ida::MonitorMode::Off)       ? ida::MonitorMode::Processed
+                        : (cur == ida::MonitorMode::Processed) ? ida::MonitorMode::Raw
+                                                               : ida::MonitorMode::Off;
+        setMonitorModeAt (idx, next, /*notify*/ true);
+    }
+
+
     std::vector<std::unique_ptr<otto::ui::CompactFaderStrip>> strips_;
     std::vector<std::unique_ptr<juce::TextButton>>            destButtons_;
     /// Per-input-strip INS buttons (P7 T5 slice 5). Parallel to strips_.
     std::vector<std::unique_ptr<juce::TextButton>>            inputStripInsButtons_;
+    /// 2026-05-24 monitor slice — per-input-strip Monitor button. Parallel to
+    /// strips_. Click cycles Off ↔ Processed (the 90% case); right-click +
+    /// long-press cycles Off → Processed → Raw → Off.
+    std::vector<std::unique_ptr<juce::TextButton>>            monitorButtons_;
+    std::vector<ida::MonitorMode>                             monitorModes_;
     std::vector<StripDest>                                    stripDests_;
     std::vector<DestChoice>                                   choices_;   // shared, stored once
     std::vector<bool>                                         stripStereo_;
@@ -3118,17 +3220,20 @@ MainComponent::MainComponent()
     // M4 Session 3 — the audio callback now drives engine-side mixers and
     // a DirectLayer. Mixers are constructed before the callback so the
     // raw pointers handed to setInputMixer/setOutputMixer/setDirectLayer
-    // are live for the callback's entire lifetime. Default identity routes
-    // 0→0 and 1→1 preserve M1 monitoring behaviour: when monitoring is
-    // armed, input N is mixed into output N, matching the prior pass-
-    // through semantics under the new DirectLayer plumbing. If the device
-    // exposes more than 2 channels, extras simply route nowhere — the
-    // operator wires additional routes through M4's manual-only API.
+    // are live for the callback's entire lifetime.
+    //
+    // 2026-05-24 monitor slice: the auto-wire of identity routes
+    // (input pair N → output pair N for every device pair) was DELETED here.
+    // The operator opts in per channel via the Monitor button on each input
+    // strip (Off / Raw / Processed — whitepaper §7.1 line 691: "A channel
+    // can write to tape, feed direct, both, or neither — independent
+    // per-channel choices"). InputMixer owns the DirectLayer route
+    // lifecycle and stamps the strip's mute atomic on every route so mute
+    // is a true kill-switch (the fix for the operator-reported mute leak).
     inputMixer_      = std::make_unique<InputMixer>();
     outputMixer_     = std::make_unique<OutputMixer>();
     directLayer_     = std::make_unique<DirectLayer>();
-    for (int ch = 0; ch < kDefaultStereoChannels; ++ch)
-        directLayer_->addRawRoute (InputId (ch), OutputChannelId (ch));
+    inputMixer_->setDirectLayer (directLayer_.get());
 
     // M6 Session 2 — construct the truthfulness bus before the audio callback
     // so the setter below sees a live pointer, and pre-reserve the drain
@@ -3590,6 +3695,21 @@ MainComponent::MainComponent()
         inputMixerPane_->onInputInsertChainClicked = [this] (int idx)
         {
             openInsertChainPopupForChannel (idx);
+        };
+        // 2026-05-24 monitor slice — Monitor button gesture. Mutating the
+        // DirectLayer route table races the audio thread (routeBuffers reads
+        // rawRoutes_/processedRoutes_), so bracket the same way the routing
+        // pickers do (`onDestinationChosen` above).
+        inputMixerPane_->onMonitorModeChanged = [this] (int idx, ida::MonitorMode mode)
+        {
+            if (idx < 0 || idx >= static_cast<int> (inputStripChannelIds_.size())) return;
+            const auto chId = inputStripChannelIds_[static_cast<std::size_t> (idx)];
+            audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+            // outputPair 0 = the first stereo pair, matching the pre-2026-05-24
+            // auto-wire's identity-route default. Multi-pair destination picking
+            // is a follow-on slice (todo.md).
+            inputMixer_->setChannelMonitorMode (chId, mode, /*outputPair*/ 0);
+            audioDeviceManager_.addAudioCallback (audioCallback_.get());
         };
         inputMixerPane_->onBusRename = [this] (int busIdx, juce::String newName)
         {
@@ -5447,7 +5567,13 @@ void MainComponent::refreshInputDestinations()
                                                   bid.value(),
                                                   juce::String (bus->config().name) });
     }
-    choices.push_back (Pane::DestChoice { Pane::DestKind::HardwareOutput, 0, "Direct out" });
+    // 2026-05-24 monitor slice: the "Direct out" choice was DELETED from this
+    // picker. Inputs reach physical outputs ONLY via the per-channel Monitor
+    // button (whitepaper §5.2 / §7.1 — input mixer never writes physical
+    // outputs directly). The engine-level MainOutDest::HardwareOutput
+    // infrastructure is retained for legacy/back-compat (separate cleanup
+    // slice — see todo.md). Channels that were previously routed to
+    // HardwareOutput still display correctly via the case below.
 
     // Per-strip current destination, read back from the engine's main-out.
     std::vector<Pane::StripDest> perStrip;
@@ -5488,6 +5614,15 @@ void MainComponent::refreshInputDestinations()
     }
     inputMixerPane_->setDestinations (choices, perStrip);
 
+    // 2026-05-24 monitor slice — refresh the Monitor button state in lockstep
+    // with the destination labels. Engine-side mode is the source of truth
+    // (loaded projects, programmatic edits, future automation).
+    std::vector<ida::MonitorMode> monitorModes;
+    monitorModes.reserve (inputStripChannelIds_.size());
+    for (const auto& chId : inputStripChannelIds_)
+        monitorModes.push_back (inputMixer_->channelMonitorMode (chId));
+    inputMixerPane_->setMonitorModes (monitorModes);
+
     // Bus-row pickers. Each bus/FX-return strip can route its output to a pooled
     // tape, another PLAIN bus, or direct out. The choice list is built PER BUS:
     // feedback-cycle targets (and the bus itself) are filtered out, so the lists
@@ -5515,7 +5650,9 @@ void MainComponent::refreshInputDestinations()
                                                             target.value(),
                                                             juce::String (bus->config().name) });
         }
-        choicesForBus.push_back (Pane::DestChoice { Pane::DestKind::HardwareOutput, 0, "Direct out" });
+        // 2026-05-24 monitor slice: "Direct out" was also dropped from the bus
+        // picker for the same reason (input-side buses sum FX returns for
+        // tape capture; they do not write physical outputs directly).
         busChoices.push_back (std::move (choicesForBus));
 
         Pane::StripDest dest;
@@ -6421,6 +6558,10 @@ void MainComponent::chooseFileAndLoad()
                             inputMixer_->setNotificationBus (notificationBus_.get());
                             inputMixer_->setTapeSink (tapeColoringSink_.get());
                             inputMixer_->setEffectChainHost (&effectChainHost_);
+                            // 2026-05-24 monitor slice — bind the DirectLayer
+                            // BEFORE importGraphState so per-channel
+                            // MonitorMode replay can register routes.
+                            inputMixer_->setDirectLayer (directLayer_.get());
                             ida::mirrorTapePool (tapePool_, *inputMixer_);
                             inputMixer_->importGraphState (*loadedInputMixer);
                         }

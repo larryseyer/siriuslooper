@@ -62,13 +62,26 @@ InputMixer::InputMixer()
     tapeTerminals_.push_back ({ 1, graph_.terminalNode (MixerTerminal::Tape) });
 }
 
-InputMixer::~InputMixer() = default;
+InputMixer::~InputMixer()
+{
+    // 2026-05-24 monitor slice — remove every DirectLayer route the mixer
+    // owns BEFORE the strips destruct. Each route holds a non-owning pointer
+    // to the strip's mute atomic; on the project-load path the InputMixer
+    // is destroyed-then-reconstructed while the DirectLayer (owned by
+    // MainComponent) survives, so any route left behind would later be
+    // read with a dangling muteFlag on the next audio-callback resume.
+    if (directLayer_ != nullptr)
+        for (auto& [_, state] : channelMonitorRoutes_)
+            if (state.route.has_value())
+                directLayer_->removeRoute (*state.route);
+}
 
 void InputMixer::setTapeWriter (TapeWriter* writer) noexcept       { tapeWriter_ = writer; }
 void InputMixer::setOverloadProtection (OverloadProtection* o) noexcept { overload_ = o; }
 void InputMixer::setTapeStore (ida::persistence::TapeStore* store) noexcept { tapeStore_ = store; }
 void InputMixer::setNotificationBus (NotificationBus* bus) noexcept { notificationBus_ = bus; }
 void InputMixer::setTapeSink (ITapeSink* sink) noexcept { tapeSink_ = sink; }
+void InputMixer::setDirectLayer (DirectLayer* layer) noexcept { directLayer_ = layer; }
 
 void InputMixer::registerInput (InputId id, const InputDescriptor& desc)
 {
@@ -108,6 +121,19 @@ ChannelId InputMixer::addChannel (InputId source, SignalType type)
 
 void InputMixer::removeChannel (ChannelId id)
 {
+    // 2026-05-24 monitor slice: tear down the DirectLayer route BEFORE the
+    // channel's strip is destroyed. The route holds a non-owning pointer to
+    // the strip's `muted_` atomic; reading a dangling pointer on the audio
+    // thread would be a use-after-free. Caller is responsible for the
+    // audio-callback-detached bracket around removeChannel; here we just
+    // ensure the route comes out first.
+    if (auto it = channelMonitorRoutes_.find (id.value()); it != channelMonitorRoutes_.end())
+    {
+        if (directLayer_ != nullptr && it->second.route.has_value())
+            directLayer_->removeRoute (*it->second.route);
+        channelMonitorRoutes_.erase (it);
+    }
+
     // Slice E3 — decrement target-bus sender counts for every edge the
     // channel currently contributes to (main-out target if it's a bus,
     // plus each nonzero send into an FX return). graph_.removeNode below
@@ -131,6 +157,83 @@ void InputMixer::removeChannel (ChannelId id)
     channels_.erase (id.value());
     channelSources_.erase (id.value());
     channelPreFaderSends_.erase (id.value());
+}
+
+void InputMixer::setChannelMonitorMode (ChannelId id, MonitorMode mode, int outputPair)
+{
+    auto chIt = channels_.find (id.value());
+    if (chIt == channels_.end()) return;                          // unknown id — silent no-op
+    if (chIt->second.signalType != SignalType::Audio) return;     // monitor is audio-only
+
+    // Read the existing route state (entry exists only when a route is live).
+    auto it = channelMonitorRoutes_.find (id.value());
+    const bool hadRoute = (it != channelMonitorRoutes_.end()) && it->second.route.has_value();
+
+    // Tear down any existing route. Cheap when there isn't one; correct on
+    // every transition (Off → Raw/Processed, Raw ↔ Processed, * → Off,
+    // outputPair change).
+    if (hadRoute && directLayer_ != nullptr)
+        directLayer_->removeRoute (*it->second.route);
+
+    if (mode == MonitorMode::Off)
+    {
+        // The entry exists only while a route is live; drop it on transition
+        // to Off so subsequent reads of `channelMonitorMode` return the
+        // documented default.
+        if (it != channelMonitorRoutes_.end())
+            channelMonitorRoutes_.erase (it);
+        return;
+    }
+
+    // From here, mode is Raw or Processed and we need a fresh route. The
+    // DirectLayer collaborator is the gate — without it we still update the
+    // mode table so a later `setDirectLayer` + replay can attach, but no
+    // route exists in the meantime.
+    MonitorRouteState state;
+    state.mode       = mode;
+    state.outputPair = outputPair;
+
+    if (directLayer_ != nullptr)
+    {
+        // Pull the strip's mute atomic so the route honors the operator's
+        // kill-switch (the 2026-05-24 mute-leak fix). The strip outlives the
+        // route by construction (removeChannel removes the route first).
+        auto* strip = static_cast<ChannelStrip<SignalType::Audio>*> (chIt->second.processing.get());
+        const std::atomic<bool>* mute = (strip != nullptr) ? strip->mutedAtomic() : nullptr;
+
+        const auto dst = OutputChannelId (outputPair);
+        if (mode == MonitorMode::Raw)
+        {
+            // Raw taps the physical input (whitepaper §7.2 — pre-strip,
+            // sub-millisecond, no digital colouration). Source is the
+            // channel's primary InputId (the strip's left device channel —
+            // a stereo source's right side is handled by the second InputId
+            // on the audio thread; this slice's UI ships one route per strip
+            // matching the operator's per-channel toggle).
+            state.route = directLayer_->addRawRoute (chIt->second.source, dst, mute);
+        }
+        else
+        {
+            // Processed taps after the strip (whitepaper §7.2 — post-FX).
+            state.route = directLayer_->addProcessedRoute (id, dst, mute);
+        }
+    }
+
+    channelMonitorRoutes_[id.value()] = std::move (state);
+}
+
+MonitorMode InputMixer::channelMonitorMode (ChannelId id) const noexcept
+{
+    if (auto it = channelMonitorRoutes_.find (id.value()); it != channelMonitorRoutes_.end())
+        return it->second.mode;
+    return MonitorMode::Off;
+}
+
+int InputMixer::channelMonitorOutputPair (ChannelId id) const noexcept
+{
+    if (auto it = channelMonitorRoutes_.find (id.value()); it != channelMonitorRoutes_.end())
+        return it->second.outputPair;
+    return 0;
 }
 
 bool InputMixer::channelSendIsPreFader (ChannelId id) const noexcept
@@ -330,6 +433,11 @@ InputMixerGraphState InputMixer::exportGraphState() const
         if (auto* chain = channelInsertChain (ch.id)) entry.inserts = *chain;
         if (auto pf = channelPreFaderSends_.find (rawId); pf != channelPreFaderSends_.end())
             entry.preFaderSends = pf->second != 0;
+        if (auto mr = channelMonitorRoutes_.find (rawId); mr != channelMonitorRoutes_.end())
+        {
+            entry.monitorMode       = mr->second.mode;
+            entry.monitorOutputPair = mr->second.outputPair;
+        }
         state.channels.push_back (std::move (entry));
     }
 
@@ -381,6 +489,17 @@ void InputMixer::importGraphState (const InputMixerGraphState& state)
         if (c.preFaderSends)
             channelPreFaderSends_[c.channelId] = 1;
     }
+
+    // 2026-05-24 monitor slice — replay the per-channel monitor mode AFTER
+    // sends/main-outs are applied (mode is independent of those, but the
+    // strip must exist before its mute atomic is read by addRawRoute /
+    // addProcessedRoute). When the DirectLayer collaborator isn't bound at
+    // import time, the mode is stashed and a later `setDirectLayer` does
+    // NOT auto-replay — callers that load a project before binding the
+    // DirectLayer must replay manually (today MainComponent binds first).
+    for (const auto& c : state.channels)
+        if (c.monitorMode != MonitorMode::Off)
+            setChannelMonitorMode (ChannelId (c.channelId), c.monitorMode, c.monitorOutputPair);
 
     // 3. Apply main-outs (all nodes exist now, so no cycle false-positives).
     for (const auto& b : state.buses)    applyBusMainOut (BusId (b.busId), b.mainOut);

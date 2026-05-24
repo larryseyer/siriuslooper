@@ -115,7 +115,19 @@ add_executable(IdaTests
     # JUCE Component is constructed inside ScopedJuceInitialiser_GUI; the
     # public simulate* test seams drive the callback contract without
     # painting pixels (pixel rendering is operator-eyes-on at slice 5).
-    InsertChainPopupTests.cpp)
+    InsertChainPopupTests.cpp
+    # 2026-05-24 monitor slice — per-channel direct-layer monitor mode +
+    # the operator-reported mute-leak fix. Three test files:
+    #   MonitorModeLifecycleTests — Off/Raw/Processed transitions create,
+    #     swap, and remove DirectLayer routes (engine-level lifecycle).
+    #   MuteLeakTests — the operator's failing case: a muted channel's
+    #     monitor signal goes silent on the audio thread regardless of
+    #     mode (the kill-switch reading of mute).
+    #   SessionFormatMonitorModeTests — round-trip + back-compat (missing
+    #     field reads as Off, unknown token throws).
+    InputMixerMonitorModeLifecycleTests.cpp
+    InputMixerMonitorMuteLeakTests.cpp
+    SessionFormatMonitorModeTests.cpp)
 
 # T3a: EqAdapterTests includes "fx/EqAdapter.h" (engine-private header) and
 # EqAdapter.h transitively includes <otto/effects/PlayerEQ.h>. Both paths
