@@ -218,7 +218,7 @@ button that opens the FX edit surface.
 
 ## ▶ BASELINE (start of next session)
 
-* **HEAD on origin/master:** `<new>` (per-channel Monitor +
+* **HEAD on origin/master:** `5c34ed6` (per-channel Monitor +
   direct-layer mute kill-switch).
 * **ctest baseline:** 728 pass / 0 fail with
   `ctest -E "(PluginEditor|MainComponentPlug)"`. The two
