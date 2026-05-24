@@ -83,6 +83,7 @@ OutputMixer::OutputMixer()
     channelPreFaderSends_.reserve   (static_cast<std::size_t> (kMaxOutputChannels));
     channelMainOutKind_.reserve     (static_cast<std::size_t> (kMaxOutputChannels));
     channelMainOutBus_.reserve      (static_cast<std::size_t> (kMaxOutputChannels));
+    channelAudioSources_.reserve    (static_cast<std::size_t> (kMaxOutputChannels));
     freeChannelIds_.reserve         (static_cast<std::size_t> (kMaxOutputChannels));
 
     // Auto-create the master bus at BusId{0} per the M5 Session 2 spec.
@@ -118,6 +119,18 @@ void OutputMixer::registerChannelWithId (SignalType type, OutputChannelId id)
     channelPreFaderSends_.push_back (0);   // slice E2: default post-fader
     channelMainOutKind_.push_back (MainOutDest::Bus);    // slice E3: default = master
     channelMainOutBus_.push_back  (BusId { 0 });
+    channelAudioSources_.push_back ({ nullptr, nullptr }); // 2026-05-24: silent default
+}
+
+void OutputMixer::setChannelAudioSource (OutputChannelId id,
+                                         const float* left, const float* right) noexcept
+{
+    for (std::size_t i = 0; i < channels_.size(); ++i)
+        if (channels_[i].id == id)
+        {
+            channelAudioSources_[i] = { left, right };
+            return;
+        }
 }
 
 OutputChannelId OutputMixer::addChannel (SignalType type)
@@ -192,6 +205,7 @@ void OutputMixer::removeChannel (OutputChannelId id)
         channelPreFaderSends_[idx]   = channelPreFaderSends_[last];
         channelMainOutKind_[idx]     = channelMainOutKind_[last];
         channelMainOutBus_[idx]      = channelMainOutBus_[last];
+        channelAudioSources_[idx]    = channelAudioSources_[last];
     }
     channels_.pop_back();
     channelNodeIds_.pop_back();
@@ -199,6 +213,7 @@ void OutputMixer::removeChannel (OutputChannelId id)
     channelPreFaderSends_.pop_back();
     channelMainOutKind_.pop_back();
     channelMainOutBus_.pop_back();
+    channelAudioSources_.pop_back();
 
     freeChannelIds_.push_back (channelValue);
 }
@@ -618,18 +633,17 @@ void OutputMixer::renderBuffer (const float* const* inputChannelData,
     const int clampedSamples = std::min (numSamples,
                                          static_cast<int> (kMaxBlockSamples));
 
-    // Step 1 — for each registered output channel, scratch-mix its source
-    // signal through ChannelStrip<Audio>::process. The source is the input
-    // device channel at the same 0-based index (M5 proxy for Constituent
-    // rendering; M6+ replaces). Channels without an input source go silent.
-    //
-    // Slice E2: snapshot the pre-strip (source) signal into
-    // channelPreFaderScratch_ BEFORE strip->process mutates the post-strip
-    // scratch. Step 2 picks per-channel between the two scratches based on
-    // channelPreFaderSends_. The snapshot runs for every channel (whether
-    // or not it's currently in pre-fader mode) so a mid-block flip would be
-    // safe; the cost is a memcpy per block per channel, sub-µs at default
-    // block sizes.
+    // Step 1 — for each registered channel, fill its scratch from the
+    // per-channel audio source set via `setChannelAudioSource` (and strip-
+    // process the post-fader scratch). Channels with no source (the default)
+    // stay at silence. Per whitepaper §5.2 / §6 / §7 the input mixer's
+    // DirectLayer is the only sanctioned input → output path; phrase channels
+    // render Constituent / tape playback. Until that source path lands,
+    // production runs with every channel's source = nullptr and the master
+    // bus reads silence — the 2026-05-24 fix for the operator-reported
+    // master-meter leak with Monitor=Off. `inputChannelData` is reserved for
+    // a future routing slice and intentionally unused here.
+    juce::ignoreUnused (inputChannelData, numInputChannels);
     for (std::size_t i = 0; i < channels_.size(); ++i)
     {
         const auto& entry        = channels_[i];
@@ -640,36 +654,27 @@ void OutputMixer::renderBuffer (const float* const* inputChannelData,
         float* const leftPre      = channelPreFaderScratch_.data() + base;
         float* const rightPre     = leftPre + kMaxBlockSamples;
 
-        // Zero both scratches unconditionally — defensive against the prior
-        // buffer's residue when the current source is silent.
         const std::size_t bytes = static_cast<std::size_t> (clampedSamples) * sizeof (float);
         std::memset (leftScratch,  0, bytes);
         std::memset (rightScratch, 0, bytes);
         std::memset (leftPre,      0, bytes);
         std::memset (rightPre,     0, bytes);
 
-        // Non-Audio channels skip DSP entirely — their strips are stubs
-        // until M9 (Midi) / M12 (Video) / M13 (File).
+        // Non-Audio channels skip DSP entirely (MIDI/Video/File strips are
+        // stubs until their owning slices land).
         if (entry.signalType != SignalType::Audio) continue;
 
-        // Source = input device channel at the matching 0-based index.
-        const std::int64_t channelIndex = entry.id.value() - 1;
-        if (channelIndex < 0 || channelIndex >= numInputChannels) continue;
-        const float* const src = inputChannelData[channelIndex];
-        if (src == nullptr) continue;
+        // No source bound or partial-stereo (either side null) → channel
+        // stays at silence. The architectural rule is explicit per-channel
+        // wiring; there is no auto-source.
+        const auto& source = channelAudioSources_[i];
+        if (source.left == nullptr || source.right == nullptr) continue;
 
-        // Copy source into both scratch channels (mono → stereo) so the
-        // strip's equal-power pan has something to work with. Mirror the
-        // source into the pre-fader scratch so a pre-fader send sees the
-        // unstripped signal.
-        std::memcpy (leftScratch,  src, bytes);
-        std::memcpy (rightScratch, src, bytes);
-        std::memcpy (leftPre,      src, bytes);
-        std::memcpy (rightPre,     src, bytes);
+        std::memcpy (leftScratch,  source.left,  bytes);
+        std::memcpy (rightScratch, source.right, bytes);
+        std::memcpy (leftPre,      source.left,  bytes);
+        std::memcpy (rightPre,     source.right, bytes);
 
-        // Apply the per-channel ChannelStrip<Audio> if attached. Without a
-        // strip the scratch carries the unity-gain source — M5 acceptable;
-        // operators expecting gain/pan attach a strip via setChannelStrip.
         if (entry.strip != nullptr)
         {
             float* stripChannels[kStripChannelCount] = { leftScratch, rightScratch };

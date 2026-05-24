@@ -233,13 +233,18 @@ TEST_CASE ("OutputMixer::renderBuffer routes input through strip+master at unity
     constexpr int kFrames = 8;
     std::array<float, kFrames> inLeft;  inLeft.fill  (1.0f);
     std::array<float, kFrames> inRight; inRight.fill (1.0f);
-    const float* inputs[2] = { inLeft.data(), inRight.data() };
+
+    // 2026-05-24: wire each channel's audio source explicitly. The prior
+    // M5 proxy (inputChannelData[id-1] auto-map) was removed; phrase
+    // channels are silent until something feeds them.
+    mixer.setChannelAudioSource (chL, inLeft.data(),  inLeft.data());
+    mixer.setChannelAudioSource (chR, inRight.data(), inRight.data());
 
     std::array<float, kFrames> outLeft;  outLeft.fill  (0.0f);
     std::array<float, kFrames> outRight; outRight.fill (0.0f);
     float* outputs[2] = { outLeft.data(), outRight.data() };
 
-    mixer.renderBuffer (inputs, 2, outputs, 2, kFrames);
+    mixer.renderBuffer (nullptr, 0, outputs, 2, kFrames);
 
     // Channel L: src=1.0 → strip(gain 0.5, pan 0.5 center) → left ~= 0.354,
     // right ~= 0.354. Channel R: same. Both channels' contributions are
@@ -292,13 +297,13 @@ TEST_CASE ("OutputMixer::renderBuffer accumulates aux-bus sends into master at u
 
     constexpr int kFrames = 4;
     std::array<float, kFrames> inLeft;  inLeft.fill  (1.0f);
-    const float* inputs[1] = { inLeft.data() };
+    mixer.setChannelAudioSource (ch, inLeft.data(), inLeft.data());
 
     std::array<float, kFrames> outLeft;  outLeft.fill  (0.0f);
     std::array<float, kFrames> outRight; outRight.fill (0.0f);
     float* outputs[2] = { outLeft.data(), outRight.data() };
 
-    mixer.renderBuffer (inputs, 1, outputs, 2, kFrames);
+    mixer.renderBuffer (nullptr, 0, outputs, 2, kFrames);
 
     // Mono input → both scratch channels carry 1.0 → master accumulates
     // (1.0 + 0.5) * 1.0 = 1.5 on each channel.
@@ -311,17 +316,16 @@ TEST_CASE ("OutputMixer::renderBuffer writes additively into pre-populated outpu
 {
     OutputMixer mixer;
     const auto ch = mixer.addChannel (SignalType::Audio);
-    (void) ch;
 
     constexpr int kFrames = 4;
     std::array<float, kFrames> inLeft;  inLeft.fill  (0.5f);
-    const float* inputs[1] = { inLeft.data() };
+    mixer.setChannelAudioSource (ch, inLeft.data(), inLeft.data());
 
     std::array<float, kFrames> outLeft;  outLeft.fill  (0.25f); // pre-populated
     std::array<float, kFrames> outRight; outRight.fill (0.25f);
     float* outputs[2] = { outLeft.data(), outRight.data() };
 
-    mixer.renderBuffer (inputs, 1, outputs, 2, kFrames);
+    mixer.renderBuffer (nullptr, 0, outputs, 2, kFrames);
 
     // Pre-existing 0.25 + (input 0.5 * master send 1.0) = 0.75. Proves
     // DirectLayer's bypass writes are preserved when OutputMixer runs
@@ -435,9 +439,10 @@ TEST_CASE ("OutputMixer::renderBuffer 32-channel x 8-bus RT smoke",
     constexpr int kInputs = 32;
     std::vector<std::vector<float>> inputBuffers (static_cast<std::size_t> (kInputs),
                                                   std::vector<float> (static_cast<std::size_t> (kFrames), 1.0f));
-    std::vector<const float*> inputs (static_cast<std::size_t> (kInputs));
+    // Wire each channel's audio source (2026-05-24 — replaces the M5 proxy).
     for (std::size_t i = 0; i < static_cast<std::size_t> (kInputs); ++i)
-        inputs[i] = inputBuffers[i].data();
+        mixer.setChannelAudioSource (channels[i],
+                                     inputBuffers[i].data(), inputBuffers[i].data());
 
     std::array<std::vector<float>, 2> outputBuffers {
         std::vector<float> (kFrames, 0.0f),
@@ -451,13 +456,13 @@ TEST_CASE ("OutputMixer::renderBuffer 32-channel x 8-bus RT smoke",
     constexpr int kWarmup    = 100;
     constexpr int kMeasure   = 100;
     for (int i = 0; i < kWarmup; ++i)
-        mixer.renderBuffer (inputs.data(), kInputs, outputs, 2, kFrames);
+        mixer.renderBuffer (nullptr, 0, outputs, 2, kFrames);
 
     double maxElapsedSec = 0.0;
     for (int i = 0; i < kMeasure; ++i)
     {
         const auto t0 = juce::Time::getHighResolutionTicks();
-        mixer.renderBuffer (inputs.data(), kInputs, outputs, 2, kFrames);
+        mixer.renderBuffer (nullptr, 0, outputs, 2, kFrames);
         const auto t1 = juce::Time::getHighResolutionTicks();
         const double elapsedSec = juce::Time::highResolutionTicksToSeconds (t1 - t0);
         if (elapsedSec > maxElapsedSec) maxElapsedSec = elapsedSec;
@@ -527,9 +532,9 @@ TEST_CASE ("OutputMixer bus->bus subgroup actually routes audio through the pare
 
     std::array<float, 4> in;  in.fill (0.5f);
     std::array<float, 4> out; out.fill (0.0f);
-    const float* inPtrs[1]  = { in.data() };
+    mixer.setChannelAudioSource (ch, in.data(), in.data());
     float*       outPtrs[2] = { out.data(), nullptr };
-    mixer.renderBuffer (inPtrs, 1, outPtrs, 1, static_cast<int> (in.size()));
+    mixer.renderBuffer (nullptr, 0, outPtrs, 1, static_cast<int> (in.size()));
 
     // Signal traversed busB, so busB's halving applied exactly once:
     // 0.5 (input) -> busA (unity) -> busB (x0.5) -> master -> 0.25.
@@ -687,7 +692,7 @@ TEST_CASE ("OutputMixer per-output-pair routing writes to the requested pair",
 
     constexpr int kFrames = 4;
     std::array<float, kFrames> input;  input.fill (1.0f);
-    const float* inputs[1] = { input.data() };
+    mixer.setChannelAudioSource (ch, input.data(), input.data());
 
     std::array<float, kFrames> out0{}; out0.fill (0.0f);
     std::array<float, kFrames> out1{}; out1.fill (0.0f);
@@ -695,7 +700,7 @@ TEST_CASE ("OutputMixer per-output-pair routing writes to the requested pair",
     std::array<float, kFrames> out3{}; out3.fill (0.0f);
     float* outputs[4] = { out0.data(), out1.data(), out2.data(), out3.data() };
 
-    mixer.renderBuffer (inputs, 1, outputs, 4, kFrames);
+    mixer.renderBuffer (nullptr, 0, outputs, 4, kFrames);
 
     // Master at pair 0 carries the channel's master send (1.0).
     for (float v : out0) CHECK (v == Catch::Approx (1.0f));
@@ -1024,13 +1029,13 @@ TEST_CASE ("OutputMixer post-fader sends respect channel mute (default behavior)
 
     constexpr int kFrames = 8;
     std::array<float, kFrames> inLeft;  inLeft.fill (1.0f);
-    const float* inputs[1] = { inLeft.data() };
+    mixer.setChannelAudioSource (ch, inLeft.data(), inLeft.data());
 
     std::array<float, kFrames> outLeft;  outLeft.fill  (0.0f);
     std::array<float, kFrames> outRight; outRight.fill (0.0f);
     float* outputs[2] = { outLeft.data(), outRight.data() };
 
-    mixer.renderBuffer (inputs, 1, outputs, 2, kFrames);
+    mixer.renderBuffer (nullptr, 0, outputs, 2, kFrames);
 
     // The default master send is 1.0 (set by addChannel), but the channel is
     // muted → post-fader send is silent → master output is silent.
@@ -1055,13 +1060,13 @@ TEST_CASE ("OutputMixer pre-fader sends bypass channel mute",
 
     constexpr int kFrames = 8;
     std::array<float, kFrames> inLeft;  inLeft.fill (1.0f);
-    const float* inputs[1] = { inLeft.data() };
+    mixer.setChannelAudioSource (ch, inLeft.data(), inLeft.data());
 
     std::array<float, kFrames> outLeft;  outLeft.fill  (0.0f);
     std::array<float, kFrames> outRight; outRight.fill (0.0f);
     float* outputs[2] = { outLeft.data(), outRight.data() };
 
-    mixer.renderBuffer (inputs, 1, outputs, 2, kFrames);
+    mixer.renderBuffer (nullptr, 0, outputs, 2, kFrames);
 
     // Source = 1.0, master send = 1.0, strip is muted but bypassed for the
     // send tap → master output carries source on both channels (the source
@@ -1084,13 +1089,13 @@ TEST_CASE ("OutputMixer pre-fader sends bypass channel gain",
 
     constexpr int kFrames = 4;
     std::array<float, kFrames> inLeft;  inLeft.fill (1.0f);
-    const float* inputs[1] = { inLeft.data() };
+    mixer.setChannelAudioSource (ch, inLeft.data(), inLeft.data());
 
     std::array<float, kFrames> outLeft;  outLeft.fill  (0.0f);
     std::array<float, kFrames> outRight; outRight.fill (0.0f);
     float* outputs[2] = { outLeft.data(), outRight.data() };
 
-    mixer.renderBuffer (inputs, 1, outputs, 2, kFrames);
+    mixer.renderBuffer (nullptr, 0, outputs, 2, kFrames);
 
     // Pre-fader bypasses gain AND pan — the send tap sees the un-stripped
     // mono → both sides at 1.0 (mono source copied to both scratch
@@ -1296,7 +1301,7 @@ TEST_CASE ("renderBuffer skips a bus whose sendInputActive is false (no contribu
     // contribution to master (its default main-out) must be zero. The
     // channel registration alone is what makes master active; the test
     // doesn't need to address it by id beyond that.
-    (void) mixer.addChannel (SignalType::Audio);
+    const auto ch  = mixer.addChannel (SignalType::Audio);
     const auto rvb = mixer.addBus (BusConfig { 2, "Reverb", BusKind::FxReturn });
 
     // Drop a recognizable junk pattern into the FX return's mixBuffer so
@@ -1309,13 +1314,13 @@ TEST_CASE ("renderBuffer skips a bus whose sendInputActive is false (no contribu
 
     constexpr int kFrames = 4;
     std::array<float, kFrames> inLeft;  inLeft.fill (1.0f);
-    const float* inputs[1] = { inLeft.data() };
+    mixer.setChannelAudioSource (ch, inLeft.data(), inLeft.data());
 
     std::array<float, kFrames> outLeft;  outLeft.fill (0.0f);
     std::array<float, kFrames> outRight; outRight.fill (0.0f);
     float* outputs[2] = { outLeft.data(), outRight.data() };
 
-    mixer.renderBuffer (inputs, 1, outputs, 2, kFrames);
+    mixer.renderBuffer (nullptr, 0, outputs, 2, kFrames);
 
     // Master is active (ch's default 1.0 master send) — its accumulated mix
     // is source 1.0 × master send 1.0 = 1.0 on both sides. The FX return,
@@ -1460,12 +1465,12 @@ TEST_CASE ("OutputMixer::setBusSend feeds the FX-return mix and survives renderB
 
     constexpr int kFrames = 8;
     std::array<float, kFrames> inLeft;  inLeft.fill (1.0f);
-    const float* inputs[1] = { inLeft.data() };
+    mixer.setChannelAudioSource (ch, inLeft.data(), inLeft.data());
     std::array<float, kFrames> outLeft;  outLeft.fill  (0.0f);
     std::array<float, kFrames> outRight; outRight.fill (0.0f);
     float* outputs[2] = { outLeft.data(), outRight.data() };
 
-    mixer.renderBuffer (inputs, 1, outputs, 2, kFrames);
+    mixer.renderBuffer (nullptr, 0, outputs, 2, kFrames);
 
     // Two parallel paths into the master: aux→master (unity), and
     // aux→rvb (0.5) → rvb→master (unity). Both add: 1.0 + 0.5 = 1.5.
@@ -1489,12 +1494,12 @@ TEST_CASE ("OutputMixer::setBusSend with level=0 removes the FX-return contribut
 
     constexpr int kFrames = 4;
     std::array<float, kFrames> inLeft;  inLeft.fill (1.0f);
-    const float* inputs[1] = { inLeft.data() };
+    mixer.setChannelAudioSource (ch, inLeft.data(), inLeft.data());
     std::array<float, kFrames> outLeft;  outLeft.fill  (0.0f);
     std::array<float, kFrames> outRight; outRight.fill (0.0f);
     float* outputs[2] = { outLeft.data(), outRight.data() };
 
-    mixer.renderBuffer (inputs, 1, outputs, 2, kFrames);
+    mixer.renderBuffer (nullptr, 0, outputs, 2, kFrames);
 
     // Only the aux→master path remains (1.0). FX-return is bypassed (no senders).
     for (float v : outLeft)  CHECK (v == Catch::Approx (1.0f));

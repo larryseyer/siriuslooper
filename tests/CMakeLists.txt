@@ -127,7 +127,11 @@ add_executable(IdaTests
     #     field reads as Off, unknown token throws).
     InputMixerMonitorModeLifecycleTests.cpp
     InputMixerMonitorMuteLeakTests.cpp
-    SessionFormatMonitorModeTests.cpp)
+    SessionFormatMonitorModeTests.cpp
+    # 2026-05-24 — pins the whitepaper-correct silence rule: an Output Mixer
+    # phrase channel does NOT pipe live device input to master. Caught the
+    # "M5 proxy" leak that bypassed the Input Mixer's Monitor button.
+    OutputMixerPhraseChannelSilenceTests.cpp)
 
 # T3a: EqAdapterTests includes "fx/EqAdapter.h" (engine-private header) and
 # EqAdapter.h transitively includes <otto/effects/PlayerEQ.h>. Both paths

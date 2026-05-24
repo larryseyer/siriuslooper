@@ -314,13 +314,30 @@ public:
 
     // Audio-thread interface (real-time safe in M5 Session 3+) ---------------
 
+    /// Per-channel audio source pointer (2026-05-24). Message-thread setter;
+    /// read on the audio thread by `renderBuffer` Step 1 to fill the channel's
+    /// scratch. nullptr (default for every newly-added channel) = silent —
+    /// the channel produces zero into the bus mix until something feeds it.
+    /// Either pointer null = the channel is treated as silent (no partial-
+    /// stereo source). Pointers MUST outlive every `renderBuffer` call until
+    /// cleared via setChannelAudioSource(id, nullptr, nullptr); the Constituent
+    /// renderer slice wires its rendered output here. Unknown id = silent no-op.
+    ///
+    /// Whitepaper §5.2 / §6 / §7: input → output is sanctioned ONLY via the
+    /// Input Mixer's DirectLayer (operator's per-channel Monitor button).
+    /// OutputMixer phrase channels render Constituent audio, not live input.
+    /// This API makes the source explicit; the prior auto-mapping from
+    /// `inputChannelData[id-1]` ("M5 proxy") leaked live input to master
+    /// independent of the Monitor button and was removed in the same slice.
+    void setChannelAudioSource (OutputChannelId,
+                                const float* left, const float* right) noexcept;
+
     /// Audio-thread render entry. M5 Session 3 body: channel-strip →
     /// send-matrix → bus-process → master-bus → output traversal.
     ///
-    /// Per-channel audio source (M5): `inputChannelData[channelIndex]`
-    /// where `channelIndex = OutputChannelId.value() - 1`. Channels
-    /// without a matching input device channel are silent. M6+ replaces
-    /// this with Constituent renders.
+    /// `inputChannelData` / `numInputChannels` are RESERVED for a future
+    /// audio-source path; renderBuffer currently does not read them. The
+    /// per-channel audio source comes from `setChannelAudioSource` instead.
     ///
     /// `const noexcept` per V7 plan line 386 + continue.md constraint #4:
     /// `renderBuffer` is a function of state, not a state mutator. All
@@ -402,6 +419,21 @@ private:
     /// Stable across switches to HardwareOutput and back — the picker UI
     /// can remember the last bus pick.
     std::vector<BusId>        channelMainOutBus_;
+
+    /// Per-channel audio source pointers, parallel to `channels_`
+    /// (2026-05-24). Default `{nullptr, nullptr}` (silent) for every newly-
+    /// added channel; updated via `setChannelAudioSource`. Read on the audio
+    /// thread by `renderBuffer` Step 1; if either side is null the channel's
+    /// scratch is left zero (the architectural silence rule — phrase channels
+    /// are silent until a Constituent renderer / tape playback feeds them).
+    /// Reserved to `kMaxOutputChannels` in the ctor so `push_back` in
+    /// `addChannel` never reallocates.
+    struct ChannelSource
+    {
+        const float* left  { nullptr };
+        const float* right { nullptr };
+    };
+    std::vector<ChannelSource> channelAudioSources_;
 
     /// Per-channel pre-fader-send mode, parallel to `channels_` (slice E2).
     /// `char` not `bool` so `std::vector<bool>`'s bit-packing doesn't get
