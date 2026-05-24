@@ -1,4 +1,4 @@
-# Session Continuation — NEXT: operator eyes-on slice U + slice P save/load round-trip
+# Session Continuation — NEXT: Slice EC (EQ + CMP tabs functional, both mixers)
 
 > **For a fresh chat picking this up cold:** memory + project +
 > user CLAUDE.md load automatically. This file is the **forward-looking
@@ -8,130 +8,390 @@
 
 1. Read `external/OTTO/CROSS_PROJECT_INBOX.md`. As of session start
    2026-05-24, all entries through TAPECOLOR Phase 5 + the "OTTO pin
-   bumped to c4a8ec3" informational notice are acked. Next expected
-   OTTO event is TAPECOLOR Phase 6 (tape-hiss noise floor).
-2. **Operator GUI eyes-on for slice U** (landed previous session):
-   launch `~/Desktop/IDA` → Input Mixer tab → click a strip → the
-   tabbed detail panel should show four tabs (Pan/Wid, Sends, EQ,
-   CMP). Pan/Wid unchanged. Sends shows the operator's FX-return
-   buses (or "No FX returns on this mixer — add one from the
-   blank-area menu" if none) plus a PRE FADER toggle. EQ + CMP are
-   explicit placeholder cards saying wiring lands with the insert-
-   chain UI (P7). Repeat on the Output Mixer tab with a phrase strip.
-3. **Operator save/load eyes-on for slice P** (landed this session):
-   - With a session having at least one phrase strip on the Output
-     Mixer (Mark Out a capture to create one if needed), set a
-     custom fader / mute / send level / destination picker choice on
-     a phrase strip.
-   - File → Save As → write a new `.ida.json`.
-   - Quit + relaunch IDA. File → Load → pick that file.
-   - The phrase strip should reappear in the same pill-order slot
-     with the same fader / mute / send / destination state. The
-     ConstituentId → OutputChannelId binding now survives save/load.
-   - Also check that aux buses + FX returns on either mixer survive
-     (input + output mixer graph states are now persisted alongside
-     the phrase-channel map).
-   - Loading an older v1 envelope (`ida_version: 1`) still works —
-     the mixer/map keys are optional and default to "no change to
-     current state" (current pre-v2 behavior preserved).
+   bumped to c4a8ec3" informational notice are acked. No new OTTO
+   events landed in the session that produced this handoff. Next
+   expected OTTO event is TAPECOLOR Phase 6 (tape-hiss noise floor).
+2. **Confirm the parity invariant before writing any code** (section
+   below). Slice EC is fundamentally a parity-realization slice —
+   the EQ + CMP tabs ship identically on both mixers, instanced
+   twice. If you find yourself adding mixer-specific logic, stop.
+3. Begin slice EC per the plan below. Start with the brainstorming
+   skill if any concrete sub-decision below feels under-specified —
+   the operator has stated they want it done in this session.
+
+## ▶ THE PARITY INVARIANT (load-bearing — restated by operator 2026-05-24)
+
+> "input mixer and output mixer are IDENTICAL except for inputs and
+> outputs... very important!"
+>
+> "What I mean is their channels are identical... of course, the
+> number of channels for each will be different"
+>
+> "input mixer goes to tapes (or other) and output mixer comes from
+> phrases and goes to outputs etc..."
+
+What this means in code:
+
+- The **channel/strip UI is identical between InputMixerPane and
+  OutputMixerPane**: fader, mute, INS, pan/width, **EQ**, **CMP**,
+  sends, destination picker. Same UI types per-instance (memory:
+  `project_two_mixers_totally_separate` — types shared, never
+  state).
+- The two consoles differ **only** at the I/O bookends:
+  - Input: physical input → strip → (tapes | aux buses |
+    hardware-output | FX-return sends).
+  - Output: phrase render (or bundled OTTO output, later) → strip
+    → (master | aux buses | hardware-output | FX-return sends).
+- Channel **count** is operator-driven on both, independently.
+- Slice U gave both panes the same `ida::ui::ChannelDetail`
+  instance type — slice EC continues that pattern with the new EQ
+  and CMP tab components.
 
 ## ▶ DONE LAST SESSION
 
-**Slice P — session persistence for mixer graphs + phrase-channel map.**
+This session shipped two pieces and surfaced one big design gap
+(slice EC, queued for the next session).
 
-Spec: `docs/superpowers/specs/2026-05-23-mixer-symmetry-fx-returns-sends-design.md`
-§Slice P, with the slice-5c map cross-ref from
-`2026-05-23-output-mixer-phrase-channels-design.md`. Continue.md's prior
-note that slice P was "single-concern" reflected that `preFaderSends` +
-`mainOutKind` already round-tripped through E2+E3 — but the OutputMixer
-and InputMixer graph states themselves were never wired into the save
-envelope (only unit-tested in isolation), so persisting the phrase-
-channel map alone would have been useless (channels reset on load,
-binding goes stale). Scope expanded to deliver the slice end-to-end
-per `feedback_sirius_done_right_and_complete`.
+### 1. Slice P — session persistence for mixer graphs + phrase-channel map (HEAD `f1e0fb0`)
 
-### Envelope schema v2
+Envelope schema v2 (bumped `kSessionEnvelopeVersion` 1 → 2). Three
+new optional keys: `input_mixer`, `output_mixer`,
+`phrase_channel_map`. v1 envelopes still load clean (keys are
+optional; absence preserves pre-v2 behavior).
 
-`app/MainComponent.cpp`: `kSessionEnvelopeVersion` bumped 1 → 2.
-Three new keys, all optional (v1 envelopes load clean — defaults
-preserve current pre-v2 behavior):
-- `input_mixer`  — serialized `InputMixerGraphState`
-- `output_mixer` — serialized `OutputMixerGraphState`
-- `phrase_channel_map` — list of `(constituent_id, output_channel_id)` pairs
+- New persistence helpers in
+  `persistence/include/ida/SessionFormat.h` +
+  `persistence/src/SessionFormat.cpp`:
+  `serializePhraseChannelMap` + `deserializePhraseChannelMap`.
+- Latent bug fix: `OutputMixer::importGraphState` used
+  `addChannel` (which mints fresh ids), silently breaking exports
+  with `removeChannel`-induced id gaps. Extracted
+  `registerChannelWithId` helper; import now preserves persisted
+  ids (mirror of InputMixer's pattern at
+  `engine/src/InputMixer.cpp:367-383`).
+- `MainComponent` save/load now wires both mixer graphs + the map
+  through the envelope; load replaces mixer instances with fresh
+  ones, re-binds notification bus / tape sink / effect-chain host
+  / tape-pool mirror, calls importGraphState, re-points the
+  AudioCallback's mixer pointers, then restores the phrase-channel
+  map **before** the refresh cascade so surviving constituents
+  re-bind to their saved OutputChannelIds.
+- 4 new tests (3 `[phrase-channel-map]` + 1
+  `[output-mixer][persistence][slice-p]`). Baseline 674 pass / 1
+  not-run / 675 total. Not-run is the unchanged
+  `MainComponentPluginEditorTests_NOT_BUILT` sentinel.
 
-### New persistence helpers
+**Operator eyes-on still pending for slice P** (queued — see
+"Also Pending" below). Save → quit → relaunch → load: phrase strip
+mix state should survive.
 
-`persistence/include/ida/SessionFormat.h` + `persistence/src/SessionFormat.cpp`:
-- `serializePhraseChannelMap (const std::vector<std::pair<int64_t, int64_t>>&) -> juce::String`
-- `deserializePhraseChannelMap (const juce::String&) -> std::vector<std::pair<int64_t, int64_t>>`
-  - Mirrors the TapePool convention: a missing `entries` key is a hard
-    error (back-compat callers detect envelope-level absence and skip).
+### 2. Bug fix — Output Mixer "Add FX return" UI surface (HEAD `a8e0551`)
 
-### OutputMixer id-preservation fix (latent bug surfaced by slice P)
+Discovered while the operator was testing slice U:
+**InputMixerPane's blank-area menu had "Add bus", "Add FX return",
+and "Add tape" items, but OutputMixerPane only had "Add bus".**
+E1 added `BusKind::FxReturn` to OutputMixer (engine surface) but
+the UI gesture to actually create one was never wired. Without an
+FX-return bus on the Output Mixer, the Sends tab on phrase strips
+showed "No FX returns on this mixer" forever — manifesting as the
+operator's "I don't see anything in the tabs" complaint.
 
-`engine/src/OutputMixer.cpp` + `engine/include/ida/OutputMixer.h`:
-- `OutputMixer::importGraphState` used `addChannel()`, which mints
-  fresh sequential ids. For exports with gaps from `removeChannel`
-  (e.g. saved channels `{1, 3, 5}`), the loaded mixer reproduced
-  `{1, 2, 3}` — silently breaking any external map keyed by
-  `OutputChannelId`.
-- Extracted the parallel-vector wiring into a private
-  `registerChannelWithId(SignalType, OutputChannelId)` helper.
-  `addChannel` allocates (free-list or counter) then delegates;
-  `importGraphState` calls it with the persisted `c.channelId`.
-- Mirror of the pattern `InputMixer::importGraphState` already used
-  for `ChannelId` preservation.
+Fix in `app/MainComponent.cpp`:
+- Added `onAddFxReturn` callback to OutputMixerPane (mirror of
+  InputMixerPane's).
+- Added "Add FX return" item to OutputMixerPane's
+  `showBlankAreaMenu`.
+- Wired in MainComponent ctor:
+  `outputMixer_->addBus(BusConfig{ 2, "FX N", BusKind::FxReturn })`,
+  bracketed by audio callback removal, refresh after.
 
-### Load-path wiring
+This restores parity for the blank-area menu — the operator can
+now create FX returns on both mixers. Sends tab populates as
+expected on both.
 
-`MainComponent.cpp` load callback:
-- Parses `input_mixer` / `output_mixer` / `phrase_channel_map` from
-  the envelope into `std::optional<...>` (empty on v1 envelopes).
-- Inside the existing tape-pool audio-callback bracket: if a mixer
-  state is present, allocate a fresh `InputMixer` / `OutputMixer`
-  instance (the `importGraphState` precondition asserts no bus
-  collisions), re-bind notification bus / tape sink / effect-chain
-  host / tape-pool mirror, call `importGraphState`, then re-bind the
-  `AudioCallback`'s mixer pointers (the only other holder — panes
-  don't store mixer pointers; verified via grep across `app/` + `ui/`).
-- Before the refresh cascade: clear + populate
-  `phraseChannelByConstituent_` from the loaded map. The cascade
-  then sees the binding already populated and skips minting fresh
-  channels for surviving Constituents.
+### 3. Surfaced (NOT shipped) — Slice EC scope conversation
 
-### Tests (4 new, 674/675 passing baseline — was 670/671)
+Operator clicked the EQ + CMP tabs and reported "no EQ or CMP"
+(meaning: they see the tab buttons but want functional UI, not the
+italic-placeholder cards slice U shipped). Operator restated the
+parity invariant (section above) and authorized building real EQ +
+CMP UI in this session. The remainder of this file is the slice EC
+plan.
 
-`tests/SessionFormatTests.cpp` (`[phrase-channel-map]` tag):
-- Round-trip with three entries; byte-stable re-serialize.
-- Empty list round-trips.
-- Malformed JSON throws (`{not json}`, `[1,2,3]`, missing `entries`).
+## ▶ NEXT — Slice EC: EQ + CMP tabs functional on both mixers
 
-`tests/OutputMixerTests.cpp` (`[output-mixer][persistence][slice-p]`):
-- Create channels 1,2,3 → remove 2 → reuse → remove again →
-  export. Verify the export carries ids `{1, 3}` (gap at 2). Import
-  into fresh mixer; re-export carries `{1, 3}`, not `{1, 2}`.
+### What exists today (verified this session — DO NOT re-discover)
+
+- **Internal FX enum:** `core/include/ida/InternalFxId.h` —
+  `kEq`, `kCmp`, `kRvb`, `kDly`.
+- **EQ adapter:** `engine/src/fx/EqAdapter.{h,cpp}` —
+  IDA-side wrapper around OTTO's header-only
+  `otto::effects::PlayerEQ`. Holds a `PlayerEQ` + a
+  `PlayerEffectsConfig` value member. Today's constructor flips
+  `cfg_.eqEnabled = true` and ships the default-flat curve.
+  Header comment explicitly says: *"T3a ships default config /
+  no operator parameter UI — a later UI slice exposes the
+  parameter surface."* Slice EC IS that deferred UI slice.
+- **CMP adapter:** `engine/src/fx/CmpAdapter.{h,cpp}` — symmetric
+  pattern around `otto::effects::PlayerCompressor`.
+- **Factory + dispatch:** `engine/src/InternalFxFactory.cpp` —
+  given an `InternalFxId`, returns the matching
+  `std::unique_ptr<IInternalFxAdapter>`.
+- **Interface:** `engine/include/ida/IInternalFxAdapter.h` —
+  prepare / reset / process. Today there are NO setters for the
+  PlayerEffectsConfig fields; slice EC needs to add them (or
+  expose the config reference through the interface).
+- **Parameter surface (from OTTO's `PlayerEffectsConfig`):**
+  - EQ: `eqEnabled`; HP `eqHPFreq` (20-500 Hz) + `eqHPSlope`;
+    Low shelf `eqLowGain` (-12..+12 dB) / `eqLowFreq` (40-500
+    Hz) / `eqLowQ` (0.1-10); Mid parametric `eqMidGain` /
+    `eqMidFreq` (200-8000 Hz) / `eqMidQ`; High shelf
+    `eqHighGain` / `eqHighFreq` (2000-16000 Hz) / `eqHighQ`;
+    LP `eqLPFreq` (2000-20000 Hz) + `eqLPSlope`.
+  - CMP: `compEnabled`; `compThreshold` (-60..0 dB);
+    `compRatio` (1..20); `compAttack` (0.1..100 ms);
+    `compRelease` (10..1000 ms); `compMakeup` (0..24 dB);
+    `compMix` (0..1, parallel-comp); `compSidechainHPF` bool.
+  - Read directly from
+    `external/OTTO/src/otto-core/include/otto/effects/PlayerEffects.h:134-249`
+    if you need the exact defaults or any field I left out.
+- **OTTO's panels** (visual reference only — DO NOT vendor as-is):
+  `external/OTTO/src/otto-plugin/ui/panels/EQPanel.{h,cpp}`
+  (476 + 1420 lines) and `CompressorPanel.{h,cpp}` (338 + 789
+  lines). Both depend on `otto::presets::PresetManager`,
+  `SpectrumDisplay`, `PresetTypes`, and `EQBindingAdapter` —
+  vendoring drags in OTTO subsystems IDA doesn't have. Same
+  blocker that made slice U punt. Use them as visual reference
+  (colors, layout, control idioms) — implement IDA-native.
+- **The slice U framework:** `ui/include/ida/ChannelDetail.h` +
+  `ui/src/ChannelDetail.cpp`. Today `ChannelDetail` constructs
+  four tabs: `panWidTab_` (vendored OTTO), `sendsTab_` (IDA-
+  native real, slice U), `eqTab_` + `cmpTab_` (both currently
+  `ChannelDetailPlaceholderTab` instances). Slice EC replaces
+  `eqTab_` + `cmpTab_` with new IDA-native tab components.
+
+### What needs to be built — slice EC subtasks
+
+Order them; subtask 1 unblocks 2, 2 unblocks 3-5, etc.
+
+#### EC1 — Adapter parameter surface
+
+`engine/include/ida/IInternalFxAdapter.h`: add either
+(a) message-thread-only `setConfig(const PlayerEffectsConfig&)` +
+`config() const` accessors on each adapter, OR
+(b) a generic typed parameter set/get interface. **Recommendation:**
+(a) is simpler — just add the two methods on `EqAdapter` and
+`CmpAdapter`, no interface change. The audio thread reads via a
+double-buffered swap (per the CmpAdapter header comment referring
+to OTTO's MasterBus config-swap pattern); the message thread
+writes via `setConfig`. Initial slice EC can use a plain mutex-
+free atomic-swap with `std::atomic<PlayerEffectsConfig*>` since
+both adapters today are value-members, not heap-owned — needs a
+small design call. **Default to the config-swap pattern** OTTO's
+MasterBus uses (referenced in `CmpAdapter.h` comment header) —
+`scratchConfig()` / `commitConfig()` / `liveConfig()`.
+
+Add Catch2 coverage:
+`tests/EqAdapterTests.cpp` + `tests/CmpAdapterTests.cpp`
+(check whether these exist; if so extend, if not create) —
+setConfig → process produces audibly different output (e.g.
+a sine through a -12 dB low shelf attenuates predictably; a
+compressor with threshold -∞ ratio ∞ flattens to threshold).
+Cover the audio-thread contract via the same grep the EqAdapter
+header documents.
+
+#### EC2 — Adapter binding helper (host side)
+
+Each channel strip needs a discoverable EQ adapter + CMP
+adapter instance. Two design choices on the table:
+
+**(α) Strip-owned slots.** Channel strip auto-inserts an EQ
+slot and a CMP slot in its EffectChain at construction time, at
+fixed indices (e.g. 0 = EQ, 1 = CMP per
+`project_internal_fx_first_class`'s "EQ → CMP → DLY → RVB"
+sequence). Adapters live in the engine's dispatch path. UI
+finds them by walking the chain for `EffectChainEntry::makeInternal(kEq)`
+/ `kCmp`.
+
+**(β) Side-channel adapter store.** A separate per-channel
+`std::unordered_map<ChannelId, EqAdapter*>` in MainComponent
+(or in the mixer). UI looks up by ChannelId. EffectChain stays
+operator-driven (slot is only present if the operator added
+one via INS).
+
+**Recommend (α)** because:
+- The parity invariant requires EQ + CMP "always present" on
+  every channel; (β) makes them feel optional.
+- Matches OTTO's signal-flow comment: "Synth → EQ →
+  Compressor → IR → Delay → Output" — fixed sequence per
+  channel.
+- `project_internal_fx_first_class` memory says the same:
+  "EQ→CMP→DLY→RVB sequence".
+
+Open question for (α): do EQ + CMP slots show up in the INS
+popup too? Probably yes — operator can bypass/reorder/remove
+them via INS, with `setEffectChain` re-asserting the slots if
+they get removed (or just allow removal — the EQ/CMP tab UI
+then shows a "no slot present" empty state instead of forcing
+re-insertion). **Default:** allow operator to remove; EQ/CMP
+tabs gracefully show an "add" prompt when the slot is absent.
+If operator finds this annoying, flip to "always reserved".
+
+#### EC3 — `ida::ui::ChannelDetailEQTab`
+
+`ui/include/ida/ChannelDetailEQTab.h` + `ui/src/ChannelDetailEQTab.cpp`.
+
+Shape mirrors `ChannelDetailSendsTab` from slice U:
+- `struct ChannelState { PlayerEffectsConfig config; bool hasEqSlot; }`.
+- `setChannelState (const ChannelState&)` — host pane pushes
+  when selection or chain changes.
+- `class ChannelDetailEQTabListener` with one method
+  `eqTabConfigChanged (const PlayerEffectsConfig&)` (fired on
+  any control change).
+- Layout for v1: enable toggle + 12 sliders + 12 numeric
+  readouts in a grid (HP freq + 4 shelves × 3 controls + LP
+  freq, slope toggles inline). No curve viz, no spectrum
+  underlay (queued — see "Out of scope" below).
+- Visual style: read OTTO's `EQPanel.cpp` for colors, label
+  fonts, slider styles. Use OTTOLookAndFeel's existing token
+  accessors per the GRIM Menu Surface rule (no hardcoded
+  font/color values).
+
+#### EC4 — `ida::ui::ChannelDetailCMPTab`
+
+Symmetric to EC3. 7 controls (threshold, ratio, attack, release,
+makeup, mix, sidechain-HPF toggle) + enable toggle. Visual
+reference: `external/OTTO/src/otto-plugin/ui/panels/CompressorPanel.cpp`.
+No gain-reduction meter for v1 (queued — needs adapter to
+expose live gain-reduction value, separate work).
+
+#### EC5 — Swap into `ChannelDetail`
+
+`ui/src/ChannelDetail.cpp` lines 264-272 currently construct two
+`ChannelDetailPlaceholderTab` instances. Replace with the new
+`ChannelDetailEQTab` and `ChannelDetailCMPTab`. Update
+`ChannelDetail`'s public accessors (`eqTab()`, `cmpTab()`)
+analogous to the existing `panWidTab()` / `sendsTab()`.
+
+#### EC6 — MainComponent wiring
+
+`app/MainComponent.cpp` — both panes:
+- `InputMixerPane`: inherit `ChannelDetailEQTabListener` +
+  `ChannelDetailCMPTabListener` alongside the existing
+  `Sends`/`PanWid` listeners. Wire via
+  `detailPanel_.eqTab().addListener (this)` /
+  `detailPanel_.cmpTab().addListener (this)`.
+- Extend `showDetailFor` to accept the strip's EQ/CMP config
+  (read from the strip's adapter via the EC2 helper) and push
+  into the tabs via their `setChannelState`.
+- On `eqTabConfigChanged` / `cmpTabConfigChanged`: look up the
+  strip's adapter and call `setConfig`. Wrap in the existing
+  audio-callback bracket pattern.
+- `OutputMixerPane`: same wiring, against phrase-strip
+  adapters (look up via
+  `phraseChannelByConstituent_[cid.value()]` → OutputChannelId
+  → adapter pointer).
+
+#### EC7 — Persistence (THIS slice or follow-up?)
+
+The PlayerEffectsConfig values need to round-trip through
+save/load. Two paths:
+
+**Inline in EffectChainEntry.** Add a `PlayerEffectsConfig`
+optional field to `EffectChainEntry` (or a generic JSON-shaped
+"state" payload). Serialize via existing chain persistence.
+Loud at load time when the slot is reconstructed: re-apply the
+config via `adapter->setConfig`.
+
+**Separate per-channel config sidecar.** Persist a
+`{ ChannelId : PlayerEffectsConfig }` map alongside the mixer
+graph state in the envelope (similar to slice P's
+phrase-channel map).
+
+**Recommend inline** — config is per-slot, not per-channel; if
+the operator reorders slots, the config moves with the slot.
+But: requires `EffectChainEntry` schema bump, and the persistence
+team (= you, next session) has to land this carefully.
+
+**Scope call:** v1 of slice EC ships without persistence —
+EQ/CMP defaults on every fresh strip, gestures land at runtime
+but don't save. v2 (next-next session) adds persistence. The
+operator can hot-iterate UI without waiting on the persistence
+work, and the operator's reaction to v1's UI shape will inform
+whether config-as-slot-payload vs sidecar wins.
+
+### Scope discipline — what's IN this slice vs queued
+
+**IN slice EC (must ship together for parity):**
+- EC1 + EC2 + EC3 + EC4 + EC5 + EC6.
+- Both mixers, identical components.
+- Sliders + numeric readouts + enable toggle + slope toggles
+  for HP/LP. Plain layout (no curve viz).
+- Catch2 coverage for EC1 (adapter parameter setters).
+
+**QUEUED (do not pull into slice EC):**
+- EC7 (persistence) — explicit follow-up slice.
+- Curve display + spectrum underlay (the OTTO EQPanel's
+  signature visual — needs a separate spectrum-source
+  abstraction).
+- Per-band bypass (EQ) and gain-reduction meter (CMP).
+- Preset save/load (depends on a preset system IDA doesn't have).
+- DLY + RVB tabs (analogous slices EC-DLY + EC-RVB later).
+- Plugin scanner / VST-in-INS unblock — that's "P7-scanner"
+  in the prior queue, orthogonal to slice EC.
+
+### Open design questions to settle BEFORE coding
+
+1. **Config-swap pattern** for adapter setters — exact shape
+   (use OTTO's `MasterBus.h:217-240` as reference, mirror that).
+2. **Always-present slots vs operator-removable** — default
+   recommended above is "operator-removable, tab shows empty
+   state when absent". Confirm with operator if uncertain.
+3. **EffectChain insertion order** — slot 0 = EQ, slot 1 = CMP
+   in every strip's chain. Confirms the OTTO signal-flow
+   convention.
+
+Resolve in a brief brainstorming pass at the start of the next
+session, then proceed to code.
 
 ## ▶ BASELINE (start of next session)
 
 - `ctest --test-dir build`: **674 pass / 1 not-run / 675 total**.
-  The not-run is the `MainComponentPluginEditorTests_NOT_BUILT`
-  sentinel (unchanged from prior baseline).
-- Build clean: `cmake --build build --target IDA IdaTests -j`
-  exits 0. `~/Desktop/IDA` alias points at
-  `build/app/IDA_artefacts/Release/IDA.app`.
-- `master` HEAD on origin: will be bumped this commit (slice P land).
+  Slice EC adds at least 2 test cases (EQ + CMP adapter parameter
+  round-trip) — target 676+ pass after EC1 lands.
+- Build clean as of session end: `cmake --build build --target
+  IDA IdaTests -j` exits 0. `~/Desktop/IDA` alias points at
+  `build/app/IDA_artefacts/Release/IDA.app`. Rebuild from
+  scratch (`rm -rf build && ...`) recommended before the slice EC
+  operator eyes-on, per `feedback_clean_builds`.
+- `master` HEAD on origin: `a8e0551` (Output FX-return UI fix on
+  top of `f1e0fb0` slice P).
 - OTTO submodule SHA: `3c84a409` (unchanged).
-- lsfx_tapecolor submodule SHA: `d8b06b1` (unchanged).
+- lsfx_tapecolor submodule SHA: `d8b06b1` (unchanged, Phase 5).
 
-## ▶ NEXT
+## ▶ ALSO PENDING — slice P operator eyes-on (carried forward)
 
-Mixer-symmetry design is fully landed (E1 → E2 → E3 → U → P).
-Engine roadmap (per `project_mixer_then_transport_roadmap`) returns
-to operator's next priority — **transport + metering surfaces** (the
-"and then discuss transport + other metering" half of the roadmap).
-Open with a brainstorming pass on what transport surfaces look like
-in IDA — the white paper Part IX is the design reference; OTTO's
-transport bar is the visual reference.
+Operator did NOT exercise save/load this session — they were on
+the slice U surfaces (and surfaced the Add-FX-return and EQ/CMP
+gaps). Slice P shipped + the persistence helpers are tested in
+isolation, but the end-to-end save → quit → relaunch → load
+flow has not been operator-verified.
+
+When you have a moment between EC subtasks (or after EC v1
+lands), ask the operator to:
+1. With a session that has at least one phrase strip on the
+   Output Mixer (Mark Out to create one if needed), set a
+   custom fader / mute / send level / destination picker
+   choice on a phrase strip.
+2. File → Save As → write a new `.ida.json`.
+3. Quit + relaunch IDA. File → Load → pick that file.
+4. Verify the phrase strip reappears with the same fader / mute
+   / send / destination state.
+5. Verify aux buses + FX returns on either mixer survive too.
+
+Loading a pre-slice-P (v1) envelope file should still work —
+mixer state defaults to "no change to current state", phrase
+strips re-mint fresh (current pre-v2 behavior).
 
 ## ▶ HOUSEKEEPING
 
@@ -144,18 +404,21 @@ transport bar is the visual reference.
 - **Clean build before any GUI smoke** (`feedback_clean_builds`):
   `rm -rf build && cmake -B build -S . -G Ninja
    -DCMAKE_BUILD_TYPE=Release && cmake --build build --target
-   IdaTests IDA -j`. Slice P touched the load path significantly;
-  consider a clean rebuild before the save/load eyes-on if anything
-  feels off.
-- **Pre-v2 envelope back-compat lives on grace not testing.** v1
-  envelope files (saved before this session) deserialize via the
-  same code path: the new envelope keys are optional and absent v1
-  files load with the mixers/map at their pre-load state (current
-  behavior). There's no test fixture for a v1 envelope going through
-  the loader yet — if back-compat regresses it'll surface as
-  operator-visible "old session loaded but mixer routing is wrong";
-  worth adding a fixture-based test if/when that happens.
-- **OTTO ChannelDetail wrapper still not vendored** — if a future
-  slice needs the OTTO preset bar or OTTO's full EQ/CMP panels in
-  IDA, that's a "drag in OTTO's PresetManager + panels" decision
-  the operator deferred a session ago.
+   IdaTests IDA -j`. Slice EC touches engine + UI + MainComponent —
+  do a clean rebuild before asking the operator to eyes-on.
+- **OTTO panels not vendored** — slice U deferred that and slice
+  EC reaffirms it (the IDA-native path is the elegant one given
+  PresetManager / SpectrumDisplay coupling on OTTO's side). If a
+  later slice decides to drag them in anyway, that's a fresh
+  design discussion.
+- **Auto-memory updates not needed this session.** No new
+  durable preferences, project facts, or feedback patterns
+  surfaced that weren't already captured in existing memory
+  files (the parity invariant is already in
+  `project_two_mixers_totally_separate`; the
+  "professional and elegant" default in
+  `feedback_default_to_professional_elegant`;
+  "no half-baked features" in
+  `feedback_sirius_done_right_and_complete`; "defer big design
+  to its own session" in `feedback_defer_big_design_to_own_session`
+  — slice EC follows all of these).
