@@ -47,6 +47,8 @@ Bus::Bus (Bus&& other) noexcept
       processedBuffer_ (std::move (other.processedBuffer_)),
       gainLinear_ (other.gainLinear_.load (std::memory_order_relaxed)),
       muted_ (other.muted_.load (std::memory_order_relaxed)),
+      panNormalized_ (other.panNormalized_.load (std::memory_order_relaxed)),
+      width_ (other.width_.load (std::memory_order_relaxed)),
       peakLeft_ (other.peakLeft_.load (std::memory_order_relaxed)),
       peakRight_ (other.peakRight_.load (std::memory_order_relaxed)),
       activeSenderCount_ (other.activeSenderCount_.load (std::memory_order_relaxed)),
@@ -199,27 +201,101 @@ void Bus::processInline (float* const* output, bool outputUsable,
                          float* peaksOut) const noexcept
 {
     // Inline path — bit-for-bit equivalent to M5 Session 3 at default
-    // gain 1.0 / unmuted. Gain and mute are loaded once per buffer. Applies
-    // post-fader gain to mixBuffer_ in place so the caller's LUFS feed reads
-    // post-fader values without needing a separate scratch.
+    // gain 1.0 / pan 0.5 / width 1.0 / unmuted. State loaded once per buffer.
+    // Applies post-fader gain (+ pan + width on stereo) to mixBuffer_ in
+    // place so the caller's LUFS feed reads post-fader values without a
+    // separate scratch.
     const float inlineGain = muted_.load (std::memory_order_relaxed)
                                  ? 0.0f
                                  : gainLinear_.load (std::memory_order_relaxed);
-    for (int c = 0; c < activeChannels; ++c)
+
+    if (activeChannels >= 2)
     {
-        float* const mix = mixBuffer_.data()
-                         + static_cast<std::size_t> (c) * kMaxBusMixSamples;
-        const bool canWrite = outputUsable && output[c] != nullptr;
-        float p = 0.0f;
-        for (int s = 0; s < clampedSamples; ++s)
+        applyGainPanWidthStereo (mixBuffer_.data(),
+                                 mixBuffer_.data() + kMaxBusMixSamples,
+                                 inlineGain, clampedSamples, peaksOut);
+        if (outputUsable)
         {
-            const float v = mix[s] * inlineGain;
-            mix[s] = v;                              // post-fader, in place for the LUFS feed
-            p = std::max (p, std::fabs (v));
-            if (canWrite) output[c][s] += v;
+            const float* const lProc = mixBuffer_.data();
+            const float* const rProc = mixBuffer_.data() + kMaxBusMixSamples;
+            if (output[0] != nullptr)
+                for (int s = 0; s < clampedSamples; ++s) output[0][s] += lProc[s];
+            if (output[1] != nullptr)
+                for (int s = 0; s < clampedSamples; ++s) output[1][s] += rProc[s];
         }
-        peaksOut[c] = p;
+        return;
     }
+
+    // Mono path — pan + width have no meaning; gain only.
+    float* const mix = mixBuffer_.data();
+    const bool canWrite = outputUsable && output[0] != nullptr;
+    float p = 0.0f;
+    for (int s = 0; s < clampedSamples; ++s)
+    {
+        const float v = mix[s] * inlineGain;
+        mix[s] = v;
+        p = std::max (p, std::fabs (v));
+        if (canWrite) output[0][s] += v;
+    }
+    peaksOut[0] = p;
+}
+
+void Bus::applyGainPanWidthStereo (float* left, float* right,
+                                   float gainLinear, int numSamples,
+                                   float* peaksOut) const noexcept
+{
+    // Pan + width on the bus output. Defaults (pan=0.5, width=1.0) bypass
+    // the cos/sin/mid-side math entirely so the audio path is bit-identical
+    // to pre-pan-width Bus output at unity center — this is what existing
+    // Bus tests assume. Off-center pan uses equal-power cos/sin (the
+    // ChannelStrip<Audio> convention); off-unity width uses mid/side.
+    const float p = panNormalized_.load (std::memory_order_relaxed);
+    const float w = width_.load (std::memory_order_relaxed);
+    const bool applyPan   = (p != 0.5f);
+    const bool applyWidth = (w != 1.0f);
+
+    if (! applyPan && ! applyWidth)
+    {
+        // Gain-only path — matches the pre-pan-width Bus body exactly.
+        float peakL = 0.0f, peakR = 0.0f;
+        for (int s = 0; s < numSamples; ++s)
+        {
+            const float l = left[s]  * gainLinear;
+            const float r = right[s] * gainLinear;
+            left[s]  = l;
+            right[s] = r;
+            peakL = std::max (peakL, std::fabs (l));
+            peakR = std::max (peakR, std::fabs (r));
+        }
+        peaksOut[0] = peakL;
+        peaksOut[1] = peakR;
+        return;
+    }
+
+    constexpr float kHalfPi = 1.57079632679489661923f;
+    const float angle = p * kHalfPi;
+    const float gL    = applyPan ? gainLinear * std::cos (angle) : gainLinear;
+    const float gR    = applyPan ? gainLinear * std::sin (angle) : gainLinear;
+
+    float peakL = 0.0f, peakR = 0.0f;
+    for (int s = 0; s < numSamples; ++s)
+    {
+        float l = left[s]  * gL;
+        float r = right[s] * gR;
+        if (applyWidth)
+        {
+            const float mid  = (l + r) * 0.5f;
+            const float side = (l - r) * 0.5f * w;
+            l = mid + side;
+            r = mid - side;
+        }
+        left[s]  = l;
+        right[s] = r;
+        peakL = std::max (peakL, std::fabs (l));
+        peakR = std::max (peakR, std::fabs (r));
+    }
+    peaksOut[0] = peakL;
+    peaksOut[1] = peakR;
 }
 
 void Bus::processChain (float* const* output,
@@ -274,24 +350,34 @@ void Bus::processChain (float* const* output,
                                         wetPtrs, activeChannels, clampedSamples);
     }
 
-    // Post-fader gain/mute + output accumulate (in place on processedBuffer_
-    // so the caller's LUFS feed reads post-fader values).
+    // Post-fader gain/mute (+ pan/width on stereo) + output accumulate
+    // in place on processedBuffer_ so the caller's LUFS feed reads post-fader.
     const float chainGain = muted_.load (std::memory_order_relaxed)
                                 ? 0.0f
                                 : gainLinear_.load (std::memory_order_relaxed);
-    for (int c = 0; c < activeChannels; ++c)
+
+    if (activeChannels >= 2)
     {
-        float* const proc = processedPtrs[c];
-        float p = 0.0f;
-        for (int s = 0; s < clampedSamples; ++s)
-        {
-            const float v = proc[s] * chainGain;
-            proc[s] = v;
-            p = std::max (p, std::fabs (v));
-            if (output[c] != nullptr) output[c][s] += v;
-        }
-        peaksOut[c] = p;
+        applyGainPanWidthStereo (processedPtrs[0], processedPtrs[1],
+                                 chainGain, clampedSamples, peaksOut);
+        if (output[0] != nullptr)
+            for (int s = 0; s < clampedSamples; ++s) output[0][s] += processedPtrs[0][s];
+        if (output[1] != nullptr)
+            for (int s = 0; s < clampedSamples; ++s) output[1][s] += processedPtrs[1][s];
+        return;
     }
+
+    // Mono path — gain only.
+    float* const proc = processedPtrs[0];
+    float p = 0.0f;
+    for (int s = 0; s < clampedSamples; ++s)
+    {
+        const float v = proc[s] * chainGain;
+        proc[s] = v;
+        p = std::max (p, std::fabs (v));
+        if (output[0] != nullptr) output[0][s] += v;
+    }
+    peaksOut[0] = p;
 }
 
 float* Bus::mixBufferChannel (int c) const noexcept

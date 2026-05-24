@@ -595,6 +595,14 @@ public:
     std::function<void (int busIdx)>                    onBusEqSlotAddRequested;
     std::function<void (int busIdx, ida::CmpConfig cfg)> onBusCmpConfigChanged;
     std::function<void (int busIdx)>                    onBusCmpSlotAddRequested;
+    /// Bus-side Pan/Width + Sends gestures (slice EC-Polish-fix-2). Same
+    /// shape as their channel counterparts but indexed by bus row.
+    /// `pan` is industry-standard [-1, +1]; `width` is [0, 2]; `level`
+    /// linear 0..1. MainComponent routes pan/width through Bus::setPan /
+    /// Bus::setWidth and sends through InputMixer::setBusSend.
+    std::function<void (int busIdx, float pan)>                        onBusPan;
+    std::function<void (int busIdx, float width)>                      onBusWidth;
+    std::function<void (int busIdx, int fxReturnIdx, float level)>     onBusSendChanged;
     /// A destination was chosen from bus strip `busIdx`'s picker. MainComponent
     /// applies the matching bus main-out edit (tape / plain bus / hardware out).
     std::function<void (int busIdx, DestChoice dest)>  onBusDestinationChosen;
@@ -641,18 +649,34 @@ public:
         resized();
     }
 
-    /// Bus-side detail surface: EQ + CMP tabs wired. Pan/Width + Sends
-    /// are hidden until the bus engine grows pan/width state + a bus-send
-    /// model (queued in todo.md as "bus pan/width + sends slice"). The
-    /// operator can still escape via Escape key or clicking another strip.
+    /// Bus-side detail surface — all four tabs functional. Buses get
+    /// pan/width via Bus engine atomics; bus-to-bus sends via
+    /// InputMixer::setBusSend. FX returns get pan/width + EQ/CMP; their
+    /// Sends tab is hidden ({true,false,true,true}) because FX returns
+    /// receive — they don't send. (Edit-FX swap on the Sends tab for
+    /// FX returns lands in the next slice.)
     void showBusDetailFor (int busIdx,
-                           ida::EqConfig eqConfig, bool hasEqSlot,
-                           ida::CmpConfig cmpConfig, bool hasCmpSlot)
+                           float panMinus1to1, float width,
+                           std::vector<ida::ui::FxReturnInfo> fxReturns,
+                           std::vector<float>                 sendLevels,
+                           ida::EqConfig  eqConfig,  bool hasEqSlot,
+                           ida::CmpConfig cmpConfig, bool hasCmpSlot,
+                           bool isFxReturn)
     {
         if (busIdx < 0 || busIdx >= busStripCount()) return;
-        detailPanel_.eqTab().setChannelState ({ eqConfig, hasEqSlot });
+        detailPanel_.setChannel (busIdx, isFxReturn
+                                              ? otto::ui::ChannelType::FXReturn
+                                              : otto::ui::ChannelType::Bus);
+        detailPanel_.panWidTab().setPan   (panMinus1to1);
+        detailPanel_.panWidTab().setWidth (width);
+        detailPanel_.sendsTab().setChannelState ({ std::move (fxReturns),
+                                                   std::move (sendLevels),
+                                                   /*preFader=*/ false });
+        detailPanel_.eqTab().setChannelState  ({ eqConfig,  hasEqSlot  });
         detailPanel_.cmpTab().setChannelState ({ cmpConfig, hasCmpSlot });
-        detailPanel_.setTabsAvailable ({ false, false, true, true });
+        detailPanel_.setTabsAvailable (isFxReturn
+                                        ? ida::ui::ChannelDetail::TabMask { true, false, true, true }
+                                        : ida::ui::ChannelDetail::TabMask { true, true,  true, true });
         detailPanel_.setVisible (true);
         grabKeyboardFocus();
         resized();
@@ -1184,21 +1208,39 @@ public:
     // --- ChannelDetailPanWidTabListener (the pan/width knobs) ---
     void panWidTabPanChanged (int, otto::ui::ChannelType, float pan) override
     {
+        if (selectedBus_ >= 0)
+        {
+            if (onBusPan) onBusPan (selectedBus_, pan);
+            return;
+        }
         if (onPan && selectedStrip_ >= 0) onPan (selectedStrip_, pan);
     }
     void panWidTabWidthChanged (int, otto::ui::ChannelType, float width) override
     {
+        if (selectedBus_ >= 0)
+        {
+            if (onBusWidth) onBusWidth (selectedBus_, width);
+            return;
+        }
         if (onWidth && selectedStrip_ >= 0) onWidth (selectedStrip_, width);
     }
 
     // --- ChannelDetailSendsTabListener (slice U) ---
     void sendsTabSendChanged (int fxReturnIdx, float level) override
     {
+        if (selectedBus_ >= 0)
+        {
+            if (onBusSendChanged) onBusSendChanged (selectedBus_, fxReturnIdx, level);
+            return;
+        }
         if (onSendChanged && selectedStrip_ >= 0)
             onSendChanged (selectedStrip_, fxReturnIdx, level);
     }
     void sendsTabPreFaderToggled (bool preFader) override
     {
+        // Pre-fader sends flag is per-channel only — buses use a fixed
+        // post-fader send path. Ignore the toggle for a bus selection.
+        if (selectedBus_ >= 0) return;
         if (onPreFaderToggled && selectedStrip_ >= 0)
             onPreFaderToggled (selectedStrip_, preFader);
     }
@@ -1538,6 +1580,11 @@ public:
     std::function<void (int busIdx)>                    onBusEqSlotAddRequested;
     std::function<void (int busIdx, ida::CmpConfig cfg)> onBusCmpConfigChanged;
     std::function<void (int busIdx)>                    onBusCmpSlotAddRequested;
+    /// Bus-side Pan/Width + Sends (slice EC-Polish-fix-2). Same shape as
+    /// the channel-side phrase callbacks but addressed by bus row.
+    std::function<void (int busIdx, float pan)>                        onBusPan;
+    std::function<void (int busIdx, float width)>                      onBusWidth;
+    std::function<void (int busIdx, int fxReturnIdx, float level)>     onBusSendChanged;
     /// The master strip was clicked. EQ + CMP tabs apply to the master bus
     /// (BusId{0}); MainComponent resolves and dispatches.
     std::function<void()>                              onMasterSelect;
@@ -1545,6 +1592,10 @@ public:
     std::function<void()>                              onMasterEqSlotAddRequested;
     std::function<void (ida::CmpConfig cfg)>           onMasterCmpConfigChanged;
     std::function<void()>                              onMasterCmpSlotAddRequested;
+    /// Master-side Pan/Width (slice EC-Polish-fix-2). No Sends — master is
+    /// terminal.
+    std::function<void (float pan)>                    onMasterPan;
+    std::function<void (float width)>                  onMasterWidth;
 
     // --- Phrase-channel gesture relays (slice 5b; idx = phrase-strip row index,
     // parallel to setPhraseStrips). ChannelType::Instrument distinguishes
@@ -1772,27 +1823,48 @@ public:
     /// Aux-bus detail surface (EQ + CMP only). Mirrors
     /// `InputMixerPane::showBusDetailFor`. `busIdx` is the row index into
     /// `busStrips_`, parallel to MainComponent::outputBusStripIds_.
+    /// Slice EC-Polish-fix-2: full Pan/Width + Sends + EQ + CMP for buses;
+    /// FX returns get Pan/Width + EQ + CMP (Sends → Edit FX lands next slice).
     void showBusDetailFor (int busIdx,
-                           ida::EqConfig eqConfig, bool hasEqSlot,
-                           ida::CmpConfig cmpConfig, bool hasCmpSlot)
+                           float panMinus1to1, float width,
+                           std::vector<ida::ui::FxReturnInfo> fxReturns,
+                           std::vector<float>                 sendLevels,
+                           ida::EqConfig  eqConfig,  bool hasEqSlot,
+                           ida::CmpConfig cmpConfig, bool hasCmpSlot,
+                           bool isFxReturn)
     {
         if (busIdx < 0 || busIdx >= busStripCount()) return;
-        detailPanel_.eqTab().setChannelState ({ eqConfig, hasEqSlot });
+        detailPanel_.setChannel (busIdx, isFxReturn
+                                              ? otto::ui::ChannelType::FXReturn
+                                              : otto::ui::ChannelType::Bus);
+        detailPanel_.panWidTab().setPan   (panMinus1to1);
+        detailPanel_.panWidTab().setWidth (width);
+        detailPanel_.sendsTab().setChannelState ({ std::move (fxReturns),
+                                                   std::move (sendLevels),
+                                                   /*preFader=*/ false });
+        detailPanel_.eqTab().setChannelState  ({ eqConfig,  hasEqSlot  });
         detailPanel_.cmpTab().setChannelState ({ cmpConfig, hasCmpSlot });
-        detailPanel_.setTabsAvailable ({ false, false, true, true });
+        detailPanel_.setTabsAvailable (isFxReturn
+                                        ? ida::ui::ChannelDetail::TabMask { true, false, true, true }
+                                        : ida::ui::ChannelDetail::TabMask { true, true,  true, true });
         detailPanel_.setVisible (true);
         grabKeyboardFocus();
         resized();
     }
 
-    /// Master-strip detail surface (EQ + CMP only). The master is unique on
-    /// this pane — its BusId is fixed at 0, so no idx parameter.
-    void showMasterDetailFor (ida::EqConfig eqConfig, bool hasEqSlot,
+    /// Master-strip detail surface. Master is terminal — it has Pan/Width
+    /// + EQ + CMP but no Sends (signal flows TO master, not from). The
+    /// master is unique on this pane — its BusId is fixed at 0.
+    void showMasterDetailFor (float panMinus1to1, float width,
+                              ida::EqConfig eqConfig, bool hasEqSlot,
                               ida::CmpConfig cmpConfig, bool hasCmpSlot)
     {
-        detailPanel_.eqTab().setChannelState ({ eqConfig, hasEqSlot });
+        detailPanel_.setChannel (-1, otto::ui::ChannelType::Bus);
+        detailPanel_.panWidTab().setPan   (panMinus1to1);
+        detailPanel_.panWidTab().setWidth (width);
+        detailPanel_.eqTab().setChannelState  ({ eqConfig,  hasEqSlot  });
         detailPanel_.cmpTab().setChannelState ({ cmpConfig, hasCmpSlot });
-        detailPanel_.setTabsAvailable ({ false, false, true, true });
+        detailPanel_.setTabsAvailable ({ true, false, true, true });
         detailPanel_.setVisible (true);
         grabKeyboardFocus();
         resized();
@@ -2227,23 +2299,37 @@ public:
     }
 
     // --- ChannelDetailPanWidTabListener (the pan/width knobs) -----------------
+    // Route to bus / master / phrase callbacks based on the active selection;
+    // the three are mutually exclusive (enforced in stripChannelSelected).
     void panWidTabPanChanged (int, otto::ui::ChannelType, float pan) override
     {
+        if (selectedMaster_)        { if (onMasterPan) onMasterPan (pan); return; }
+        if (selectedBus_ >= 0)      { if (onBusPan)    onBusPan (selectedBus_, pan); return; }
         if (onPhrasePan && selectedPhrase_ >= 0) onPhrasePan (selectedPhrase_, pan);
     }
     void panWidTabWidthChanged (int, otto::ui::ChannelType, float width) override
     {
+        if (selectedMaster_)        { if (onMasterWidth) onMasterWidth (width); return; }
+        if (selectedBus_ >= 0)      { if (onBusWidth)    onBusWidth (selectedBus_, width); return; }
         if (onPhraseWidth && selectedPhrase_ >= 0) onPhraseWidth (selectedPhrase_, width);
     }
 
     // --- ChannelDetailSendsTabListener (slice U) ------------------------------
     void sendsTabSendChanged (int fxReturnIdx, float level) override
     {
+        // Master has no Sends tab (terminal); only buses + phrases route here.
+        if (selectedBus_ >= 0)
+        {
+            if (onBusSendChanged) onBusSendChanged (selectedBus_, fxReturnIdx, level);
+            return;
+        }
         if (onPhraseSendChanged && selectedPhrase_ >= 0)
             onPhraseSendChanged (selectedPhrase_, fxReturnIdx, level);
     }
     void sendsTabPreFaderToggled (bool preFader) override
     {
+        // Pre-fader is a per-channel concept; buses + master ignore.
+        if (selectedMaster_ || selectedBus_ >= 0) return;
         if (onPhrasePreFaderToggled && selectedPhrase_ >= 0)
             onPhrasePreFaderToggled (selectedPhrase_, preFader);
     }
@@ -3513,9 +3599,86 @@ MainComponent::MainComponent()
         {
             const auto eqProbe  = collectInputBusEqView  (busIdx);
             const auto cmpProbe = collectInputBusCmpView (busIdx);
+            if (inputMixer_ == nullptr
+                || busIdx < 0 || busIdx >= static_cast<int> (busStripIds_.size()))
+                return;
+            const auto busId = busStripIds_[static_cast<std::size_t> (busIdx)];
+            auto* bus = inputMixer_->busForId (busId);
+            const float pan01 = bus != nullptr ? bus->pan()   : 0.5f;
+            const float width = bus != nullptr ? bus->width() : 1.0f;
+            const bool  isFxReturn = bus != nullptr
+                                      && bus->config().kind == ida::BusKind::FxReturn;
+
+            // Collect bus-to-bus send levels into each FX return (skipping
+            // self). Buses CAN send to FX returns via setBusSend (cycle-
+            // detected by the routing graph), so the Sends tab is useful
+            // even when the source is a bus.
+            std::vector<ida::ui::FxReturnInfo> fxReturns;
+            std::vector<float>                 sendLevels;
+            const int busTotal = inputMixer_->busCount();
+            for (int i = 0; i < busTotal; ++i)
+            {
+                if (inputMixer_->busKindAt (i) != ida::BusKind::FxReturn) continue;
+                const auto fxId = inputMixer_->busIdAt (i);
+                if (fxId == busId) continue;   // no self-send
+                auto* fxBus = inputMixer_->busForId (fxId);
+                if (fxBus == nullptr) continue;
+                fxReturns.push_back ({ juce::String (fxBus->config().name),
+                                       ida::palette::hueForId (fxId.value()) });
+                sendLevels.push_back (inputMixer_->busSendLevel (busId, fxId));
+            }
             inputMixerPane_->showBusDetailFor (busIdx,
+                                               pan01 * 2.0f - 1.0f,
+                                               width,
+                                               std::move (fxReturns),
+                                               std::move (sendLevels),
                                                eqProbe.config,  eqProbe.hasSlot,
-                                               cmpProbe.config, cmpProbe.hasSlot);
+                                               cmpProbe.config, cmpProbe.hasSlot,
+                                               isFxReturn);
+        };
+        inputMixerPane_->onBusPan = [this] (int busIdx, float pan)
+        {
+            if (inputMixer_ == nullptr
+                || busIdx < 0 || busIdx >= static_cast<int> (busStripIds_.size()))
+                return;
+            const auto busId = busStripIds_[static_cast<std::size_t> (busIdx)];
+            if (auto* bus = inputMixer_->busForId (busId))
+                bus->setPan ((pan + 1.0f) * 0.5f);
+        };
+        inputMixerPane_->onBusWidth = [this] (int busIdx, float width)
+        {
+            if (inputMixer_ == nullptr
+                || busIdx < 0 || busIdx >= static_cast<int> (busStripIds_.size()))
+                return;
+            const auto busId = busStripIds_[static_cast<std::size_t> (busIdx)];
+            if (auto* bus = inputMixer_->busForId (busId))
+                bus->setWidth (width);
+        };
+        inputMixerPane_->onBusSendChanged =
+            [this] (int busIdx, int fxReturnIdx, float level)
+        {
+            if (inputMixer_ == nullptr
+                || busIdx < 0 || busIdx >= static_cast<int> (busStripIds_.size()))
+                return;
+            const auto sourceId = busStripIds_[static_cast<std::size_t> (busIdx)];
+            // Re-walk the FX-return list in the same order onBusSelect did
+            // so fxReturnIdx maps deterministically to a BusId.
+            int seen = 0;
+            const int n = inputMixer_->busCount();
+            for (int i = 0; i < n; ++i)
+            {
+                if (inputMixer_->busKindAt (i) != ida::BusKind::FxReturn) continue;
+                const auto fxId = inputMixer_->busIdAt (i);
+                if (fxId == sourceId) continue;
+                if (seen == fxReturnIdx)
+                {
+                    audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+                    inputMixer_->setBusSend (sourceId, fxId, level);
+                    audioDeviceManager_.addAudioCallback (audioCallback_.get());
+                    return;
+                }
+                ++seen;
+            }
         };
         inputMixerPane_->onBusEqConfigChanged =
             [this] (int busIdx, ida::EqConfig cfg)
@@ -3880,9 +4043,41 @@ MainComponent::MainComponent()
         {
             const auto eqProbe  = collectOutputBusEqView  (busIdx);
             const auto cmpProbe = collectOutputBusCmpView (busIdx);
+            if (outputMixer_ == nullptr
+                || busIdx < 0 || busIdx >= static_cast<int> (outputBusStripIds_.size()))
+                return;
+            const auto busId = outputBusStripIds_[static_cast<std::size_t> (busIdx)];
+            auto* bus = outputMixer_->busForId (busId);
+            const float pan01 = bus != nullptr ? bus->pan()   : 0.5f;
+            const float width = bus != nullptr ? bus->width() : 1.0f;
+            // Output side: bus-to-bus is routing (`routeBusToBus`), not a
+            // level-controlled send. Hide Sends for both Bus and FxReturn
+            // — `isFxReturn=true` collapses the Sends tab uniformly. The
+            // OUTPUT FX edit affordance lands with the Edit-FX swap slice.
             outputMixerPane_->showBusDetailFor (busIdx,
+                                                pan01 * 2.0f - 1.0f, width,
+                                                {}, {},
                                                 eqProbe.config,  eqProbe.hasSlot,
-                                                cmpProbe.config, cmpProbe.hasSlot);
+                                                cmpProbe.config, cmpProbe.hasSlot,
+                                                /*isFxReturn=*/ true);
+        };
+        outputMixerPane_->onBusPan = [this] (int busIdx, float pan)
+        {
+            if (outputMixer_ == nullptr
+                || busIdx < 0 || busIdx >= static_cast<int> (outputBusStripIds_.size()))
+                return;
+            const auto busId = outputBusStripIds_[static_cast<std::size_t> (busIdx)];
+            if (auto* bus = outputMixer_->busForId (busId))
+                bus->setPan ((pan + 1.0f) * 0.5f);
+        };
+        outputMixerPane_->onBusWidth = [this] (int busIdx, float width)
+        {
+            if (outputMixer_ == nullptr
+                || busIdx < 0 || busIdx >= static_cast<int> (outputBusStripIds_.size()))
+                return;
+            const auto busId = outputBusStripIds_[static_cast<std::size_t> (busIdx)];
+            if (auto* bus = outputMixer_->busForId (busId))
+                bus->setWidth (width);
         };
         outputMixerPane_->onBusEqConfigChanged =
             [this] (int busIdx, ida::EqConfig cfg)
@@ -3940,8 +4135,26 @@ MainComponent::MainComponent()
         {
             const auto eqProbe  = collectOutputMasterEqView();
             const auto cmpProbe = collectOutputMasterCmpView();
-            outputMixerPane_->showMasterDetailFor (eqProbe.config,  eqProbe.hasSlot,
+            auto* master = (outputMixer_ != nullptr)
+                            ? outputMixer_->busForId (ida::BusId{0})
+                            : nullptr;
+            const float pan01 = master != nullptr ? master->pan()   : 0.5f;
+            const float width = master != nullptr ? master->width() : 1.0f;
+            outputMixerPane_->showMasterDetailFor (pan01 * 2.0f - 1.0f, width,
+                                                   eqProbe.config,  eqProbe.hasSlot,
                                                    cmpProbe.config, cmpProbe.hasSlot);
+        };
+        outputMixerPane_->onMasterPan = [this] (float pan)
+        {
+            if (outputMixer_ == nullptr) return;
+            if (auto* master = outputMixer_->busForId (ida::BusId{0}))
+                master->setPan ((pan + 1.0f) * 0.5f);
+        };
+        outputMixerPane_->onMasterWidth = [this] (float width)
+        {
+            if (outputMixer_ == nullptr) return;
+            if (auto* master = outputMixer_->busForId (ida::BusId{0}))
+                master->setWidth (width);
         };
         outputMixerPane_->onMasterEqConfigChanged = [this] (ida::EqConfig cfg)
         {

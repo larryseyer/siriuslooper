@@ -779,6 +779,9 @@ bool InputMixer::setBusSend (BusId source, BusId fxReturn, float level)
 float InputMixer::channelSendLevel (ChannelId ch, BusId fxReturn) const noexcept
 { return graph_.sendLevel (nodeForChannel (ch), nodeForBus (fxReturn)); }
 
+float InputMixer::busSendLevel (BusId source, BusId fxReturn) const noexcept
+{ return graph_.sendLevel (nodeForBus (source), nodeForBus (fxReturn)); }
+
 ProcessingChain* InputMixer::processingChainFor (ChannelId id) noexcept
 {
     auto it = channels_.find (id.value());

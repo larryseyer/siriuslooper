@@ -263,6 +263,78 @@ TEST_CASE ("Bus peak reflects the post-fader signal (inline path)", "[bus][meter
     REQUIRE (bus.peakRight() == Catch::Approx (0.2f));   // 0.4 * 0.5
 }
 
+TEST_CASE ("Bus pan: default center is bit-identical to no-pan", "[bus][pan]")
+{
+    // Slice EC-Polish-fix-2 contract: a default-constructed Bus must keep
+    // the pre-pan-width pass-through behavior exactly. Existing tests
+    // (and the OutOfProcessHost integration test) assume this.
+    ida::Bus bus (ida::BusId { 1 }, ida::BusConfig {});
+    REQUIRE (bus.pan()   == Catch::Approx (0.5f));
+    REQUIRE (bus.width() == Catch::Approx (1.0f));
+
+    constexpr int kSamples = 8;
+    for (int s = 0; s < kSamples; ++s)
+    {
+        bus.mixBufferChannel (0)[s] = 0.6f;
+        bus.mixBufferChannel (1)[s] = 0.3f;
+    }
+    std::vector<float> l (kSamples, 0.0f), r (kSamples, 0.0f);
+    float* out[2] = { l.data(), r.data() };
+    bus.process (out, 2, kSamples);
+
+    // Identity (gain=1.0, pan=center, width=unity).
+    for (int s = 0; s < kSamples; ++s)
+    {
+        REQUIRE (l[s] == Catch::Approx (0.6f));
+        REQUIRE (r[s] == Catch::Approx (0.3f));
+    }
+}
+
+TEST_CASE ("Bus pan: hard left silences the right channel", "[bus][pan]")
+{
+    ida::Bus bus (ida::BusId { 1 }, ida::BusConfig {});
+    bus.setPan (0.0f);   // hard left — equal-power cos(0)=1, sin(0)=0
+
+    constexpr int kSamples = 8;
+    for (int s = 0; s < kSamples; ++s)
+    {
+        bus.mixBufferChannel (0)[s] = 0.5f;
+        bus.mixBufferChannel (1)[s] = 0.5f;
+    }
+    std::vector<float> l (kSamples, 0.0f), r (kSamples, 0.0f);
+    float* out[2] = { l.data(), r.data() };
+    bus.process (out, 2, kSamples);
+
+    for (int s = 0; s < kSamples; ++s)
+    {
+        REQUIRE (l[s] == Catch::Approx (0.5f));   // 0.5 * cos(0)
+        REQUIRE (r[s] == Catch::Approx (0.0f));   // 0.5 * sin(0)
+    }
+}
+
+TEST_CASE ("Bus width: 0.0 collapses stereo to mono", "[bus][width]")
+{
+    ida::Bus bus (ida::BusId { 1 }, ida::BusConfig {});
+    bus.setWidth (0.0f);   // full mono-collapse
+
+    constexpr int kSamples = 8;
+    for (int s = 0; s < kSamples; ++s)
+    {
+        bus.mixBufferChannel (0)[s] = 0.8f;
+        bus.mixBufferChannel (1)[s] = 0.2f;
+    }
+    std::vector<float> l (kSamples, 0.0f), r (kSamples, 0.0f);
+    float* out[2] = { l.data(), r.data() };
+    bus.process (out, 2, kSamples);
+
+    // At width=0, both channels equal the mid = (L+R)/2 = 0.5.
+    for (int s = 0; s < kSamples; ++s)
+    {
+        REQUIRE (l[s] == Catch::Approx (0.5f));
+        REQUIRE (r[s] == Catch::Approx (0.5f));
+    }
+}
+
 TEST_CASE ("Bus peak reads silence when muted", "[bus][meter][mute]")
 {
     ida::Bus bus (ida::BusId { 1 }, ida::BusConfig {});

@@ -107,6 +107,27 @@ public:
     void setMuted (bool m) noexcept { muted_.store (m, std::memory_order_relaxed); }
     bool muted() const noexcept     { return muted_.load (std::memory_order_relaxed); }
 
+    /// Message-thread setter — pan ([0,1]; 0 = full left, 0.5 = center,
+    /// 1 = full right). Mirrors ChannelStrip<Audio>::setPan. Clamped on the
+    /// way in so the audio-thread equal-power cos/sin stays in range. No-op
+    /// on mono buses (`activeChannels == 1` in process()).
+    void setPan (float normalized) noexcept
+    {
+        panNormalized_.store (std::clamp (normalized, 0.0f, 1.0f),
+                              std::memory_order_relaxed);
+    }
+    float pan() const noexcept { return panNormalized_.load (std::memory_order_relaxed); }
+
+    /// Message-thread setter — stereo width via mid/side. Clamped to [0, 2]
+    /// (0 = mono-collapse, 1 = unchanged identity, 2 = double-wide). Mirrors
+    /// ChannelStrip<Audio>::setWidth. Applied after pan on the stereo path
+    /// only (mono buses skip).
+    void setWidth (float w) noexcept
+    {
+        width_.store (std::clamp (w, 0.0f, 2.0f), std::memory_order_relaxed);
+    }
+    float width() const noexcept { return width_.load (std::memory_order_relaxed); }
+
     /// Post-fader peak level for each side of the last processed block, in
     /// [0, ∞). Audio thread writes once per `process()`; the UI reads on its
     /// timer. A mono bus reports its peak on both sides (dual-mono). Parity
@@ -278,6 +299,15 @@ private:
     /// Inert if `host_ == nullptr`.
     void dispatchAllSlotsToHost();
 
+    /// Audio-thread helper — applies post-fader gain + equal-power pan +
+    /// mid/side width to a stereo (L,R) pair in place and writes peak
+    /// magnitudes to `peaksOut[0..1]`. Mirrors ChannelStrip<Audio>'s
+    /// stereo body; shared between `processInline` and `processChain`
+    /// so both paths apply pan/width identically.
+    void applyGainPanWidthStereo (float* left, float* right,
+                                  float gainLinear, int numSamples,
+                                  float* peaksOut) const noexcept;
+
     BusId             id_;
     BusConfig         config_;
     EffectChain       effectChain_;
@@ -304,8 +334,13 @@ private:
     /// Post-effects fader gain + mute (routing-graph Phase 6 prerequisite).
     /// Message-thread writes, audio-thread reads once per `process()`. Default
     /// unity/unmuted → the inline path stays bit-for-bit the M5 body.
-    std::atomic<float> gainLinear_ { 1.0f };
-    std::atomic<bool>  muted_      { false };
+    std::atomic<float> gainLinear_     { 1.0f };
+    std::atomic<bool>  muted_          { false };
+    /// Pan + width on the post-fader bus output. Defaults (0.5 / 1.0) keep
+    /// the audio path bit-identical to pre-pan-width Bus output so existing
+    /// tests stay green. Apply path mirrors ChannelStrip<Audio>::process.
+    std::atomic<float> panNormalized_  { 0.5f };
+    std::atomic<float> width_          { 1.0f };
 
     /// Post-fader meter — written from the const `process` (the bus is logically
     /// const there), so mutable. Audio-thread writes, UI reads.

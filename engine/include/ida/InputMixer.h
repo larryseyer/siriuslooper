@@ -104,6 +104,10 @@ public:
     bool  setChannelSend (ChannelId, BusId fxReturn, float level);
     bool  setBusSend (BusId source, BusId fxReturn, float level);
     float channelSendLevel (ChannelId, BusId fxReturn) const noexcept;
+    /// Bus-to-bus send level (linear 0..1). Mirrors `channelSendLevel` but
+    /// addresses a source bus. Returns 0 when either bus is unknown or no
+    /// send edge exists. Message-thread accessor.
+    float busSendLevel (BusId source, BusId fxReturn) const noexcept;
 
     /// Slice E2 (2026-05-24) — per-channel pre/post-fader send mode. Mirror
     /// of `OutputMixer::channelSendIsPreFader`: default false = post-fader
