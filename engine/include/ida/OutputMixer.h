@@ -112,6 +112,14 @@ public:
     /// Message-thread accessor.
     int channelMainOutHardwareOutPair (OutputChannelId id) const noexcept;
 
+    /// Non-owning view of the audio ChannelStrip attached to `id` via
+    /// `setChannelStrip`. Returns nullptr for unknown ids or for ids whose
+    /// strip hasn't been attached yet. Mirrors `busForId` — the OutputMixer
+    /// owns the unique_ptr; this hands out the raw pointer for message-thread
+    /// reads (UI driving the pan/width detail panel, gain/mute relays, etc.).
+    /// NOT for the audio thread.
+    ChannelStrip<SignalType::Audio>* audioStripForChannel (OutputChannelId id) noexcept;
+
     // Bus and send/return -----------------------------------------------------
 
     /// Adds a session-level effect bus and returns its fresh BusId starting

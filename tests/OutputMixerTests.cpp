@@ -788,3 +788,34 @@ TEST_CASE ("OutputMixer::setChannelMainOutToHardwareOutput clamps negative pairI
     REQUIRE (mixer.setChannelMainOutToHardwareOutput (ch, -5));
     CHECK (mixer.channelMainOutHardwareOutPair (ch) == 0);
 }
+
+TEST_CASE ("OutputMixer::audioStripForChannel returns the strip attached via setChannelStrip",
+           "[output-mixer][slice5b][channel-strip-accessor]")
+{
+    OutputMixer mixer;
+    const auto ch = mixer.addChannel (SignalType::Audio);
+
+    // No strip attached yet — accessor returns nullptr (defensive default;
+    // mirrors busForId returning nullptr for unknown ids).
+    CHECK (mixer.audioStripForChannel (ch) == nullptr);
+
+    // Unknown ids are also nullptr — caller must not deref unconditionally.
+    CHECK (mixer.audioStripForChannel (OutputChannelId { 999 }) == nullptr);
+
+    // After setChannelStrip the accessor returns the SAME object (raw pointer
+    // identity preserved — the OutputMixer owns the unique_ptr; the accessor
+    // hands out a non-owning view for message-thread reads).
+    auto strip   = std::make_unique<ChannelStrip<SignalType::Audio>>();
+    auto* rawPtr = strip.get();
+    mixer.setChannelStrip (ch, std::move (strip));
+    CHECK (mixer.audioStripForChannel (ch) == rawPtr);
+
+    // Pan + width round-trip — the accessor lets the UI read engine state
+    // back into the pan/width detail panel (slice 5b operator UX).
+    rawPtr->setPan (0.25f);
+    rawPtr->setWidth (1.5f);
+    auto* read = mixer.audioStripForChannel (ch);
+    REQUIRE (read != nullptr);
+    CHECK (read->pan()   == Catch::Approx (0.25f));
+    CHECK (read->width() == Catch::Approx (1.5f));
+}

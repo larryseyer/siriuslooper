@@ -1056,6 +1056,7 @@ private:
 // =============================================================================
 class MainComponent::OutputMixerPane final : public juce::Component,
                                              public otto::ui::CompactFaderStripListener,
+                                             public otto::ui::ChannelDetailPanWidTabListener,
                                              private juce::Timer
 {
 public:
@@ -1072,6 +1073,13 @@ public:
         master_->setOutputComboVisible (false);   // master is terminal — no destination picker
         master_->addListener (this);
         addAndMakeVisible (*master_);
+
+        // Pan/width detail panel (slice 5b polish) — top-band, hidden until a
+        // phrase strip is selected. Mirrors InputMixerPane's panel; aux buses
+        // and master have no pan/width (stereo buses are already stereo, no
+        // pan/width controls), so the panel is phrase-only on this pane.
+        detailPanel_.addListener (this);
+        addChildComponent (detailPanel_);
 
         masterIns_ = std::make_unique<juce::TextButton>();
         masterIns_->setButtonText ("INS");
@@ -1141,6 +1149,14 @@ public:
     std::function<void (int phraseIdx, bool muted)>       onPhraseMute;
     std::function<void (int phraseIdx)>                   onPhraseInsertChainClicked;
     std::function<void (int phraseIdx, DestChoice dest)>  onPhraseDestinationChosen;
+    /// A phrase strip was selected — MainComponent reads its pan/width and
+    /// calls showPhraseDetailFor() to populate + reveal the detail panel.
+    std::function<void (int phraseIdx)>                   onPhraseSelect;
+    /// Detail-panel pan knob moved. `pan` is industry-standard [-1, +1];
+    /// MainComponent converts to engine's [0,1] before writing.
+    std::function<void (int phraseIdx, float pan)>        onPhrasePan;
+    /// Detail-panel width knob moved. `width` is [0, 2] (1 = unity stereo).
+    std::function<void (int phraseIdx, float width)>      onPhraseWidth;
 
     void setMasterLevelDb (float dbL, float dbR)
     {
@@ -1257,6 +1273,19 @@ public:
         busStrips_[static_cast<std::size_t> (busIdx)]->setChannelName (newName);
     }
 
+    /// Populates the detail panel with `phraseIdx`'s current values and reveals
+    /// it. `panMinus1to1` is the knob-domain pan ([-1, +1]); `width` is [0, 2].
+    /// Mirrors InputMixerPane::showDetailFor.
+    void showPhraseDetailFor (int phraseIdx, float panMinus1to1, float width)
+    {
+        if (phraseIdx < 0 || phraseIdx >= phraseStripCount()) return;
+        detailPanel_.setChannel (phraseIdx, otto::ui::ChannelType::Instrument);
+        detailPanel_.setPan (panMinus1to1);
+        detailPanel_.setWidth (width);
+        detailPanel_.setVisible (true);
+        resized();
+    }
+
     /// Rebuilds the LEFT-band phrase-strip row from `infos` (slice 5b). Order
     /// matches PillState (DFS) order — MainComponent owns the enumeration.
     /// One strip per phrase, name read-only in 5b. Mirrors setBusStrips shape
@@ -1268,6 +1297,10 @@ public:
         phraseInsButtons_.clear();
         phraseStripDests_.clear();
         phraseChoices_.clear();
+        // Strip identities change on a rebuild — drop the selection so the
+        // detail panel doesn't keep showing a phrase that no longer exists.
+        selectedPhrase_ = -1;
+        detailPanel_.setVisible (false);
         for (int i = 0; i < static_cast<int> (infos.size()); ++i)
         {
             auto strip = std::make_unique<otto::ui::CompactFaderStrip> (
@@ -1391,6 +1424,15 @@ public:
         constexpr int kGroupDividerW = kGap * 3;
         auto area = getLocalBounds().reduced (kGap);
 
+        // Detail panel (slice 5b polish) takes a fixed top band when a phrase
+        // is selected; the strip row + button stack fills the remainder below.
+        // Mirrors InputMixerPane's layout exactly.
+        if (detailPanel_.isVisible())
+        {
+            detailPanel_.setBounds (area.removeFromTop (kDetailHeight));
+            area.removeFromTop (kGap);
+        }
+
         // Two fixed bands at the bottom: destination picker (lowest) +
         // INS button (just above) — same stacking as InputMixerPane.
         auto pickerRow = area.removeFromBottom (kDestHeight);
@@ -1482,13 +1524,34 @@ public:
         else if (onBusMute)        onBusMute (idx, muted);
     }
     void stripSoloChanged (int, otto::ui::ChannelType, bool) override {}
-    void stripChannelSelected (int, otto::ui::ChannelType) override {}
+    void stripChannelSelected (int idx, otto::ui::ChannelType type) override
+    {
+        // Only phrase strips (ChannelType::Instrument) have pan/width — aux
+        // buses and master are stereo without panning. For non-phrase taps,
+        // leave the panel and current phrase selection alone.
+        if (type != otto::ui::ChannelType::Instrument) return;
+        for (int i = 0; i < phraseStripCount(); ++i)
+            phraseStrips_[static_cast<std::size_t> (i)]->setSelected (i == idx);
+        selectedPhrase_ = idx;
+        if (onPhraseSelect) onPhraseSelect (idx);   // MainComponent loads + reveals the panel
+    }
+
+    // --- ChannelDetailPanWidTabListener (the pan/width knobs) -----------------
+    void panWidTabPanChanged (int, otto::ui::ChannelType, float pan) override
+    {
+        if (onPhrasePan && selectedPhrase_ >= 0) onPhrasePan (selectedPhrase_, pan);
+    }
+    void panWidTabWidthChanged (int, otto::ui::ChannelType, float width) override
+    {
+        if (onPhraseWidth && selectedPhrase_ >= 0) onPhraseWidth (selectedPhrase_, width);
+    }
 
 private:
     static constexpr int kLongPressMs              = 500;
     static constexpr int kLongPressMoveTolerancePx = 8;
     static constexpr int kDestHeight               = 26;
     static constexpr int kInsHeight                = 26;
+    static constexpr int kDetailHeight             = 180;   // matches InputMixerPane
 
     void timerCallback() override
     {
@@ -1611,6 +1674,11 @@ private:
     std::vector<std::unique_ptr<juce::TextButton>>             phraseInsButtons_;
     std::vector<StripDest>                                     phraseStripDests_;
     std::vector<std::vector<DestChoice>>                       phraseChoices_;
+
+    // Pan/width detail panel (slice 5b polish) — top band, hidden until a
+    // phrase strip is selected. Phrase-only; aux buses + master never select.
+    otto::ui::ChannelDetailPanWidTab                           detailPanel_;
+    int                                                        selectedPhrase_ { -1 };
 
     bool                                                      longPressBlank_ { false };
     juce::Point<int>                                          longPressScreenPos_;
@@ -2700,6 +2768,34 @@ MainComponent::MainComponent()
             }
             audioDeviceManager_.addAudioCallback (audioCallback_.get());
             refreshOutputDestinations();
+        };
+
+        // Pan/width detail-panel wiring (slice 5b polish). Resolve phraseIdx
+        // to the engine's ChannelStrip via the OutputChannelId binding, then
+        // read or write atomic [0,1]/[0,2] state. Pan converts between the
+        // engine's [0,1] storage and the panel's [-1,+1] knob domain.
+        auto resolvePhraseStrip = [this] (int phraseIdx) -> ChannelStrip<SignalType::Audio>*
+        {
+            if (phraseIdx < 0
+                || phraseIdx >= static_cast<int> (phraseStripConstituentIds_.size()))
+                return nullptr;
+            const auto cid = phraseStripConstituentIds_[static_cast<std::size_t> (phraseIdx)];
+            const auto it  = phraseChannelByConstituent_.find (cid.value());
+            if (it == phraseChannelByConstituent_.end()) return nullptr;
+            return outputMixer_->audioStripForChannel (it->second);
+        };
+        outputMixerPane_->onPhraseSelect = [this, resolvePhraseStrip] (int phraseIdx)
+        {
+            if (auto* s = resolvePhraseStrip (phraseIdx))
+                outputMixerPane_->showPhraseDetailFor (phraseIdx, s->pan() * 2.0f - 1.0f, s->width());
+        };
+        outputMixerPane_->onPhrasePan = [resolvePhraseStrip] (int phraseIdx, float pan)
+        {
+            if (auto* s = resolvePhraseStrip (phraseIdx)) s->setPan ((pan + 1.0f) * 0.5f);
+        };
+        outputMixerPane_->onPhraseWidth = [resolvePhraseStrip] (int phraseIdx, float width)
+        {
+            if (auto* s = resolvePhraseStrip (phraseIdx)) s->setWidth (width);
         };
 
         tabs_.addTab ("Output Mixer", juce::Colours::black, outputMixerPane_.get(), false);

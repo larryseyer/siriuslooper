@@ -333,6 +333,13 @@ int OutputMixer::channelMainOutHardwareOutPair (OutputChannelId id) const noexce
     return 0;
 }
 
+ChannelStrip<SignalType::Audio>* OutputMixer::audioStripForChannel (OutputChannelId id) noexcept
+{
+    for (auto& entry : channels_)
+        if (entry.id == id) return entry.strip.get();
+    return nullptr;
+}
+
 bool OutputMixer::busMainOutToBusWouldCycle (BusId from, BusId to) const noexcept
 {
     const auto fi = static_cast<std::size_t> (from.value());
