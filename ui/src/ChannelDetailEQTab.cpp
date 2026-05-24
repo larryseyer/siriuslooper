@@ -49,6 +49,15 @@ ChannelDetailEQTab::ChannelDetailEQTab()
     };
     addChildComponent (*addSlotButton_);
 
+    // Slice EC-Polish: graphical curve display — dominant element of the
+    // tab once a slot is wired. Mirrors OTTO's EQPanel visual idiom; the
+    // band-knob row beneath supplies precise numeric control for fields
+    // (HP/LP frequency, all Qs, shelf slope toggles) the curve gesture
+    // alone doesn't cover.
+    curveView_ = std::make_unique<EqCurveView>();
+    curveView_->addListener (this);
+    addChildComponent (*curveView_);
+
     buildColumns();
 }
 
@@ -152,6 +161,7 @@ void ChannelDetailEQTab::setChannelState (const ChannelState& state)
 
     enableToggle_->setVisible (hasEqSlot_);
     addSlotButton_->setVisible (! hasEqSlot_);
+    if (curveView_) curveView_->setVisible (hasEqSlot_);
     for (auto& col : bands_)
     {
         if (col.title)        col.title       ->setVisible (hasEqSlot_);
@@ -174,6 +184,7 @@ void ChannelDetailEQTab::clearChannelState()
     hasEqSlot_       = false;
     enableToggle_->setVisible (false);
     addSlotButton_->setVisible (false);
+    if (curveView_) curveView_->setVisible (false);
     for (auto& col : bands_)
     {
         if (col.title)        col.title       ->setVisible (false);
@@ -214,7 +225,34 @@ void ChannelDetailEQTab::pushConfigToControls (const EqConfig& cfg)
     bands_[kLP].slopeToggle->setButtonText  (lp24 ? "24 dB" : "12 dB");
 
     updateReadouts();
+    if (curveView_) curveView_->setConfig (cfg);
     suppressNotify_ = false;
+}
+
+void ChannelDetailEQTab::eqCurveConfigChanged (const EqConfig& cfg)
+{
+    // The curve view fired — update cached state, push the same numbers into
+    // the knob row (so readouts + knob positions stay in sync with the
+    // graphical drag), and republish to the host pane. suppressNotify_
+    // gates the knob's own onValueChange to avoid a feedback loop.
+    cachedConfig_ = cfg;
+
+    suppressNotify_ = true;
+    enableToggle_->setToggleState (cfg.enabled, juce::dontSendNotification);
+
+    bands_[kHP].freq->setValue   (cfg.hpFreq,   juce::dontSendNotification);
+    bands_[kLow].freq->setValue  (cfg.lowFreq,  juce::dontSendNotification);
+    bands_[kLow].gain->setValue  (cfg.lowGain,  juce::dontSendNotification);
+    bands_[kMid].freq->setValue  (cfg.midFreq,  juce::dontSendNotification);
+    bands_[kMid].gain->setValue  (cfg.midGain,  juce::dontSendNotification);
+    bands_[kHigh].freq->setValue (cfg.highFreq, juce::dontSendNotification);
+    bands_[kHigh].gain->setValue (cfg.highGain, juce::dontSendNotification);
+    bands_[kLP].freq->setValue   (cfg.lpFreq,   juce::dontSendNotification);
+    updateReadouts();
+    suppressNotify_ = false;
+
+    listeners_.call ([&cfg] (ChannelDetailEQTabListener& l)
+                     { l.eqTabConfigChanged (cfg); });
 }
 
 void ChannelDetailEQTab::publishCurrentConfig()
@@ -235,6 +273,7 @@ void ChannelDetailEQTab::publishCurrentConfig()
     cachedConfig_.lpSlopeDbPerOct = static_cast<std::uint8_t> (bands_[kLP].slopeToggle->getToggleState() ? 24 : 12);
 
     updateReadouts();
+    if (curveView_) curveView_->setConfig (cachedConfig_);
 
     const EqConfig snapshot = cachedConfig_;
     listeners_.call ([&snapshot] (ChannelDetailEQTabListener& l)
@@ -292,6 +331,22 @@ void ChannelDetailEQTab::resized()
     auto topRow = bounds.removeFromTop (kEnableToggleHeight);
     enableToggle_->setBounds (topRow.removeFromLeft (90));
     bounds.removeFromTop (kRowGap);
+
+    // Curve view dominates when there's room: ~60% of remaining vertical,
+    // capped so the knob row stays legible. The detail panel in normal
+    // mode is only ~140 px tall — too small for a meaningful curve, so
+    // we hide it then and let the knob row use the full height. In
+    // full-screen tab mode the panel is the whole pane (~700+ px) and
+    // the curve takes the dominant share.
+    const bool showCurve = (curveView_ != nullptr) && (bounds.getHeight() > 240);
+    if (curveView_) curveView_->setVisible (showCurve);
+    if (showCurve)
+    {
+        const int knobRowH = juce::jlimit (180, 260, bounds.getHeight() * 4 / 10);
+        const int curveH   = bounds.getHeight() - knobRowH - kRowGap;
+        curveView_->setBounds (bounds.removeFromTop (curveH));
+        bounds.removeFromTop (kRowGap);
+    }
 
     // 5 equal band columns.
     const int totalGap = kBandGap * (kBandCount - 1);

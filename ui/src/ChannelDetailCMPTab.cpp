@@ -60,6 +60,11 @@ ChannelDetailCMPTab::ChannelDetailCMPTab()
     };
     addChildComponent (*addSlotButton_);
 
+    // Slice EC-Polish: transfer-curve + gain-reduction meter view.
+    meterView_ = std::make_unique<CmpMeterView>();
+    meterView_->addListener (this);
+    addChildComponent (*meterView_);
+
     buildKnobs();
 }
 
@@ -114,6 +119,7 @@ void ChannelDetailCMPTab::setChannelState (const ChannelState& state)
     enableToggle_->setVisible       (hasCmpSlot_);
     sidechainHpfToggle_->setVisible (hasCmpSlot_);
     addSlotButton_->setVisible      (! hasCmpSlot_);
+    if (meterView_) meterView_->setVisible (hasCmpSlot_);
     for (auto& row : knobs_)
     {
         if (row.title)   row.title  ->setVisible (hasCmpSlot_);
@@ -132,6 +138,7 @@ void ChannelDetailCMPTab::clearChannelState()
     enableToggle_->setVisible (false);
     sidechainHpfToggle_->setVisible (false);
     addSlotButton_->setVisible (false);
+    if (meterView_) meterView_->setVisible (false);
     for (auto& row : knobs_)
     {
         if (row.title)   row.title  ->setVisible (false);
@@ -156,7 +163,25 @@ void ChannelDetailCMPTab::pushConfigToControls (const CmpConfig& cfg)
     knobs_[kMix]      .knob->setValue (cfg.mix,       juce::dontSendNotification);
 
     updateReadouts();
+    if (meterView_) meterView_->setConfig (cfg);
     suppressNotify_ = false;
+}
+
+void ChannelDetailCMPTab::cmpViewConfigChanged (const CmpConfig& cfg)
+{
+    // Meter-view drag pushed threshold or ratio. Sync to cached state +
+    // knob row, then republish to the host pane. suppressNotify_ blocks
+    // the knob's own onValueChange to prevent loops.
+    cachedConfig_ = cfg;
+
+    suppressNotify_ = true;
+    knobs_[kThreshold].knob->setValue (cfg.threshold, juce::dontSendNotification);
+    knobs_[kRatio]    .knob->setValue (cfg.ratio,     juce::dontSendNotification);
+    updateReadouts();
+    suppressNotify_ = false;
+
+    listeners_.call ([&cfg] (ChannelDetailCMPTabListener& l)
+                     { l.cmpTabConfigChanged (cfg); });
 }
 
 void ChannelDetailCMPTab::publishCurrentConfig()
@@ -171,6 +196,7 @@ void ChannelDetailCMPTab::publishCurrentConfig()
     cachedConfig_.mix          = static_cast<float> (knobs_[kMix].knob->getValue());
 
     updateReadouts();
+    if (meterView_) meterView_->setConfig (cachedConfig_);
 
     const CmpConfig snapshot = cachedConfig_;
     listeners_.call ([&snapshot] (ChannelDetailCMPTabListener& l)
@@ -221,6 +247,18 @@ void ChannelDetailCMPTab::resized()
     enableToggle_->setBounds       (topRow.removeFromLeft  (90));
     sidechainHpfToggle_->setBounds (topRow.removeFromRight (200));
     bounds.removeFromTop (kRowGap);
+
+    // Meter view dominates when there's room (full-screen tab mode); in
+    // the small detail-band mode the knob row gets the height instead.
+    const bool showMeter = (meterView_ != nullptr) && (bounds.getHeight() > 240);
+    if (meterView_) meterView_->setVisible (showMeter);
+    if (showMeter)
+    {
+        const int knobRowH = juce::jlimit (130, 200, bounds.getHeight() * 35 / 100);
+        const int meterH   = bounds.getHeight() - knobRowH - kRowGap;
+        meterView_->setBounds (bounds.removeFromTop (meterH));
+        bounds.removeFromTop (kRowGap);
+    }
 
     // 6 equal-width knob columns.
     const int totalGap = kColGap * (kKnobCount - 1);

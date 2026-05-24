@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ida/EqCurveView.h"
 #include "ida/InternalFxConfigs.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -39,7 +40,8 @@ public:
 ///   2. Channel bound, no slot  — big centered "+ Add EQ" button that
 ///                                fires `eqTabRequestSlotAdd`.
 ///   3. Channel bound + slot    — full 5-band editor.
-class ChannelDetailEQTab : public juce::Component
+class ChannelDetailEQTab : public juce::Component,
+                           public EqCurveView::Listener
 {
 public:
     struct ChannelState
@@ -85,6 +87,11 @@ private:
     std::array<BandColumn, kBandCount>             bands_;
     std::unique_ptr<juce::ToggleButton>            enableToggle_;
     std::unique_ptr<juce::TextButton>              addSlotButton_;
+    std::unique_ptr<EqCurveView>                   curveView_;
+
+    // EqCurveView::Listener — the curve view drives operator gestures on the
+    // graphical surface; this callback unifies them with knob-driven edits.
+    void eqCurveConfigChanged (const EqConfig& cfg) override;
 
     EqConfig    cachedConfig_ {};
     bool        hasChannelBound_ { false };

@@ -88,7 +88,9 @@ add_library(IdaUi STATIC
     src/InsertChainPopup.cpp
     src/ChannelDetail.cpp
     src/ChannelDetailEQTab.cpp
-    src/ChannelDetailCMPTab.cpp)
+    src/ChannelDetailCMPTab.cpp
+    src/EqCurveView.cpp
+    src/CmpMeterView.cpp)
 
 target_include_directories(IdaUi PUBLIC include)
 

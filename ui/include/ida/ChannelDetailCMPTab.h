@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ida/CmpMeterView.h"
 #include "ida/InternalFxConfigs.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -23,7 +24,8 @@ public:
 /// `ChannelDetailEQTab` in structure (enable + "no slot" empty state +
 /// editor when bound). Six rotary knobs (threshold, ratio, attack,
 /// release, makeup, mix) + two toggles (enable, sidechain-HPF).
-class ChannelDetailCMPTab : public juce::Component
+class ChannelDetailCMPTab : public juce::Component,
+                            public CmpMeterView::Listener
 {
 public:
     struct ChannelState
@@ -63,6 +65,9 @@ private:
     std::unique_ptr<juce::ToggleButton>            enableToggle_;
     std::unique_ptr<juce::ToggleButton>            sidechainHpfToggle_;
     std::unique_ptr<juce::TextButton>              addSlotButton_;
+    std::unique_ptr<CmpMeterView>                  meterView_;
+
+    void cmpViewConfigChanged (const CmpConfig& cfg) override;
 
     CmpConfig   cachedConfig_ {};
     bool        hasChannelBound_ { false };

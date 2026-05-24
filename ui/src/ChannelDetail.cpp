@@ -80,6 +80,10 @@ void ChannelDetailSendsTab::removeListener (ChannelDetailSendsTabListener* l) { 
 
 void ChannelDetailSendsTab::paint (juce::Graphics& g)
 {
+    // Slice EC-Polish: no card outlines / fills (operator: "sends knobs
+    // should look like pan/width with no border"). The whole tab is a flat
+    // bg2 surface; FX-return color lives on the knob's indicator arc, fed
+    // via the "fillColor" property OTTOLookAndFeel reads in drawRotarySlider.
     g.fillAll (otto::Colours::bg2);
 
     if (! hasChannelBound_)
@@ -97,24 +101,6 @@ void ChannelDetailSendsTab::paint (juce::Graphics& g)
         g.setFont (juce::FontOptions (14.0f));
         g.drawText ("No FX returns on this mixer — add one from the blank-area menu",
                     getLocalBounds().toFloat(), juce::Justification::centred);
-        return;
-    }
-
-    auto bounds = getLocalBounds();
-    bounds.removeFromTop (kPreToggleHeight + kCardGap);
-
-    const int totalGap = kCardGap * (static_cast<int> (cards_.size()) - 1);
-    const int cardW = (bounds.getWidth() - totalGap) / static_cast<int> (cards_.size());
-
-    for (std::size_t i = 0; i < cards_.size(); ++i)
-    {
-        const int x = bounds.getX() + static_cast<int> (i) * (cardW + kCardGap);
-        auto card = juce::Rectangle<int> (x, bounds.getY(), cardW, bounds.getHeight()).toFloat();
-
-        g.setColour (otto::Colours::bg3);
-        g.fillRoundedRectangle (card, static_cast<float> (kCardCornerRadius));
-        g.setColour (i < cardColors_.size() ? cardColors_[i] : otto::Colours::bg5);
-        g.drawRoundedRectangle (card, static_cast<float> (kCardCornerRadius), 1.0f);
     }
 }
 
@@ -124,31 +110,41 @@ void ChannelDetailSendsTab::resized()
 
     // Pre-fader toggle takes a strip across the top.
     preFaderToggle_->setBounds (bounds.removeFromTop (kPreToggleHeight));
-    bounds.removeFromTop (kCardGap);
+    bounds.removeFromTop (kColumnGap);
 
     if (cards_.empty()) return;
 
-    const int totalGap = kCardGap * (static_cast<int> (cards_.size()) - 1);
-    const int cardW = (bounds.getWidth() - totalGap) / static_cast<int> (cards_.size());
+    // PanWid-style sizing: knob fills a (knobSide x knobSide) box centered
+    // in its column; label sits directly below the knob; dB readout sits
+    // below the label. No card chrome. Columns share kColumnGap.
+    const int n = static_cast<int> (cards_.size());
+    const int availH = bounds.getHeight() - kNameLabelHeight - kDbReadoutHeight - kColumnGap;
+    const int availW = (bounds.getWidth() - kColumnGap * (n - 1)) / juce::jmax (1, n);
+    const int knobSide = juce::jlimit (kMinKnobSize, kMaxKnobSize,
+                                       juce::jmin (availH, availW));
+    const int colW = juce::jmax (knobSide, availW);
+
+    // Center the group horizontally when the columns don't fill the bounds.
+    const int totalW = colW * n + kColumnGap * (n - 1);
+    int x = bounds.getX() + juce::jmax (0, (bounds.getWidth() - totalW) / 2);
+    const int colTop = bounds.getY()
+                     + juce::jmax (0, (bounds.getHeight()
+                                       - (knobSide + kNameLabelHeight + kDbReadoutHeight)) / 2);
 
     for (std::size_t i = 0; i < cards_.size(); ++i)
     {
-        const int x = bounds.getX() + static_cast<int> (i) * (cardW + kCardGap);
-        auto card = juce::Rectangle<int> (x, bounds.getY(), cardW, bounds.getHeight())
-                       .reduced (kCardPadding);
+        const int colX = x + static_cast<int> (i) * (colW + kColumnGap);
+        // Knob: square, centered in column.
+        auto knobBounds = juce::Rectangle<int> (colX + (colW - knobSide) / 2,
+                                                colTop, knobSide, knobSide);
+        // Label directly under knob; dB readout under label.
+        auto nameRow = juce::Rectangle<int> (colX, colTop + knobSide,
+                                             colW, kNameLabelHeight);
+        auto dbRow   = juce::Rectangle<int> (colX, colTop + knobSide + kNameLabelHeight,
+                                             colW, kDbReadoutHeight);
 
-        auto nameRow = card.removeFromTop (kNameLabelHeight);
-        card.removeFromTop (kCardGap / 2);
-        auto dbRow   = card.removeFromBottom (kDbReadoutHeight);
-        card.removeFromBottom (kCardGap / 2);
-
-        const int knobSide = juce::jmax (kMinKnobSize,
-                                         juce::jmin (card.getWidth(), card.getHeight()));
-        auto knobBounds = juce::Rectangle<int> (0, 0, knobSide, knobSide)
-                              .withCentre (card.getCentre());
-
+        cards_[i].knob     ->setBounds (knobBounds);
         cards_[i].nameLabel->setBounds (nameRow);
-        cards_[i].knob->setBounds (knobBounds);
         cards_[i].dbReadout->setBounds (dbRow);
     }
 }
@@ -287,6 +283,22 @@ void ChannelDetail::setChannelColor (juce::Colour color)
 
 void ChannelDetail::setActiveTab (Tab tab)
 {
+    // Fall through to the first available tab if `tab` was hidden via
+    // setTabsAvailable. Caller can't observe the corrected value except by
+    // re-reading getActiveTab() after the call returns.
+    if (! tabMask_.contains (tab))
+    {
+        constexpr Tab order[] = { Tab::PanWid, Tab::Sends, Tab::EQ, Tab::CMP };
+        for (Tab candidate : order)
+        {
+            if (tabMask_.contains (candidate))
+            {
+                tab = candidate;
+                break;
+            }
+        }
+    }
+
     activeTab_ = tab;
 
     panWidTab_->setVisible (tab == Tab::PanWid);
@@ -300,6 +312,21 @@ void ChannelDetail::setActiveTab (Tab tab)
 
     notifyTabChanged();
     resized();
+}
+
+void ChannelDetail::setTabsAvailable (TabMask mask)
+{
+    tabMask_ = mask;
+
+    // Hide buttons for unavailable tabs.
+    for (int i = 0; i < tabButtons_.size(); ++i)
+    {
+        const auto tab = static_cast<Tab> (i);
+        tabButtons_[i]->setVisible (tabMask_.contains (tab));
+    }
+
+    // If the active tab is now hidden, fall through via setActiveTab.
+    setActiveTab (activeTab_);
 }
 
 void ChannelDetail::addListener    (ChannelDetailListener* l) { listeners_.add (l); }

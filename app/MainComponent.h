@@ -196,6 +196,16 @@ private:
     [[nodiscard]] ChannelCmpProbe collectInputCmpView  (int stripIdx) const;
     [[nodiscard]] ChannelFxProbe  collectOutputEqView  (int phraseIdx) const;
     [[nodiscard]] ChannelCmpProbe collectOutputCmpView (int phraseIdx) const;
+    /// Slice EC-Polish: bus/FX-return strips can now hold EQ + CMP. The
+    /// probes are keyed by the bus-row index (parallel to busStripIds_ on
+    /// the input pane, outputBusStripIds_ on the output pane). The output
+    /// mixer's master bus (BusId{0}) is its own pair of probes.
+    [[nodiscard]] ChannelFxProbe  collectInputBusEqView    (int busIdx) const;
+    [[nodiscard]] ChannelCmpProbe collectInputBusCmpView   (int busIdx) const;
+    [[nodiscard]] ChannelFxProbe  collectOutputBusEqView   (int busIdx) const;
+    [[nodiscard]] ChannelCmpProbe collectOutputBusCmpView  (int busIdx) const;
+    [[nodiscard]] ChannelFxProbe  collectOutputMasterEqView()  const;
+    [[nodiscard]] ChannelCmpProbe collectOutputMasterCmpView() const;
 
     // --- P7 T5 slice 5: per-strip insert chain popup ---
     /// Opens the InsertChainPopup anchored to input strip `stripIdx`'s INS

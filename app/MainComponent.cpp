@@ -453,6 +453,7 @@ class MainComponent::InputMixerPane final : public juce::Component,
                                             public ida::ui::ChannelDetailSendsTabListener,
                                             public ida::ui::ChannelDetailEQTabListener,
                                             public ida::ui::ChannelDetailCMPTabListener,
+                                            public ida::ui::ChannelDetailListener,
                                             private juce::Timer
 {
 public:
@@ -460,13 +461,19 @@ public:
     {
         // Tabbed detail panel: every tab is real after slice EC. Each tab's
         // listener wires independently so the pane only sees the gestures
-        // it actually relays.
+        // it actually relays. The ChannelDetailListener on the panel itself
+        // catches tab-change events so resized() can expand the panel to
+        // full-screen when EQ / CMP are active (slice EC-Polish).
         detailPanel_.panWidTab().addListener (this);
         detailPanel_.sendsTab() .addListener (this);
         detailPanel_.eqTab()    .addListener (this);
         detailPanel_.cmpTab()   .addListener (this);
+        detailPanel_.addListener (this);
         addChildComponent (detailPanel_);
     }
+
+    // --- ChannelDetailListener (slice EC-Polish full-screen layout) -----------
+    void channelDetailTabChanged (int /*tabIndex*/) override { resized(); }
 
     /// One strip's display state: its name and whether its source pair is in
     /// stereo mode (drives the Split/Collapse menu wording). Stereo = one strip;
@@ -538,6 +545,19 @@ public:
     std::function<void (int busIdx, float gainLinear)> onBusGain;
     std::function<void (int busIdx, bool muted)>       onBusMute;
     std::function<void (int busIdx, bool soloed)>      onBusSolo;
+    /// A bus/FX-return strip was clicked. MainComponent reads the bus's
+    /// EffectChain + config snapshots and calls `showBusDetailFor` to populate
+    /// the EQ + CMP tabs (Pan/Width + Sends are hidden for buses — stereo bus
+    /// has no pan, and per-bus sends aren't modeled yet). Mirrors `onSelect`.
+    std::function<void (int busIdx)>                   onBusSelect;
+    /// EQ/CMP gestures for the currently-selected bus. Same shape as the
+    /// channel-strip versions but addresses the bus's nodeKey (BusId.value())
+    /// instead of a channel's. MainComponent routes through the same
+    /// `effectChainHost_.setInternalEqConfigAt` / slot-append patterns.
+    std::function<void (int busIdx, ida::EqConfig cfg)> onBusEqConfigChanged;
+    std::function<void (int busIdx)>                    onBusEqSlotAddRequested;
+    std::function<void (int busIdx, ida::CmpConfig cfg)> onBusCmpConfigChanged;
+    std::function<void (int busIdx)>                    onBusCmpSlotAddRequested;
     /// A destination was chosen from bus strip `busIdx`'s picker. MainComponent
     /// applies the matching bus main-out edit (tape / plain bus / hardware out).
     std::function<void (int busIdx, DestChoice dest)>  onBusDestinationChosen;
@@ -574,6 +594,26 @@ public:
                                                    preFader });
         detailPanel_.eqTab().setChannelState ({ eqConfig, hasEqSlot });
         detailPanel_.cmpTab().setChannelState ({ cmpConfig, hasCmpSlot });
+        // Channel strips: all four tabs available (default after construction,
+        // but a previous bus selection may have hidden Pan/Width + Sends).
+        detailPanel_.setTabsAvailable ({ true, true, true, true });
+        detailPanel_.setVisible (true);
+        resized();
+    }
+
+    /// Bus-side detail surface: only EQ + CMP tabs are wired (no pan on a
+    /// stereo bus; per-bus sends aren't modeled yet). MainComponent collects
+    /// the probes by looking up the bus's IEffectChainHost view keyed by
+    /// `BusId.value()` and calls this. `busIdx` is the row index into
+    /// `busStrips_` (parallel to MainComponent::busStripIds_).
+    void showBusDetailFor (int busIdx,
+                           ida::EqConfig eqConfig, bool hasEqSlot,
+                           ida::CmpConfig cmpConfig, bool hasCmpSlot)
+    {
+        if (busIdx < 0 || busIdx >= busStripCount()) return;
+        detailPanel_.eqTab().setChannelState ({ eqConfig, hasEqSlot });
+        detailPanel_.cmpTab().setChannelState ({ cmpConfig, hasCmpSlot });
+        detailPanel_.setTabsAvailable ({ false, false, true, true });
         detailPanel_.setVisible (true);
         resized();
     }
@@ -588,10 +628,13 @@ public:
         destButtons_.clear();
         inputStripInsButtons_.clear();
         stripDests_.clear();
-        // Channel identities change on a rebuild, so the prior selection no
-        // longer maps to a strip — drop it and hide the detail panel.
+        // Channel identities change on a rebuild, so the prior channel
+        // selection no longer maps to a strip — drop it. The detail panel
+        // hides only if no bus selection is keeping it bound (bus identities
+        // live in a separate row that survives a channel rebuild).
         selectedStrip_ = -1;
-        detailPanel_.setVisible (false);
+        if (selectedBus_ < 0)
+            detailPanel_.setVisible (false);
         for (int i = 0; i < static_cast<int> (infos.size()); ++i)
         {
             auto strip = std::make_unique<otto::ui::CompactFaderStrip> (
@@ -678,7 +721,15 @@ public:
         busNameOverlays_.clear();
         busStripDests_.clear();
         busChoices_.clear();
-        // No selection/detail state to reset — bus strips have no detail panel in P6.
+        // Bus identities change on a rebuild, so a prior bus selection no
+        // longer maps to a strip — drop it and hide the detail panel iff the
+        // bus was what was selected. A channel-strip selection is independent
+        // and survives a bus-row rebuild (different identity space).
+        if (selectedBus_ >= 0)
+        {
+            selectedBus_ = -1;
+            detailPanel_.setVisible (false);
+        }
         for (int i = 0; i < static_cast<int> (infos.size()); ++i)
         {
             const auto& info = infos[static_cast<std::size_t> (i)];
@@ -815,11 +866,48 @@ public:
             strips_[static_cast<std::size_t> (idx)]->setEffectivelyMuted (effectivelyMuted);
     }
 
+    /// Full-screen detail trigger: when EQ or CMP is the active tab, the
+    /// graphical curve / meter needs the whole pane to be useful. PanWid +
+    /// Sends remain in the kDetailHeight band at the top.
+    bool isDetailFullScreen() const noexcept
+    {
+        if (! detailPanel_.isVisible()) return false;
+        const auto t = detailPanel_.getActiveTab();
+        return t == ida::ui::ChannelDetail::Tab::EQ
+            || t == ida::ui::ChannelDetail::Tab::CMP;
+    }
+
     void resized() override
     {
         constexpr int kGap          = 6;
         constexpr int kGroupDividerW = kGap * 3;   // visual gap between channel + bus strip groups
         auto area = getLocalBounds().reduced (kGap);
+
+        // Full-screen detail (EQ / CMP active): the panel takes the entire
+        // pane; strips + INS + picker rows hide. resized() is re-entered on
+        // every tab change via channelDetailTabChanged so the layout flips
+        // both ways cleanly.
+        if (isDetailFullScreen())
+        {
+            detailPanel_.setBounds (area);
+            for (auto& s : strips_)              s->setVisible (false);
+            for (auto& b : destButtons_)         b->setVisible (false);
+            for (auto& b : inputStripInsButtons_) b->setVisible (false);
+            for (auto& s : busStrips_)           s->setVisible (false);
+            for (auto& b : busDestButtons_)      b->setVisible (false);
+            for (auto& b : busStripInsButtons_)  b->setVisible (false);
+            for (auto& o : busNameOverlays_)     o->setVisible (false);
+            return;
+        }
+
+        // Restore visibility (a previous tab change may have hidden them).
+        for (auto& s : strips_)              s->setVisible (true);
+        for (auto& b : destButtons_)         b->setVisible (true);
+        for (auto& b : inputStripInsButtons_) b->setVisible (true);
+        for (auto& s : busStrips_)           s->setVisible (true);
+        for (auto& b : busDestButtons_)      b->setVisible (true);
+        for (auto& b : busStripInsButtons_)  b->setVisible (true);
+        for (auto& o : busNameOverlays_)     o->setVisible (true);
 
         // The detail panel (when a strip is selected) takes a fixed band across
         // the top; the strip row fills the remainder below it.
@@ -917,12 +1005,32 @@ public:
     }
     void stripChannelSelected (int idx, otto::ui::ChannelType type) override
     {
-        if (type == otto::ui::ChannelType::Bus || type == otto::ui::ChannelType::FXReturn)
-            return;   // bus strips have no detail panel in P6
-        for (int i = 0; i < stripCount(); ++i)
-            strips_[static_cast<std::size_t> (i)]->setSelected (i == idx);
-        selectedStrip_ = idx;
-        if (onSelect) onSelect (idx);   // MainComponent loads + reveals the panel
+        const bool isBusRow = (type == otto::ui::ChannelType::Bus
+                            || type == otto::ui::ChannelType::FXReturn);
+
+        // Channel + bus selections are mutually exclusive — the detail panel
+        // binds to exactly one strip at a time. Clearing the OTHER row's
+        // highlights keeps the affordance honest.
+        if (isBusRow)
+        {
+            for (int i = 0; i < stripCount(); ++i)
+                strips_[static_cast<std::size_t> (i)]->setSelected (false);
+            for (int i = 0; i < busStripCount(); ++i)
+                busStrips_[static_cast<std::size_t> (i)]->setSelected (i == idx);
+            selectedStrip_ = -1;
+            selectedBus_   = idx;
+            if (onBusSelect) onBusSelect (idx);
+        }
+        else
+        {
+            for (int i = 0; i < stripCount(); ++i)
+                strips_[static_cast<std::size_t> (i)]->setSelected (i == idx);
+            for (int i = 0; i < busStripCount(); ++i)
+                busStrips_[static_cast<std::size_t> (i)]->setSelected (false);
+            selectedStrip_ = idx;
+            selectedBus_   = -1;
+            if (onSelect) onSelect (idx);   // MainComponent loads + reveals the panel
+        }
     }
 
     // --- ChannelDetailPanWidTabListener (the pan/width knobs) ---
@@ -948,26 +1056,44 @@ public:
     }
 
     // --- ChannelDetailEQTabListener (slice EC) ---
+    // Route to bus-side callbacks when a bus is selected, channel-side
+    // otherwise. selectedBus_ + selectedStrip_ are mutually exclusive.
     void eqTabConfigChanged (const ida::EqConfig& cfg) override
     {
-        if (onEqConfigChanged && selectedStrip_ >= 0)
+        if (selectedBus_ >= 0)
+        {
+            if (onBusEqConfigChanged) onBusEqConfigChanged (selectedBus_, cfg);
+        }
+        else if (onEqConfigChanged && selectedStrip_ >= 0)
             onEqConfigChanged (selectedStrip_, cfg);
     }
     void eqTabRequestSlotAdd() override
     {
-        if (onEqSlotAddRequested && selectedStrip_ >= 0)
+        if (selectedBus_ >= 0)
+        {
+            if (onBusEqSlotAddRequested) onBusEqSlotAddRequested (selectedBus_);
+        }
+        else if (onEqSlotAddRequested && selectedStrip_ >= 0)
             onEqSlotAddRequested (selectedStrip_);
     }
 
     // --- ChannelDetailCMPTabListener (slice EC) ---
     void cmpTabConfigChanged (const ida::CmpConfig& cfg) override
     {
-        if (onCmpConfigChanged && selectedStrip_ >= 0)
+        if (selectedBus_ >= 0)
+        {
+            if (onBusCmpConfigChanged) onBusCmpConfigChanged (selectedBus_, cfg);
+        }
+        else if (onCmpConfigChanged && selectedStrip_ >= 0)
             onCmpConfigChanged (selectedStrip_, cfg);
     }
     void cmpTabRequestSlotAdd() override
     {
-        if (onCmpSlotAddRequested && selectedStrip_ >= 0)
+        if (selectedBus_ >= 0)
+        {
+            if (onBusCmpSlotAddRequested) onBusCmpSlotAddRequested (selectedBus_);
+        }
+        else if (onCmpSlotAddRequested && selectedStrip_ >= 0)
             onCmpSlotAddRequested (selectedStrip_);
     }
 
@@ -1102,6 +1228,7 @@ private:
     std::vector<bool>                                         stripStereo_;
     ida::ui::ChannelDetail                                    detailPanel_;
     int                                                       selectedStrip_ { -1 };
+    int                                                       selectedBus_   { -1 };
     int                                                       longPressIdx_ { -1 };
     bool                                                      longPressBlank_ { false };
     juce::Point<int>                                          longPressScreenPos_;
@@ -1141,6 +1268,7 @@ class MainComponent::OutputMixerPane final : public juce::Component,
                                              public ida::ui::ChannelDetailSendsTabListener,
                                              public ida::ui::ChannelDetailEQTabListener,
                                              public ida::ui::ChannelDetailCMPTabListener,
+                                             public ida::ui::ChannelDetailListener,
                                              private juce::Timer
 {
 public:
@@ -1159,12 +1287,15 @@ public:
         addAndMakeVisible (*master_);
 
         // Tabbed detail panel: same shape as InputMixerPane post slice EC.
-        // Aux buses and master have no pan/width, so the panel is phrase-
-        // only on this pane.
+        // After slice EC-Polish aux buses + master CAN select (EQ+CMP only)
+        // so the panel binds to phrase, aux bus, or master interchangeably.
+        // The pane also listens to ChannelDetail itself for tab-change events
+        // so resized() flips into full-screen layout on EQ / CMP.
         detailPanel_.panWidTab().addListener (this);
         detailPanel_.sendsTab() .addListener (this);
         detailPanel_.eqTab()    .addListener (this);
         detailPanel_.cmpTab()   .addListener (this);
+        detailPanel_.addListener (this);
         addChildComponent (detailPanel_);
 
         masterIns_ = std::make_unique<juce::TextButton>();
@@ -1231,6 +1362,21 @@ public:
     std::function<void (int busIdx)>                   onBusInsertChainClicked;
     std::function<void (int busIdx, DestChoice dest)>  onBusDestinationChosen;
     std::function<void (int busIdx, juce::String newName)> onBusRename;
+    /// An aux-bus strip was clicked. Mirrors `onPhraseSelect`. Only EQ + CMP
+    /// tabs apply (no pan/width on a stereo bus; no per-bus sends yet).
+    std::function<void (int busIdx)>                   onBusSelect;
+    /// EQ/CMP gestures for the currently-selected aux bus.
+    std::function<void (int busIdx, ida::EqConfig cfg)> onBusEqConfigChanged;
+    std::function<void (int busIdx)>                    onBusEqSlotAddRequested;
+    std::function<void (int busIdx, ida::CmpConfig cfg)> onBusCmpConfigChanged;
+    std::function<void (int busIdx)>                    onBusCmpSlotAddRequested;
+    /// The master strip was clicked. EQ + CMP tabs apply to the master bus
+    /// (BusId{0}); MainComponent resolves and dispatches.
+    std::function<void()>                              onMasterSelect;
+    std::function<void (ida::EqConfig cfg)>            onMasterEqConfigChanged;
+    std::function<void()>                              onMasterEqSlotAddRequested;
+    std::function<void (ida::CmpConfig cfg)>           onMasterCmpConfigChanged;
+    std::function<void()>                              onMasterCmpSlotAddRequested;
 
     // --- Phrase-channel gesture relays (slice 5b; idx = phrase-strip row index,
     // parallel to setPhraseStrips). ChannelType::Instrument distinguishes
@@ -1291,6 +1437,14 @@ public:
         busNameOverlays_.clear();
         busStripDests_.clear();
         busChoices_.clear();
+        // Bus identities change on a rebuild — drop the bus selection. Hide
+        // the detail panel only if nothing else (phrase / master) is bound.
+        if (selectedBus_ >= 0)
+        {
+            selectedBus_ = -1;
+            if (selectedPhrase_ < 0 && ! selectedMaster_)
+                detailPanel_.setVisible (false);
+        }
         for (int i = 0; i < static_cast<int> (infos.size()); ++i)
         {
             auto strip = std::make_unique<otto::ui::CompactFaderStrip> (
@@ -1401,6 +1555,36 @@ public:
                                                    preFader });
         detailPanel_.eqTab().setChannelState ({ eqConfig, hasEqSlot });
         detailPanel_.cmpTab().setChannelState ({ cmpConfig, hasCmpSlot });
+        // Phrase strips: all four tabs available (reset any prior hide from
+        // a bus / master selection).
+        detailPanel_.setTabsAvailable ({ true, true, true, true });
+        detailPanel_.setVisible (true);
+        resized();
+    }
+
+    /// Aux-bus detail surface (EQ + CMP only). Mirrors
+    /// `InputMixerPane::showBusDetailFor`. `busIdx` is the row index into
+    /// `busStrips_`, parallel to MainComponent::outputBusStripIds_.
+    void showBusDetailFor (int busIdx,
+                           ida::EqConfig eqConfig, bool hasEqSlot,
+                           ida::CmpConfig cmpConfig, bool hasCmpSlot)
+    {
+        if (busIdx < 0 || busIdx >= busStripCount()) return;
+        detailPanel_.eqTab().setChannelState ({ eqConfig, hasEqSlot });
+        detailPanel_.cmpTab().setChannelState ({ cmpConfig, hasCmpSlot });
+        detailPanel_.setTabsAvailable ({ false, false, true, true });
+        detailPanel_.setVisible (true);
+        resized();
+    }
+
+    /// Master-strip detail surface (EQ + CMP only). The master is unique on
+    /// this pane — its BusId is fixed at 0, so no idx parameter.
+    void showMasterDetailFor (ida::EqConfig eqConfig, bool hasEqSlot,
+                              ida::CmpConfig cmpConfig, bool hasCmpSlot)
+    {
+        detailPanel_.eqTab().setChannelState ({ eqConfig, hasEqSlot });
+        detailPanel_.cmpTab().setChannelState ({ cmpConfig, hasCmpSlot });
+        detailPanel_.setTabsAvailable ({ false, false, true, true });
         detailPanel_.setVisible (true);
         resized();
     }
@@ -1416,10 +1600,12 @@ public:
         phraseInsButtons_.clear();
         phraseStripDests_.clear();
         phraseChoices_.clear();
-        // Strip identities change on a rebuild — drop the selection so the
-        // detail panel doesn't keep showing a phrase that no longer exists.
+        // Phrase identities change on a rebuild — drop the phrase selection.
+        // Hide the detail panel only if nothing else (bus / master) is still
+        // bound to it.
         selectedPhrase_ = -1;
-        detailPanel_.setVisible (false);
+        if (selectedBus_ < 0 && ! selectedMaster_)
+            detailPanel_.setVisible (false);
         for (int i = 0; i < static_cast<int> (infos.size()); ++i)
         {
             auto strip = std::make_unique<otto::ui::CompactFaderStrip> (
@@ -1537,11 +1723,52 @@ public:
         longPressBlank_ = false;
     }
 
+    /// Full-screen trigger — same contract as InputMixerPane.
+    bool isDetailFullScreen() const noexcept
+    {
+        if (! detailPanel_.isVisible()) return false;
+        const auto t = detailPanel_.getActiveTab();
+        return t == ida::ui::ChannelDetail::Tab::EQ
+            || t == ida::ui::ChannelDetail::Tab::CMP;
+    }
+
     void resized() override
     {
         constexpr int kGap          = 6;
         constexpr int kGroupDividerW = kGap * 3;
         auto area = getLocalBounds().reduced (kGap);
+
+        // Full-screen detail (EQ / CMP) — panel fills the pane; every other
+        // child hides until a non-fullscreen tab is selected again.
+        if (isDetailFullScreen())
+        {
+            detailPanel_.setBounds (area);
+            for (auto& s : phraseStrips_)        s->setVisible (false);
+            for (auto& b : phraseDestButtons_)   b->setVisible (false);
+            for (auto& b : phraseInsButtons_)    b->setVisible (false);
+            for (auto& s : busStrips_)           s->setVisible (false);
+            for (auto& b : busDestButtons_)      b->setVisible (false);
+            for (auto& b : busInsButtons_)       b->setVisible (false);
+            for (auto& o : busNameOverlays_)     o->setVisible (false);
+            if (master_)             master_           ->setVisible (false);
+            if (masterIns_)          masterIns_        ->setVisible (false);
+            if (masterDestButton_)   masterDestButton_ ->setVisible (false);
+            return;
+        }
+
+        // Restore visibility (master destination button has its own visibility
+        // rule — multi-pair devices only — handled by setMasterDestination).
+        for (auto& s : phraseStrips_)        s->setVisible (true);
+        for (auto& b : phraseDestButtons_)   b->setVisible (true);
+        for (auto& b : phraseInsButtons_)    b->setVisible (true);
+        for (auto& s : busStrips_)           s->setVisible (true);
+        for (auto& b : busDestButtons_)      b->setVisible (true);
+        for (auto& b : busInsButtons_)       b->setVisible (true);
+        for (auto& o : busNameOverlays_)     o->setVisible (true);
+        if (master_)    master_   ->setVisible (true);
+        if (masterIns_) masterIns_->setVisible (true);
+        if (masterDestButton_)
+            masterDestButton_->setVisible (masterChoices_.size() > 1);
 
         // Detail panel (slice 5b polish) takes a fixed top band when a phrase
         // is selected; the strip row + button stack fills the remainder below.
@@ -1624,6 +1851,9 @@ public:
 
     void paint (juce::Graphics& g) override { g.fillAll (otto::Colours::bg2); }
 
+    // --- ChannelDetailListener (slice EC-Polish full-screen layout) -----------
+    void channelDetailTabChanged (int /*tabIndex*/) override { resized(); }
+
     // --- CompactFaderStripListener — master (idx == kMasterStripId) vs aux vs
     // phrase. Phrase strips are distinguished from aux buses by their
     // ChannelType::Instrument tag (aux buses use ChannelType::Bus); the row
@@ -1645,14 +1875,49 @@ public:
     void stripSoloChanged (int, otto::ui::ChannelType, bool) override {}
     void stripChannelSelected (int idx, otto::ui::ChannelType type) override
     {
-        // Only phrase strips (ChannelType::Instrument) have pan/width — aux
-        // buses and master are stereo without panning. For non-phrase taps,
-        // leave the panel and current phrase selection alone.
-        if (type != otto::ui::ChannelType::Instrument) return;
-        for (int i = 0; i < phraseStripCount(); ++i)
-            phraseStrips_[static_cast<std::size_t> (i)]->setSelected (i == idx);
-        selectedPhrase_ = idx;
-        if (onPhraseSelect) onPhraseSelect (idx);   // MainComponent loads + reveals the panel
+        const bool isMaster = (idx == kMasterStripId);
+        const bool isPhrase = (! isMaster) && (type == otto::ui::ChannelType::Instrument);
+        const bool isAux    = (! isMaster) && (! isPhrase);
+
+        // Phrase, aux-bus, and master are mutually exclusive selections.
+        // Clear the OTHER rows' highlights so the affordance stays honest.
+        auto clearAll = [this]
+        {
+            for (int i = 0; i < phraseStripCount(); ++i)
+                phraseStrips_[static_cast<std::size_t> (i)]->setSelected (false);
+            for (int i = 0; i < busStripCount(); ++i)
+                busStrips_[static_cast<std::size_t> (i)]->setSelected (false);
+            if (master_) master_->setSelected (false);
+        };
+
+        if (isPhrase)
+        {
+            clearAll();
+            phraseStrips_[static_cast<std::size_t> (idx)]->setSelected (true);
+            selectedPhrase_ = idx;
+            selectedBus_    = -1;
+            selectedMaster_ = false;
+            if (onPhraseSelect) onPhraseSelect (idx);
+        }
+        else if (isAux)
+        {
+            clearAll();
+            if (idx >= 0 && idx < busStripCount())
+                busStrips_[static_cast<std::size_t> (idx)]->setSelected (true);
+            selectedPhrase_ = -1;
+            selectedBus_    = idx;
+            selectedMaster_ = false;
+            if (onBusSelect) onBusSelect (idx);
+        }
+        else // isMaster
+        {
+            clearAll();
+            if (master_) master_->setSelected (true);
+            selectedPhrase_ = -1;
+            selectedBus_    = -1;
+            selectedMaster_ = true;
+            if (onMasterSelect) onMasterSelect();
+        }
     }
 
     // --- ChannelDetailPanWidTabListener (the pan/width knobs) -----------------
@@ -1678,26 +1943,60 @@ public:
     }
 
     // --- ChannelDetailEQTabListener (slice EC) --------------------------------
+    // Route to bus / master / phrase callbacks based on which selection
+    // owns the detail panel right now. The three are mutually exclusive.
     void eqTabConfigChanged (const ida::EqConfig& cfg) override
     {
-        if (onPhraseEqConfigChanged && selectedPhrase_ >= 0)
+        if (selectedMaster_)
+        {
+            if (onMasterEqConfigChanged) onMasterEqConfigChanged (cfg);
+        }
+        else if (selectedBus_ >= 0)
+        {
+            if (onBusEqConfigChanged) onBusEqConfigChanged (selectedBus_, cfg);
+        }
+        else if (onPhraseEqConfigChanged && selectedPhrase_ >= 0)
             onPhraseEqConfigChanged (selectedPhrase_, cfg);
     }
     void eqTabRequestSlotAdd() override
     {
-        if (onPhraseEqSlotAddRequested && selectedPhrase_ >= 0)
+        if (selectedMaster_)
+        {
+            if (onMasterEqSlotAddRequested) onMasterEqSlotAddRequested();
+        }
+        else if (selectedBus_ >= 0)
+        {
+            if (onBusEqSlotAddRequested) onBusEqSlotAddRequested (selectedBus_);
+        }
+        else if (onPhraseEqSlotAddRequested && selectedPhrase_ >= 0)
             onPhraseEqSlotAddRequested (selectedPhrase_);
     }
 
     // --- ChannelDetailCMPTabListener (slice EC) -------------------------------
     void cmpTabConfigChanged (const ida::CmpConfig& cfg) override
     {
-        if (onPhraseCmpConfigChanged && selectedPhrase_ >= 0)
+        if (selectedMaster_)
+        {
+            if (onMasterCmpConfigChanged) onMasterCmpConfigChanged (cfg);
+        }
+        else if (selectedBus_ >= 0)
+        {
+            if (onBusCmpConfigChanged) onBusCmpConfigChanged (selectedBus_, cfg);
+        }
+        else if (onPhraseCmpConfigChanged && selectedPhrase_ >= 0)
             onPhraseCmpConfigChanged (selectedPhrase_, cfg);
     }
     void cmpTabRequestSlotAdd() override
     {
-        if (onPhraseCmpSlotAddRequested && selectedPhrase_ >= 0)
+        if (selectedMaster_)
+        {
+            if (onMasterCmpSlotAddRequested) onMasterCmpSlotAddRequested();
+        }
+        else if (selectedBus_ >= 0)
+        {
+            if (onBusCmpSlotAddRequested) onBusCmpSlotAddRequested (selectedBus_);
+        }
+        else if (onPhraseCmpSlotAddRequested && selectedPhrase_ >= 0)
             onPhraseCmpSlotAddRequested (selectedPhrase_);
     }
 
@@ -1831,10 +2130,14 @@ private:
     std::vector<StripDest>                                     phraseStripDests_;
     std::vector<std::vector<DestChoice>>                       phraseChoices_;
 
-    // Pan/width detail panel (slice 5b polish) — top band, hidden until a
-    // phrase strip is selected. Phrase-only; aux buses + master never select.
+    // Tabbed detail panel (slice U + slice EC + slice EC-Polish). One of
+    // selectedPhrase_ / selectedBus_ / selectedMaster_ is "active" at a time;
+    // others sit at sentinel values. Mutual exclusion is enforced in
+    // stripChannelSelected.
     ida::ui::ChannelDetail                                     detailPanel_;
     int                                                        selectedPhrase_ { -1 };
+    int                                                        selectedBus_    { -1 };
+    bool                                                       selectedMaster_ { false };
 
     bool                                                      longPressBlank_ { false };
     juce::Point<int>                                          longPressScreenPos_;
@@ -2888,6 +3191,73 @@ MainComponent::MainComponent()
         {
             openInsertChainPopupForBus (busIdx);
         };
+
+        // Slice EC-Polish — bus / FX-return selection opens the detail panel
+        // with EQ + CMP tabs only (no pan on stereo bus; no per-bus send
+        // model yet). Config-change + slot-add callbacks mirror the
+        // channel-strip wiring, addressing the bus by BusId.value() as
+        // nodeKey (matching the Bus's own host-dispatch contract).
+        inputMixerPane_->onBusSelect = [this] (int busIdx)
+        {
+            const auto eqProbe  = collectInputBusEqView  (busIdx);
+            const auto cmpProbe = collectInputBusCmpView (busIdx);
+            inputMixerPane_->showBusDetailFor (busIdx,
+                                               eqProbe.config,  eqProbe.hasSlot,
+                                               cmpProbe.config, cmpProbe.hasSlot);
+        };
+        inputMixerPane_->onBusEqConfigChanged =
+            [this] (int busIdx, ida::EqConfig cfg)
+        {
+            const auto probe = collectInputBusEqView (busIdx);
+            if (! probe.hasSlot) return;
+            if (busIdx < 0 || busIdx >= static_cast<int> (busStripIds_.size())) return;
+            const auto busId = busStripIds_[static_cast<std::size_t> (busIdx)];
+            audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+            effectChainHost_.setInternalEqConfigAt (busId.value(), probe.slotIdx, cfg);
+            audioDeviceManager_.addAudioCallback (audioCallback_.get());
+        };
+        inputMixerPane_->onBusCmpConfigChanged =
+            [this] (int busIdx, ida::CmpConfig cfg)
+        {
+            const auto probe = collectInputBusCmpView (busIdx);
+            if (! probe.hasSlot) return;
+            if (busIdx < 0 || busIdx >= static_cast<int> (busStripIds_.size())) return;
+            const auto busId = busStripIds_[static_cast<std::size_t> (busIdx)];
+            audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+            effectChainHost_.setInternalCmpConfigAt (busId.value(), probe.slotIdx, cfg);
+            audioDeviceManager_.addAudioCallback (audioCallback_.get());
+        };
+        inputMixerPane_->onBusEqSlotAddRequested = [this] (int busIdx)
+        {
+            if (busIdx < 0 || busIdx >= static_cast<int> (busStripIds_.size())) return;
+            auto* bus = inputMixer_->busForId (
+                busStripIds_[static_cast<std::size_t> (busIdx)]);
+            if (bus == nullptr) return;
+            auto chain = bus->effectChain()
+                            .withAppended (ida::EffectChainEntry::makeInternal (
+                                               ida::InternalFxId::kEq));
+            audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+            bus->setEffectChain (std::move (chain));
+            audioDeviceManager_.addAudioCallback (audioCallback_.get());
+            // Re-show with the freshly-bound EQ slot so the empty state
+            // collapses into the wired editor.
+            inputMixerPane_->onBusSelect (busIdx);
+        };
+        inputMixerPane_->onBusCmpSlotAddRequested = [this] (int busIdx)
+        {
+            if (busIdx < 0 || busIdx >= static_cast<int> (busStripIds_.size())) return;
+            auto* bus = inputMixer_->busForId (
+                busStripIds_[static_cast<std::size_t> (busIdx)]);
+            if (bus == nullptr) return;
+            auto chain = bus->effectChain()
+                            .withAppended (ida::EffectChainEntry::makeInternal (
+                                               ida::InternalFxId::kCmp));
+            audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+            bus->setEffectChain (std::move (chain));
+            audioDeviceManager_.addAudioCallback (audioCallback_.get());
+            inputMixerPane_->onBusSelect (busIdx);
+        };
+
         tabs_.addTab ("Input Mixer", juce::Colours::black, inputMixerPane_.get(), false);
 
         rebuildInputStrips();
@@ -3188,6 +3558,120 @@ MainComponent::MainComponent()
             strip->setEffectChain (chain);
             audioDeviceManager_.addAudioCallback (audioCallback_.get());
             if (outputMixerPane_) outputMixerPane_->onPhraseSelect (phraseIdx);
+        };
+
+        // Slice EC-Polish — aux-bus + master selection opens the EQ/CMP-only
+        // detail panel on the output pane. Same pattern as the input pane;
+        // addressing differs (outputBusStripIds_ for aux buses, BusId{0} for
+        // master).
+        outputMixerPane_->onBusSelect = [this] (int busIdx)
+        {
+            const auto eqProbe  = collectOutputBusEqView  (busIdx);
+            const auto cmpProbe = collectOutputBusCmpView (busIdx);
+            outputMixerPane_->showBusDetailFor (busIdx,
+                                                eqProbe.config,  eqProbe.hasSlot,
+                                                cmpProbe.config, cmpProbe.hasSlot);
+        };
+        outputMixerPane_->onBusEqConfigChanged =
+            [this] (int busIdx, ida::EqConfig cfg)
+        {
+            const auto probe = collectOutputBusEqView (busIdx);
+            if (! probe.hasSlot) return;
+            if (busIdx < 0 || busIdx >= static_cast<int> (outputBusStripIds_.size())) return;
+            const auto busId = outputBusStripIds_[static_cast<std::size_t> (busIdx)];
+            audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+            effectChainHost_.setInternalEqConfigAt (busId.value(), probe.slotIdx, cfg);
+            audioDeviceManager_.addAudioCallback (audioCallback_.get());
+        };
+        outputMixerPane_->onBusCmpConfigChanged =
+            [this] (int busIdx, ida::CmpConfig cfg)
+        {
+            const auto probe = collectOutputBusCmpView (busIdx);
+            if (! probe.hasSlot) return;
+            if (busIdx < 0 || busIdx >= static_cast<int> (outputBusStripIds_.size())) return;
+            const auto busId = outputBusStripIds_[static_cast<std::size_t> (busIdx)];
+            audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+            effectChainHost_.setInternalCmpConfigAt (busId.value(), probe.slotIdx, cfg);
+            audioDeviceManager_.addAudioCallback (audioCallback_.get());
+        };
+        outputMixerPane_->onBusEqSlotAddRequested = [this] (int busIdx)
+        {
+            if (busIdx < 0 || busIdx >= static_cast<int> (outputBusStripIds_.size())) return;
+            auto* bus = outputMixer_->busForId (
+                outputBusStripIds_[static_cast<std::size_t> (busIdx)]);
+            if (bus == nullptr) return;
+            auto chain = bus->effectChain()
+                            .withAppended (ida::EffectChainEntry::makeInternal (
+                                               ida::InternalFxId::kEq));
+            audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+            bus->setEffectChain (std::move (chain));
+            audioDeviceManager_.addAudioCallback (audioCallback_.get());
+            outputMixerPane_->onBusSelect (busIdx);
+        };
+        outputMixerPane_->onBusCmpSlotAddRequested = [this] (int busIdx)
+        {
+            if (busIdx < 0 || busIdx >= static_cast<int> (outputBusStripIds_.size())) return;
+            auto* bus = outputMixer_->busForId (
+                outputBusStripIds_[static_cast<std::size_t> (busIdx)]);
+            if (bus == nullptr) return;
+            auto chain = bus->effectChain()
+                            .withAppended (ida::EffectChainEntry::makeInternal (
+                                               ida::InternalFxId::kCmp));
+            audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+            bus->setEffectChain (std::move (chain));
+            audioDeviceManager_.addAudioCallback (audioCallback_.get());
+            outputMixerPane_->onBusSelect (busIdx);
+        };
+
+        // Master strip on the output pane is BusId{0} — fixed.
+        outputMixerPane_->onMasterSelect = [this]
+        {
+            const auto eqProbe  = collectOutputMasterEqView();
+            const auto cmpProbe = collectOutputMasterCmpView();
+            outputMixerPane_->showMasterDetailFor (eqProbe.config,  eqProbe.hasSlot,
+                                                   cmpProbe.config, cmpProbe.hasSlot);
+        };
+        outputMixerPane_->onMasterEqConfigChanged = [this] (ida::EqConfig cfg)
+        {
+            const auto probe = collectOutputMasterEqView();
+            if (! probe.hasSlot) return;
+            audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+            effectChainHost_.setInternalEqConfigAt (ida::BusId{0}.value(), probe.slotIdx, cfg);
+            audioDeviceManager_.addAudioCallback (audioCallback_.get());
+        };
+        outputMixerPane_->onMasterCmpConfigChanged = [this] (ida::CmpConfig cfg)
+        {
+            const auto probe = collectOutputMasterCmpView();
+            if (! probe.hasSlot) return;
+            audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+            effectChainHost_.setInternalCmpConfigAt (ida::BusId{0}.value(), probe.slotIdx, cfg);
+            audioDeviceManager_.addAudioCallback (audioCallback_.get());
+        };
+        outputMixerPane_->onMasterEqSlotAddRequested = [this]
+        {
+            if (outputMixer_ == nullptr) return;
+            auto* bus = outputMixer_->busForId (ida::BusId{0});
+            if (bus == nullptr) return;
+            auto chain = bus->effectChain()
+                            .withAppended (ida::EffectChainEntry::makeInternal (
+                                               ida::InternalFxId::kEq));
+            audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+            bus->setEffectChain (std::move (chain));
+            audioDeviceManager_.addAudioCallback (audioCallback_.get());
+            outputMixerPane_->onMasterSelect();
+        };
+        outputMixerPane_->onMasterCmpSlotAddRequested = [this]
+        {
+            if (outputMixer_ == nullptr) return;
+            auto* bus = outputMixer_->busForId (ida::BusId{0});
+            if (bus == nullptr) return;
+            auto chain = bus->effectChain()
+                            .withAppended (ida::EffectChainEntry::makeInternal (
+                                               ida::InternalFxId::kCmp));
+            audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+            bus->setEffectChain (std::move (chain));
+            audioDeviceManager_.addAudioCallback (audioCallback_.get());
+            outputMixerPane_->onMasterSelect();
         };
 
         tabs_.addTab ("Output Mixer", juce::Colours::black, outputMixerPane_.get(), false);
@@ -3620,6 +4104,120 @@ MainComponent::collectOutputCmpView (int phraseIdx) const
     probe.slotIdx = *slotOpt;
     probe.hasSlot = true;
     if (auto cfg = effectChainHost_.internalCmpConfigAt (outChId.value(), probe.slotIdx))
+        probe.config = *cfg;
+    return probe;
+}
+
+// =============================================================================
+// Slice EC-Polish — bus + master EQ/CMP probes
+// =============================================================================
+//
+// The bus probes mirror the channel-strip probes (findInternalSlot on the
+// bus's EffectChain, then internalEqConfigAt/internalCmpConfigAt keyed by
+// BusId.value() — the same nodeKey the Bus itself dispatches with).
+
+MainComponent::ChannelFxProbe
+MainComponent::collectInputBusEqView (int busIdx) const
+{
+    ChannelFxProbe probe;
+    if (inputMixer_ == nullptr) return probe;
+    if (busIdx < 0 || busIdx >= static_cast<int> (busStripIds_.size())) return probe;
+    const auto busId = busStripIds_[static_cast<std::size_t> (busIdx)];
+    auto* bus = inputMixer_->busForId (busId);
+    if (bus == nullptr) return probe;
+    const auto slotOpt = findInternalSlot (bus->effectChain(), ida::InternalFxId::kEq);
+    if (! slotOpt.has_value()) return probe;
+    probe.slotIdx = *slotOpt;
+    probe.hasSlot = true;
+    if (auto cfg = effectChainHost_.internalEqConfigAt (busId.value(), probe.slotIdx))
+        probe.config = *cfg;
+    return probe;
+}
+
+MainComponent::ChannelCmpProbe
+MainComponent::collectInputBusCmpView (int busIdx) const
+{
+    ChannelCmpProbe probe;
+    if (inputMixer_ == nullptr) return probe;
+    if (busIdx < 0 || busIdx >= static_cast<int> (busStripIds_.size())) return probe;
+    const auto busId = busStripIds_[static_cast<std::size_t> (busIdx)];
+    auto* bus = inputMixer_->busForId (busId);
+    if (bus == nullptr) return probe;
+    const auto slotOpt = findInternalSlot (bus->effectChain(), ida::InternalFxId::kCmp);
+    if (! slotOpt.has_value()) return probe;
+    probe.slotIdx = *slotOpt;
+    probe.hasSlot = true;
+    if (auto cfg = effectChainHost_.internalCmpConfigAt (busId.value(), probe.slotIdx))
+        probe.config = *cfg;
+    return probe;
+}
+
+MainComponent::ChannelFxProbe
+MainComponent::collectOutputBusEqView (int busIdx) const
+{
+    ChannelFxProbe probe;
+    if (outputMixer_ == nullptr) return probe;
+    if (busIdx < 0 || busIdx >= static_cast<int> (outputBusStripIds_.size())) return probe;
+    const auto busId = outputBusStripIds_[static_cast<std::size_t> (busIdx)];
+    auto* bus = outputMixer_->busForId (busId);
+    if (bus == nullptr) return probe;
+    const auto slotOpt = findInternalSlot (bus->effectChain(), ida::InternalFxId::kEq);
+    if (! slotOpt.has_value()) return probe;
+    probe.slotIdx = *slotOpt;
+    probe.hasSlot = true;
+    if (auto cfg = effectChainHost_.internalEqConfigAt (busId.value(), probe.slotIdx))
+        probe.config = *cfg;
+    return probe;
+}
+
+MainComponent::ChannelCmpProbe
+MainComponent::collectOutputBusCmpView (int busIdx) const
+{
+    ChannelCmpProbe probe;
+    if (outputMixer_ == nullptr) return probe;
+    if (busIdx < 0 || busIdx >= static_cast<int> (outputBusStripIds_.size())) return probe;
+    const auto busId = outputBusStripIds_[static_cast<std::size_t> (busIdx)];
+    auto* bus = outputMixer_->busForId (busId);
+    if (bus == nullptr) return probe;
+    const auto slotOpt = findInternalSlot (bus->effectChain(), ida::InternalFxId::kCmp);
+    if (! slotOpt.has_value()) return probe;
+    probe.slotIdx = *slotOpt;
+    probe.hasSlot = true;
+    if (auto cfg = effectChainHost_.internalCmpConfigAt (busId.value(), probe.slotIdx))
+        probe.config = *cfg;
+    return probe;
+}
+
+MainComponent::ChannelFxProbe
+MainComponent::collectOutputMasterEqView() const
+{
+    ChannelFxProbe probe;
+    if (outputMixer_ == nullptr) return probe;
+    const auto masterId = ida::BusId{ 0 };
+    auto* bus = outputMixer_->busForId (masterId);
+    if (bus == nullptr) return probe;
+    const auto slotOpt = findInternalSlot (bus->effectChain(), ida::InternalFxId::kEq);
+    if (! slotOpt.has_value()) return probe;
+    probe.slotIdx = *slotOpt;
+    probe.hasSlot = true;
+    if (auto cfg = effectChainHost_.internalEqConfigAt (masterId.value(), probe.slotIdx))
+        probe.config = *cfg;
+    return probe;
+}
+
+MainComponent::ChannelCmpProbe
+MainComponent::collectOutputMasterCmpView() const
+{
+    ChannelCmpProbe probe;
+    if (outputMixer_ == nullptr) return probe;
+    const auto masterId = ida::BusId{ 0 };
+    auto* bus = outputMixer_->busForId (masterId);
+    if (bus == nullptr) return probe;
+    const auto slotOpt = findInternalSlot (bus->effectChain(), ida::InternalFxId::kCmp);
+    if (! slotOpt.has_value()) return probe;
+    probe.slotIdx = *slotOpt;
+    probe.hasSlot = true;
+    if (auto cfg = effectChainHost_.internalCmpConfigAt (masterId.value(), probe.slotIdx))
         probe.config = *cfg;
     return probe;
 }

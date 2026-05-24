@@ -108,13 +108,17 @@ private:
     void notifySendChanged (std::size_t cardIdx);
     void notifyPreFaderToggled();
 
-    static constexpr int kCardGap          = 10;
-    static constexpr int kCardPadding      = 8;
-    static constexpr int kCardCornerRadius = 8;
-    static constexpr int kNameLabelHeight  = 18;
+    // Layout constants chosen to match OTTO's ChannelDetailPanWidTab visual
+    // idiom (slice EC-Polish): borderless rotary, knob centered in its
+    // column, label directly below, dB readout below the label. Knob sizing
+    // follows PanWid (kMinKnobSize=60 / kMaxKnobSize=500) so columns scale
+    // smoothly from iPhone to desktop.
+    static constexpr int kColumnGap        = 16;     // matches PanWid kKnobGap
+    static constexpr int kNameLabelHeight  = 20;     // matches PanWid kLabelHeight
     static constexpr int kDbReadoutHeight  = 16;
     static constexpr int kPreToggleHeight  = 24;
-    static constexpr int kMinKnobSize      = 48;
+    static constexpr int kMinKnobSize      = 60;     // matches PanWid kMinKnobSize
+    static constexpr int kMaxKnobSize      = 500;    // matches PanWid kMaxKnobSize
 
     std::vector<SendCard>           cards_;
     std::vector<juce::Colour>       cardColors_;   // parallel to cards_; cached for paint()
@@ -175,6 +179,34 @@ public:
     void setActiveTab (Tab tab);
     Tab  getActiveTab() const noexcept { return activeTab_; }
 
+    /// Set which tabs are visible in the tab bar. Tabs not in the mask are
+    /// hidden from the bar (and their content suppressed). If the currently
+    /// active tab becomes unavailable, falls through to the first available
+    /// tab in PanWid → Sends → EQ → CMP order. Bus/FX strips use this to
+    /// hide PanWid + Sends (stereo bus: no pan; no bus-side send model yet).
+    struct TabMask
+    {
+        bool panWid { true };
+        bool sends  { true };
+        bool eq     { true };
+        bool cmp    { true };
+
+        bool contains (Tab t) const noexcept
+        {
+            switch (t)
+            {
+                case Tab::PanWid:  return panWid;
+                case Tab::Sends:   return sends;
+                case Tab::EQ:      return eq;
+                case Tab::CMP:     return cmp;
+                case Tab::NumTabs: break;
+            }
+            return false;
+        }
+    };
+    void setTabsAvailable (TabMask mask);
+    TabMask getTabsAvailable() const noexcept { return tabMask_; }
+
     /// Tab content accessors — host panes wire their own listeners directly
     /// onto the underlying tabs. Returned references stay valid for the lifetime
     /// of the ChannelDetail.
@@ -196,6 +228,7 @@ private:
     void notifyTabChanged();
 
     Tab                          activeTab_ { Tab::PanWid };
+    TabMask                      tabMask_   {};   // all visible by default
     juce::OwnedArray<TabButton>  tabButtons_;
 
     std::unique_ptr<otto::ui::ChannelDetailPanWidTab> panWidTab_;
