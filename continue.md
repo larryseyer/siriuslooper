@@ -1,169 +1,133 @@
-# Session Continuation — NEXT: operator eyes-on slice EC + slice P (carried)
+# Session Continuation — NEXT: operator eyes-on slice EC-Polish
 
-> **For a fresh chat picking this up cold:** memory + project +
-> user CLAUDE.md load automatically. This file is the **forward-looking
-> handoff** — only what's next matters.
+> **For a fresh chat picking this up cold:** memory + project + user CLAUDE.md
+> load automatically. This file is the **forward-looking handoff** — only
+> what's next matters.
 
 ## ▶ DO THIS FIRST
 
 1. Read `external/OTTO/CROSS_PROJECT_INBOX.md`. As of session end
    2026-05-24, all entries through TAPECOLOR Phase 5 + the
-   "OTTO pin bumped to c4a8ec3" informational notice are acked.
-   No new OTTO events landed this session. Next expected OTTO
-   event is TAPECOLOR Phase 6 (tape-hiss noise floor).
-2. **Slice EC shipped this session — full operator eyes-on still
-   pending**. The build is clean (`build/app/IDA_artefacts/Release/IDA.app`,
-   `~/Desktop/IDA` alias points at it). Walk through the verification
-   sequence in the "Slice EC operator eyes-on" section below. Both
-   mixers should show a real 5-band EQ and a 6-knob CMP on every
-   channel strip.
-3. Slice P save/load eyes-on is **also still pending** from two
-   sessions ago — sandwich it in alongside slice EC verification.
+   "OTTO pin bumped to c4a8ec3" informational notice are acked. No new
+   OTTO events landed this session. Next expected OTTO event is
+   TAPECOLOR Phase 6 (tape-hiss noise floor).
+2. **Slice EC-Polish shipped this session — operator eyes-on still pending**.
+   `~/Desktop/IDA` alias points at the clean-rebuild artefact. Walk the
+   "Slice EC-Polish operator eyes-on" sequence below.
+3. Slice EC (the prior slice) + slice P save/load eyes-on are still
+   carried — sandwich both into the same session.
 
 ## ▶ DONE THIS SESSION
 
-### Slice EC — EQ + CMP tabs functional on both mixers
+### Slice EC-Polish — bus selection + full-screen EQ/CMP + curve view + GR meter + sends restyle
 
-**HEAD: master** — clean rebuild verified, ctest 678/679 green
-(the 1 not-run is the unchanged `MainComponentPluginEditorTests_NOT_BUILT`
-sentinel).
+**HEAD on origin/master:** `1a311f3` — pushed. Clean rebuild verified,
+ctest 678/679 green (the 1 not-run is the unchanged
+`MainComponentPluginEditorTests_NOT_BUILT` sentinel).
 
-Six sub-tasks landed in order, all on `master`:
+Five operator-reported issues, all fixed in one slice:
 
-1. **EC1 — Adapter config-swap pattern.**
-   `engine/src/fx/EqAdapter.{h,cpp}` and `CmpAdapter.{h,cpp}` now
-   hold a two-entry `std::array<PlayerEffectsConfig,2>` with an
-   atomic `liveIndex_` — direct mirror of OTTO's
-   `MasterBus.h:217-240`. New public methods: `scratchConfig()` (msg-
-   thread write), `commitConfig()` (publishes via release-store +
-   coefficient refresh), `liveConfig()` (audio-thread acquire-read).
-   The ctor still ships enabled+flat (EQ) / enabled+conservative (CMP)
-   so freshly inserted adapters DSP from sample 0. Tests extended in
-   `tests/EqAdapterTests.cpp` + `tests/CmpAdapterTests.cpp` — 4 new
-   `[setConfig]` cases (low-shelf attenuation, unity-ratio
-   pass-through, ctor-default snapshots).
+1. **Bus / FX-return / aux / master selection.** Clicking a
+   bus / FX-return strip on the input mixer (or an aux / master strip
+   on the output mixer) now opens the detail panel with EQ + CMP tabs
+   only (Pan/Width + Sends hidden via the new `ChannelDetail::setTabsAvailable`
+   API). `InputMixerPane` + `OutputMixerPane` gained mutually-exclusive
+   `selectedBus_` (plus `selectedMaster_` on the output side) alongside
+   the existing `selectedStrip_` / `selectedPhrase_`. Listener forwards
+   route by selected kind. MainComponent grew six new probes
+   (`collectInputBusEqView` / `CmpView`, `collectOutputBusEqView` /
+   `CmpView`, `collectOutputMasterEqView` / `CmpView`) keyed by
+   `BusId.value()` — matches the Bus's own host-dispatch nodeKey.
+   New bus-side EQ/CMP config + slot-add gestures plumb through the
+   same audio-callback detach pattern as channel strips.
 
-2. **EC2 — IDA-side typed config surface + auto-seed.**
-   `core/include/ida/InternalFxConfigs.h` declares JUCE/OTTO-free
-   `ida::EqConfig` + `ida::CmpConfig` structs. `IInternalFxAdapter`
-   gained virtual `setEqConfig/eqConfig/setCmpConfig/cmpConfig`
-   (default no-op); EqAdapter + CmpAdapter override their respective
-   pair to map between the IDA struct and `PlayerEffectsConfig`.
-   `IEffectChainHost` gained `setInternalEqConfigAt` /
-   `internalEqConfigAt` (+ Cmp); `OutOfProcessEffectChainHost`
-   implements via the existing `internalAdapters_` lookup.
-   **`ChannelStrip<SignalType::Audio>` ctor now auto-seeds the chain
-   with `[makeInternal(kEq), makeInternal(kCmp)]`**. `setEffectChainHost`
-   now also dispatches whatever's already in the chain so the seed
-   binds adapters as soon as the host is wired. ChannelStripTests
-   updated to encode the new contract.
+2. **Full-screen detail on EQ / CMP tab active.** Both panes now
+   inherit `ChannelDetailListener` and re-layout on tab change. When
+   the active tab is EQ or CMP, `detailPanel_` expands to the entire
+   pane bounds and the strip row + INS + picker rows hide. Reverting
+   to PanWid / Sends (or closing the detail) restores the strip
+   layout. Helper: `isDetailFullScreen() const`.
 
-3. **EC3 + EC4 — Real EQ + CMP tab components.**
-   `ui/include/ida/ChannelDetailEQTab.h` + `.cpp`: 5-band layout
-   (HP, Low shelf, Mid parametric, High shelf, LP), each with rotary
-   knobs + numeric readouts, plus an `ENABLE` toggle and HP/LP slope
-   toggle (12 / 24 dB). Empty state: "+ Add EQ to this strip" button
-   fires `eqTabRequestSlotAdd()`. Symmetric `ChannelDetailCMPTab` —
-   6 knobs (threshold, ratio, attack, release, makeup, mix) + enable
-   + sidechain-HPF toggle. Both follow the slice U sends-tab pattern
-   for refresh/listener semantics.
+3. **Sends knobs match Pan/Width styling.** Dropped the rounded-rect
+   card outlines + fills. Layout matches OTTO's `ChannelDetailPanWidTab`:
+   borderless rotary, knob centered in column, label below knob,
+   dB readout below label. Knob sizing constants align (`kMinKnobSize=60`,
+   `kMaxKnobSize=500`, `kColumnGap=16`).
 
-4. **EC5 — Placeholders gone.**
-   `ChannelDetail`'s `eqTab_` / `cmpTab_` members are now the real
-   tab types; `eqTab()` / `cmpTab()` accessors mirror
-   `panWidTab()` / `sendsTab()`.
+4. **EqCurveView (new widget).** `ui/include/ida/EqCurveView.h` +
+   `ui/src/EqCurveView.cpp`. Leaf `juce::Component` that paints the
+   5-band response over a log-frequency / linear-dB grid using the
+   same response math as OTTO's `EQPanel::calculateEQResponse` (HP/LP
+   slope-octave subtraction, bell-curve approximation for the three
+   shelves). Draggable band nodes for freq + gain; double-click resets
+   the band to its `EqConfig` default. Listener fires the full
+   `EqConfig` — same shape as the existing knob-change callback.
+   Hosted by `ChannelDetailEQTab` as the dominant element in
+   full-screen mode (auto-hidden in the 180px detail-band mode where
+   it'd be too cramped). 5-band knob row stays beneath for precise
+   numeric control + per-band Q + HP/LP slope toggle.
 
-5. **EC6 — MainComponent wiring on both panes.**
-   `InputMixerPane` + `OutputMixerPane` inherit the new listeners.
-   New `std::function` callbacks on each: `onEqConfigChanged`,
-   `onCmpConfigChanged`, `onEqSlotAddRequested`,
-   `onCmpSlotAddRequested` (phrase- prefix on the output side).
-   `showDetailFor` / `showPhraseDetailFor` extended with `EqConfig`/
-   `hasEqSlot` + `CmpConfig`/`hasCmpSlot` args. New
-   `collectInputEqView` / `collectInputCmpView` /
-   `collectOutputEqView` / `collectOutputCmpView` helpers in
-   MainComponent compute the slot index + live config snapshot.
-   Slot-add gestures append an Internal entry via
-   `strip->setEffectChain(strip->effectChain().withAppended(...))`,
-   bracketed in the standard audio-callback detach pattern. Config-
-   change gestures route through `effectChainHost_.setInternalEqConfigAt`
-   / `setInternalCmpConfigAt`.
-
-**Persistence of operator-tuned EQ/CMP values is NOT in this slice.**
-The chain itself (the EQ + CMP slot entries) round-trips fine via the
-existing `EffectChainEntry` persistence — when a session is loaded,
-the host re-mints adapters via the slot sweep and they start at their
-default config. Operator slider positions don't survive a relaunch.
-This is an explicit follow-up (see "Queued" below).
+5. **CmpMeterView (new widget).** Same shape: transfer-curve plot
+   (input dB vs. output dB) with threshold knee + ratio slope drag,
+   plus a vertical gain-reduction meter column on the right. Mirrors
+   OTTO's `CompressorPanel` visual idiom. GR meter reads 0 until the
+   adapter surfaces live GR (queued — see [[continue.md]] EC7).
+   Hosted by `ChannelDetailCMPTab`.
 
 ### Tests
 
-- `ctest --test-dir build`: **678 pass / 1 not-run / 679 total**.
-  Up 4 new test cases (`[setConfig]` cases in EqAdapterTests +
-  CmpAdapterTests), and 2 ChannelStripTests were rewritten to encode
-  the auto-seed contract.
-- Clean rebuild verified end-to-end (`rm -rf build && cmake -B build
-   -S . -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build
-   --target IdaTests IDA -j` exits 0).
+- `ctest --test-dir build`: **678 pass / 1 not-run / 679 total** —
+  unchanged baseline.
+- No new test cases added. The new widgets are operator-verified UI
+  (per [[feedback_clean_builds]] convention); engine response math is
+  identical to OTTO's already-tested formula.
 
-## ▶ NEXT — Slice EC operator eyes-on
+## ▶ NEXT — Slice EC-Polish operator eyes-on
 
-The end-to-end gestures that verify slice EC actually wired through:
+Walk through, in this order:
 
-1. **Launch IDA.** `~/Desktop/IDA` alias → opens
-   `build/app/IDA_artefacts/Release/IDA.app`.
-2. **Input Mixer, EQ tab.** Click any strip → tap the EQ tab. You
-   should see 5 band columns (HP, LOW, MID, HIGH, LP), each with at
-   least a frequency knob + readout (shelves also have gain + Q),
-   plus an `ENABLE` toggle at the top reading ON. The +/- 12 dB
-   labels on the shelf gain readouts should read "+0.0 dB" / "0.0 dB"
-   at default. Drag the LOW gain knob down to -12 dB while audio is
-   running through the strip — bottom of the signal should noticeably
-   thin.
-3. **Input Mixer, CMP tab.** Tap CMP → 6 knobs (THRESH, RATIO, ATTACK,
-   RELEASE, MAKEUP, MIX) + ENABLE + SIDECHAIN HPF toggles. Defaults:
-   threshold -12 dB, ratio 4:1, etc. Drop threshold to -40 dB on a
-   hot signal — audible compression / gain reduction.
-4. **Output Mixer, phrase strip.** Click a phrase strip (Mark Out
-   if no phrases exist yet) → both EQ and CMP tabs should present
-   the same components as the input side. This is the parity
-   invariant in flesh — they should be visually + behaviorally
-   identical.
-5. **INS popup + remove + re-add.** Open the INS popup on any
-   channel strip. The two auto-seeded slots (EQ at index 0, CMP at
-   index 1) should appear. Remove the EQ slot → EQ tab repaints to
-   show "+ Add EQ to this strip". Tap that → EQ slot returns + tab
-   repopulates with default-flat values.
+1. **Launch IDA.** `~/Desktop/IDA` alias.
+2. **Bus selection — input mixer.** Add a bus + an FX return via the
+   blank-area right-click menu. Click each: detail panel opens with
+   only EQ + CMP tabs in the tab bar (Pan/Width + Sends should not
+   appear). "+ Add EQ to this strip" should be the initial empty
+   state on a fresh bus.
+3. **Bus selection — output mixer.** Add an aux bus. Click an aux:
+   same EQ/CMP-only behavior. Click the master strip: same.
+4. **Full-screen EQ.** Click any channel strip → click the EQ tab.
+   The detail panel should expand to the entire mixer pane (strip
+   row + bottom buttons gone). A frequency curve with 5 colored band
+   nodes (HP grey, LOW red, MID accent, HIGH green, LP grey) should
+   appear over a dB grid + frequency labels. Drag the MID node —
+   curve responds, knobs below sync. Click PanWid → layout restores.
+5. **Full-screen CMP.** Click CMP. Same expansion. Transfer curve +
+   GR meter column on the right. Drag the threshold knee — curve
+   responds + knob below syncs. Drag the slope above the knee
+   (mouse-down on the slope line, drag down) — ratio responds.
+6. **Sends styling.** Click a channel strip → click Sends tab.
+   FX-return knobs should be borderless (no rounded card outline),
+   sized like Pan/Width knobs, with the FX-return name BELOW the
+   knob (not above) and dB readout below the name.
 
-If anything in steps 2-5 doesn't match — flag it. Most likely
-breakpoints: the slope-toggle text not updating on first click
-(suspect: the `setButtonText("24 dB")` in the toggle's onClick fires
-after the publish), or the empty-state button center-alignment on
-narrow strips.
+Flag any drift from the above. Most likely breakpoint: the response
+math constant `kHpSlope = kLpSlope = 24 dB/oct` in `EqCurveView.cpp`
+is a fixed-display assumption; the engine still respects the
+`hpSlopeDbPerOct` field. If the operator toggles slope to 12 on the
+knob row, the engine changes but the curve display doesn't — the
+curve always paints a 24 dB/oct slope.
 
-## ▶ ALSO PENDING — slice P operator eyes-on (carried from last session)
+## ▶ ALSO PENDING — operator eyes-on, carried
 
-Slice P (mixer-graph persistence + phrase-channel map) shipped two
-sessions ago. The save → quit → relaunch → load flow was never
-operator-verified end-to-end. Quick path:
-
-1. Set a custom fader / mute / send level on at least one phrase
-   strip on the Output Mixer (Mark Out to create one if needed),
-   plus a destination-picker choice.
-2. File → Save As → write a new `.ida.json`.
-3. Quit + relaunch IDA. File → Load → pick that file.
-4. Verify the phrase strip reappears with the same state.
-
-Loading a pre-slice-P (v1) envelope should still work — mixer state
-defaults to "no change to current state", phrase strips re-mint fresh.
+- **Slice EC (EQ + CMP tabs functional)** — verification sequence in
+  the prior continue.md snapshot still applies. The auto-seed + slot
+  empty-state behavior is unchanged by EC-Polish, just the look of
+  the editor that opens after slot-add.
+- **Slice P save/load** — quit + relaunch + load round trip on a
+  modified phrase strip. Carried from two sessions ago.
 
 ## ▶ BASELINE (start of next session)
 
-- **HEAD on origin:** `master` — slice EC commits not yet pushed
-  at session end. Sequence them through the standard
-  `bu.sh` → `git push` flow per
-  [[feedback_claude_commits_and_pushes_master]] when the operator
-  signs off on the eyes-on.
+- **HEAD on origin/master:** `1a311f3` (EC-Polish, pushed).
 - **ctest baseline:** 678 pass / 1 not-run / 679 total.
 - **OTTO submodule SHA:** `3c84a409` (unchanged this session).
 - **lsfx_tapecolor submodule SHA:** `d8b06b1` (unchanged — Phase 5).
@@ -172,52 +136,44 @@ defaults to "no change to current state", phrase strips re-mint fresh.
 
 ## ▶ QUEUED — explicit follow-ups
 
-- **EC7 — persistence of operator-tuned EQ + CMP values.**
-  Two paths to weigh:
-  (a) Add a `PlayerEffectsConfig`-shaped payload to
-  `EffectChainEntry` and serialize inline.
-  (b) Sidecar map per-channel in the session envelope (similar to
-  slice P's phrase-channel map).
-  Recommend (a) because the config is per-slot; if the operator
-  reorders the chain, the config moves with the slot. Schema bump
-  on EffectChainEntry — handle carefully.
+- **EC-Polish curve-display slope sync** — `EqCurveView` paints a
+  fixed 24 dB/oct on HP/LP for the visual; the engine respects the
+  per-band toggle. If the operator wants the displayed slope to
+  match, plumb the toggle's `hpSlopeDbPerOct` / `lpSlopeDbPerOct`
+  into the response math (small change in `EqCurveView::responseAt`).
 
-- **EC viz upgrades** — frequency-response curve on EQ tab (needs
-  a spectrum-source abstraction we don't have yet); gain-reduction
-  meter on CMP tab (needs adapter to surface live GR value).
+- **EC-Polish Q drag on curve** — currently the curve only drags
+  freq + gain. Adding wheel-or-modifier-drag for Q on shelf bands
+  would round out the gesture (mirrors OTTO).
 
-- **DLY + RVB tabs** — analogous slices (EC-DLY, EC-RVB). The
-  `ChannelDetail::Tab` enum is currently PanWid/Sends/EQ/CMP only;
-  adding DLY/RVB means extending the tab bar + the placeholder
-  type (still present, just unused after slice EC) can become DLY/
-  RVB until those tabs ship.
+- **EC-Polish live GR readout** — `CmpMeterView::setGainReductionDb`
+  exists but nothing pushes a value in. Wire it from the CmpAdapter
+  once that adapter exposes a live GR atomic.
 
-- **EC empty-state polish** — the auto-seed means most strips
-  never hit the empty state; only operator-removed slots do.
-  Worth checking whether the operator finds the centered "+ Add
-  EQ" button discoverable on a narrow iPhone strip.
+- **EC7 (carried)** — persistence of operator-tuned EQ + CMP values.
+  Same options as before: payload on `EffectChainEntry` (preferred)
+  or sidecar map in the session envelope.
 
-- **EC + bus auto-seed?** This slice intentionally seeds channel
-  strips only, not buses / FX returns / master. Memory
-  `project_minimal_default_mixers` says no bus seeding; the
-  operator may or may not want EQ + CMP on the master bus
-  specifically (OTTO does — see MasterBus's `enableEQ` /
-  `enableComp`). If yes, that's a small follow-up (Bus ctor seed +
-  `eqTab()`/`cmpTab()` on the master strip detail panel).
+- **DLY + RVB tabs** — analogous slices once Delay + Reverb
+  internal-FX adapters land.
+
+- **EC-Polish small-mode behavior** — in the 180px detail-band mode
+  (non-fullscreen tab), the curve view is hidden and only the knob
+  row shows. Worth confirming with the operator whether that's the
+  right call or whether a mini-curve at the top of the small mode
+  would read better.
 
 - **Plugin scanner unblock** (`project_plugin_scanner_broken`) —
-  still queued from prior sessions; unrelated to slice EC.
+  still carried.
 
 ## ▶ HOUSEKEEPING
 
 - **Whitepaper:** `docs/IDA_Whitepaper_V8.md`.
-- **Operator actions still pending** (between sessions; agent
-  cannot perform): notarytool keychain `ida-notary` setup;
-  `automagicart.com/ida` product page + `larryseyer.com` rename.
-- **Clean build before any GUI smoke** is mandatory per
-  `feedback_clean_builds` — verified end-of-session for slice EC,
-  do it again at the next iteration boundary.
-- **No new auto-memory updates needed.** Slice EC's design choices
-  all flow from existing memory entries (parity invariant,
-  pro-audio convention defaults, no half-baked features, OTTO as
-  visual reference but IDA-native implementation).
+- **Operator actions still pending** (between sessions): notarytool
+  keychain `ida-notary` setup; `automagicart.com/ida` product page +
+  `larryseyer.com` rename.
+- **Clean build before any GUI smoke** verified end-of-session.
+- **No new auto-memory updates needed.** EC-Polish design choices
+  flow from existing memory entries (OTTO visual idiom but IDA-native
+  implementation; gestures over UI clutter; pro-audio convention
+  defaults).
