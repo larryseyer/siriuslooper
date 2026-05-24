@@ -1,5 +1,6 @@
 #include "MainComponent.h"
 
+#include "StripContextOverlay.h"
 #include "components/ChannelDetailPanWidTab.h"
 #include "components/CompactFaderStrip.h"
 #include "ida/CalibrationStore.h"
@@ -515,6 +516,10 @@ public:
     /// The INS button on bus strip `busIdx` was clicked. Same shape as the channel
     /// callback; MainComponent reads the bus's EffectChain instead of a channel's.
     std::function<void (int busIdx)>                   onBusInsertChainClicked;
+    /// Rename committed for bus/FX-return strip `busIdx` via the StripContextOverlay's
+    /// inline editor. MainComponent applies it via `InputMixer::renameBus`. Mirrors
+    /// `OutputMixerPane::onBusRename` (slice 4 parity).
+    std::function<void (int busIdx, juce::String newName)> onBusRename;
 
     /// Populates the detail panel with `idx`'s current values and reveals it.
     /// `panMinus1to1` is the knob-domain pan ([-1, +1]); `width` is [0, 2].
@@ -625,6 +630,7 @@ public:
         busStrips_.clear();
         busDestButtons_.clear();
         busStripInsButtons_.clear();
+        busNameOverlays_.clear();
         busStripDests_.clear();
         busChoices_.clear();
         // No selection/detail state to reset — bus strips have no detail panel in P6.
@@ -657,8 +663,30 @@ public:
             };
             addAndMakeVisible (*ins);
             busStripInsButtons_.push_back (std::move (ins));
+
+            // Strip context overlay — invisible click-catcher on the bus/FX-return
+            // strip's top name band. Right-click (desktop) + 500 ms long-press (iOS)
+            // → "Rename…" → inline TextEditor. Mirrors OutputMixerPane slice 3.
+            auto overlay = std::make_unique<ida::app::StripContextOverlay> (
+                idx,
+                [this] (int who) { showBusContextMenu (who); },
+                [this] (int who, juce::String s)
+                {
+                    if (onBusRename) onBusRename (who, std::move (s));
+                });
+            addAndMakeVisible (*overlay);
+            busNameOverlays_.push_back (std::move (overlay));
         }
         resized();
+    }
+
+    /// Updates a single bus/FX-return strip's visible name without rebuilding
+    /// the row (preserves fader / mute / meter state on rename). Mirrors
+    /// OutputMixerPane::updateBusName.
+    void updateBusName (int busIdx, const juce::String& newName)
+    {
+        if (busIdx < 0 || busIdx >= busStripCount()) return;
+        busStrips_[static_cast<std::size_t> (busIdx)]->setChannelName (newName);
     }
 
     [[nodiscard]] int busStripCount() const noexcept
@@ -789,7 +817,13 @@ public:
         }
         for (int i = 0; i < busStripCount(); ++i)
         {
-            busStrips_[static_cast<std::size_t> (i)]->setBounds (area.removeFromLeft (kStripW));
+            auto stripBounds = area.removeFromLeft (kStripW);
+            busStrips_[static_cast<std::size_t> (i)]->setBounds (stripBounds);
+            // Overlay covers the top name-label band so right-click / long-press
+            // there triggers the per-bus context menu (parity with OutputMixerPane).
+            if (i < static_cast<int> (busNameOverlays_.size()))
+                busNameOverlays_[static_cast<std::size_t> (i)]->setBounds (
+                    stripBounds.withHeight (kNameOverlayHeight));
             busStripInsButtons_[static_cast<std::size_t> (i)]->setBounds (insRow.removeFromLeft (kStripW));
             busDestButtons_[static_cast<std::size_t> (i)]->setBounds (pickerRow.removeFromLeft (kStripW));
             area.removeFromLeft (kGap);
@@ -862,6 +896,7 @@ private:
     static constexpr int kDetailHeight             = 180;
     static constexpr int kDestHeight               = 26;
     static constexpr int kInsHeight                = 26;
+    static constexpr int kNameOverlayHeight        = 22;   // strip name band height
 
     void timerCallback() override
     {
@@ -945,6 +980,26 @@ private:
             busDestButtons_[static_cast<std::size_t> (idx)].get()));
     }
 
+    /// Per-bus context menu — currently just "Rename…". Triggered by the
+    /// StripContextOverlay's right-click or long-press gesture. Anchored to
+    /// the overlay so the menu opens over the strip's name area. Mirrors
+    /// OutputMixerPane::showBusContextMenu.
+    void showBusContextMenu (int idx)
+    {
+        if (idx < 0 || idx >= busStripCount()) return;
+        if (idx >= static_cast<int> (busNameOverlays_.size())) return;
+        juce::PopupMenu menu;
+        const int who = idx;
+        menu.addItem ("Rename…", [this, who]
+        {
+            if (who >= 0 && who < static_cast<int> (busNameOverlays_.size()))
+                busNameOverlays_[static_cast<std::size_t> (who)]->beginRename (
+                    busStrips_[static_cast<std::size_t> (who)]->getChannelName());
+        });
+        menu.showMenuAsync (juce::PopupMenu::Options{}.withTargetComponent (
+            busNameOverlays_[static_cast<std::size_t> (idx)].get()));
+    }
+
     /// Maps a mouse event's source component back to a strip index (the event
     /// component may be a nested child of the strip), or -1 if it is none.
     [[nodiscard]] int stripIndexOf (juce::Component* c) const
@@ -978,6 +1033,8 @@ private:
     std::vector<std::unique_ptr<juce::TextButton>>            busDestButtons_;
     /// Per-bus-strip INS buttons (P7 T5 slice 5). Parallel to busStrips_.
     std::vector<std::unique_ptr<juce::TextButton>>            busStripInsButtons_;
+    /// Per-bus-strip rename overlays (slice 4). Parallel to busStrips_.
+    std::vector<std::unique_ptr<ida::app::StripContextOverlay>> busNameOverlays_;
     std::vector<StripDest>                                    busStripDests_;
     /// Per-bus choice lists (cycle-excluded targets differ per bus, so unlike the
     /// channel picker this is NOT one shared list).
@@ -1129,7 +1186,7 @@ public:
             // hosts the inline TextEditor when the operator commits to a
             // rename. Sits in front in Z order so its mouseDown fires before
             // the CompactFaderStrip's fader interaction below it.
-            auto overlay = std::make_unique<StripContextOverlay> (
+            auto overlay = std::make_unique<ida::app::StripContextOverlay> (
                 idx,
                 [this] (int who) { showBusContextMenu (who); },
                 [this] (int who, juce::String s)
@@ -1404,100 +1461,6 @@ private:
             busNameOverlays_[static_cast<std::size_t> (idx)].get()));
     }
 
-    /// Overlay sitting on the strip's name area. Captures right-click and
-    /// long-press for the per-strip context menu, and swaps in an inline
-    /// `juce::TextEditor` when the operator commits to a rename. Reuses the
-    /// TapesPane row's rename pattern (return / focus-lost both commit, a
-    /// `committed_` flag prevents double-fire).
-    class StripContextOverlay final : public juce::Component, private juce::Timer
-    {
-    public:
-        StripContextOverlay (int idx,
-                             std::function<void (int)> onContextMenu,
-                             std::function<void (int, juce::String)> onCommitName)
-            : idx_ (idx),
-              onContextMenu_ (std::move (onContextMenu)),
-              onCommitName_  (std::move (onCommitName))
-        {
-            // Transparent — the strip's painted name still shows through
-            // when no rename editor is visible.
-            setInterceptsMouseClicks (true, false);
-        }
-
-        void beginRename (const juce::String& currentName)
-        {
-            if (editor_ != nullptr) return;
-            editor_ = std::make_unique<juce::TextEditor>();
-            editor_->setText (currentName, false);
-            editor_->selectAll();
-            editor_->setColour (juce::TextEditor::backgroundColourId, otto::Colours::bg3);
-            editor_->setColour (juce::TextEditor::textColourId,       otto::Colours::textPrimary);
-            editor_->setColour (juce::TextEditor::outlineColourId,    otto::Colours::accent);
-            editor_->onReturnKey = [this] { commit(); };
-            editor_->onEscapeKey = [this] { cancel(); };
-            editor_->onFocusLost = [this] { commit(); };
-            addAndMakeVisible (*editor_);
-            editor_->setBounds (getLocalBounds());
-            editor_->grabKeyboardFocus();
-            committed_ = false;
-        }
-
-    private:
-        void mouseDown (const juce::MouseEvent& e) override
-        {
-            if (editor_ != nullptr) return;          // editor handles its own input
-            if (e.mods.isPopupMenu())
-            {
-                onContextMenu_ (idx_);
-                return;
-            }
-            longPressed_ = true;
-            startTimer (500);                        // matches blank-area long-press
-        }
-        void mouseDrag (const juce::MouseEvent& e) override
-        {
-            if (isTimerRunning() && e.getDistanceFromDragStart() > 8)
-            {
-                stopTimer();
-                longPressed_ = false;
-            }
-        }
-        void mouseUp (const juce::MouseEvent&) override
-        {
-            stopTimer();
-            longPressed_ = false;
-        }
-        void timerCallback() override
-        {
-            stopTimer();
-            if (longPressed_)
-            {
-                longPressed_ = false;
-                onContextMenu_ (idx_);
-            }
-        }
-        void commit()
-        {
-            if (committed_ || editor_ == nullptr) return;
-            committed_ = true;
-            const auto txt = editor_->getText().trim();
-            editor_.reset();
-            if (txt.isNotEmpty()) onCommitName_ (idx_, txt);
-        }
-        void cancel()
-        {
-            committed_ = true;   // skip the focus-lost path that follows
-            editor_.reset();
-        }
-
-        int idx_ { -1 };
-        std::function<void (int)> onContextMenu_;
-        std::function<void (int, juce::String)> onCommitName_;
-        std::unique_ptr<juce::TextEditor> editor_;
-        bool longPressed_ { false };
-        bool committed_   { false };
-    };
-
     // Master strip (always present)
     std::unique_ptr<otto::ui::CompactFaderStrip> master_;
     std::unique_ptr<juce::TextButton>            masterIns_;
@@ -1509,7 +1472,7 @@ private:
     std::vector<std::unique_ptr<otto::ui::CompactFaderStrip>>  busStrips_;
     std::vector<std::unique_ptr<juce::TextButton>>             busDestButtons_;
     std::vector<std::unique_ptr<juce::TextButton>>             busInsButtons_;
-    std::vector<std::unique_ptr<StripContextOverlay>>          busNameOverlays_;
+    std::vector<std::unique_ptr<ida::app::StripContextOverlay>> busNameOverlays_;
     std::vector<StripDest>                                     busStripDests_;
     std::vector<std::vector<DestChoice>>                       busChoices_;
 
@@ -2443,6 +2406,21 @@ MainComponent::MainComponent()
         inputMixerPane_->onInputInsertChainClicked = [this] (int idx)
         {
             openInsertChainPopupForChannel (idx);
+        };
+        inputMixerPane_->onBusRename = [this] (int busIdx, juce::String newName)
+        {
+            if (busIdx < 0 || busIdx >= static_cast<int> (busStripIds_.size())) return;
+            const auto id = busStripIds_[static_cast<std::size_t> (busIdx)];
+            // renameBus is message-thread only; bracket the audio callback to be
+            // symmetric with every other input-side config mutator on this pane.
+            audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+            const bool ok = inputMixer_->renameBus (id, newName.toStdString());
+            audioDeviceManager_.addAudioCallback (audioCallback_.get());
+            if (! ok) return;
+            inputMixerPane_->updateBusName (busIdx, newName);
+            // Other strips' destination pickers may reference this bus by its
+            // old name — refresh so their labels and menu entries update too.
+            refreshInputDestinations();
         };
         inputMixerPane_->onBusInsertChainClicked = [this] (int busIdx)
         {

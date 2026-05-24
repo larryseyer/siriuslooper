@@ -169,6 +169,20 @@ Bus* InputMixer::busForId (BusId id) noexcept
     return nullptr;
 }
 
+bool InputMixer::renameBus (BusId id, std::string newName)
+{
+    if (id.value() == 0) return false;       // invalid sentinel
+    for (auto& bus : buses_)
+    {
+        if (bus.id() == id)
+        {
+            bus.setName (std::move (newName));
+            return true;
+        }
+    }
+    return false;
+}
+
 MixerMainOut InputMixer::mainOutSnapshot (MixerNodeId node) const noexcept
 {
     const auto dest = graph_.mainOutOf (node);

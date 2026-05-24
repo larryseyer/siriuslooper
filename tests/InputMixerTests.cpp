@@ -829,6 +829,43 @@ TEST_CASE ("InputMixer::busForId returns the bus for a known id, nullptr otherwi
     REQUIRE (mixer.busForId (ida::BusId { 9999 }) == nullptr);
 }
 
+TEST_CASE ("InputMixer::renameBus updates plain buses + FX returns; rejects unknown ids",
+           "[input-mixer][slice4][rename]")
+{
+    // Input side has no "master" concept — every bus is renameable. The only
+    // reject path is an unknown id.
+    ida::InputMixer mixer;
+    const auto drums  = mixer.addBus (ida::BusConfig { 2, "Drums", ida::BusKind::Bus });
+    const auto reverb = mixer.addFxReturn ("Reverb");
+
+    // Unknown ids — engine rejects, lives unchanged.
+    CHECK_FALSE (mixer.renameBus (ida::BusId { 0 },    "x"));   // 0 is invalid-sentinel
+    CHECK_FALSE (mixer.renameBus (ida::BusId { 9999 }, "x"));
+
+    // Plain bus rename — writes through to the live bus.
+    REQUIRE (mixer.renameBus (drums, "Kick + Snare"));
+    REQUIRE (mixer.busForId (drums) != nullptr);
+    CHECK (mixer.busForId (drums)->config().name == "Kick + Snare");
+
+    // FX return rename — same path; the BusKind is irrelevant to renameBus.
+    REQUIRE (mixer.renameBus (reverb, "Plate Verb"));
+    REQUIRE (mixer.busForId (reverb) != nullptr);
+    CHECK (mixer.busForId (reverb)->config().name == "Plate Verb");
+
+    // Persistence: both renamed buses survive export → import.
+    const auto exported = mixer.exportGraphState();
+    REQUIRE (exported.buses.size() == 2);
+    CHECK (exported.buses[0].name == "Kick + Snare");
+    CHECK (exported.buses[1].name == "Plate Verb");
+
+    ida::InputMixer loaded;
+    loaded.importGraphState (exported);
+    REQUIRE (loaded.busForId (drums)  != nullptr);
+    REQUIRE (loaded.busForId (reverb) != nullptr);
+    CHECK (loaded.busForId (drums)->config().name  == "Kick + Snare");
+    CHECK (loaded.busForId (reverb)->config().name == "Plate Verb");
+}
+
 TEST_CASE ("InputMixer: a freshly constructed mixer has exactly the primary tape (TapeId 1)",
            "[input-mixer][multi-tape]")
 {

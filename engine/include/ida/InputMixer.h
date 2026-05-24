@@ -130,6 +130,13 @@ public:
     /// the pointer is stable for the bus's lifetime within this mixer).
     Bus* busForId (BusId id) noexcept;
 
+    /// Renames a bus or FX-return. Writes the new name into `BusConfig::name`.
+    /// Returns false for unknown ids (the invalid sentinel `BusId{0}` included
+    /// — input-side buses always start at 1; there is no master concept on the
+    /// input side, so every real bus is renameable). Message-thread only.
+    /// Mirrors `OutputMixer::renameBus`.
+    bool renameBus (BusId id, std::string newName);
+
     /// Message-thread snapshot of the entire routing graph for persistence
     /// (routing-graph Phase 5). Reads buses, FX returns, per-node main-outs,
     /// sends, channel input sources, tape modes, and every node's insert chain.
