@@ -30,6 +30,8 @@ InputMixer::InputMixer()
     : processingScratch_ (kMaxScratchSamples, 0.0f),
       scratchLeft_ (kMaxScratchSamples, 0.0f),
       scratchRight_ (kMaxScratchSamples, 0.0f),
+      scratchLeftPre_ (kMaxScratchSamples, 0.0f),
+      scratchRightPre_ (kMaxScratchSamples, 0.0f),
       tapeMixLeft_  (static_cast<std::size_t> (kMaxTapes), std::vector<float> (kMaxScratchSamples, 0.0f)),
       tapeMixRight_ (static_cast<std::size_t> (kMaxTapes), std::vector<float> (kMaxScratchSamples, 0.0f)),
       tapeTouched_  (static_cast<std::size_t> (kMaxTapes), 0)
@@ -88,11 +90,25 @@ void InputMixer::removeChannel (ChannelId id)
 {
     channels_.erase (id.value());
     channelSources_.erase (id.value());
+    channelPreFaderSends_.erase (id.value());
     if (auto it = channelNodeIds_.find (id.value()); it != channelNodeIds_.end())
     {
         graph_.removeNode (it->second);
         channelNodeIds_.erase (it);
     }
+}
+
+bool InputMixer::channelSendIsPreFader (ChannelId id) const noexcept
+{
+    if (auto it = channelPreFaderSends_.find (id.value()); it != channelPreFaderSends_.end())
+        return it->second != 0;
+    return false; // unknown id or never set → safe default (post-fader)
+}
+
+void InputMixer::setChannelSendIsPreFader (ChannelId id, bool preFader) noexcept
+{
+    if (channels_.find (id.value()) == channels_.end()) return; // unknown id
+    channelPreFaderSends_[id.value()] = preFader ? 1 : 0;
 }
 
 void InputMixer::setChannelTapeMode (ChannelId id, TapeMode mode)
@@ -277,6 +293,8 @@ InputMixerGraphState InputMixer::exportGraphState() const
         entry.mainOut = mainOutSnapshot (node);
         entry.sends   = sendSnapshot (node);
         if (auto* chain = channelInsertChain (ch.id)) entry.inserts = *chain;
+        if (auto pf = channelPreFaderSends_.find (rawId); pf != channelPreFaderSends_.end())
+            entry.preFaderSends = pf->second != 0;
         state.channels.push_back (std::move (entry));
     }
 
@@ -324,6 +342,9 @@ void InputMixer::importGraphState (const InputMixerGraphState& state)
         if (c.signalType == SignalType::Audio)
             if (auto* chain = channels_.at (c.channelId).processing.get())
                 static_cast<ChannelStrip<SignalType::Audio>*> (chain)->setEffectChain (c.inserts);
+
+        if (c.preFaderSends)
+            channelPreFaderSends_[c.channelId] = 1;
     }
 
     // 3. Apply main-outs (all nodes exist now, so no cycle false-positives).
@@ -700,6 +721,13 @@ void InputMixer::renderInputGraph (const float* const* deviceIn, int numDeviceCh
         std::memcpy (scratchLeft_.data(),  deviceIn[leftCh],  byteCount);
         std::memcpy (scratchRight_.data(), deviceIn[rightCh], byteCount);
 
+        // Slice E2: snapshot the pre-strip (pre-fader) signal so the send
+        // accumulator can choose unstripped source when a channel is in
+        // pre-fader mode. Copy unconditionally — a single block-sized
+        // memcpy per channel; sub-µs at default block sizes.
+        std::memcpy (scratchLeftPre_.data(),  scratchLeft_.data(),  byteCount);
+        std::memcpy (scratchRightPre_.data(), scratchRight_.data(), byteCount);
+
         float* stereo[2] { scratchLeft_.data(), scratchRight_.data() };
         auto* strip = static_cast<ChannelStrip<SignalType::Audio>*> (channel.processing.get());
         strip->process (stereo, 2, n); // also updates peak/LUFS meters
@@ -728,10 +756,20 @@ void InputMixer::renderInputGraph (const float* const* deviceIn, int numDeviceCh
             accumulateIntoBus (dest, scratchLeft_.data(), scratchRight_.data(), 1.0f, n);
         }
 
+        // Slice E2: per-channel send source — pre-strip when the channel's
+        // pre-fader flag is set, post-strip otherwise (today's default).
+        const bool preFader =
+            [this, val = channel.id.value()] {
+                auto it = channelPreFaderSends_.find (val);
+                return it != channelPreFaderSends_.end() && it->second != 0;
+            }();
+        const float* const sendLeft  = preFader ? scratchLeftPre_.data()  : scratchLeft_.data();
+        const float* const sendRight = preFader ? scratchRightPre_.data() : scratchRight_.data();
+
         for (const auto& e : graph_.sendEdges())
         {
             if (e.source != chNode) continue;
-            accumulateIntoBus (e.fxReturn, scratchLeft_.data(), scratchRight_.data(), e.level, n);
+            accumulateIntoBus (e.fxReturn, sendLeft, sendRight, e.level, n);
         }
     }
 

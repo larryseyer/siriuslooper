@@ -102,23 +102,29 @@ struct MixerBusState
 
 /// Input-side channel: input source id, device source, tape mode, single
 /// main-out (tape / hardware-output / bus), sends into FX returns, insert chain.
+/// Slice E2 (2026-05-24) adds `preFaderSends` — one toggle per channel
+/// covering all of that channel's sends. Default false = post-fader (the
+/// channel's gain + mute applies before the send tap, today's behavior).
+/// True = pre-fader (sends bypass the strip so a muted channel still feeds
+/// its FX returns; reverb-on-cans / live-cue use cases).
 struct InputChannelState
 {
-    std::int64_t           channelId     { 0 };
-    SignalType             signalType    { SignalType::Audio };
-    std::int64_t           inputSourceId { 0 };
+    std::int64_t           channelId      { 0 };
+    SignalType             signalType     { SignalType::Audio };
+    std::int64_t           inputSourceId  { 0 };
     MixerChannelSource     source;
-    TapeMode               tapeMode      { TapeMode::NoTape };
+    TapeMode               tapeMode       { TapeMode::NoTape };
     MixerMainOut           mainOut;
     std::vector<MixerSend> sends;
     EffectChain            inserts;
+    bool                   preFaderSends  { false };
 
     bool operator== (const InputChannelState& o) const noexcept
     {
         return channelId == o.channelId && signalType == o.signalType
             && inputSourceId == o.inputSourceId && source == o.source
             && tapeMode == o.tapeMode && mainOut == o.mainOut && sends == o.sends
-            && inserts == o.inserts;
+            && inserts == o.inserts && preFaderSends == o.preFaderSends;
     }
     bool operator!= (const InputChannelState& o) const noexcept { return ! (*this == o); }
 };
@@ -136,12 +142,14 @@ struct OutputChannelState
     std::vector<MixerSend> sends;
     EffectChain            inserts;
     int                    hardwareOutPair { 0 };
+    bool                   preFaderSends   { false };
 
     bool operator== (const OutputChannelState& o) const noexcept
     {
         return channelId == o.channelId && signalType == o.signalType
             && sends == o.sends && inserts == o.inserts
-            && hardwareOutPair == o.hardwareOutPair;
+            && hardwareOutPair == o.hardwareOutPair
+            && preFaderSends == o.preFaderSends;
     }
     bool operator!= (const OutputChannelState& o) const noexcept { return ! (*this == o); }
 };

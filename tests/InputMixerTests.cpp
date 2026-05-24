@@ -1128,3 +1128,149 @@ TEST_CASE ("InputMixer flags bus main-out routes that would cycle", "[input-mixe
     REQUIRE (mixer.busMainOutToBusWouldCycle (b, a));    // b -> a would close the loop
     REQUIRE_FALSE (mixer.busMainOutToBusWouldCycle (a, b));
 }
+
+// Slice E2 — per-channel pre-fader send toggle on InputMixer (mixer-symmetry
+// spec 2026-05-23 §Slice E2). Symmetric to OutputMixer: one toggle per
+// channel covering all of that channel's sends. Pre-fader bypasses
+// ChannelStrip::process (gain + mute) for the send tap so a muted channel
+// still feeds its FX returns (reverb-on-cans / live-cue use cases).
+TEST_CASE ("InputMixer::channelSendIsPreFader defaults to false; setter round-trips",
+           "[input-mixer][send][pre-fader]")
+{
+    using ida::ChannelId;
+    using ida::InputId;
+    using ida::InputMixer;
+    using ida::SignalType;
+
+    InputMixer mixer;
+    const auto ch = mixer.addChannel (InputId { 0 }, SignalType::Audio);
+
+    CHECK_FALSE (mixer.channelSendIsPreFader (ch));
+
+    mixer.setChannelSendIsPreFader (ch, true);
+    CHECK (mixer.channelSendIsPreFader (ch));
+
+    mixer.setChannelSendIsPreFader (ch, false);
+    CHECK_FALSE (mixer.channelSendIsPreFader (ch));
+
+    // Unknown ids return the safe default (false) rather than asserting.
+    CHECK_FALSE (mixer.channelSendIsPreFader (ChannelId { 999 }));
+}
+
+TEST_CASE ("InputMixer pre-fader send bypasses channel mute on the FX-return tap",
+           "[input-mixer][send][pre-fader][render]")
+{
+    using ida::ChannelStrip;
+    using ida::InputId;
+    using ida::InputMixer;
+    using ida::SignalType;
+
+    InputMixer mixer;
+    const auto ch  = mixer.addChannel (InputId { 0 }, SignalType::Audio);
+    mixer.setChannelInputSource (ch, 0, 1, true);
+
+    // Mute the strip so the post-fader signal is silent.
+    auto* chain = mixer.processingChainFor (ch);
+    REQUIRE (chain != nullptr);
+    auto* strip = static_cast<ChannelStrip<SignalType::Audio>*> (chain);
+    strip->setMuted (true);
+
+    const auto rvb = mixer.addFxReturn ("RVB");
+    // Isolate the send tap: kill the dry main-out, route the FX-return
+    // straight to the hardware output, set a unity send.
+    REQUIRE (mixer.setChannelMainOutToTape (ch));      // dry -> tape (off direct-out)
+    REQUIRE (mixer.setChannelSend (ch, rvb, 1.0f));
+    REQUIRE (mixer.setBusMainOutToHardwareOutput (rvb));
+
+    // Engage pre-fader: the send tap should bypass the mute.
+    mixer.setChannelSendIsPreFader (ch, true);
+
+    constexpr int n = 16;
+    std::vector<float> left (n, 0.5f), right (n, 0.5f);
+    std::vector<float> outL (n, 0.0f), outR (n, 0.0f);
+    const float* deviceIn[2] = { left.data(), right.data() };
+    float* directOut[2] = { outL.data(), outR.data() };
+
+    mixer.renderInputGraph (deviceIn, 2, directOut, 2, n);
+
+    // Pre-fader + muted strip: direct-out (= FX-return passthrough output)
+    // still carries the source signal (no tape sink bound; dry tape path is
+    // dropped). The default post-fader behavior would land silence here.
+    CHECK (outL[0] != 0.0f);
+    CHECK (outR[0] != 0.0f);
+}
+
+TEST_CASE ("InputMixer post-fader send respects channel mute (default)",
+           "[input-mixer][send][pre-fader][render]")
+{
+    using ida::ChannelStrip;
+    using ida::InputId;
+    using ida::InputMixer;
+    using ida::SignalType;
+
+    InputMixer mixer;
+    const auto ch  = mixer.addChannel (InputId { 0 }, SignalType::Audio);
+    mixer.setChannelInputSource (ch, 0, 1, true);
+
+    auto* chain = mixer.processingChainFor (ch);
+    REQUIRE (chain != nullptr);
+    auto* strip = static_cast<ChannelStrip<SignalType::Audio>*> (chain);
+    strip->setMuted (true);
+
+    const auto rvb = mixer.addFxReturn ("RVB");
+    REQUIRE (mixer.setChannelMainOutToTape (ch));
+    REQUIRE (mixer.setChannelSend (ch, rvb, 1.0f));
+    REQUIRE (mixer.setBusMainOutToHardwareOutput (rvb));
+    // Default mode = post-fader; the mute kills the send tap.
+
+    constexpr int n = 16;
+    std::vector<float> left (n, 0.5f), right (n, 0.5f);
+    std::vector<float> outL (n, 0.0f), outR (n, 0.0f);
+    const float* deviceIn[2] = { left.data(), right.data() };
+    float* directOut[2] = { outL.data(), outR.data() };
+
+    mixer.renderInputGraph (deviceIn, 2, directOut, 2, n);
+
+    for (float v : outL) CHECK (v == Catch::Approx (0.0f));
+    for (float v : outR) CHECK (v == Catch::Approx (0.0f));
+}
+
+TEST_CASE ("InputMixer export/import round-trips the preFaderSends flag",
+           "[input-mixer][send][pre-fader][persistence]")
+{
+    using ida::ChannelId;
+    using ida::InputDescriptor;
+    using ida::InputId;
+    using ida::InputKind;
+    using ida::InputMixer;
+    using ida::SignalType;
+    using ida::TapeId;
+
+    InputMixer source;
+    const InputDescriptor desc {
+        TapeId { 1 }, InputKind::Audio, std::string ("In 1"), std::optional<int> (0)
+    };
+    source.registerInput (InputId { 1 }, desc);
+
+    const auto chA = source.addChannel (InputId { 1 }, SignalType::Audio);
+    const auto chB = source.addChannel (InputId { 1 }, SignalType::Audio);
+    source.setChannelSendIsPreFader (chA, true);
+    // chB stays at default false.
+
+    const auto exported = source.exportGraphState();
+    REQUIRE (exported.channels.size() == 2);
+    // Channels are exported in addChannel order; chA is index 0.
+    const auto findCh = [&] (std::int64_t id)
+    {
+        for (const auto& c : exported.channels) if (c.channelId == id) return c;
+        return ida::InputChannelState {};
+    };
+    CHECK (findCh (chA.value()).preFaderSends);
+    CHECK_FALSE (findCh (chB.value()).preFaderSends);
+
+    InputMixer loaded;
+    loaded.importGraphState (exported);
+    CHECK (loaded.channelSendIsPreFader (chA));
+    CHECK_FALSE (loaded.channelSendIsPreFader (chB));
+    CHECK (loaded.exportGraphState() == exported);
+}

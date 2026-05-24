@@ -243,6 +243,22 @@ public:
     /// traversal that reads send levels into the mix.
     float sendLevelFor (OutputChannelId channel, BusId bus) const noexcept;
 
+    /// Slice E2 (2026-05-24) — per-channel pre/post-fader send mode.
+    /// Default false = post-fader (the channel's strip applies before the
+    /// send tap; mute and gain silence/attenuate the send too — today's
+    /// behavior). True = pre-fader (the send tap samples the channel's
+    /// pre-strip scratch, so a muted channel still feeds its FX returns —
+    /// reverb-on-cans / live-cue use cases). One toggle per channel covers
+    /// all of that channel's sends (per-send toggle is a future polish
+    /// slice per the mixer-symmetry spec). Unknown ids return false.
+    bool channelSendIsPreFader (OutputChannelId channel) const noexcept;
+
+    /// Message-thread setter for `channelSendIsPreFader`. Unknown ids are
+    /// a silent no-op (defensive — the UI never asks for unknown ids in
+    /// steady state). Set before the audio device starts; the audio thread
+    /// only reads.
+    void setChannelSendIsPreFader (OutputChannelId channel, bool preFader) noexcept;
+
     // Persistence (routing-graph Phase 5) -------------------------------------
 
     /// Message-thread snapshot of the routing graph for persistence (Phase 5).
@@ -328,6 +344,15 @@ private:
     /// so `push_back` in `addChannel` never reallocates.
     std::vector<int>          channelHardwareOutPair_;
 
+    /// Per-channel pre-fader-send mode, parallel to `channels_` (slice E2).
+    /// `char` not `bool` so `std::vector<bool>`'s bit-packing doesn't get
+    /// in the way of the audio thread's read pattern. Default 0 (post-
+    /// fader). Updated on the message thread by `setChannelSendIsPreFader`;
+    /// read on the audio thread by `renderBuffer` to pick the source for
+    /// the send-matrix accumulator. Reserved to `kMaxOutputChannels` in
+    /// the ctor so `push_back` in `addChannel` never reallocates.
+    std::vector<char>         channelPreFaderSends_;
+
     /// Free-list of OutputChannelId values released by `removeChannel`
     /// (slice 5a). `addChannel` pops from here before incrementing
     /// `nextOutputChannelId_`, so phrase add/remove churn doesn't burn
@@ -349,6 +374,21 @@ private:
     /// is implementation detail the audio thread owns end-to-end. Matches
     /// the `InputMixer::processingScratch_` pattern.
     mutable std::vector<float> channelScratch_;
+
+    /// Per-channel PRE-strip (pre-fader) scratch — same shape as
+    /// `channelScratch_` (slice E2). The audio-thread `renderBuffer`
+    /// snapshots the source signal into here BEFORE calling
+    /// `ChannelStrip::process` on `channelScratch_`. When a channel's
+    /// `channelPreFaderSends_` is true, Step 2 reads the send-matrix
+    /// accumulator source from this buffer instead of the post-strip
+    /// buffer — so mute + gain on the strip don't apply to the send tap.
+    /// Allocated unconditionally in the ctor (2 MB total at the default
+    /// caps: 32 ch × 2 strip ch × 8192 samples × 4 bytes) rather than
+    /// conditional-on-first-toggle because the audio-thread atomic
+    /// publish for a newly-allocated buffer adds RT-safety risk for a
+    /// pre-audio-start memory saving that isn't load-bearing. Same
+    /// `mutable` rationale as `channelScratch_`.
+    mutable std::vector<float> channelPreFaderScratch_;
 
     std::int64_t nextOutputChannelId_ { 1 };
     std::int64_t nextBusId_ { 1 }; // BusId{0} is the master, auto-created.

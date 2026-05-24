@@ -961,6 +961,8 @@ namespace
         obj->setProperty ("mainOut",       mainOutToVar (c.mainOut));
         obj->setProperty ("sends",         sendsToVar (c.sends));
         obj->setProperty ("inserts",       effectChainToVar (c.inserts));
+        if (c.preFaderSends)
+            obj->setProperty ("preFaderSends", true);
         return objectVar (obj);
     }
     InputChannelState inputChannelFromVar (const juce::var& v)
@@ -977,6 +979,8 @@ namespace
         c.mainOut       = mainOutFromVar (requireProperty (v, "mainOut"));
         c.sends         = sendsFromVar (optionalProperty (v, "sends"));
         c.inserts       = effectChainFromVar (requireProperty (v, "inserts"));
+        if (const auto p = optionalProperty (v, "preFaderSends"); ! p.isVoid())
+            c.preFaderSends = bool (p);
         return c;
     }
 
@@ -987,6 +991,8 @@ namespace
         obj->setProperty ("signalType", signalTypeToString (c.signalType));
         obj->setProperty ("sends",      sendsToVar (c.sends));
         obj->setProperty ("inserts",    effectChainToVar (c.inserts));
+        if (c.preFaderSends)
+            obj->setProperty ("preFaderSends", true);
         return objectVar (obj);
     }
     OutputChannelState outputChannelFromVar (const juce::var& v)
@@ -996,6 +1002,8 @@ namespace
         c.signalType = signalTypeFromString (requireProperty (v, "signalType").toString());
         c.sends      = sendsFromVar (optionalProperty (v, "sends"));
         c.inserts    = effectChainFromVar (requireProperty (v, "inserts"));
+        if (const auto p = optionalProperty (v, "preFaderSends"); ! p.isVoid())
+            c.preFaderSends = bool (p);
         return c;
     }
 

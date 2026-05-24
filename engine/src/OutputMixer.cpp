@@ -66,7 +66,11 @@ OutputMixer::OutputMixer()
       channelScratch_ (static_cast<std::size_t> (kMaxOutputChannels)
                            * kMaxBlockSamples
                            * static_cast<std::size_t> (kStripChannelCount),
-                       0.0f)
+                       0.0f),
+      channelPreFaderScratch_ (static_cast<std::size_t> (kMaxOutputChannels)
+                                   * kMaxBlockSamples
+                                   * static_cast<std::size_t> (kStripChannelCount),
+                               0.0f)
 {
     // Reserve to the hard caps so push_backs inside addChannel/addBus never
     // reallocate (would otherwise invalidate any const references S3 might
@@ -76,6 +80,7 @@ OutputMixer::OutputMixer()
     buses_.reserve   (static_cast<std::size_t> (kMaxBuses));
     busHardwareOutPair_.reserve     (static_cast<std::size_t> (kMaxBuses));
     channelHardwareOutPair_.reserve (static_cast<std::size_t> (kMaxOutputChannels));
+    channelPreFaderSends_.reserve   (static_cast<std::size_t> (kMaxOutputChannels));
     freeChannelIds_.reserve         (static_cast<std::size_t> (kMaxOutputChannels));
 
     // Auto-create the master bus at BusId{0} per the M5 Session 2 spec.
@@ -129,6 +134,7 @@ OutputChannelId OutputMixer::addChannel (SignalType type)
 
     channelNodeIds_.push_back (graph_.addNode (MixerNodeKind::Channel));
     channelHardwareOutPair_.push_back (0); // new channels default to pair 0
+    channelPreFaderSends_.push_back (0);   // slice E2: default post-fader
 
     return id;
 }
@@ -159,18 +165,20 @@ void OutputMixer::removeChannel (OutputChannelId id)
     // Tear down the graph node so it stops appearing in evaluationOrder().
     graph_.removeNode (channelNodeIds_[idx]);
 
-    // Swap-erase from the three parallel vectors. Order isn't observable
-    // through the public API; iteration uses channels_'s indices directly.
+    // Swap-erase from the parallel vectors. Order isn't observable through
+    // the public API; iteration uses channels_'s indices directly.
     const std::size_t last = channels_.size() - 1;
     if (idx != last)
     {
         channels_[idx]               = std::move (channels_[last]);
         channelNodeIds_[idx]         = channelNodeIds_[last];
         channelHardwareOutPair_[idx] = channelHardwareOutPair_[last];
+        channelPreFaderSends_[idx]   = channelPreFaderSends_[last];
     }
     channels_.pop_back();
     channelNodeIds_.pop_back();
     channelHardwareOutPair_.pop_back();
+    channelPreFaderSends_.pop_back();
 
     freeChannelIds_.push_back (channelValue);
 }
@@ -333,6 +341,26 @@ int OutputMixer::channelMainOutHardwareOutPair (OutputChannelId id) const noexce
     return 0;
 }
 
+bool OutputMixer::channelSendIsPreFader (OutputChannelId channel) const noexcept
+{
+    for (std::size_t i = 0; i < channels_.size(); ++i)
+        if (channels_[i].id == channel)
+            return channelPreFaderSends_[i] != 0;
+    return false; // unknown id → safe default
+}
+
+void OutputMixer::setChannelSendIsPreFader (OutputChannelId channel, bool preFader) noexcept
+{
+    for (std::size_t i = 0; i < channels_.size(); ++i)
+    {
+        if (channels_[i].id == channel)
+        {
+            channelPreFaderSends_[i] = preFader ? 1 : 0;
+            return;
+        }
+    }
+}
+
 ChannelStrip<SignalType::Audio>* OutputMixer::audioStripForChannel (OutputChannelId id) noexcept
 {
     for (auto& entry : channels_)
@@ -426,20 +454,31 @@ void OutputMixer::renderBuffer (const float* const* inputChannelData,
     // signal through ChannelStrip<Audio>::process. The source is the input
     // device channel at the same 0-based index (M5 proxy for Constituent
     // rendering; M6+ replaces). Channels without an input source go silent.
+    //
+    // Slice E2: snapshot the pre-strip (source) signal into
+    // channelPreFaderScratch_ BEFORE strip->process mutates the post-strip
+    // scratch. Step 2 picks per-channel between the two scratches based on
+    // channelPreFaderSends_. The snapshot runs for every channel (whether
+    // or not it's currently in pre-fader mode) so a mid-block flip would be
+    // safe; the cost is a memcpy per block per channel, sub-µs at default
+    // block sizes.
     for (std::size_t i = 0; i < channels_.size(); ++i)
     {
         const auto& entry        = channels_[i];
-        float* const leftScratch =
-            channelScratch_.data()
-                + i * kMaxBlockSamples * static_cast<std::size_t> (kStripChannelCount);
+        const std::size_t base   =
+            i * kMaxBlockSamples * static_cast<std::size_t> (kStripChannelCount);
+        float* const leftScratch  = channelScratch_.data()         + base;
         float* const rightScratch = leftScratch + kMaxBlockSamples;
+        float* const leftPre      = channelPreFaderScratch_.data() + base;
+        float* const rightPre     = leftPre + kMaxBlockSamples;
 
-        // Zero the scratch unconditionally — defensive against the prior
+        // Zero both scratches unconditionally — defensive against the prior
         // buffer's residue when the current source is silent.
-        std::memset (leftScratch,  0,
-                     static_cast<std::size_t> (clampedSamples) * sizeof (float));
-        std::memset (rightScratch, 0,
-                     static_cast<std::size_t> (clampedSamples) * sizeof (float));
+        const std::size_t bytes = static_cast<std::size_t> (clampedSamples) * sizeof (float);
+        std::memset (leftScratch,  0, bytes);
+        std::memset (rightScratch, 0, bytes);
+        std::memset (leftPre,      0, bytes);
+        std::memset (rightPre,     0, bytes);
 
         // Non-Audio channels skip DSP entirely — their strips are stubs
         // until M9 (Midi) / M12 (Video) / M13 (File).
@@ -452,11 +491,13 @@ void OutputMixer::renderBuffer (const float* const* inputChannelData,
         if (src == nullptr) continue;
 
         // Copy source into both scratch channels (mono → stereo) so the
-        // strip's equal-power pan has something to work with.
-        std::memcpy (leftScratch,  src,
-                     static_cast<std::size_t> (clampedSamples) * sizeof (float));
-        std::memcpy (rightScratch, src,
-                     static_cast<std::size_t> (clampedSamples) * sizeof (float));
+        // strip's equal-power pan has something to work with. Mirror the
+        // source into the pre-fader scratch so a pre-fader send sees the
+        // unstripped signal.
+        std::memcpy (leftScratch,  src, bytes);
+        std::memcpy (rightScratch, src, bytes);
+        std::memcpy (leftPre,      src, bytes);
+        std::memcpy (rightPre,     src, bytes);
 
         // Apply the per-channel ChannelStrip<Audio> if attached. Without a
         // strip the scratch carries the unity-gain source — M5 acceptable;
@@ -471,14 +512,18 @@ void OutputMixer::renderBuffer (const float* const* inputChannelData,
     // Step 2 — for each (channel, bus) with send level > 0, accumulate the
     // scaled scratch into the target bus's mixBuffer. Master bus (BusId{0})
     // is included; channels with master send level 1.0 (the addChannel
-    // default) land in the master directly.
+    // default) land in the master directly. Slice E2: pre-fader channels
+    // source from channelPreFaderScratch_ (unstripped); post-fader (default)
+    // sources from channelScratch_ (post-strip).
     for (std::size_t ci = 0; ci < channels_.size(); ++ci)
     {
         const auto& entry        = channels_[ci];
-        const float* const leftScratch =
-            channelScratch_.data()
-                + ci * kMaxBlockSamples * static_cast<std::size_t> (kStripChannelCount);
-        const float* const rightScratch = leftScratch + kMaxBlockSamples;
+        const std::size_t base   =
+            ci * kMaxBlockSamples * static_cast<std::size_t> (kStripChannelCount);
+        const bool preFader      = channelPreFaderSends_[ci] != 0;
+        const float* const left  =
+            (preFader ? channelPreFaderScratch_.data() : channelScratch_.data()) + base;
+        const float* const right = left + kMaxBlockSamples;
 
         for (const auto& bus : buses_)
         {
@@ -491,8 +536,8 @@ void OutputMixer::renderBuffer (const float* const* inputChannelData,
 
             for (int s = 0; s < clampedSamples; ++s)
             {
-                busLeft[s]  += leftScratch[s]  * level;
-                busRight[s] += rightScratch[s] * level;
+                busLeft[s]  += left[s]  * level;
+                busRight[s] += right[s] * level;
             }
         }
     }
@@ -677,6 +722,7 @@ OutputMixerGraphState OutputMixer::exportGraphState() const
         entry.channelId       = ce.id.value();
         entry.signalType      = ce.signalType;
         entry.hardwareOutPair = channelHardwareOutPair_[ci]; // slice 5a
+        entry.preFaderSends   = channelPreFaderSends_[ci] != 0; // slice E2
         if (ce.strip != nullptr) entry.inserts = ce.strip->effectChain();
         for (std::size_t b = 0; b < buses_.size(); ++b)
         {
@@ -753,6 +799,8 @@ void OutputMixer::importGraphState (const OutputMixerGraphState& state)
         // pushed a default-0 entry; setter overwrites it with the persisted
         // value. (Destination kind isn't persisted in 5a — only the pair.)
         setChannelMainOutToHardwareOutput (created, c.hardwareOutPair);
+        // Slice E2: restore per-channel pre-fader send mode.
+        setChannelSendIsPreFader (created, c.preFaderSends);
     }
 
     nextBusId_           = std::max (nextBusId_, state.nextBusId);

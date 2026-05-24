@@ -105,6 +105,20 @@ public:
     bool  setBusSend (BusId source, BusId fxReturn, float level);
     float channelSendLevel (ChannelId, BusId fxReturn) const noexcept;
 
+    /// Slice E2 (2026-05-24) — per-channel pre/post-fader send mode. Mirror
+    /// of `OutputMixer::channelSendIsPreFader`: default false = post-fader
+    /// (today's behavior; channel's strip applies before the FX-return send
+    /// tap). True = pre-fader (the send tap samples the channel's pre-strip
+    /// scratch so a muted channel still feeds its FX returns). One toggle
+    /// per channel covering all of that channel's sends. Unknown ids return
+    /// false. Message-thread accessor.
+    bool channelSendIsPreFader (ChannelId) const noexcept;
+
+    /// Message-thread setter for `channelSendIsPreFader`. Unknown ids are a
+    /// silent no-op (defensive). Set before the audio device starts; the
+    /// audio thread only reads.
+    void setChannelSendIsPreFader (ChannelId, bool preFader) noexcept;
+
     /// Message-thread setter — copies the chain into the named bus (parity
     /// with OutputMixer::setBusEffectChain). No-op if the BusId is unknown.
     void setBusEffectChain (BusId id, EffectChain chain);
@@ -261,6 +275,11 @@ private:
     std::unordered_map<std::int64_t, InputState> inputs_;
     std::unordered_map<std::int64_t, Channel> channels_;
     std::unordered_map<std::int64_t, ChannelInputSource> channelSources_;
+    /// Slice E2: per-channel pre-fader send mode. `char` (1/0) so reads from
+    /// the audio thread are POD memory, not a `std::vector<bool>` proxy. An
+    /// unset entry (channel never had its flag flipped) reads as
+    /// post-fader (0) — same default as freshly minted channels.
+    std::unordered_map<std::int64_t, char> channelPreFaderSends_;
     std::int64_t nextChannelId_ { 1 };
 
     MixerGraph graph_ { { MixerTerminal::Tape, MixerTerminal::HardwareOutput } };
@@ -322,6 +341,15 @@ private:
     // path and the metering path never share a buffer.
     std::vector<float> scratchLeft_;
     std::vector<float> scratchRight_;
+
+    // Slice E2: pre-strip (pre-fader) scratch for `renderInputGraph`. Same
+    // shape as `scratchLeft_/scratchRight_` (one stereo pair, reused per
+    // channel as the loop iterates). `renderInputGraph` copies the source
+    // into here BEFORE calling ChannelStrip::process on the post-fader
+    // scratch, then picks per-channel which scratch feeds the send tap.
+    // Allocated once in the ctor; 64 KB total at default kMaxScratchSamples.
+    std::vector<float> scratchLeftPre_;
+    std::vector<float> scratchRightPre_;
 
     // Per-tape summing scratch for renderInputGraph — kMaxTapes rows of
     // kMaxScratchSamples, pre-allocated in the constructor. Each pooled tape's

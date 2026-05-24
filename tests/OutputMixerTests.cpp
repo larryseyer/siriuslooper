@@ -920,3 +920,137 @@ TEST_CASE ("OutputMixer export/import round-trips a BusKind::FxReturn end-to-end
     REQUIRE (loaded.busCount() == 3);
     CHECK (loaded.busKindAt (2) == BusKind::FxReturn);
 }
+
+// Slice E2 — per-channel pre-fader send toggle on OutputMixer (mixer-symmetry
+// spec 2026-05-23 §Slice E2). One toggle per channel covering all of that
+// channel's sends (single-toggle simplification per D3). Default false =
+// post-fader (today's behavior). Pre-fader mode bypasses ChannelStrip::process
+// (gain + mute) for the send-matrix source so a muted channel still feeds
+// reverb-on-cans / live-cue setups.
+TEST_CASE ("OutputMixer::channelSendIsPreFader defaults to false; setter round-trips",
+           "[output-mixer][send][pre-fader]")
+{
+    OutputMixer mixer;
+    const auto ch = mixer.addChannel (SignalType::Audio);
+
+    CHECK_FALSE (mixer.channelSendIsPreFader (ch));
+
+    mixer.setChannelSendIsPreFader (ch, true);
+    CHECK (mixer.channelSendIsPreFader (ch));
+
+    mixer.setChannelSendIsPreFader (ch, false);
+    CHECK_FALSE (mixer.channelSendIsPreFader (ch));
+
+    // Unknown ids return the safe default (false) rather than asserting.
+    CHECK_FALSE (mixer.channelSendIsPreFader (OutputChannelId { 999 }));
+}
+
+TEST_CASE ("OutputMixer post-fader sends respect channel mute (default behavior)",
+           "[output-mixer][send][pre-fader][render-buffer]")
+{
+    OutputMixer mixer;
+    const auto ch = mixer.addChannel (SignalType::Audio);
+
+    // Mute the strip so the post-fader (post-mute) signal is silent.
+    auto strip = std::make_unique<ChannelStrip<SignalType::Audio>> ();
+    strip->setMuted (true);
+    mixer.setChannelStrip (ch, std::move (strip));
+
+    constexpr int kFrames = 8;
+    std::array<float, kFrames> inLeft;  inLeft.fill (1.0f);
+    const float* inputs[1] = { inLeft.data() };
+
+    std::array<float, kFrames> outLeft;  outLeft.fill  (0.0f);
+    std::array<float, kFrames> outRight; outRight.fill (0.0f);
+    float* outputs[2] = { outLeft.data(), outRight.data() };
+
+    mixer.renderBuffer (inputs, 1, outputs, 2, kFrames);
+
+    // The default master send is 1.0 (set by addChannel), but the channel is
+    // muted → post-fader send is silent → master output is silent.
+    for (float v : outLeft)  CHECK (v == Catch::Approx (0.0f));
+    for (float v : outRight) CHECK (v == Catch::Approx (0.0f));
+}
+
+TEST_CASE ("OutputMixer pre-fader sends bypass channel mute",
+           "[output-mixer][send][pre-fader][render-buffer]")
+{
+    OutputMixer mixer;
+    const auto ch = mixer.addChannel (SignalType::Audio);
+
+    auto strip = std::make_unique<ChannelStrip<SignalType::Audio>> ();
+    strip->setMuted (true);
+    mixer.setChannelStrip (ch, std::move (strip));
+
+    // Flip the channel's send mode to pre-fader. The send-matrix accumulator
+    // must now sample the channel's pre-strip signal, so the muted strip
+    // doesn't kill the master send.
+    mixer.setChannelSendIsPreFader (ch, true);
+
+    constexpr int kFrames = 8;
+    std::array<float, kFrames> inLeft;  inLeft.fill (1.0f);
+    const float* inputs[1] = { inLeft.data() };
+
+    std::array<float, kFrames> outLeft;  outLeft.fill  (0.0f);
+    std::array<float, kFrames> outRight; outRight.fill (0.0f);
+    float* outputs[2] = { outLeft.data(), outRight.data() };
+
+    mixer.renderBuffer (inputs, 1, outputs, 2, kFrames);
+
+    // Source = 1.0, master send = 1.0, strip is muted but bypassed for the
+    // send tap → master output carries source on both channels (the source
+    // copy lands in both leftScratch + rightScratch).
+    for (float v : outLeft)  CHECK (v == Catch::Approx (1.0f));
+    for (float v : outRight) CHECK (v == Catch::Approx (1.0f));
+}
+
+TEST_CASE ("OutputMixer pre-fader sends bypass channel gain",
+           "[output-mixer][send][pre-fader][render-buffer]")
+{
+    OutputMixer mixer;
+    const auto ch = mixer.addChannel (SignalType::Audio);
+
+    auto strip = std::make_unique<ChannelStrip<SignalType::Audio>> ();
+    strip->setGain (0.25f);     // post-fader would attenuate to 0.25
+    strip->setPan  (0.5f);      // center → ~0.707 per side
+    mixer.setChannelStrip (ch, std::move (strip));
+    mixer.setChannelSendIsPreFader (ch, true);
+
+    constexpr int kFrames = 4;
+    std::array<float, kFrames> inLeft;  inLeft.fill (1.0f);
+    const float* inputs[1] = { inLeft.data() };
+
+    std::array<float, kFrames> outLeft;  outLeft.fill  (0.0f);
+    std::array<float, kFrames> outRight; outRight.fill (0.0f);
+    float* outputs[2] = { outLeft.data(), outRight.data() };
+
+    mixer.renderBuffer (inputs, 1, outputs, 2, kFrames);
+
+    // Pre-fader bypasses gain AND pan — the send tap sees the un-stripped
+    // mono → both sides at 1.0 (mono source copied to both scratch
+    // channels in renderBuffer's source-fill step).
+    for (float v : outLeft)  CHECK (v == Catch::Approx (1.0f));
+    for (float v : outRight) CHECK (v == Catch::Approx (1.0f));
+}
+
+TEST_CASE ("OutputMixer export/import round-trips the preFaderSends flag",
+           "[output-mixer][send][pre-fader][persistence]")
+{
+    OutputMixer source;
+    const auto chA = source.addChannel (SignalType::Audio);
+    const auto chB = source.addChannel (SignalType::Audio);
+
+    source.setChannelSendIsPreFader (chA, true);
+    // chB stays at default false.
+
+    const auto exported = source.exportGraphState();
+    REQUIRE (exported.channels.size() == 2);
+    CHECK (exported.channels[0].preFaderSends);
+    CHECK_FALSE (exported.channels[1].preFaderSends);
+
+    OutputMixer loaded;
+    loaded.importGraphState (exported);
+    CHECK (loaded.channelSendIsPreFader (chA));
+    CHECK_FALSE (loaded.channelSendIsPreFader (chB));
+    CHECK (loaded.exportGraphState() == exported);
+}
