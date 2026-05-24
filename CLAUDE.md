@@ -84,6 +84,10 @@ Status: needs-ack | acked YYYY-MM-DD | resolved
 Resolution: <added by recipient when ack'd>
 ```
 
+### Pruning
+
+The inbox is the active queue, not a historical log. At session start, after you have read the inbox and acted on every entry addressed to you, **delete every entry whose `Status:` is `acked YYYY-MM-DD` (or `informational`) and that carries a `Resolution:` line.** Never prune a `needs-ack` entry. Durable cross-project history lives in `git log --grep='Ida-Origin\|OTTO-Origin'` and in the original commit messages — the inbox does not need to duplicate it.
+
 ### Audit trail
 
 `git log --grep='Sirius-Origin\|Ida-Origin' --all` in `external/OTTO/` surfaces
