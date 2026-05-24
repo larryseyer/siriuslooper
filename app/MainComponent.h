@@ -173,6 +173,30 @@ private:
     [[nodiscard]] ChannelSendsView collectInputSendsView  (int stripIdx) const;
     [[nodiscard]] ChannelSendsView collectOutputSendsView (int phraseIdx) const;
 
+    /// Slice EC: snapshot the channel strip's current EQ slot index +
+    /// live `EqConfig` (or default + `hasSlot=false` if no EQ slot is
+    /// present in the chain). The slot index is the first chain entry
+    /// with `kind==Internal && internalId==kEq`; the config is read
+    /// through `effectChainHost_.internalEqConfigAt`. Symmetric helpers
+    /// exist for CMP and for the OutputMixer (phrase-strip lookup via
+    /// the phrase-channel map).
+    struct ChannelFxProbe
+    {
+        ida::EqConfig  config {};
+        std::size_t    slotIdx { 0 };
+        bool           hasSlot { false };
+    };
+    struct ChannelCmpProbe
+    {
+        ida::CmpConfig config {};
+        std::size_t    slotIdx { 0 };
+        bool           hasSlot { false };
+    };
+    [[nodiscard]] ChannelFxProbe  collectInputEqView   (int stripIdx) const;
+    [[nodiscard]] ChannelCmpProbe collectInputCmpView  (int stripIdx) const;
+    [[nodiscard]] ChannelFxProbe  collectOutputEqView  (int phraseIdx) const;
+    [[nodiscard]] ChannelCmpProbe collectOutputCmpView (int phraseIdx) const;
+
     // --- P7 T5 slice 5: per-strip insert chain popup ---
     /// Opens the InsertChainPopup anchored to input strip `stripIdx`'s INS
     /// button. The popup mirrors the strip's current EffectChain (Internal

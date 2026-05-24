@@ -323,6 +323,50 @@ void OutOfProcessEffectChainHost::prepareInternalFx (double sampleRate, int maxB
     }
 }
 
+void OutOfProcessEffectChainHost::setInternalEqConfigAt (std::int64_t nodeKey,
+                                                         std::size_t  slotIdx,
+                                                         const EqConfig& cfg)
+{
+    // Message-thread only — caller MUST detach the audio callback before
+    // invoking. The dispatch is virtual through IInternalFxAdapter::
+    // setEqConfig — a Cmp/Dly/Rvb adapter at this slot silently no-ops
+    // via the base-class default.
+    const auto it = internalAdapters_.find ({ nodeKey, slotIdx });
+    if (it == internalAdapters_.end() || it->second == nullptr)
+        return;
+    it->second->setEqConfig (cfg);
+}
+
+std::optional<EqConfig> OutOfProcessEffectChainHost::internalEqConfigAt (
+    std::int64_t nodeKey,
+    std::size_t  slotIdx) const noexcept
+{
+    const auto it = internalAdapters_.find ({ nodeKey, slotIdx });
+    if (it == internalAdapters_.end() || it->second == nullptr)
+        return std::nullopt;
+    return it->second->eqConfig();
+}
+
+void OutOfProcessEffectChainHost::setInternalCmpConfigAt (std::int64_t nodeKey,
+                                                          std::size_t  slotIdx,
+                                                          const CmpConfig& cfg)
+{
+    const auto it = internalAdapters_.find ({ nodeKey, slotIdx });
+    if (it == internalAdapters_.end() || it->second == nullptr)
+        return;
+    it->second->setCmpConfig (cfg);
+}
+
+std::optional<CmpConfig> OutOfProcessEffectChainHost::internalCmpConfigAt (
+    std::int64_t nodeKey,
+    std::size_t  slotIdx) const noexcept
+{
+    const auto it = internalAdapters_.find ({ nodeKey, slotIdx });
+    if (it == internalAdapters_.end() || it->second == nullptr)
+        return std::nullopt;
+    return it->second->cmpConfig();
+}
+
 void OutOfProcessEffectChainHost::setInternalFxAdapterForTesting (
     std::int64_t                          nodeKey,
     std::size_t                           slotIdx,

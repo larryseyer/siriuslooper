@@ -2,6 +2,7 @@
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
+#include <cstddef>
 #include <cstring>
 
 namespace ida
@@ -9,14 +10,13 @@ namespace ida
 
 CmpAdapter::CmpAdapter()
 {
-    // T3b ships default-config CMP with the master enable flipped on so the
-    // adapter actually runs DSP. The remaining defaults (-12 dB threshold,
-    // 4:1 ratio, 10 ms attack, 100 ms release, 0 dB makeup, mix=1.0 fully
-    // wet, sidechain HPF on at 100 Hz Butterworth × 4 stages) produce a
-    // conservative compressor that reduces peaks above -12 dB. Unlike EQ's
-    // flat-default no-op, a freshly inserted CMP slot immediately
-    // compresses — the operator dials parameters from there.
-    cfg_.compEnabled = true;
+    // Default both halves of the double-buffer to "enabled + conservative
+    // compressor" so a freshly-inserted CMP adapter immediately
+    // compresses peaks above the default -12 dB threshold (4:1 ratio,
+    // 10 ms attack, 100 ms release, 0 dB makeup, mix=1.0 fully wet,
+    // sidechain HPF on at 100 Hz). Operator dials from there.
+    cfgs_[0].compEnabled = true;
+    cfgs_[1] = cfgs_[0];
 }
 
 void CmpAdapter::prepare (double sampleRate, int maxBlockSize)
@@ -26,12 +26,13 @@ void CmpAdapter::prepare (double sampleRate, int maxBlockSize)
     // blend) and the sidechain detector buffer, and initializes the
     // 4-stage Butterworth HPF coefficients. updateParameters then
     // pre-computes envelope coefficients (attack/release exponentials)
-    // from cfg_. Without that call the envelope follower has zero
-    // coefficients and degenerates into a sample-accurate peak limiter
-    // (instant attack / release) instead of the operator-expected 10 ms /
-    // 100 ms behavior.
+    // from the live config. Without that call the envelope follower has
+    // zero coefficients and degenerates into a sample-accurate peak
+    // limiter (instant attack / release) instead of the operator-
+    // expected 10 ms / 100 ms behavior.
     comp_.prepare (sampleRate, maxBlockSize);
-    comp_.updateParameters (cfg_);
+    const int live = liveIndex_.load (std::memory_order_relaxed);
+    comp_.updateParameters (cfgs_[static_cast<std::size_t> (live)]);
     prepared_ = true;
 }
 
@@ -93,6 +94,62 @@ bool CmpAdapter::process (const float* const* inChannels,
     juce::AudioBuffer<float> buffer (outChannels, numChannels, numSamples);
     comp_.process (buffer);
     return true;
+}
+
+otto::effects::PlayerEffectsConfig& CmpAdapter::scratchConfig() noexcept
+{
+    const int live = liveIndex_.load (std::memory_order_relaxed);
+    return cfgs_[static_cast<std::size_t> (1 - live)];
+}
+
+void CmpAdapter::commitConfig() noexcept
+{
+    // Mirror of EqAdapter::commitConfig / MasterBus.h:217-240. Flip with
+    // release so the audio thread's acquire-load picks up the new
+    // config, refresh the compressor's pre-computed envelope coefficients
+    // against the new live half, then copy forward so subsequent
+    // scratchConfig() calls start from current state.
+    const int oldLive = liveIndex_.load (std::memory_order_relaxed);
+    const int newLive = 1 - oldLive;
+    liveIndex_.store (newLive, std::memory_order_release);
+    if (prepared_)
+        comp_.updateParameters (cfgs_[static_cast<std::size_t> (newLive)]);
+    cfgs_[static_cast<std::size_t> (oldLive)] = cfgs_[static_cast<std::size_t> (newLive)];
+}
+
+const otto::effects::PlayerEffectsConfig& CmpAdapter::liveConfig() const noexcept
+{
+    const int live = liveIndex_.load (std::memory_order_acquire);
+    return cfgs_[static_cast<std::size_t> (live)];
+}
+
+void CmpAdapter::setCmpConfig (const CmpConfig& cfg) noexcept
+{
+    auto& scratch = scratchConfig();
+    scratch.compEnabled      = cfg.enabled;
+    scratch.compThreshold    = cfg.threshold;
+    scratch.compRatio        = cfg.ratio;
+    scratch.compAttack       = cfg.attackMs;
+    scratch.compRelease      = cfg.releaseMs;
+    scratch.compMakeup       = cfg.makeupDb;
+    scratch.compMix          = cfg.mix;
+    scratch.compSidechainHPF = cfg.sidechainHpf;
+    commitConfig();
+}
+
+CmpConfig CmpAdapter::cmpConfig() const noexcept
+{
+    const auto& live = liveConfig();
+    CmpConfig out;
+    out.enabled      = live.compEnabled;
+    out.threshold    = live.compThreshold;
+    out.ratio        = live.compRatio;
+    out.attackMs     = live.compAttack;
+    out.releaseMs    = live.compRelease;
+    out.makeupDb     = live.compMakeup;
+    out.mix          = live.compMix;
+    out.sidechainHpf = live.compSidechainHPF;
+    return out;
 }
 
 } // namespace ida

@@ -13,6 +13,7 @@
 // public surface — see tests/CMakeLists.txt.
 #include "fx/CmpAdapter.h"
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
@@ -233,4 +234,59 @@ TEST_CASE ("CmpAdapter::process reduces peak after envelope settles on a sustain
                                     peakAbs (outRight.data(), kBlockSamples));
     CHECK (outPeak < 0.6f);
     CHECK (outPeak > 0.1f);
+}
+
+TEST_CASE ("CmpAdapter::commitConfig publishes a unity-ratio config that yields near-pass-through",
+           "[internal-fx][cmp-adapter][setConfig]")
+{
+    // Slice EC's load-bearing CMP setConfig test. Push ratio = 1.0 (no
+    // compression) and threshold = -60 dB (the entire signal is "above"
+    // the threshold, so the ratio is what governs gain reduction). At
+    // 1:1 ratio the compressor reduces gain by 0 dB regardless of how
+    // much the signal exceeds the threshold — output peak must equal
+    // input peak within tight slack.
+    CmpAdapter adapter;
+    adapter.prepare (kSampleRate, kMaxBlockSize);
+
+    {
+        auto& scratch = adapter.scratchConfig();
+        scratch.compEnabled   = true;
+        scratch.compRatio     = 1.0f;
+        scratch.compThreshold = -60.0f;
+        scratch.compMakeup    = 0.0f;
+        scratch.compMix       = 1.0f;
+        adapter.commitConfig();
+    }
+
+    // Verify the publish landed.
+    REQUIRE (adapter.liveConfig().compRatio == Catch::Approx (1.0f));
+    REQUIRE (adapter.liveConfig().compThreshold == Catch::Approx (-60.0f));
+
+    std::vector<float> sinL (kBlockSamples), sinR (kBlockSamples);
+    fillSine (sinL.data(), kBlockSamples, kSampleRate, 1000.0, 0.7f);
+    fillSine (sinR.data(), kBlockSamples, kSampleRate, 1000.0, 0.7f);
+    const float inPeak = peakAbs (sinL.data(), kBlockSamples);
+
+    std::vector<float> outL (kBlockSamples), outR (kBlockSamples);
+    const float* inPtrs[kNumChannels]  = { sinL.data(), sinR.data() };
+    float*       outPtrs[kNumChannels] = { outL.data(), outR.data() };
+
+    // Settle past envelope attack, then measure.
+    for (int b = 0; b < 6; ++b)
+        REQUIRE (adapter.process (inPtrs, outPtrs, kNumChannels, kBlockSamples));
+
+    const float outPeak = std::max (peakAbs (outL.data(), kBlockSamples),
+                                    peakAbs (outR.data(), kBlockSamples));
+    // Unity ratio: output peak should be within 10% of input peak.
+    CHECK (outPeak > 0.9f * inPeak);
+    CHECK (outPeak < 1.1f * inPeak);
+}
+
+TEST_CASE ("CmpAdapter::liveConfig defaults match cfgs_[0] compEnabled=true after construction",
+           "[internal-fx][cmp-adapter][setConfig]")
+{
+    CmpAdapter adapter;
+    CHECK (adapter.liveConfig().compEnabled == true);
+    CHECK (adapter.liveConfig().compThreshold == Catch::Approx (-12.0f));
+    CHECK (adapter.liveConfig().compRatio     == Catch::Approx (4.0f));
 }

@@ -2,6 +2,8 @@
 
 #include "CompactFaderStrip.h"
 #include "ChannelDetailPanWidTab.h"
+#include "ida/ChannelDetailCMPTab.h"
+#include "ida/ChannelDetailEQTab.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -178,6 +180,8 @@ public:
     /// of the ChannelDetail.
     otto::ui::ChannelDetailPanWidTab& panWidTab() noexcept { return *panWidTab_; }
     ChannelDetailSendsTab&            sendsTab()  noexcept { return *sendsTab_;  }
+    ChannelDetailEQTab&               eqTab()     noexcept { return *eqTab_;     }
+    ChannelDetailCMPTab&              cmpTab()    noexcept { return *cmpTab_;    }
 
     void addListener    (ChannelDetailListener* l);
     void removeListener (ChannelDetailListener* l);
@@ -196,8 +200,8 @@ private:
 
     std::unique_ptr<otto::ui::ChannelDetailPanWidTab> panWidTab_;
     std::unique_ptr<ChannelDetailSendsTab>            sendsTab_;
-    std::unique_ptr<ChannelDetailPlaceholderTab>      eqTab_;
-    std::unique_ptr<ChannelDetailPlaceholderTab>      cmpTab_;
+    std::unique_ptr<ChannelDetailEQTab>               eqTab_;
+    std::unique_ptr<ChannelDetailCMPTab>              cmpTab_;
 
     juce::ListenerList<ChannelDetailListener> listeners_;
 

@@ -178,3 +178,64 @@ TEST_CASE ("EqAdapter::process supports in-place invocation (in == out aliased p
         REQUIRE (oopOutRight[i] == ipRight[i]);
     }
 }
+
+TEST_CASE ("EqAdapter::commitConfig publishes a -12 dB low-shelf that attenuates a 100 Hz sine",
+           "[internal-fx][eq-adapter][setConfig]")
+{
+    // Slice EC's load-bearing test: operator pushes a new PlayerEffectsConfig
+    // via scratchConfig() + commitConfig(), and the audio thread's
+    // subsequent process() call must reflect it. We dial a -12 dB low
+    // shelf centered at 100 Hz, then run a 100 Hz sine through and check
+    // that the output peak is materially below the input peak.
+    EqAdapter adapter;
+    adapter.prepare (kSampleRate, kMaxBlockSize);
+
+    {
+        auto& scratch = adapter.scratchConfig();
+        scratch.eqEnabled = true;
+        scratch.eqLowGain = -12.0f;    // hard attenuation
+        scratch.eqLowFreq = 100.0f;
+        scratch.eqLowQ    = 1.0f;
+        adapter.commitConfig();
+    }
+
+    // The new live config should reflect what we just committed.
+    REQUIRE (adapter.liveConfig().eqLowGain == Catch::Approx (-12.0f));
+
+    // Drive a steady-state 100 Hz sine through several blocks so the IIR
+    // transient settles, then measure the peak on the final block.
+    std::vector<float> srcL (kBlockSamples), srcR (kBlockSamples);
+    fillSine (srcL.data(), kBlockSamples, kSampleRate, 100.0, 0.5f);
+    fillSine (srcR.data(), kBlockSamples, kSampleRate, 100.0, 0.5f);
+
+    std::vector<float> outL (kBlockSamples), outR (kBlockSamples);
+    const float* inPtrs[kNumChannels]  = { srcL.data(), srcR.data() };
+    float*       outPtrs[kNumChannels] = { outL.data(), outR.data() };
+
+    // Settle: run 8 blocks before measuring.
+    for (int i = 0; i < 8; ++i)
+        REQUIRE (adapter.process (inPtrs, outPtrs, kNumChannels, kBlockSamples));
+
+    const float inPeak  = peakAbs (srcL.data(), kBlockSamples);
+    const float outPeak = std::max (peakAbs (outL.data(), kBlockSamples),
+                                    peakAbs (outR.data(), kBlockSamples));
+    // -12 dB shelf at 100 Hz on a 100 Hz sine should knock peak down to
+    // roughly inPeak / sqrt(16) ≈ 0.25 * inPeak. Allow generous slack
+    // for the shelf's actual frequency response (a low shelf at 100 Hz
+    // is centered there, not a brickwall) — peak must be < 0.7 * inPeak.
+    CHECK (outPeak < 0.7f * inPeak);
+    CHECK (allFinite (outL.data(), kBlockSamples));
+    CHECK (allFinite (outR.data(), kBlockSamples));
+}
+
+TEST_CASE ("EqAdapter::liveConfig defaults match cfgs_[0] eqEnabled=true after construction",
+           "[internal-fx][eq-adapter][setConfig]")
+{
+    // Smoke: after construction the live config is the enabled-flat default,
+    // not zero-initialized. Catches an accidental regression where someone
+    // removes the ctor's cfgs_[0].eqEnabled = true line.
+    EqAdapter adapter;
+    CHECK (adapter.liveConfig().eqEnabled == true);
+    CHECK (adapter.liveConfig().eqHPFreq == Catch::Approx (20.0f));
+    CHECK (adapter.liveConfig().eqLPFreq == Catch::Approx (20000.0f));
+}

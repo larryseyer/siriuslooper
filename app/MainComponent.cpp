@@ -451,17 +451,20 @@ class MainComponent::InputMixerPane final : public juce::Component,
                                             public otto::ui::CompactFaderStripListener,
                                             public otto::ui::ChannelDetailPanWidTabListener,
                                             public ida::ui::ChannelDetailSendsTabListener,
+                                            public ida::ui::ChannelDetailEQTabListener,
+                                            public ida::ui::ChannelDetailCMPTabListener,
                                             private juce::Timer
 {
 public:
     InputMixerPane()
     {
-        // Tabbed detail panel (slice U): Pan/Wid + Sends real, EQ + CMP placeholder
-        // until the insert-chain UI lands (P7). Hidden until a strip is selected.
-        // Each tab's listener wires independently so the pane only sees the
-        // gestures it actually relays.
+        // Tabbed detail panel: every tab is real after slice EC. Each tab's
+        // listener wires independently so the pane only sees the gestures
+        // it actually relays.
         detailPanel_.panWidTab().addListener (this);
         detailPanel_.sendsTab() .addListener (this);
+        detailPanel_.eqTab()    .addListener (this);
+        detailPanel_.cmpTab()   .addListener (this);
         addChildComponent (detailPanel_);
     }
 
@@ -507,6 +510,17 @@ public:
     /// Sends-tab PRE FADER toggle changed for the selected channel.
     /// MainComponent calls `InputMixer::setChannelSendIsPreFader`.
     std::function<void (int idx, bool preFader)>    onPreFaderToggled;
+    /// EQ-tab control moved for the selected channel. MainComponent
+    /// pushes `cfg` through `setInternalEqConfigAt` against the strip's
+    /// EQ slot, bracketed in the audio-callback detach pattern.
+    std::function<void (int idx, ida::EqConfig cfg)> onEqConfigChanged;
+    /// EQ-tab "+ Add EQ" empty-state button. MainComponent appends an
+    /// EQ slot to the strip's EffectChain via setEffectChain.
+    std::function<void (int idx)>                      onEqSlotAddRequested;
+    /// CMP-tab control moved for the selected channel.
+    std::function<void (int idx, ida::CmpConfig cfg)> onCmpConfigChanged;
+    /// CMP-tab "+ Add CMP" empty-state button.
+    std::function<void (int idx)>                      onCmpSlotAddRequested;
     /// A destination was chosen from strip `idx`'s picker. MainComponent applies
     /// the matching engine main-out edit (tape / bus / hardware output).
     std::function<void (int idx, DestChoice dest)> onDestinationChosen;
@@ -547,7 +561,9 @@ public:
     void showDetailFor (int idx, float panMinus1to1, float width,
                         std::vector<ida::ui::FxReturnInfo> fxReturns,
                         std::vector<float> sendLevels,
-                        bool preFader)
+                        bool preFader,
+                        ida::EqConfig eqConfig, bool hasEqSlot,
+                        ida::CmpConfig cmpConfig, bool hasCmpSlot)
     {
         if (idx < 0 || idx >= stripCount()) return;
         detailPanel_.setChannel (idx, otto::ui::ChannelType::Instrument);
@@ -556,6 +572,8 @@ public:
         detailPanel_.sendsTab().setChannelState ({ std::move (fxReturns),
                                                    std::move (sendLevels),
                                                    preFader });
+        detailPanel_.eqTab().setChannelState ({ eqConfig, hasEqSlot });
+        detailPanel_.cmpTab().setChannelState ({ cmpConfig, hasCmpSlot });
         detailPanel_.setVisible (true);
         resized();
     }
@@ -929,6 +947,30 @@ public:
             onPreFaderToggled (selectedStrip_, preFader);
     }
 
+    // --- ChannelDetailEQTabListener (slice EC) ---
+    void eqTabConfigChanged (const ida::EqConfig& cfg) override
+    {
+        if (onEqConfigChanged && selectedStrip_ >= 0)
+            onEqConfigChanged (selectedStrip_, cfg);
+    }
+    void eqTabRequestSlotAdd() override
+    {
+        if (onEqSlotAddRequested && selectedStrip_ >= 0)
+            onEqSlotAddRequested (selectedStrip_);
+    }
+
+    // --- ChannelDetailCMPTabListener (slice EC) ---
+    void cmpTabConfigChanged (const ida::CmpConfig& cfg) override
+    {
+        if (onCmpConfigChanged && selectedStrip_ >= 0)
+            onCmpConfigChanged (selectedStrip_, cfg);
+    }
+    void cmpTabRequestSlotAdd() override
+    {
+        if (onCmpSlotAddRequested && selectedStrip_ >= 0)
+            onCmpSlotAddRequested (selectedStrip_);
+    }
+
 private:
     static constexpr int kLongPressMs              = 500;
     static constexpr int kLongPressMoveTolerancePx = 8;
@@ -1097,6 +1139,8 @@ class MainComponent::OutputMixerPane final : public juce::Component,
                                              public otto::ui::CompactFaderStripListener,
                                              public otto::ui::ChannelDetailPanWidTabListener,
                                              public ida::ui::ChannelDetailSendsTabListener,
+                                             public ida::ui::ChannelDetailEQTabListener,
+                                             public ida::ui::ChannelDetailCMPTabListener,
                                              private juce::Timer
 {
 public:
@@ -1114,11 +1158,13 @@ public:
         master_->addListener (this);
         addAndMakeVisible (*master_);
 
-        // Tabbed detail panel (slice U): mirror InputMixerPane — Pan/Wid + Sends
-        // real, EQ + CMP placeholder until insert-chain UI (P7). Aux buses and
-        // master have no pan/width, so the panel is phrase-only on this pane.
+        // Tabbed detail panel: same shape as InputMixerPane post slice EC.
+        // Aux buses and master have no pan/width, so the panel is phrase-
+        // only on this pane.
         detailPanel_.panWidTab().addListener (this);
         detailPanel_.sendsTab() .addListener (this);
+        detailPanel_.eqTab()    .addListener (this);
+        detailPanel_.cmpTab()   .addListener (this);
         addChildComponent (detailPanel_);
 
         masterIns_ = std::make_unique<juce::TextButton>();
@@ -1211,6 +1257,14 @@ public:
     std::function<void (int phraseIdx, bool preFader)>    onPhrasePreFaderToggled;
     /// Detail-panel width knob moved. `width` is [0, 2] (1 = unity stereo).
     std::function<void (int phraseIdx, float width)>      onPhraseWidth;
+    /// EQ-tab control moved for the selected phrase strip (slice EC).
+    std::function<void (int phraseIdx, ida::EqConfig cfg)> onPhraseEqConfigChanged;
+    /// EQ-tab "+ Add EQ" empty-state button.
+    std::function<void (int phraseIdx)>                    onPhraseEqSlotAddRequested;
+    /// CMP-tab control moved for the selected phrase strip.
+    std::function<void (int phraseIdx, ida::CmpConfig cfg)> onPhraseCmpConfigChanged;
+    /// CMP-tab "+ Add CMP" empty-state button.
+    std::function<void (int phraseIdx)>                    onPhraseCmpSlotAddRequested;
 
     void setMasterLevelDb (float dbL, float dbR)
     {
@@ -1334,7 +1388,9 @@ public:
     void showPhraseDetailFor (int phraseIdx, float panMinus1to1, float width,
                               std::vector<ida::ui::FxReturnInfo> fxReturns,
                               std::vector<float> sendLevels,
-                              bool preFader)
+                              bool preFader,
+                              ida::EqConfig eqConfig, bool hasEqSlot,
+                              ida::CmpConfig cmpConfig, bool hasCmpSlot)
     {
         if (phraseIdx < 0 || phraseIdx >= phraseStripCount()) return;
         detailPanel_.setChannel (phraseIdx, otto::ui::ChannelType::Instrument);
@@ -1343,6 +1399,8 @@ public:
         detailPanel_.sendsTab().setChannelState ({ std::move (fxReturns),
                                                    std::move (sendLevels),
                                                    preFader });
+        detailPanel_.eqTab().setChannelState ({ eqConfig, hasEqSlot });
+        detailPanel_.cmpTab().setChannelState ({ cmpConfig, hasCmpSlot });
         detailPanel_.setVisible (true);
         resized();
     }
@@ -1617,6 +1675,30 @@ public:
     {
         if (onPhrasePreFaderToggled && selectedPhrase_ >= 0)
             onPhrasePreFaderToggled (selectedPhrase_, preFader);
+    }
+
+    // --- ChannelDetailEQTabListener (slice EC) --------------------------------
+    void eqTabConfigChanged (const ida::EqConfig& cfg) override
+    {
+        if (onPhraseEqConfigChanged && selectedPhrase_ >= 0)
+            onPhraseEqConfigChanged (selectedPhrase_, cfg);
+    }
+    void eqTabRequestSlotAdd() override
+    {
+        if (onPhraseEqSlotAddRequested && selectedPhrase_ >= 0)
+            onPhraseEqSlotAddRequested (selectedPhrase_);
+    }
+
+    // --- ChannelDetailCMPTabListener (slice EC) -------------------------------
+    void cmpTabConfigChanged (const ida::CmpConfig& cfg) override
+    {
+        if (onPhraseCmpConfigChanged && selectedPhrase_ >= 0)
+            onPhraseCmpConfigChanged (selectedPhrase_, cfg);
+    }
+    void cmpTabRequestSlotAdd() override
+    {
+        if (onPhraseCmpSlotAddRequested && selectedPhrase_ >= 0)
+            onPhraseCmpSlotAddRequested (selectedPhrase_);
     }
 
 private:
@@ -2577,12 +2659,16 @@ MainComponent::MainComponent()
             if (auto* s = inputStripAt (idx))
             {
                 auto sends = collectInputSendsView (idx);
+                const auto eqProbe  = collectInputEqView  (idx);
+                const auto cmpProbe = collectInputCmpView (idx);
                 inputMixerPane_->showDetailFor (idx,
                                                 s->pan() * 2.0f - 1.0f,
                                                 s->width(),
                                                 std::move (sends.fxReturns),
                                                 std::move (sends.sendLevels),
-                                                sends.preFader);
+                                                sends.preFader,
+                                                eqProbe.config,  eqProbe.hasSlot,
+                                                cmpProbe.config, cmpProbe.hasSlot);
             }
         };
         inputMixerPane_->onPan = [this] (int idx, float pan)
@@ -2627,6 +2713,61 @@ MainComponent::MainComponent()
                 || stripIdx >= static_cast<int> (inputStripChannelIds_.size())) return;
             const auto chId = inputStripChannelIds_[static_cast<std::size_t> (stripIdx)];
             inputMixer_->setChannelSendIsPreFader (chId, preFader);
+        };
+        // Slice EC — EQ + CMP tab gestures on the input pane. Config changes
+        // route through the host's typed setter, bracketed in the standard
+        // audio-callback detach pattern (same shape as setEffectChain calls
+        // elsewhere). The "+ Add" empty-state button appends an Internal
+        // entry to the strip's EffectChain so the slot becomes present and
+        // the host auto-binds an adapter on the slot-sweep.
+        inputMixerPane_->onEqConfigChanged =
+            [this] (int stripIdx, ida::EqConfig cfg)
+        {
+            const auto probe = collectInputEqView (stripIdx);
+            if (! probe.hasSlot) return;
+            if (stripIdx < 0
+                || stripIdx >= static_cast<int> (inputStripChannelIds_.size())) return;
+            const auto chId = inputStripChannelIds_[static_cast<std::size_t> (stripIdx)];
+            audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+            effectChainHost_.setInternalEqConfigAt (chId.value(), probe.slotIdx, cfg);
+            audioDeviceManager_.addAudioCallback (audioCallback_.get());
+        };
+        inputMixerPane_->onCmpConfigChanged =
+            [this] (int stripIdx, ida::CmpConfig cfg)
+        {
+            const auto probe = collectInputCmpView (stripIdx);
+            if (! probe.hasSlot) return;
+            if (stripIdx < 0
+                || stripIdx >= static_cast<int> (inputStripChannelIds_.size())) return;
+            const auto chId = inputStripChannelIds_[static_cast<std::size_t> (stripIdx)];
+            audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+            effectChainHost_.setInternalCmpConfigAt (chId.value(), probe.slotIdx, cfg);
+            audioDeviceManager_.addAudioCallback (audioCallback_.get());
+        };
+        inputMixerPane_->onEqSlotAddRequested = [this] (int stripIdx)
+        {
+            auto* strip = inputStripAt (stripIdx);
+            if (strip == nullptr) return;
+            auto chain = strip->effectChain()
+                              .withAppended (ida::EffectChainEntry::makeInternal (
+                                                  ida::InternalFxId::kEq));
+            audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+            strip->setEffectChain (chain);
+            audioDeviceManager_.addAudioCallback (audioCallback_.get());
+            // Refresh the detail panel so the EQ tab flips out of empty state.
+            if (inputMixerPane_) inputMixerPane_->onSelect (stripIdx);
+        };
+        inputMixerPane_->onCmpSlotAddRequested = [this] (int stripIdx)
+        {
+            auto* strip = inputStripAt (stripIdx);
+            if (strip == nullptr) return;
+            auto chain = strip->effectChain()
+                              .withAppended (ida::EffectChainEntry::makeInternal (
+                                                  ida::InternalFxId::kCmp));
+            audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+            strip->setEffectChain (chain);
+            audioDeviceManager_.addAudioCallback (audioCallback_.get());
+            if (inputMixerPane_) inputMixerPane_->onSelect (stripIdx);
         };
         // Routing the channel main-out to a tape is a TOPOLOGY mutation, not a
         // strip-local edit: setChannelMainOutToTape -> MixerGraph::setMainOut ->
@@ -2918,12 +3059,16 @@ MainComponent::MainComponent()
             if (auto* s = resolvePhraseStrip (phraseIdx))
             {
                 auto sends = collectOutputSendsView (phraseIdx);
+                const auto eqProbe  = collectOutputEqView  (phraseIdx);
+                const auto cmpProbe = collectOutputCmpView (phraseIdx);
                 outputMixerPane_->showPhraseDetailFor (phraseIdx,
                                                        s->pan() * 2.0f - 1.0f,
                                                        s->width(),
                                                        std::move (sends.fxReturns),
                                                        std::move (sends.sendLevels),
-                                                       sends.preFader);
+                                                       sends.preFader,
+                                                       eqProbe.config,  eqProbe.hasSlot,
+                                                       cmpProbe.config, cmpProbe.hasSlot);
             }
         };
         outputMixerPane_->onPhrasePan = [resolvePhraseStrip] (int phraseIdx, float pan)
@@ -2972,6 +3117,77 @@ MainComponent::MainComponent()
             const auto it  = phraseChannelByConstituent_.find (cid.value());
             if (it == phraseChannelByConstituent_.end()) return;
             outputMixer_->setChannelSendIsPreFader (it->second, preFader);
+        };
+        // Slice EC — EQ + CMP gestures on phrase strips. Mirrors the input
+        // pane's wiring, but the strip lookup goes ConstituentId →
+        // OutputChannelId via phraseChannelByConstituent_.
+        auto resolvePhraseChannelId = [this] (int phraseIdx) -> std::optional<ida::OutputChannelId>
+        {
+            if (phraseIdx < 0
+                || phraseIdx >= static_cast<int> (phraseStripConstituentIds_.size()))
+                return std::nullopt;
+            const auto cid = phraseStripConstituentIds_[static_cast<std::size_t> (phraseIdx)];
+            const auto it  = phraseChannelByConstituent_.find (cid.value());
+            if (it == phraseChannelByConstituent_.end()) return std::nullopt;
+            return it->second;
+        };
+        outputMixerPane_->onPhraseEqConfigChanged =
+            [this] (int phraseIdx, ida::EqConfig cfg)
+        {
+            const auto probe = collectOutputEqView (phraseIdx);
+            if (! probe.hasSlot) return;
+            if (phraseIdx < 0
+                || phraseIdx >= static_cast<int> (phraseStripConstituentIds_.size())) return;
+            const auto cid = phraseStripConstituentIds_[static_cast<std::size_t> (phraseIdx)];
+            const auto it  = phraseChannelByConstituent_.find (cid.value());
+            if (it == phraseChannelByConstituent_.end()) return;
+            audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+            effectChainHost_.setInternalEqConfigAt (it->second.value(), probe.slotIdx, cfg);
+            audioDeviceManager_.addAudioCallback (audioCallback_.get());
+        };
+        outputMixerPane_->onPhraseCmpConfigChanged =
+            [this] (int phraseIdx, ida::CmpConfig cfg)
+        {
+            const auto probe = collectOutputCmpView (phraseIdx);
+            if (! probe.hasSlot) return;
+            if (phraseIdx < 0
+                || phraseIdx >= static_cast<int> (phraseStripConstituentIds_.size())) return;
+            const auto cid = phraseStripConstituentIds_[static_cast<std::size_t> (phraseIdx)];
+            const auto it  = phraseChannelByConstituent_.find (cid.value());
+            if (it == phraseChannelByConstituent_.end()) return;
+            audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+            effectChainHost_.setInternalCmpConfigAt (it->second.value(), probe.slotIdx, cfg);
+            audioDeviceManager_.addAudioCallback (audioCallback_.get());
+        };
+        outputMixerPane_->onPhraseEqSlotAddRequested =
+            [this, resolvePhraseChannelId] (int phraseIdx)
+        {
+            auto chOpt = resolvePhraseChannelId (phraseIdx);
+            if (! chOpt.has_value() || outputMixer_ == nullptr) return;
+            auto* strip = outputMixer_->audioStripForChannel (*chOpt);
+            if (strip == nullptr) return;
+            auto chain = strip->effectChain()
+                              .withAppended (ida::EffectChainEntry::makeInternal (
+                                                  ida::InternalFxId::kEq));
+            audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+            strip->setEffectChain (chain);
+            audioDeviceManager_.addAudioCallback (audioCallback_.get());
+            if (outputMixerPane_) outputMixerPane_->onPhraseSelect (phraseIdx);
+        };
+        outputMixerPane_->onPhraseCmpSlotAddRequested =
+            [this, resolvePhraseChannelId] (int phraseIdx)
+        {
+            auto chOpt = resolvePhraseChannelId (phraseIdx);
+            if (! chOpt.has_value() || outputMixer_ == nullptr) return;
+            auto* strip = outputMixer_->audioStripForChannel (*chOpt);
+            if (strip == nullptr) return;
+            auto chain = strip->effectChain()
+                              .withAppended (ida::EffectChainEntry::makeInternal (
+                                                  ida::InternalFxId::kCmp));
+            audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+            strip->setEffectChain (chain);
+            audioDeviceManager_.addAudioCallback (audioCallback_.get());
+            if (outputMixerPane_) outputMixerPane_->onPhraseSelect (phraseIdx);
         };
 
         tabs_.addTab ("Output Mixer", juce::Colours::black, outputMixerPane_.get(), false);
@@ -3302,6 +3518,110 @@ MainComponent::collectOutputSendsView (int phraseIdx) const
     }
     view.preFader = outputMixer_->channelSendIsPreFader (outChId);
     return view;
+}
+
+namespace
+{
+    /// Walk an EffectChain for the first Internal slot with the given id.
+    /// Returns the slot index or nullopt. Used by the slice EC probes.
+    std::optional<std::size_t> findInternalSlot (const ida::EffectChain& chain,
+                                                  ida::InternalFxId        id)
+    {
+        const auto& entries = chain.entries();
+        for (std::size_t i = 0; i < entries.size(); ++i)
+        {
+            if (entries[i].kind       == ida::EffectChainSlotKind::Internal
+             && entries[i].internalId == id)
+                return i;
+        }
+        return std::nullopt;
+    }
+}
+
+MainComponent::ChannelFxProbe
+MainComponent::collectInputEqView (int stripIdx) const
+{
+    ChannelFxProbe probe;
+    if (stripIdx < 0 || stripIdx >= static_cast<int> (inputStripChannelIds_.size()))
+        return probe;
+    auto* strip = const_cast<MainComponent*> (this)->inputStripAt (stripIdx);
+    if (strip == nullptr) return probe;
+    const auto chId = inputStripChannelIds_[static_cast<std::size_t> (stripIdx)];
+
+    const auto slotOpt = findInternalSlot (strip->effectChain(), ida::InternalFxId::kEq);
+    if (! slotOpt.has_value()) return probe;
+    probe.slotIdx = *slotOpt;
+    probe.hasSlot = true;
+    if (auto cfg = effectChainHost_.internalEqConfigAt (chId.value(), probe.slotIdx))
+        probe.config = *cfg;
+    return probe;
+}
+
+MainComponent::ChannelCmpProbe
+MainComponent::collectInputCmpView (int stripIdx) const
+{
+    ChannelCmpProbe probe;
+    if (stripIdx < 0 || stripIdx >= static_cast<int> (inputStripChannelIds_.size()))
+        return probe;
+    auto* strip = const_cast<MainComponent*> (this)->inputStripAt (stripIdx);
+    if (strip == nullptr) return probe;
+    const auto chId = inputStripChannelIds_[static_cast<std::size_t> (stripIdx)];
+
+    const auto slotOpt = findInternalSlot (strip->effectChain(), ida::InternalFxId::kCmp);
+    if (! slotOpt.has_value()) return probe;
+    probe.slotIdx = *slotOpt;
+    probe.hasSlot = true;
+    if (auto cfg = effectChainHost_.internalCmpConfigAt (chId.value(), probe.slotIdx))
+        probe.config = *cfg;
+    return probe;
+}
+
+MainComponent::ChannelFxProbe
+MainComponent::collectOutputEqView (int phraseIdx) const
+{
+    ChannelFxProbe probe;
+    if (outputMixer_ == nullptr) return probe;
+    if (phraseIdx < 0
+        || phraseIdx >= static_cast<int> (phraseStripConstituentIds_.size()))
+        return probe;
+    const auto cid = phraseStripConstituentIds_[static_cast<std::size_t> (phraseIdx)];
+    const auto it  = phraseChannelByConstituent_.find (cid.value());
+    if (it == phraseChannelByConstituent_.end()) return probe;
+    const auto outChId = it->second;
+    auto* strip = outputMixer_->audioStripForChannel (outChId);
+    if (strip == nullptr) return probe;
+
+    const auto slotOpt = findInternalSlot (strip->effectChain(), ida::InternalFxId::kEq);
+    if (! slotOpt.has_value()) return probe;
+    probe.slotIdx = *slotOpt;
+    probe.hasSlot = true;
+    if (auto cfg = effectChainHost_.internalEqConfigAt (outChId.value(), probe.slotIdx))
+        probe.config = *cfg;
+    return probe;
+}
+
+MainComponent::ChannelCmpProbe
+MainComponent::collectOutputCmpView (int phraseIdx) const
+{
+    ChannelCmpProbe probe;
+    if (outputMixer_ == nullptr) return probe;
+    if (phraseIdx < 0
+        || phraseIdx >= static_cast<int> (phraseStripConstituentIds_.size()))
+        return probe;
+    const auto cid = phraseStripConstituentIds_[static_cast<std::size_t> (phraseIdx)];
+    const auto it  = phraseChannelByConstituent_.find (cid.value());
+    if (it == phraseChannelByConstituent_.end()) return probe;
+    const auto outChId = it->second;
+    auto* strip = outputMixer_->audioStripForChannel (outChId);
+    if (strip == nullptr) return probe;
+
+    const auto slotOpt = findInternalSlot (strip->effectChain(), ida::InternalFxId::kCmp);
+    if (! slotOpt.has_value()) return probe;
+    probe.slotIdx = *slotOpt;
+    probe.hasSlot = true;
+    if (auto cfg = effectChainHost_.internalCmpConfigAt (outChId.value(), probe.slotIdx))
+        probe.config = *cfg;
+    return probe;
 }
 
 namespace

@@ -261,10 +261,8 @@ ChannelDetail::ChannelDetail()
 {
     panWidTab_ = std::make_unique<otto::ui::ChannelDetailPanWidTab>();
     sendsTab_  = std::make_unique<ChannelDetailSendsTab>();
-    eqTab_     = std::make_unique<ChannelDetailPlaceholderTab> (
-                     "EQ — wiring lands with the insert-chain UI (P7)");
-    cmpTab_    = std::make_unique<ChannelDetailPlaceholderTab> (
-                     "Compressor — wiring lands with the insert-chain UI (P7)");
+    eqTab_     = std::make_unique<ChannelDetailEQTab>();
+    cmpTab_    = std::make_unique<ChannelDetailCMPTab>();
 
     addChildComponent (*panWidTab_);
     addChildComponent (*sendsTab_);

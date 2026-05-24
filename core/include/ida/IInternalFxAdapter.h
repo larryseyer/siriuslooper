@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ida/InternalFxConfigs.h"
+
 #include <cstddef>
 
 namespace ida
@@ -69,6 +71,26 @@ public:
                           float* const*       outChannels,
                           int                 numChannels,
                           int                 numSamples) noexcept = 0;
+
+    /// Message-thread typed accessors (slice EC). The base class default
+    /// is a no-op so adapter types that have no parameter surface (e.g.
+    /// DLY today) keep compiling without overriding. EqAdapter +
+    /// CmpAdapter override the pair that matches their kind. The host
+    /// dispatches through these from `setInternalFxConfigAt(...)` —
+    /// calling `setEqConfig` on a CmpAdapter is a silent no-op (mismatched
+    /// kind), the host knows the kind via `EffectChainEntry::internalId`
+    /// and chooses the right setter.
+    ///
+    /// Implementations that ARE configurable must map IDA's surface struct
+    /// into their wrapped OTTO config and route through their own
+    /// scratch/commit pattern (lock-free w.r.t. the audio thread). The
+    /// caller must detach the audio callback before invoking — same
+    /// precondition as `setInternalFxAtSlot`.
+    virtual void setEqConfig (const EqConfig& /*cfg*/) noexcept {}
+    virtual EqConfig eqConfig() const noexcept { return {}; }
+
+    virtual void setCmpConfig (const CmpConfig& /*cfg*/) noexcept {}
+    virtual CmpConfig cmpConfig() const noexcept { return {}; }
 };
 
 } // namespace ida

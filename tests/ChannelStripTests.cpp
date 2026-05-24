@@ -510,10 +510,17 @@ TEST_CASE ("ChannelStrip<Audio> stores a set-once effect chain + host + node key
 
     AudioStrip strip;
 
-    // Defaults: no host, empty chain — the pre-Phase-4 configuration.
+    // Defaults: no host, but the chain is pre-seeded by slice EC with
+    // [Internal(kEq), Internal(kCmp)] so every channel strip ships with
+    // the pro-audio rack convention of "EQ + CMP on every input strip".
     CHECK (strip.effectChainHost() == nullptr);
-    CHECK (strip.effectChain().empty());
+    REQUIRE (strip.effectChain().size() == 2u);
+    CHECK (strip.effectChain().entries()[0].kind       == ida::EffectChainSlotKind::Internal);
+    CHECK (strip.effectChain().entries()[0].internalId == ida::InternalFxId::kEq);
+    CHECK (strip.effectChain().entries()[1].kind       == ida::EffectChainSlotKind::Internal);
+    CHECK (strip.effectChain().entries()[1].internalId == ida::InternalFxId::kCmp);
 
+    // Replacing the chain via setEffectChain overrides the auto-seed entirely.
     EffectChainEntry entry;
     entry.descriptor.name = "Comp";
     EffectChain chain;
@@ -605,11 +612,13 @@ TEST_CASE ("ChannelStrip<Audio> behavior-equivalent to gain-only when no host / 
 {
     SlotAwareHost host;
 
-    // (a) host bound but chain empty.
+    // (a) host bound but chain explicitly cleared (the slice EC default
+    // auto-seeds EQ+CMP, so we have to override to get the gain-only path).
     {
         AudioStrip strip;
         strip.setGain (2.0f);
-        strip.setEffectChainHost (&host, 1);          // empty chain
+        strip.setEffectChain (ida::EffectChain{});    // clear EC auto-seed
+        strip.setEffectChainHost (&host, 1);          // bind host onto empty chain
         std::array<float, 2> mono { 0.25f, 0.25f };
         float* chans[1] = { mono.data() };
         strip.process (chans, 1, 2);

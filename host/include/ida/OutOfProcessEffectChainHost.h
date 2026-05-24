@@ -230,6 +230,26 @@ public:
                              std::size_t  fromSlot,
                              std::size_t  toSlot) override;
 
+    // Slice EC — typed config setters/getters. Message-thread only;
+    // caller MUST detach the audio callback before invoking the setters
+    // (matches `setInternalFxAtSlot`). The getters take a snapshot of
+    // the live config under the same precondition. All four no-op
+    // silently when the slot is empty or holds the wrong kind of
+    // adapter (the no-op default lives on `IInternalFxAdapter` so the
+    // dispatch is virtual, not dynamic_cast).
+    void setInternalEqConfigAt  (std::int64_t nodeKey,
+                                 std::size_t  slotIdx,
+                                 const EqConfig& cfg) override;
+    std::optional<EqConfig>
+         internalEqConfigAt     (std::int64_t nodeKey,
+                                 std::size_t  slotIdx) const noexcept override;
+    void setInternalCmpConfigAt (std::int64_t nodeKey,
+                                 std::size_t  slotIdx,
+                                 const CmpConfig& cfg) override;
+    std::optional<CmpConfig>
+         internalCmpConfigAt    (std::int64_t nodeKey,
+                                 std::size_t  slotIdx) const noexcept override;
+
     // Message-thread only. Forwards `prepare(sampleRate, maxBlockSize)` to
     // every currently-bound internal-FX adapter and remembers the values
     // so adapters bound later by `setInternalFxAtSlot` are auto-prepared

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ida/InternalFxConfigs.h"
 #include "ida/InternalFxId.h"
 
 #include <cstddef>
@@ -129,6 +130,33 @@ public:
     /// them). Default no-op for the same fake-compat reason as
     /// `setInternalFxAtSlot`.
     virtual void prepareInternalFx (double /*sampleRate*/, int /*maxBlockSize*/) {}
+
+    /// Slice EC — typed config setters/getters routed through whatever
+    /// `IInternalFxAdapter` is bound at `(nodeKey, slotIdx)`. The
+    /// concrete implementation looks the adapter up and dispatches
+    /// through its `setEqConfig` / `setCmpConfig` virtual; calling on a
+    /// slot whose adapter doesn't match the kind (e.g. `setInternalEqConfigAt`
+    /// on a slot holding a Cmp adapter) is a silent no-op via the base-
+    /// class default in `IInternalFxAdapter`. Getters return nullopt when
+    /// no adapter is bound; otherwise they return the adapter's snapshot
+    /// (`EqConfig{}` shape for Eq slots, etc).
+    ///
+    /// Message-thread only — caller MUST detach the audio callback before
+    /// invoking, same as `setInternalFxAtSlot`. Default no-op so test
+    /// fakes that only care about `pumpSlot` keep compiling.
+    virtual void setInternalEqConfigAt (std::int64_t /*nodeKey*/,
+                                        std::size_t  /*slotIdx*/,
+                                        const EqConfig& /*cfg*/) {}
+    virtual std::optional<EqConfig>
+            internalEqConfigAt (std::int64_t /*nodeKey*/,
+                                std::size_t  /*slotIdx*/) const noexcept { return std::nullopt; }
+
+    virtual void setInternalCmpConfigAt (std::int64_t /*nodeKey*/,
+                                         std::size_t  /*slotIdx*/,
+                                         const CmpConfig& /*cfg*/) {}
+    virtual std::optional<CmpConfig>
+            internalCmpConfigAt (std::int64_t /*nodeKey*/,
+                                 std::size_t  /*slotIdx*/) const noexcept { return std::nullopt; }
 };
 
 } // namespace ida

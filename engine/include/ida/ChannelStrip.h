@@ -2,6 +2,7 @@
 
 #include "ida/EffectChain.h"
 #include "ida/IEffectChainHost.h"
+#include "ida/InternalFxId.h"
 #include "ida/LufsMeter.h"
 #include "ida/ProcessingChain.h"
 #include "ida/SignalType.h"
@@ -54,7 +55,26 @@ template <>
 class ChannelStrip<SignalType::Audio> final : public ProcessingChain
 {
 public:
-    ChannelStrip() noexcept : gainLinear_ (1.0f), panNormalized_ (0.5f) {}
+    /// Slice EC — auto-seeds the strip's `EffectChain` with an EQ slot at
+    /// index 0 and a CMP slot at index 1 so every channel strip ships with
+    /// the pro-audio rack convention (every console has EQ + CMP per
+    /// input strip). Operator may still remove either via the insert
+    /// popup; the EQ + CMP detail tabs show an "+ Add" empty-state when
+    /// a slot is absent.
+    ///
+    /// Allocation: pushing two entries into the underlying vector can
+    /// allocate, so the ctor is no longer `noexcept`. Channel strips are
+    /// always constructed on the message thread (importGraphState,
+    /// MainComponent setup) — never the audio thread — so this is safe.
+    /// The bind-side dispatch happens later, in `setEffectChainHost` /
+    /// `setEffectChain`.
+    ChannelStrip()
+        : gainLinear_ (1.0f), panNormalized_ (0.5f)
+    {
+        effectChain_ = effectChain_
+                           .withAppended (EffectChainEntry::makeInternal (InternalFxId::kEq))
+                           .withAppended (EffectChainEntry::makeInternal (InternalFxId::kCmp));
+    }
 
     SignalType signalType() const noexcept override { return SignalType::Audio; }
 
@@ -133,26 +153,7 @@ public:
     void setEffectChain (EffectChain chain)
     {
         effectChain_ = std::move (chain);
-
-        if (host_ == nullptr) return;
-
-        const auto& entries = effectChain_.entries();
-        for (std::size_t slotIdx = 0; slotIdx < EffectChain::kMaxSlots; ++slotIdx)
-        {
-            if (slotIdx < entries.size()
-                && entries[slotIdx].kind == EffectChainSlotKind::Internal)
-            {
-                host_->setInternalFxAtSlot (nodeKey_, slotIdx, entries[slotIdx].internalId);
-                // P7 T5 slice 3 — propagate the entry's persisted bypass flag
-                // (same shape as Bus::setEffectChain).
-                host_->setInternalFxBypassAtSlot (nodeKey_, slotIdx, entries[slotIdx].bypassed);
-            }
-            else
-            {
-                host_->setInternalFxAtSlot (nodeKey_, slotIdx, std::nullopt);
-                // nullopt erase already cleared the bypass entry.
-            }
-        }
+        dispatchAllSlotsToHost();
     }
 
     const EffectChain& effectChain() const noexcept { return effectChain_; }
@@ -164,10 +165,15 @@ public:
     /// collide on raw id values — the caller partitions the key space).
     /// Pass `nullptr` to disable dispatch — the pre-Phase-4 inline path runs
     /// unchanged. Set-once before the audio thread starts.
-    void setEffectChainHost (IEffectChainHost* host, std::int64_t nodeKey) noexcept
+    void setEffectChainHost (IEffectChainHost* host, std::int64_t nodeKey)
     {
         host_    = host;
         nodeKey_ = nodeKey;
+        // Slice EC — bind any pre-seeded chain (the ctor's EQ + CMP
+        // default, or anything imported via setEffectChain before the
+        // host was set) so the operator sees active adapters as soon as
+        // the strip is wired. Inert when no chain or no host.
+        dispatchAllSlotsToHost();
     }
 
     IEffectChainHost* effectChainHost() const noexcept { return host_; }
@@ -299,6 +305,35 @@ private:
     EffectChain       effectChain_;
     IEffectChainHost* host_    { nullptr };
     std::int64_t      nodeKey_ { 0 };
+
+    /// Walks every slot index up to `EffectChain::kMaxSlots` and rebinds
+    /// each non-empty Internal slot's adapter (or erases when the chain
+    /// has no entry at that index / the entry is Plugin / Empty). Called
+    /// from both `setEffectChain` (replace path) and `setEffectChainHost`
+    /// (initial bind path so a pre-seeded chain wires up as soon as the
+    /// host is attached). Inert if `host_ == nullptr`.
+    void dispatchAllSlotsToHost()
+    {
+        if (host_ == nullptr) return;
+
+        const auto& entries = effectChain_.entries();
+        for (std::size_t slotIdx = 0; slotIdx < EffectChain::kMaxSlots; ++slotIdx)
+        {
+            if (slotIdx < entries.size()
+                && entries[slotIdx].kind == EffectChainSlotKind::Internal)
+            {
+                host_->setInternalFxAtSlot (nodeKey_, slotIdx, entries[slotIdx].internalId);
+                // P7 T5 slice 3 — propagate the entry's persisted bypass flag
+                // (same shape as Bus::setEffectChain).
+                host_->setInternalFxBypassAtSlot (nodeKey_, slotIdx, entries[slotIdx].bypassed);
+            }
+            else
+            {
+                host_->setInternalFxAtSlot (nodeKey_, slotIdx, std::nullopt);
+                // nullopt erase already cleared the bypass entry.
+            }
+        }
+    }
 
     /// Stereo invariant — inserts dispatch at most two channels.
     static constexpr int kMaxInsertChannels = 2;
