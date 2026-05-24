@@ -1,4 +1,4 @@
-# Session Continuation — NEXT: Output Mixer slice 3 (cycle-aware filtering + per-output-pair picker + bus rename)
+# Session Continuation — NEXT: operator smoke of Output Mixer slice 3, then slice 4 scope
 
 > **For a fresh chat picking this up cold:** memory + project +
 > user CLAUDE.md load automatically. This file is the **forward-looking
@@ -6,125 +6,120 @@
 
 ## ▶ DO THIS FIRST
 
-1. Read `external/OTTO/CROSS_PROJECT_INBOX.md`. Last sweep
-   2026-05-23 (this session): Phase 3 TAPECOLOR mirror request acked
-   and resolved. Nothing new expected until OTTO ships Phase 4.
+1. Read `external/OTTO/CROSS_PROJECT_INBOX.md`. Last sweep 2026-05-23.
+   No new entries; everything is acked or informational. Phase 4 from
+   OTTO is the next expected event.
 
-## ▶ DONE PREVIOUS SESSION — Output Mixer slices 1 + 2, TAPECOLOR Phase 3 mirror
+## ▶ DONE PREVIOUS SESSION — Output Mixer slice 3
 
-Three pieces of work landed in the prior session.
+Commit `0e4924e`. Engine + UI + tests; pushed to `origin/master`.
 
-### Slice 1 — master bus strip
-Commit `41944be`. `OutputMixerPane` + `Bus* OutputMixer::busForId`
-accessor + `openInsertChainPopupForMasterBus()` + tab registration +
-30 Hz refresh. Operator confirmed visually.
+### Engine (engine/src/OutputMixer.cpp, engine/include/ida/OutputMixer.h)
+- `busMainOutToBusWouldCycle(BusId, BusId) const noexcept` — pre-check
+  predicate mirroring `InputMixer`; delegates to
+  `MixerGraph::wouldMainOutCycle`.
+- `setBusMainOutToHardwareOutput(BusId, int pairIndex)` — new canonical
+  overload, accepts master (`BusId{0}`); single-arg overload kept as a
+  wrapper.
+- `busHardwareOutPair(BusId) const noexcept` — read-back accessor.
+- `renameBus(BusId, std::string)` — message-thread writer; rejects
+  master + unknown ids. `Bus::setName` added to support it.
+- `renderBuffer` Step 3 now writes aux→HardwareOutput direct to physical
+  outputs at the bus's pair offset (bypassing master — the real "Direct
+  out" semantic; slice 2 had folded it through master). Step 4 master
+  also honours its pair index. `resolveHardwarePair` lambda handles
+  bounds-fallback (requested pair > device channel count falls back to
+  pair 0) and the degenerate mono output case.
+- `MixerMainOut::hardwareOutPair` field added in
+  `core/include/ida/MixerGraphState.h`; `SessionFormat.cpp` emits/reads
+  optional `hardwareOutPair` field with back-compat default 0. Full
+  export→import round-trip preserves pair indexes.
 
-### Slice 2 — aux bus row + add-bus + destination picker
-Commit `7195335`. Engine: `OutputMixer::busCount()`,
-`setBusMainOutToHardwareOutput()`, `MainOutDest` enum,
-`busMainOut()`, `busMainOutBus()`. GUI: aux-bus row to the LEFT of
-master (master moved to rightmost per pro mixing-console
-convention), per-strip INS + destination picker, blank-area
-right-click / long-press → "Add bus" menu. Listener disambiguation:
-master uses sentinel id `-1`, aux strips use 0..N-1.
+### UI (app/MainComponent.cpp)
+- `OutputMixerPane::DestChoice` gains `pairIndex`; `StripDest` gains
+  `currentPairIndex`. Ticking uses a `destMatches` helper that includes
+  the pair on HardwareOutput entries.
+- Per-strip context overlay (`StripContextOverlay` nested class): an
+  invisible click-catcher sitting on each aux strip's top name band.
+  Catches right-click (desktop) and long-press (iOS — 500 ms timer
+  matching the slice-2 "Add bus" pattern). On "Rename…" swaps in an
+  inline `juce::TextEditor` using the TapesPane row pattern: Return /
+  focus-lost commit, Escape cancels, `committed_` flag prevents
+  double-fire, OTTO `bg3`/`textPrimary`/`accent` colours. Pair
+  `feedback_ios_long_press_pairs_right_click` is now realised in
+  Output Mixer.
+- Master strip gains a `masterDestButton_` showing per-pair entries
+  only (no Master/bus entries — master is the terminal). Visible only
+  when the device exposes more than one stereo pair; hidden on
+  2-channel devices.
+- `refreshOutputDestinations` rebuilt: enumerates active output pairs
+  from `audioDeviceManager_.getCurrentAudioDevice()->
+  getActiveOutputChannels()` ("Out 1-2", "Out 3-4", …), pre-filters
+  cycle-bound bus targets via the new predicate, populates per-aux
+  picker, populates master per-pair picker.
+- `onBusRename`, `onMasterDestinationChosen` callbacks added; the
+  aux `onBusDestinationChosen` now passes `dest.pairIndex` through to
+  the engine.
 
-### TAPECOLOR Phase 3 mirror (cross-project)
-OTTO commit `be8240ef` (ack) + IDA commit `941aee5` (submodule
-bumps). `external/lsfx_tapecolor` bumped `c4a8ec3` → `ec6425c6`
-(DC blocker + emphasis EQ + ConvolutionStage async swap + 8
-placeholder IRs). `juce_dsp` + `juce_audio_formats` arrived
-transitively via existing `juce_audio_utils` link — no IDA CMake
-edits needed. New `lsfx_tapecolor_ir_data` binary-data target
-INTERFACE-linked automatically. Still pure plumbing on IDA's side
-— no `lsfx::TapeColorProcessor` instantiated anywhere until OTTO
-Phase 13.
-
-## ▶ NEXT — Output Mixer slice 3
-
-Operator asked, during the slice 2 review, whether
-"Master / other-bus / Direct out" matched the spec. The whitepaper
-sweep produced a concrete answer:
-
-> §5.2 — "Each channel in the output mixer similarly chooses among
-> physical outputs, file destinations, MIDI outputs, video outputs,
-> and internal buses."
-
-> §6.6 (bundled-OTTO paragraph) — "the output mixer alone decides
-> **which physical outputs** each channel reaches… with a larger
-> interface, the performer parks each channel on any available
-> output pair in any combination."
-
-So the slice 2 single "Direct out" entry was a 2-output-interface
-collapse. Slice 3 honours the spec on multi-output hardware.
-Operator confirmed: roll **both** the cycle-aware filtering AND
-the per-output-pair picker into slice 3, with bus rename as well.
-
-### Slice 3 scope
-
-1. **Per-output-pair picker.** Replace the single "Direct out" entry
-   with one entry per physical stereo output pair the audio device
-   exposes. Source: `audioDeviceManager_.getCurrentAudioDevice()->
-   getActiveOutputChannels()` paired up (1-2, 3-4, …). Engine work
-   required: extend `OutputMixer` so a bus's main-out can target a
-   *specific* output-pair index, not just `MixerTerminal::HardwareOutput`
-   in aggregate. Likely needs a new `MixerTerminal::HardwareOutputPair{N}`
-   concept or per-bus pair-index state. Match the InputMixer's
-   per-strip output-pair handling if there's a precedent to mirror
-   (search `setBusMainOutToHardwareOutput` and any pair-index plumbing
-   on the input side first; engine extension cost depends on what's
-   already in `MixerGraph`).
-
-2. **Cycle-aware destination filtering.** Add
-   `OutputMixer::busMainOutToBusWouldCycle(BusId from, BusId to)
-   const noexcept` mirroring `InputMixer::busMainOutToBusWouldCycle`
-   (delegates to `MixerGraph::wouldMainOutCycle`). Use it in
-   `refreshOutputDestinations` to pre-filter cycle-bound targets so
-   the picker never offers a route the engine would reject.
-   Currently silent failure on cycle — refreshes label to current
-   state but is opaque to the operator.
-
-3. **Bus rename.** Aux buses ship as "Bus 1", "Bus 2", … with no
-   way to change them. Spec implication is operator-driven names
-   (the `BusConfig::name` field exists precisely for the
-   operator-facing bus picker). Pattern options:
-   - Right-click strip → "Rename…" → modal text-entry dialog
-   - Double-click the strip's name label → inline edit
-   InputMixerPane has no precedent yet; pick the most-elegant
-   pro-audio convention and apply symmetrically to both mixers
-   (per `feedback_default_to_professional_elegant`). Engine work:
-   add `OutputMixer::renameBus(BusId, std::string)` writing to
-   `BusConfig::name` (message-thread only; not on the audio thread).
-   Mirror on InputMixer if InputMixerPane wants the same gesture
-   (defer that to a follow-up if it widens scope).
-
-### Order of operations inside slice 3
-
-1. Engine first — `busMainOutToBusWouldCycle`, `renameBus`, the
-   per-output-pair routing surface (the chunkiest of the three —
-   may need a MixerGraph audit before designing).
-2. UI next — pre-filter cycle targets, expand the picker choices,
-   wire the rename gesture.
-3. Build + ctest (hold 639/640 baseline) + commit + push.
-
-### Deferred to later slices
-
-- **Channel strips** ("one per phrase" per §6.6) — waits on M6+
-  Constituent rendering; the per-channel row stays empty in slice 3.
-- **File / MIDI / video output destinations** — wait on render/
-  export and MIDI/video subsystem milestones.
+### Tests (tests/OutputMixerTests.cpp)
+Three new Catch2 cases (slice3 tag):
+1. Cycle predicate true/false/unknown.
+2. Per-output-pair routing + persistence round-trip + master on
+   non-zero pair.
+3. Rename writes BusConfig::name, rejects master, persists.
 
 ## ▶ BASELINE (start of next session)
 
-- `ctest --test-dir build`: **639 pass / 1 not-run / 640 total**
-  (1 not-run is the `MainComponentPluginEditorTests_NOT_BUILT`
-  sentinel — unchanged from baseline). Test #169 (`permanent bypass:
-  kill every generation`) is flaky on first run, passes on re-run
-  — pre-existing plug-in-host process-kill timing dependency,
-  unrelated to Output Mixer work.
-- `master` HEAD on origin: `941aee5` (submodule bumps for TAPECOLOR
-  Phase 3 mirror).
-- OTTO submodule SHA: `be8240ef` on `origin/main` (Phase 3 ack).
-- lsfx_tapecolor submodule SHA: `ec6425c` on `main` (Phase 1+2+3).
+- `ctest --test-dir build`: **642 pass / 1 not-run / 643 total** (the
+  not-run is the `MainComponentPluginEditorTests_NOT_BUILT` sentinel —
+  unchanged). Net +3 from the prior 639/640 baseline as predicted.
+- `master` HEAD on origin: `0e4924e` (Output Mixer slice 3).
+- OTTO submodule SHA: `be8240ef` (Phase 3 ack, unchanged).
+- lsfx_tapecolor submodule SHA: `ec6425c` (Phase 1+2+3, unchanged).
+
+## ▶ OPERATOR SMOKE PENDING (slice 3 verification)
+
+Clean rebuild done this session. Launch `IDA.app` (Desktop alias) and
+verify on macOS:
+- Aux strip picker lists Master, every other aux bus, and one entry
+  per active hardware output pair from the audio device.
+- Routing aux A → aux B → aux A: the second pick of A is **not
+  offered** for B's picker (cycle pre-filter).
+- Right-click an aux strip's name band → "Rename…" → type → Return
+  or click-away → name persists, shows in other strips' pickers,
+  survives undo/redo and session reload. Escape cancels.
+- Long-press an aux strip's name band (touch / trackpad force-touch)
+  yields the same menu.
+- On a multi-out device: master strip exposes a per-pair picker (no
+  bus entries); routing master to "Out 3-4" lands the stereo mix at
+  physical outputs 3-4.
+- On a 2-channel device: master destination button is hidden.
+- Routing aux to "Out 3-4" lands at physical outputs 3-4 bypassing
+  master entirely.
+- Master has no "Rename…" context menu (right-click anywhere on it
+  produces no per-strip menu — gestures only on aux strips this slice).
+
+If the smoke surfaces a bug, fix on top with a follow-on commit (don't
+amend `0e4924e`).
+
+## ▶ AFTER OPERATOR APPROVES — pick the next slice
+
+Two ready candidates; either can land independently.
+
+### Slice 4 — InputMixer rename parity
+The handoff for slice 3 deferred bus rename on the input side ("defer
+to a follow-up if it widens scope"). Engine work: `InputMixer::
+renameBus(BusId, std::string)` mirroring `OutputMixer::renameBus`
+(message-thread, rejects master if input ever ships a master concept —
+today input has no master, so just unknown-id rejection). UI work:
+mirror the `StripContextOverlay` pattern onto InputMixerPane strips
+plus the FX-return strips. Picks up the same iOS long-press pair.
+Probably one session.
+
+### Parallel docs plan — IDA-specific plugin specs
+The unchanged `~/.claude/plans/there-are-several-things-moonlit-twilight.md`
+plan from 2026-05-23 is still ready to execute. Pure docs/specs; no
+engine touch; safe to land in any order vs. slice 4.
 
 ## ▶ HOUSEKEEPING
 
@@ -137,37 +132,5 @@ the per-output-pair picker into slice 3, with bus rename as well.
 - **Clean build before any GUI smoke** (`feedback_clean_builds`):
   `rm -rf build && cmake -B build -S . -G Ninja
    -DCMAKE_BUILD_TYPE=Release && cmake --build build --target
-   IdaTests IDA -j`.
-
-## ▶ PARALLEL PLAN — IDA-specific plugin docs (docs-only, no engine touch)
-
-A separate session (2026-05-23) wrote a complete docs/specs plan
-covering every plugin IDA ships beyond the four shared with OTTO:
-
-- 5 IDA-only audio inserts (Phaser, Chorus, Pitch Changer, Audio
-  Gate, TAPECOLOR) — reuses existing `IInternalFxAdapter`.
-- 8 MIDI inserts (Channel Filter, Input Velocity Control, MIDI
-  Remap, Quantize, Limit Notes to Scale, plus Velocity / Timing /
-  Swing Energy-bound) — needs new `IMidiFxAdapter` subsystem.
-- 4 offline FX (Audio Peak Quantize, Autotune, Short Notes Removal,
-  Thin Controller Data) — needs new offline analyze+apply subsystem.
-- MIDI Learn across every transport + every mixer control — needs
-  new binding-registry subsystem.
-
-**Plan file:** `~/.claude/plans/there-are-several-things-moonlit-twilight.md`.
-
-**Scope:** whitepaper amendments (§6.6/6.7/6.8/6.11/6.12/new 6.13/
-15.6/17.4), 6 new design docs under `docs/design/` (umbrella,
-audio-insert, midi-insert, offline, midi-learn, energy-binding),
-user-guide stub, stale CLAUDE.md V7→V8 path fix, IDA→OTTO inbox
-entry. **No code** — every implementation lives in its own future
-slice.
-
-**No collision with slice 3.** Slice 3 touches `engine/` + Output
-Mixer UI; this plan touches only `docs/**`, `CLAUDE.md`, and
-`external/OTTO/CROSS_PROJECT_INBOX.md`. Either can land in either
-order.
-
-**When to execute:** operator's call. Recommended after slice 3
-ships (or whenever a docs-focused session has bandwidth) — the plan
-is self-contained and the executor just reads it top-to-bottom.
+   IdaTests IDA -j`. (Already done this session; the slice-3 .app
+  in `build/app/IDA_artefacts/Release/IDA.app` is fresh.)
