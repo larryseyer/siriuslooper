@@ -1258,26 +1258,15 @@ public:
 
         constexpr int kStripW = otto::ui::CompactFaderStrip::kStripWidth;
 
-        // Pro mixing-console layout: aux buses on the LEFT, master on the
-        // RIGHT. Aux strips lay out left-to-right; master takes the rightmost
-        // strip slot via removeFromRight. The picker row spans aux strips
-        // and, on multi-output devices, master's per-pair picker too.
-        for (int i = 0; i < busStripCount(); ++i)
-        {
-            auto stripBounds = area.removeFromLeft (kStripW);
-            busStrips_[static_cast<std::size_t> (i)]->setBounds (stripBounds);
-            // Overlay covers the top name-label band of the strip (where
-            // CompactFaderStrip paints the channel name). Sized to a thin
-            // sliver so it doesn't block fader interaction below it.
-            if (i < static_cast<int> (busNameOverlays_.size()))
-                busNameOverlays_[static_cast<std::size_t> (i)]->setBounds (
-                    stripBounds.withHeight (kNameOverlayHeight));
-            busInsButtons_[static_cast<std::size_t> (i)]->setBounds (insRow.removeFromLeft (kStripW));
-            busDestButtons_[static_cast<std::size_t> (i)]->setBounds (pickerRow.removeFromLeft (kStripW));
-            area.removeFromLeft (kGap);
-            insRow.removeFromLeft (kGap);
-            pickerRow.removeFromLeft (kGap);
-        }
+        // Pro mixing-console layout (Pro Tools / Logic / Reaper): channel
+        // strips fill the LEFT band (M6+ Constituent rendering), aux buses
+        // and master pin to the RIGHT as a single group. Master rightmost,
+        // then aux buses immediately to its left in index order (Bus 1
+        // leftmost-of-group, Bus N closest to master).
+        if (master_)    master_->setBounds    (area.removeFromRight (kStripW));
+        if (masterIns_) masterIns_->setBounds (insRow.removeFromRight (kStripW));
+        if (masterDestButton_ && masterDestButton_->isVisible())
+            masterDestButton_->setBounds (pickerRow.removeFromRight (kStripW));
 
         if (busStripCount() > 0)
         {
@@ -1286,10 +1275,30 @@ public:
             insRow.removeFromRight (kGroupDividerW);
             pickerRow.removeFromRight (kGroupDividerW);
         }
-        if (master_)    master_->setBounds    (area.removeFromRight (kStripW));
-        if (masterIns_) masterIns_->setBounds (insRow.removeFromRight (kStripW));
-        if (masterDestButton_ && masterDestButton_->isVisible())
-            masterDestButton_->setBounds (pickerRow.removeFromRight (kStripW));
+
+        // Aux strips right-to-left so the bus group is right-anchored. The
+        // last bus (highest index) sits closest to master; the first sits
+        // leftmost of the group. Inter-strip gap is skipped after the last
+        // (leftmost) strip so the group has no trailing gap on its left.
+        for (int i = busStripCount() - 1; i >= 0; --i)
+        {
+            auto stripBounds = area.removeFromRight (kStripW);
+            busStrips_[static_cast<std::size_t> (i)]->setBounds (stripBounds);
+            // Overlay covers the top name-label band of the strip (where
+            // CompactFaderStrip paints the channel name). Sized to a thin
+            // sliver so it doesn't block fader interaction below it.
+            if (i < static_cast<int> (busNameOverlays_.size()))
+                busNameOverlays_[static_cast<std::size_t> (i)]->setBounds (
+                    stripBounds.withHeight (kNameOverlayHeight));
+            busInsButtons_[static_cast<std::size_t> (i)]->setBounds (insRow.removeFromRight (kStripW));
+            busDestButtons_[static_cast<std::size_t> (i)]->setBounds (pickerRow.removeFromRight (kStripW));
+            if (i > 0)
+            {
+                area.removeFromRight (kGap);
+                insRow.removeFromRight (kGap);
+                pickerRow.removeFromRight (kGap);
+            }
+        }
     }
 
     void paint (juce::Graphics& g) override { g.fillAll (otto::Colours::bg2); }
