@@ -160,3 +160,79 @@ TEST_CASE ("deserializeTapePool rejects empty and malformed documents", "[tape-p
     REQUIRE_THROWS_AS (ida::persistence::deserializeTapePool ("{}"),
                        std::runtime_error);
 }
+
+// ── TAPECOLOR Slice 2: per-tape tri-state (None / BeforeWrite / AfterRead) ──
+//
+// Operator design lock 2026-05-24 (`[[project_tapecolor_placement]]`): each
+// tape carries its own TAPECOLOR mode, defaulting to None. Switching it on
+// snaps to AfterRead (clean disk + color on playback). BeforeWrite bakes the
+// color into the FLAC. The mode rides on TapeDescriptor and serializes
+// wire-stably so a project saved before the operator ever touches TAPECOLOR
+// reloads identically.
+
+TEST_CASE ("TapeDescriptor defaults tapeColor to None", "[tape-pool][tapecolor]")
+{
+    TapeDescriptor d { TapeId (1), "Tape 1" };
+    CHECK (d.tapeColor == ida::TapeColorMode::None);
+}
+
+TEST_CASE ("default TapePool seeds primary tape with tapeColor == None",
+           "[tape-pool][tapecolor]")
+{
+    TapePool pool;
+    CHECK (pool.at (0).tapeColor == ida::TapeColorMode::None);
+
+    // add() preserves the default — newly-added tapes are silent until the
+    // operator explicitly turns TAPECOLOR on for that tape.
+    const auto drums = pool.add ("Drums");
+    CHECK (pool.find (drums)->tapeColor == ida::TapeColorMode::None);
+}
+
+TEST_CASE ("TapePool tapeColor round-trips through SessionFormat", "[tape-pool][tapecolor][sessionformat]")
+{
+    TapePool original (std::vector<TapeDescriptor> {
+        TapeDescriptor { TapeId (1), "Tape 1", ida::TapeColorMode::None },
+        TapeDescriptor { TapeId (2), "Drums",  ida::TapeColorMode::BeforeWrite },
+        TapeDescriptor { TapeId (3), "Bass",   ida::TapeColorMode::AfterRead } });
+
+    const auto json   = ida::persistence::serializeTapePool (original);
+    const auto loaded = ida::persistence::deserializeTapePool (json);
+
+    REQUIRE (loaded.count() == original.count());
+    for (int i = 0; i < original.count(); ++i)
+    {
+        CHECK (loaded.at (i).id        == original.at (i).id);
+        CHECK (loaded.at (i).name      == original.at (i).name);
+        CHECK (loaded.at (i).tapeColor == original.at (i).tapeColor);
+    }
+}
+
+TEST_CASE ("deserializeTapePool back-compat: missing tape_color reads as None",
+           "[tape-pool][tapecolor][sessionformat]")
+{
+    // Projects saved before Slice 2 have no tape_color field. They MUST
+    // reload with every tape's mode defaulting to None so back-compat is
+    // bit-equivalent to the pre-Slice-2 behavior.
+    const juce::String legacy =
+        R"({ "tapes": [ { "id": 1, "name": "Tape 1" },
+                        { "id": 5, "name": "Drums"  } ] })";
+
+    const auto loaded = ida::persistence::deserializeTapePool (legacy);
+
+    REQUIRE (loaded.count() == 2);
+    CHECK (loaded.at (0).tapeColor == ida::TapeColorMode::None);
+    CHECK (loaded.at (1).tapeColor == ida::TapeColorMode::None);
+}
+
+TEST_CASE ("deserializeTapePool rejects an unknown tape_color string",
+           "[tape-pool][tapecolor][sessionformat]")
+{
+    // Wire-stable tokens are "None" / "BeforeWrite" / "AfterRead". Anything
+    // else means the on-disk format has drifted under us — fail loud rather
+    // than silently snapping to None and discarding the operator's intent.
+    const juce::String bad =
+        R"({ "tapes": [ { "id": 1, "name": "Tape 1", "tape_color": "Glitter" } ] })";
+
+    REQUIRE_THROWS_AS (ida::persistence::deserializeTapePool (bad),
+                       std::runtime_error);
+}

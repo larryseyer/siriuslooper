@@ -80,4 +80,19 @@ bool TapeColorAdapter::process (const float* const* inChannels,
     return true;
 }
 
+lsfx::tapecolor::TapeColorConfig& TapeColorAdapter::scratchConfig() noexcept
+{
+    return processor_.scratchConfig();
+}
+
+void TapeColorAdapter::commitConfig() noexcept
+{
+    processor_.commitConfig();
+}
+
+const lsfx::tapecolor::TapeColorConfig& TapeColorAdapter::liveConfig() const noexcept
+{
+    return processor_.liveConfig();
+}
+
 } // namespace ida

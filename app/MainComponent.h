@@ -12,6 +12,7 @@
 #include "ida/EngineConfig.h"
 #include "ida/InputDescriptor.h"
 #include "ida/FlacTapeSink.h"
+#include "ida/TapeColoringSink.h"
 #include "ida/InputMixer.h"
 #include "ida/LatencyBudget.h"
 #include "ida/Lmc.h"
@@ -298,7 +299,12 @@ private:
     // must land before the sink's worker thread drains and finalises the files.
     // The destructor's explicit removeAudioCallback is the primary guard; this
     // ordering is a belt-and-suspenders invariant.
-    std::unique_ptr<ida::FlacTapeSink> flacTapeSink_;
+    std::unique_ptr<ida::FlacTapeSink>     flacTapeSink_;
+    // TAPECOLOR Slice 2 — per-tape routing decorator. Sits between the
+    // InputMixer's ITapeSink boundary and flacTapeSink_, applying TAPECOLOR
+    // to tapes whose mode is BeforeWrite (default OFF everywhere). Declared
+    // after flacTapeSink_ so the inner sink it references outlives it.
+    std::unique_ptr<ida::TapeColoringSink> tapeColoringSink_;
     std::unique_ptr<AudioCallback>        audioCallback_;
     juce::String                          audioDeviceLastError_;
 

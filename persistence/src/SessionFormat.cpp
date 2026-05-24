@@ -1135,14 +1135,40 @@ OutputMixerGraphState deserializeOutputMixerGraphState (const juce::String& json
     return s;
 }
 
+namespace
+{
+    // Wire-stable tokens for TapeColorMode (TAPECOLOR Slice 2). Changing
+    // these strings is an on-disk format break — projects saved with the
+    // old token will fail to load.
+    const char* tapeColorModeToken (TapeColorMode mode) noexcept
+    {
+        switch (mode)
+        {
+            case TapeColorMode::None:        return "None";
+            case TapeColorMode::BeforeWrite: return "BeforeWrite";
+            case TapeColorMode::AfterRead:   return "AfterRead";
+        }
+        return "None"; // unreachable; defensive
+    }
+
+    TapeColorMode tapeColorModeFromString (const juce::String& s)
+    {
+        if (s == "None")        return TapeColorMode::None;
+        if (s == "BeforeWrite") return TapeColorMode::BeforeWrite;
+        if (s == "AfterRead")   return TapeColorMode::AfterRead;
+        fail (std::string ("unknown tape_color \"") + s.toStdString() + "\"");
+    }
+}
+
 juce::String serializeTapePool (const TapePool& pool)
 {
     juce::Array<juce::var> tapeArr;
     for (const auto& t : pool.tapes())
     {
         auto obj = makeObject();
-        obj->setProperty ("id",   juce::int64 (t.id.value()));
-        obj->setProperty ("name", juce::String (t.name));
+        obj->setProperty ("id",         juce::int64 (t.id.value()));
+        obj->setProperty ("name",       juce::String (t.name));
+        obj->setProperty ("tape_color", juce::String (tapeColorModeToken (t.tapeColor)));
         tapeArr.add (objectVar (obj));
     }
     auto root = makeObject();
@@ -1168,9 +1194,17 @@ TapePool deserializeTapePool (const juce::String& json)
     for (int i = 0; i < tapes.size(); ++i)
     {
         const auto& entry = tapes[i];
+
+        // tape_color is optional for back-compat: projects saved before
+        // TAPECOLOR Slice 2 have no such field and must reload as None.
+        TapeColorMode mode = TapeColorMode::None;
+        if (const auto tc = optionalProperty (entry, "tape_color"); ! tc.isVoid())
+            mode = tapeColorModeFromString (tc.toString());
+
         descriptors.push_back (TapeDescriptor {
             TapeId (requireInt64 (requireProperty (entry, "id"), "tape.id")),
-            requireProperty (entry, "name").toString().toStdString() });
+            requireProperty (entry, "name").toString().toStdString(),
+            mode });
     }
     return TapePool (std::move (descriptors));
 }

@@ -25,6 +25,10 @@ add_library(IdaEngine STATIC
     src/OutputMixer.cpp
     src/ProcessingChain.cpp
     src/TapeWriter.cpp
+    # TAPECOLOR Slice 2 — per-tape routing decorator. Sits between
+    # InputMixer's ITapeSink boundary and the downstream sink (FlacTapeSink
+    # in the app), applying TAPECOLOR to tapes whose mode is BeforeWrite.
+    src/TapeColoringSink.cpp
     src/WetCaptureWriter.cpp
     src/NotificationBus.cpp
     src/SessionSnapshot.cpp

@@ -102,6 +102,11 @@ add_executable(IdaTests
     # anywhere plumbing only; default-OFF semantics; param surface lands in
     # a follow-on slice. Same include-path pattern as EqAdapterTests above.
     TapeColorAdapterTests.cpp
+    # TAPECOLOR Slice 2 — per-tape routing decorator. Sits between the
+    # InputMixer's per-tape sum and the FlacTapeSink, applying TAPECOLOR
+    # to tapes whose mode is BeforeWrite. AfterRead is downstream-only;
+    # this decorator forwards it bit-identical on the write path.
+    TapeColoringSinkTests.cpp
     # P7 T3a-C — end-to-end Bus → host → adapter dispatch test.
     BusInternalFxEndToEndTests.cpp
     # P7 T3a I-2 — end-to-end InputMixer → Bus → host → adapter dispatch.

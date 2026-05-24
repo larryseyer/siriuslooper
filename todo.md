@@ -1,5 +1,69 @@
 # IDA — Deferred Items
 
+### 2026-05-24 — Hide EQ + CMP from insert-slot picker (every channel already has them)
+- Files: ui/include/ida/InsertChainPopup.h + matching .cpp (the picker that
+  populates the insert-slot menu); engine/include/ida/InternalFxFactory.h
+  (catalog enumerator if one exists — the `kEq`/`kCmp`/`kRvb`/`kDly`/
+  `kTapeColor` IDs are surfaced from here); plus any UI menu builder that
+  reads the full internal-FX catalog when offering plugins for an insert
+  slot.
+- What was deferred: the insert-chain picker currently offers EQ + CMP
+  alongside RVB / DLY / TAPECOLOR / 3rd-party VST/CLAP. Per the operator
+  rule (2026-05-24): every input + output + bus channel already has a
+  built-in EQ and CMP on the channel strip's EQ + CMP tabs. Offering
+  them again in the insert path would let an operator double-insert
+  EQ or CMP per channel, which is both confusing and an architectural
+  redundancy. EQ + CMP must be reachable ONLY from the channel-strip
+  tabs, never from the insert-slot picker.
+- Why deferred: design decision arrived mid-session while TAPECOLOR
+  Slice 2 was in flight; orthogonal to the tape-color work. The fix is
+  a UI-side filter (drop kEq + kCmp from the offered list) plus a
+  matching menu-builder pass; the factory + adapters stay as-is (other
+  paths — render pipeline, host plugin chain — may still legitimately
+  construct them programmatically). TAPECOLOR Slice 2 must not bundle
+  it or the slice will balloon.
+- What's needed to finish:
+  1. Find the menu-builder that enumerates `InternalFxId` for the
+     insert-chain picker. Filter out `kEq` and `kCmp`.
+  2. Add a test that pins the contract: the picker's offered list does
+     NOT contain "EQ" / "CMP" entries.
+  3. Update the operator-facing user guide (per
+     `[[project_user_guide_alongside_whitepaper]]`) to call out that
+     EQ + CMP live on every strip's tabs, not in inserts.
+
+### 2026-05-24 — TAPECOLOR IRs: offline pre-bake instead of runtime resample
+- Files: external/lsfx_tapecolor/dsp/ConvolutionStage.cpp
+  (`decodePlaceholderIR` + `loadMachineInternal` — currently decodes
+  embedded BinaryData WAVs and lets juce::dsp::Convolution::prepare
+  resample them at runtime); embedded BinaryData generator under
+  external/lsfx_tapecolor/ir/ (the 8 placeholder IRs); plus IDA-side
+  `TapeColorAdapter` to consume pre-baked IRs through the same
+  ConvolutionStage seam.
+- What was deferred: pre-resample every embedded TAPECOLOR IR offline
+  to the small set of expected device sample rates (44.1 / 48 / 88.2 /
+  96 / 176.4 / 192 kHz × stereo) and ship the pre-baked sets in
+  BinaryData. Runtime `juce::dsp::Convolution::prepare` then loads the
+  matching pre-baked IR directly instead of running the IR through
+  ResamplingAudioSource on every adapter prepare.
+- Why deferred: investigated during TAPECOLOR Slice 2 wiring. The
+  current runtime path is correct AND fast when fed valid params (the
+  hang we hit today was caused by `sampleRate=0` slipping in, fixed in
+  `TapeColoringSink::setSampleRate` guard). Offline pre-baking is a
+  cold-boot / per-rate optimization, not a correctness fix — defer
+  until it shows up as a measurable startup cost. Touches the
+  lsfx_tapecolor submodule, which means coordinating with OTTO.
+- What's needed to finish:
+  1. Author an offline IR pre-bake tool (small CLI) that resamples the
+     8 source IRs to each supported rate, writes them into a new
+     BinaryData payload (e.g. `tape_ir_<machine>_<rate>.wav`).
+  2. Extend `ConvolutionStage` with a "load pre-baked IR for (machine,
+     deviceRate)" path that bypasses `juce::dsp::Convolution`'s
+     ResamplingAudioSource.
+  3. Coordinate with OTTO via `external/OTTO/CROSS_PROJECT_INBOX.md`
+     (TAPECOLOR is shared via the `lsfx_tapecolor` submodule).
+  4. Keep the runtime resample path as a fallback for non-standard
+     rates (operator-named devices at exotic SR).
+
 ### 2026-05-24 — Bus pan + width + bus-side sends (NEXT SLICE)
 - Files: engine/include/ida/Bus.h + .cpp (add `pan_`, `width_` atomics +
   per-buffer equal-power pan + mid/side width matrix in `processInline` /

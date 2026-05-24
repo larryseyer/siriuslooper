@@ -3146,11 +3146,32 @@ MainComponent::MainComponent()
         tapesDirectory(),
         audioDeviceManager_.getAudioDeviceSetup().sampleRate,
         256);
-    inputMixer_->setTapeSink (flacTapeSink_.get());
+
+    // TAPECOLOR Slice 2 — wrap the FLAC sink in the per-tape coloring
+    // decorator. For tapes with mode == BeforeWrite, the decorator applies
+    // TAPECOLOR before forwarding bytes downstream; for None/AfterRead it's
+    // a bit-identical passthrough. The default for every tape is None, so
+    // wiring this on costs nothing at runtime until the operator opts in.
+    const auto deviceSetupForColor = audioDeviceManager_.getAudioDeviceSetup();
+    tapeColoringSink_ = std::make_unique<ida::TapeColoringSink> (
+        flacTapeSink_.get(),
+        deviceSetupForColor.sampleRate > 0.0 ? deviceSetupForColor.sampleRate : 48000.0,
+        deviceSetupForColor.bufferSize  > 0  ? deviceSetupForColor.bufferSize  : 512);
+
+    inputMixer_->setTapeSink (tapeColoringSink_.get());
 
     // Tape-UI slice — TapePool is the single source of truth for which tapes exist.
     // Mirror it into the input mixer's routing terminals at startup.
     ida::mirrorTapePool (tapePool_, *inputMixer_);
+    // And mirror the same set into the TAPECOLOR decorator so each pool tape
+    // owns its own adapter from the moment it exists. Modes follow whatever
+    // the descriptor carries (None for a default TapePool; honors any value
+    // a loaded project supplies).
+    for (const auto& t : tapePool_.tapes())
+    {
+        tapeColoringSink_->addTape (t.id);
+        tapeColoringSink_->setMode (t.id, t.tapeColor);
+    }
 
     audioCallback_   = std::make_unique<AudioCallback> (engineConfig_);
     audioCallback_->setLmc (lmc_.get());
@@ -5619,6 +5640,15 @@ void MainComponent::rebuildInputStrips()
     // thread, before audio starts or between removeAudioCallback/addAudioCallback).
     if (flacTapeSink_ != nullptr)
         flacTapeSink_->setSampleRate (sampleRate);
+    // TAPECOLOR Slice 2 — re-prepare every per-tape adapter at the new rate
+    // so BeforeWrite coloring stays in step with the device. Same RT-safety
+    // posture as the FLAC sink: message thread, audio callback detached.
+    if (tapeColoringSink_ != nullptr)
+    {
+        const auto setup = audioDeviceManager_.getAudioDeviceSetup();
+        const int  blk   = setup.bufferSize > 0 ? setup.bufferSize : 512;
+        tapeColoringSink_->setSampleRate (sampleRate, blk);
+    }
 
     // P7 T3a-C — re-prepare every bound internal-FX adapter against the live
     // device configuration. The audio callback is detached here, so the host's
@@ -5754,6 +5784,14 @@ void MainComponent::addTape (const juce::String& name)
     audioDeviceManager_.removeAudioCallback (audioCallback_.get());
     const bool ok = inputMixer_->addTape (id);
     jassert (ok); juce::ignoreUnused (ok);
+    // TAPECOLOR Slice 2 — give the new tape its own (default-OFF) adapter.
+    // Mode follows the descriptor (None for a freshly-added tape).
+    if (tapeColoringSink_ != nullptr)
+    {
+        tapeColoringSink_->addTape (id);
+        if (const auto* d = tapePool_.find (id))
+            tapeColoringSink_->setMode (id, d->tapeColor);
+    }
     audioDeviceManager_.addAudioCallback (audioCallback_.get());
     refreshTapesPane();
 }
@@ -5785,6 +5823,10 @@ void MainComponent::removeTape (ida::TapeId id)
             inputMixer_->setChannelMainOutToTape (chId);   // primary
     flacTapeSink_->closeTape (id);               // SPSC: inside the bracket only
     inputMixer_->removeTape (id);
+    // TAPECOLOR Slice 2 — release the per-tape adapter alongside the FLAC
+    // writer. After this point deliverTapeBlock for `id` is passthrough.
+    if (tapeColoringSink_ != nullptr)
+        tapeColoringSink_->removeTape (id);
     audioDeviceManager_.addAudioCallback (audioCallback_.get());
 
     const bool ok = tapePool_.remove (id);
@@ -6335,13 +6377,37 @@ void MainComponent::chooseFileAndLoad()
                 // by replacing the mixer instances with brand-new ones.
                 {
                     audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+
+                    // Snapshot the current pool's non-primary ids before the
+                    // move so we can prune them from both the InputMixer and
+                    // (TAPECOLOR Slice 2) the per-tape decorator. The primary
+                    // is permanent in both subsystems.
+                    std::vector<ida::TapeId> staleNonPrimary;
                     for (const auto& tape : tapePool_.tapes())
-                    {
-                        if (tape.id == tapePool_.primary()) continue;
-                        inputMixer_->removeTape (tape.id);
-                    }
+                        if (tape.id != tapePool_.primary())
+                            staleNonPrimary.push_back (tape.id);
+
+                    for (auto id : staleNonPrimary)
+                        inputMixer_->removeTape (id);
+
+                    if (tapeColoringSink_ != nullptr)
+                        for (auto id : staleNonPrimary)
+                            tapeColoringSink_->removeTape (id);
+
                     tapePool_ = std::move (loadedPool);
                     ida::mirrorTapePool (tapePool_, *inputMixer_);
+
+                    // TAPECOLOR Slice 2 — re-seed the per-tape decorator from
+                    // the freshly-loaded pool and apply each descriptor's
+                    // tapeColor. addTape is a no-op for ids already present
+                    // (e.g. the primary), so the primary's mode also gets
+                    // refreshed via setMode.
+                    if (tapeColoringSink_ != nullptr)
+                        for (const auto& t : tapePool_.tapes())
+                        {
+                            tapeColoringSink_->addTape (t.id);
+                            tapeColoringSink_->setMode (t.id, t.tapeColor);
+                        }
 
                     if (loadedInputMixer.has_value() || loadedOutputMixer.has_value())
                     {
@@ -6353,7 +6419,7 @@ void MainComponent::chooseFileAndLoad()
                         {
                             inputMixer_ = std::make_unique<ida::InputMixer>();
                             inputMixer_->setNotificationBus (notificationBus_.get());
-                            inputMixer_->setTapeSink (flacTapeSink_.get());
+                            inputMixer_->setTapeSink (tapeColoringSink_.get());
                             inputMixer_->setEffectChainHost (&effectChainHost_);
                             ida::mirrorTapePool (tapePool_, *inputMixer_);
                             inputMixer_->importGraphState (*loadedInputMixer);

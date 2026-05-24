@@ -48,6 +48,15 @@ public:
                   int                 numChannels,
                   int                 numSamples) noexcept override;
 
+    /// Message-thread config publication, mirrored from the wrapped
+    /// processor (EqAdapter / RvbAdapter / etc. expose the same pattern).
+    /// Write into `scratchConfig()` in place, then call `commitConfig()`
+    /// to atomically publish to the audio thread. `liveConfig()` returns
+    /// the most-recently-committed snapshot.
+    lsfx::tapecolor::TapeColorConfig&       scratchConfig() noexcept;
+    void                              commitConfig() noexcept;
+    const lsfx::tapecolor::TapeColorConfig& liveConfig() const noexcept;
+
 private:
     lsfx::TapeColorProcessor processor_;
     bool                     prepared_ = false;
