@@ -573,6 +573,35 @@ float OutputMixer::sendLevelFor (OutputChannelId channel, BusId bus) const noexc
     return sendMatrix_[idx];
 }
 
+bool OutputMixer::setBusSend (BusId source, BusId fxReturn, float level)
+{
+    // Mirror of `InputMixer::setBusSend`. The MixerGraph rejects self-sends,
+    // wrong-kind targets (must be FxReturn), unknown ids, and cycles. We
+    // additionally maintain the FX-return's active-sender count so the
+    // send-zero bypass in renderBuffer step 3 stays honest.
+    const auto si = static_cast<std::size_t> (source.value());
+    const auto ti = static_cast<std::size_t> (fxReturn.value());
+    if (si >= busNodeIds_.size() || ti >= busNodeIds_.size()) return false;
+
+    const auto srcNode = busNodeIds_[si];
+    const auto tgtNode = busNodeIds_[ti];
+    const float oldLevel = graph_.sendLevel (srcNode, tgtNode);
+    const bool ok = graph_.setSend (srcNode, tgtNode, level);
+    if (! ok) return false;
+
+    if (oldLevel <= 0.0f && level > 0.0f) buses_[ti].adjustActiveSenderCount (+1);
+    if (oldLevel >  0.0f && level <= 0.0f) buses_[ti].adjustActiveSenderCount (-1);
+    return true;
+}
+
+float OutputMixer::busSendLevel (BusId source, BusId fxReturn) const noexcept
+{
+    const auto si = static_cast<std::size_t> (source.value());
+    const auto ti = static_cast<std::size_t> (fxReturn.value());
+    if (si >= busNodeIds_.size() || ti >= busNodeIds_.size()) return 0.0f;
+    return graph_.sendLevel (busNodeIds_[si], busNodeIds_[ti]);
+}
+
 void OutputMixer::renderBuffer (const float* const* inputChannelData,
                                 int                 numInputChannels,
                                 float* const*       outputChannelData,
@@ -745,7 +774,6 @@ void OutputMixer::renderBuffer (const float* const* inputChannelData,
         }
 
         if (busIdx >= busNodeIds_.size()) continue; // channel or terminal node
-        if (busIdx == 0) continue;                  // master handled in Step 4
 
         const Bus& bus = buses_[busIdx];
 
@@ -754,7 +782,53 @@ void OutputMixer::renderBuffer (const float* const* inputChannelData,
         // dispatch, meter publish) entirely. The atomic load is
         // `memory_order_relaxed` because the mixer mutator contract
         // serializes the bump/decrement against the audio thread.
-        if (! bus.sendInputActive()) continue;
+        if (! bus.sendInputActive())
+        {
+            if (busIdx == 0) continue;              // master also handled in Step 4
+            continue;
+        }
+
+        // Bus-to-FX-return send tap (mirror of `InputMixer::setBusSend`).
+        // For each `setBusSend` edge whose source is this bus's node, add
+        // this bus's mixBuffer × level into the target FX-return's mixBuffer.
+        // The tap is post-channel-routes (mixBuffer carries channel sends
+        // accumulated in Step 2) and pre-bus-effect-chain (matches the
+        // routing-graph storage and `InputMixer` semantics). Topo-sort
+        // guarantees the FX-return processes after this bus, and the
+        // `MixerGraph::setSend` cycle check guarantees no feedback loop.
+        // Master is a legal source here as long as `setBusSend` accepted
+        // the edge (cycle detection forbids master→X when X→master via
+        // main-out).
+        {
+            const float* const myL = bus.mixBufferChannel (0);
+            const float* const myR = bus.mixBufferChannel (1);
+            if (myL != nullptr && myR != nullptr)
+            {
+                for (const auto& edge : graph_.sendEdges())
+                {
+                    if (edge.source != nodeId) continue;
+                    if (edge.level <= 0.0f)    continue;
+
+                    std::size_t tgt = busNodeIds_.size();
+                    for (std::size_t ti = 0; ti < busNodeIds_.size(); ++ti)
+                        if (busNodeIds_[ti] == edge.fxReturn) { tgt = ti; break; }
+                    if (tgt >= busNodeIds_.size()) continue;
+
+                    float* const tL = buses_[tgt].mixBufferChannel (0);
+                    float* const tR = buses_[tgt].mixBufferChannel (1);
+                    if (tL == nullptr || tR == nullptr) continue;
+
+                    const float lvl = edge.level;
+                    for (int s = 0; s < clampedSamples; ++s)
+                    {
+                        tL[s] += myL[s] * lvl;
+                        tR[s] += myR[s] * lvl;
+                    }
+                }
+            }
+        }
+
+        if (busIdx == 0) continue;                  // master handled in Step 4
 
         // Resolve destination:
         //   - master node          -> master's mix buffer (subgroup-into-master)

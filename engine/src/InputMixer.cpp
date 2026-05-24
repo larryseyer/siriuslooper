@@ -919,6 +919,40 @@ void InputMixer::renderInputGraph (const float* const* deviceIn, int numDeviceCh
         // active senders. Mirrors the OutputMixer bypass.
         if (! bus.sendInputActive()) continue;
 
+        // Bus-to-FX-return send tap — accumulate this bus's mixBuffer ×
+        // level into each FX-return target's mixBuffer (mirror of the
+        // OutputMixer step-3 tap). Tap is post-channel-sends, pre-bus-
+        // effect-chain. Topo-sort guarantees FX-return targets process
+        // after this bus; `MixerGraph::setSend` rejects cycles.
+        {
+            const float* const myL = bus.mixBufferChannel (0);
+            const float* const myR = bus.mixBufferChannel (1);
+            if (myL != nullptr && myR != nullptr)
+            {
+                for (const auto& edge : graph_.sendEdges())
+                {
+                    if (edge.source != nodeId) continue;
+                    if (edge.level <= 0.0f)    continue;
+
+                    std::size_t tgt = busNodeIds_.size();
+                    for (std::size_t ti = 0; ti < busNodeIds_.size(); ++ti)
+                        if (busNodeIds_[ti] == edge.fxReturn) { tgt = ti; break; }
+                    if (tgt >= busNodeIds_.size()) continue;
+
+                    float* const tL = buses_[tgt].mixBufferChannel (0);
+                    float* const tR = buses_[tgt].mixBufferChannel (1);
+                    if (tL == nullptr || tR == nullptr) continue;
+
+                    const float lvl = edge.level;
+                    for (int s = 0; s < n; ++s)
+                    {
+                        tL[s] += myL[s] * lvl;
+                        tR[s] += myR[s] * lvl;
+                    }
+                }
+            }
+        }
+
         const MixerNodeId dest = graph_.mainOutOf (nodeId);
         const int tapeSlot     = tapeSlotForNode (dest);
 

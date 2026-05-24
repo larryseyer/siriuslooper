@@ -4050,16 +4050,63 @@ MainComponent::MainComponent()
             auto* bus = outputMixer_->busForId (busId);
             const float pan01 = bus != nullptr ? bus->pan()   : 0.5f;
             const float width = bus != nullptr ? bus->width() : 1.0f;
-            // Output side: bus-to-bus is routing (`routeBusToBus`), not a
-            // level-controlled send. Hide Sends for both Bus and FxReturn
-            // — `isFxReturn=true` collapses the Sends tab uniformly. The
-            // OUTPUT FX edit affordance lands with the Edit-FX swap slice.
+            const bool  isFxReturn = bus != nullptr
+                                      && bus->config().kind == ida::BusKind::FxReturn;
+
+            // Collect bus-to-bus send levels into each FX return (skipping
+            // self). Mirror of the InputMixerPane onBusSelect wiring — the
+            // OutputMixer now ships level-controlled bus→FX-return sends via
+            // `setBusSend` (2026-05-24 mixer-symmetry slice). FX-return
+            // selection still hides the Sends tab uniformly here; the
+            // Edit-FX swap is the next slice.
+            std::vector<ida::ui::FxReturnInfo> fxReturns;
+            std::vector<float>                 sendLevels;
+            const int busTotal = outputMixer_->busCount();
+            for (int i = 0; i < busTotal; ++i)
+            {
+                if (outputMixer_->busKindAt (i) != ida::BusKind::FxReturn) continue;
+                const auto fxId = outputMixer_->busIdAt (i);
+                if (fxId == busId) continue;   // no self-send
+                auto* fxBus = outputMixer_->busForId (fxId);
+                if (fxBus == nullptr) continue;
+                fxReturns.push_back ({ juce::String (fxBus->config().name),
+                                       ida::palette::hueForId (fxId.value()) });
+                sendLevels.push_back (outputMixer_->busSendLevel (busId, fxId));
+            }
             outputMixerPane_->showBusDetailFor (busIdx,
                                                 pan01 * 2.0f - 1.0f, width,
-                                                {}, {},
+                                                std::move (fxReturns),
+                                                std::move (sendLevels),
                                                 eqProbe.config,  eqProbe.hasSlot,
                                                 cmpProbe.config, cmpProbe.hasSlot,
-                                                /*isFxReturn=*/ true);
+                                                isFxReturn);
+        };
+        outputMixerPane_->onBusSendChanged =
+            [this] (int busIdx, int fxReturnIdx, float level)
+        {
+            if (outputMixer_ == nullptr
+                || busIdx < 0 || busIdx >= static_cast<int> (outputBusStripIds_.size()))
+                return;
+            const auto sourceId = outputBusStripIds_[static_cast<std::size_t> (busIdx)];
+            // Re-walk the FX-return list in the same order onBusSelect did
+            // so fxReturnIdx maps deterministically to a BusId. Mirror of
+            // the InputMixerPane onBusSendChanged wiring.
+            int seen = 0;
+            const int n = outputMixer_->busCount();
+            for (int i = 0; i < n; ++i)
+            {
+                if (outputMixer_->busKindAt (i) != ida::BusKind::FxReturn) continue;
+                const auto fxId = outputMixer_->busIdAt (i);
+                if (fxId == sourceId) continue;
+                if (seen == fxReturnIdx)
+                {
+                    audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+                    outputMixer_->setBusSend (sourceId, fxId, level);
+                    audioDeviceManager_.addAudioCallback (audioCallback_.get());
+                    return;
+                }
+                ++seen;
+            }
         };
         outputMixerPane_->onBusPan = [this] (int busIdx, float pan)
         {

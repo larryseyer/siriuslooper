@@ -265,6 +265,22 @@ public:
     /// traversal that reads send levels into the mix.
     float sendLevelFor (OutputChannelId channel, BusId bus) const noexcept;
 
+    /// Sets a bus-to-FX-return send level (mirror of `InputMixer::setBusSend`).
+    /// `source` must be a registered bus (master or aux). `fxReturn` must be
+    /// a registered FX-return-kind bus — sends into a plain `Bus` are not
+    /// allowed (use `routeBusToBus` for subgroup main-out). Self-sends and
+    /// graph cycles are rejected by `MixerGraph::setSend`. `level` is
+    /// clamped to [0, 1]; level <= 0 removes the edge. Returns false on
+    /// unknown ids, wrong target kind, self-send, or cycle. The fxReturn's
+    /// active-sender count is bumped/decremented to keep the send-zero
+    /// bypass honest. Message-thread only.
+    bool setBusSend (BusId source, BusId fxReturn, float level);
+
+    /// Bus-to-FX-return send level (linear 0..1). Mirror of
+    /// `InputMixer::busSendLevel`. Returns 0 when either id is unknown or
+    /// no edge exists. Message-thread accessor.
+    float busSendLevel (BusId source, BusId fxReturn) const noexcept;
+
     /// Slice E2 (2026-05-24) — per-channel pre/post-fader send mode.
     /// Default false = post-fader (the channel's strip applies before the
     /// send tap; mute and gain silence/attenuate the send too — today's

@@ -1349,3 +1349,154 @@ TEST_CASE ("OutputMixer export/import round-trips channelMainOut (Bus and Hardwa
 
     CHECK (loaded.exportGraphState() == exported);
 }
+
+// Bus-to-FX-return sends (mixer-symmetry, 2026-05-24). Mirror of InputMixer's
+// setBusSend / busSendLevel — brings the OutputMixer API to parity per
+// [[project_input_output_mixers_identical]].
+TEST_CASE ("OutputMixer::busSendLevel defaults to zero",
+           "[output-mixer][bus-send]")
+{
+    using ida::BusKind;
+
+    OutputMixer mixer;
+    const auto aux = mixer.addBus (BusConfig { 2, "Aux",    BusKind::Bus });
+    const auto rvb = mixer.addBus (BusConfig { 2, "Reverb", BusKind::FxReturn });
+
+    CHECK (mixer.busSendLevel (aux, rvb)         == Catch::Approx (0.0f));
+    CHECK (mixer.busSendLevel (BusId{ 0 }, rvb)  == Catch::Approx (0.0f)); // master too
+}
+
+TEST_CASE ("OutputMixer::setBusSend sets and clears the level",
+           "[output-mixer][bus-send]")
+{
+    using ida::BusKind;
+
+    OutputMixer mixer;
+    const auto aux = mixer.addBus (BusConfig { 2, "Aux",    BusKind::Bus });
+    const auto rvb = mixer.addBus (BusConfig { 2, "Reverb", BusKind::FxReturn });
+
+    REQUIRE (mixer.setBusSend (aux, rvb, 0.5f));
+    CHECK   (mixer.busSendLevel (aux, rvb) == Catch::Approx (0.5f));
+
+    // Clamps to [0, 1].
+    REQUIRE (mixer.setBusSend (aux, rvb, 1.7f));
+    CHECK   (mixer.busSendLevel (aux, rvb) == Catch::Approx (1.0f));
+
+    // level <= 0 removes the edge.
+    REQUIRE (mixer.setBusSend (aux, rvb, 0.0f));
+    CHECK   (mixer.busSendLevel (aux, rvb) == Catch::Approx (0.0f));
+}
+
+TEST_CASE ("OutputMixer::setBusSend rejects self-send (feedback guard)",
+           "[output-mixer][bus-send][feedback]")
+{
+    using ida::BusKind;
+
+    OutputMixer mixer;
+    const auto rvb = mixer.addBus (BusConfig { 2, "Reverb", BusKind::FxReturn });
+
+    // FX-return sending to itself would close a one-edge feedback loop;
+    // MixerGraph::setSend rejects (source == fxReturn). No silent acceptance.
+    CHECK_FALSE (mixer.setBusSend (rvb, rvb, 0.5f));
+    CHECK (mixer.busSendLevel (rvb, rvb) == Catch::Approx (0.0f));
+}
+
+TEST_CASE ("OutputMixer::setBusSend rejects sending into a plain Bus (only FX returns accept sends)",
+           "[output-mixer][bus-send]")
+{
+    using ida::BusKind;
+
+    OutputMixer mixer;
+    const auto src = mixer.addBus (BusConfig { 2, "A", BusKind::Bus });
+    const auto dst = mixer.addBus (BusConfig { 2, "B", BusKind::Bus });
+
+    // Subgroup main-out (A.mainOut = B) is the legal aux-to-aux route; sends
+    // are reserved for FX-returns to prevent ambiguity over what is a send
+    // tap vs. a main-out swap. MixerGraph::setSend enforces this.
+    CHECK_FALSE (mixer.setBusSend (src, dst, 0.5f));
+    CHECK (mixer.busSendLevel (src, dst) == Catch::Approx (0.0f));
+}
+
+TEST_CASE ("OutputMixer::setBusSend rejects cycles via the routing graph",
+           "[output-mixer][bus-send][feedback]")
+{
+    using ida::BusKind;
+
+    OutputMixer mixer;
+    const auto rvb = mixer.addBus (BusConfig { 2, "Reverb", BusKind::FxReturn });
+
+    // Route the FX-return's main-out away from master so its graph dest is
+    // independent — then setBusSend(master → rvb) is acyclic and accepted.
+    REQUIRE (mixer.setBusMainOutToHardwareOutput (rvb));
+    REQUIRE (mixer.setBusSend (BusId{ 0 }, rvb, 0.25f));
+
+    // If we now repoint rvb.mainOut back to master, that would create a
+    // cycle (master → rvb → master). The graph rejects the second edge —
+    // master → rvb already exists, so rvb → master via routeBusToBus closes
+    // it. Cycle prevention lives in MixerGraph::setMainOut.
+    // routeBusToBus only accepts non-master source buses, but the FX-return
+    // is non-master — repoint it back via routeBusToBus(rvb, master).
+    // (routeBusToBus rejects if it would cycle.)
+    CHECK_FALSE (mixer.routeBusToBus (rvb, BusId{ 0 }));
+}
+
+TEST_CASE ("OutputMixer::setBusSend feeds the FX-return mix and survives renderBuffer",
+           "[output-mixer][bus-send][render-buffer]")
+{
+    using ida::BusKind;
+
+    OutputMixer mixer;
+    const auto ch  = mixer.addChannel (SignalType::Audio);
+    const auto aux = mixer.addBus (BusConfig { 2, "Aux",    BusKind::Bus });
+    const auto rvb = mixer.addBus (BusConfig { 2, "Reverb", BusKind::FxReturn });
+
+    // Route the channel main-out to the aux bus at unity (radio semantic
+    // also zeroes the default master send), so the aux bus has signal.
+    mixer.routeChannelToBus (ch, aux, 1.0f);
+    // Aux now bus-sends to the FX return at 0.5; FX-return main-out stays at
+    // master (the default), so the FX-return signal reaches the master
+    // output through its own evaluation step.
+    REQUIRE (mixer.setBusSend (aux, rvb, 0.5f));
+
+    constexpr int kFrames = 8;
+    std::array<float, kFrames> inLeft;  inLeft.fill (1.0f);
+    const float* inputs[1] = { inLeft.data() };
+    std::array<float, kFrames> outLeft;  outLeft.fill  (0.0f);
+    std::array<float, kFrames> outRight; outRight.fill (0.0f);
+    float* outputs[2] = { outLeft.data(), outRight.data() };
+
+    mixer.renderBuffer (inputs, 1, outputs, 2, kFrames);
+
+    // Two parallel paths into the master: aux→master (unity), and
+    // aux→rvb (0.5) → rvb→master (unity). Both add: 1.0 + 0.5 = 1.5.
+    for (float v : outLeft)  CHECK (v == Catch::Approx (1.5f));
+    for (float v : outRight) CHECK (v == Catch::Approx (1.5f));
+}
+
+TEST_CASE ("OutputMixer::setBusSend with level=0 removes the FX-return contribution",
+           "[output-mixer][bus-send][render-buffer]")
+{
+    using ida::BusKind;
+
+    OutputMixer mixer;
+    const auto ch  = mixer.addChannel (SignalType::Audio);
+    const auto aux = mixer.addBus (BusConfig { 2, "Aux",    BusKind::Bus });
+    const auto rvb = mixer.addBus (BusConfig { 2, "Reverb", BusKind::FxReturn });
+
+    mixer.routeChannelToBus (ch, aux, 1.0f);
+    REQUIRE (mixer.setBusSend (aux, rvb, 0.5f));
+    REQUIRE (mixer.setBusSend (aux, rvb, 0.0f));  // remove the edge
+
+    constexpr int kFrames = 4;
+    std::array<float, kFrames> inLeft;  inLeft.fill (1.0f);
+    const float* inputs[1] = { inLeft.data() };
+    std::array<float, kFrames> outLeft;  outLeft.fill  (0.0f);
+    std::array<float, kFrames> outRight; outRight.fill (0.0f);
+    float* outputs[2] = { outLeft.data(), outRight.data() };
+
+    mixer.renderBuffer (inputs, 1, outputs, 2, kFrames);
+
+    // Only the aux→master path remains (1.0). FX-return is bypassed (no senders).
+    for (float v : outLeft)  CHECK (v == Catch::Approx (1.0f));
+    for (float v : outRight) CHECK (v == Catch::Approx (1.0f));
+}
