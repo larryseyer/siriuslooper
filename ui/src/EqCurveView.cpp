@@ -347,6 +347,10 @@ void EqCurveView::drawGrid (juce::Graphics& g) const
 
 void EqCurveView::drawCurve (juce::Graphics& g) const
 {
+    // Slice EC-Polish-fix: matches OTTO + FabFilter Pro-Q — a plain
+    // stroked curve over the grid, no fill underneath. The fill-under
+    // idiom belongs to spectrum analyzers, not the EQ response curve
+    // itself; mixing the two reads as "different from FabFilter".
     if (curveBounds_.getWidth() <= 0) return;
 
     juce::Path curve;
@@ -365,16 +369,6 @@ void EqCurveView::drawCurve (juce::Graphics& g) const
         if (! started) { curve.startNewSubPath (x, y); started = true; }
         else            curve.lineTo (x, y);
     }
-
-    // Fill under the curve so the "above 0 dB" and "below 0 dB" regions
-    // read clearly against the grid (OTTO's idiom).
-    juce::Path fill = curve;
-    const float zeroY = gainToY (0.0f);
-    fill.lineTo (xMax, zeroY);
-    fill.lineTo (xMin, zeroY);
-    fill.closeSubPath();
-    g.setColour (accent_.withAlpha (0.18f));
-    g.fillPath (fill);
 
     g.setColour (accent_);
     g.strokePath (curve, juce::PathStrokeType (2.0f));
@@ -422,18 +416,9 @@ void EqCurveView::drawLabels (juce::Graphics& g) const
     drawDbLabel (0.0f);
     drawDbLabel (-12.0f);
 
-    // Band labels next to each node (smaller, semi-transparent).
-    g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
-    for (int b = 0; b < kBandCount; ++b)
-    {
-        const auto pos = juce::Point<float> (frequencyToX (bandFreq (b)),
-                                             gainToY (bandGain (b)));
-        g.setColour (colourForBand (b));
-        g.drawSingleLineText (nameForBand (b),
-                              juce::roundToInt (pos.x),
-                              juce::roundToInt (pos.y) - 14,
-                              juce::Justification::centred);
-    }
+    // Slice EC-Polish-fix: no per-band labels next to nodes — OTTO + FabFilter
+    // both keep the nodes naked; their color + position carry the meaning.
+    // The text-above-node was reading as a visual upward tilt.
 }
 
 } // namespace ida::ui

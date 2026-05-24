@@ -27,10 +27,12 @@ class StripContextOverlay final : public juce::Component, private juce::Timer
 public:
     StripContextOverlay (int idx,
                          std::function<void (int)> onContextMenu,
-                         std::function<void (int, juce::String)> onCommitName)
+                         std::function<void (int, juce::String)> onCommitName,
+                         std::function<void (int)> onSelect = {})
         : idx_ (idx),
           onContextMenu_ (std::move (onContextMenu)),
-          onCommitName_  (std::move (onCommitName))
+          onCommitName_  (std::move (onCommitName)),
+          onSelect_      (std::move (onSelect))
     {
         // Transparent — the strip's painted name still shows through when no
         // rename editor is visible.
@@ -75,10 +77,22 @@ private:
             longPressed_ = false;
         }
     }
-    void mouseUp (const juce::MouseEvent&) override
+    void mouseUp (const juce::MouseEvent& e) override
     {
+        const bool wasArmed   = longPressed_;          // started a press
+        const bool stillArmed = isTimerRunning();      // didn't get a drag-cancel
         stopTimer();
         longPressed_ = false;
+
+        // Treat a short left-tap (no drag, no long-press fire, not popup) as a
+        // SELECT gesture so the underlying bus / FX-return strip opens its
+        // detail panel. Without this the overlay swallows every click and the
+        // strip never sees a notifyChannelSelected. The bus strip's own
+        // mouseDown only fires on areas the overlay doesn't cover, but the
+        // overlay covers the natural target — the name band — so a select
+        // path through the overlay is required.
+        if (wasArmed && stillArmed && ! e.mods.isPopupMenu() && onSelect_)
+            onSelect_ (idx_);
     }
     void timerCallback() override
     {
@@ -106,6 +120,7 @@ private:
     int idx_ { -1 };
     std::function<void (int)> onContextMenu_;
     std::function<void (int, juce::String)> onCommitName_;
+    std::function<void (int)> onSelect_;
     std::unique_ptr<juce::TextEditor> editor_;
     bool longPressed_ { false };
     bool committed_   { false };

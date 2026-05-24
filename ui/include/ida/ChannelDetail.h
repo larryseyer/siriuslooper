@@ -122,6 +122,7 @@ private:
 
     std::vector<SendCard>           cards_;
     std::vector<juce::Colour>       cardColors_;   // parallel to cards_; cached for paint()
+    std::vector<juce::String>       cardNames_;    // parallel to cards_; composed into label
     std::unique_ptr<juce::ToggleButton> preFaderToggle_;
     bool                            hasChannelBound_ { false };
     juce::ListenerList<ChannelDetailSendsTabListener> listeners_;

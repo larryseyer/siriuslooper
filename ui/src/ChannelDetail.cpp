@@ -46,17 +46,18 @@ void ChannelDetailSendsTab::setChannelState (const ChannelState& state)
         rebuildCards (state.fxReturns.size());
 
     cardColors_.assign (state.fxReturns.size(), juce::Colour {});
+    cardNames_.assign (state.fxReturns.size(), juce::String {});
 
     for (std::size_t i = 0; i < cards_.size(); ++i)
     {
-        cards_[i].nameLabel->setText (state.fxReturns[i].name, juce::dontSendNotification);
+        cardNames_[i]  = state.fxReturns[i].name;
         cardColors_[i] = state.fxReturns[i].color;
 
         const float level = i < state.sendLevels.size() ? state.sendLevels[i] : 0.0f;
         cards_[i].knob->setValue (level, juce::dontSendNotification);
         cards_[i].knob->getProperties().set ("fillColor",
                                              state.fxReturns[i].color.toString());
-        updateDbReadout (i);
+        updateDbReadout (i);    // composes "FX N  -∞ dB" into nameLabel
     }
 
     preFaderToggle_->setToggleState (state.preFaderSends, juce::dontSendNotification);
@@ -108,44 +109,48 @@ void ChannelDetailSendsTab::resized()
 {
     auto bounds = getLocalBounds();
 
-    // Pre-fader toggle takes a strip across the top.
-    preFaderToggle_->setBounds (bounds.removeFromTop (kPreToggleHeight));
-    bounds.removeFromTop (kColumnGap);
+    // PRE FADER toggle: pinned to the top-LEFT corner, fixed footprint
+    // (~120 × 22). The toggle no longer reserves a horizontal row across
+    // the tab — slice EC-Polish-fix moves it inline so the knob column
+    // layout uses the full pane height, matching OTTO's ChannelDetailPanWidTab
+    // knob sizing per pixel.
+    if (preFaderToggle_)
+        preFaderToggle_->setBounds (bounds.getX() + 4, bounds.getY() + 4,
+                                    140, kPreToggleHeight);
 
     if (cards_.empty()) return;
 
-    // PanWid-style sizing: knob fills a (knobSide x knobSide) box centered
-    // in its column; label sits directly below the knob; dB readout sits
-    // below the label. No card chrome. Columns share kColumnGap.
+    // PanWid-style sizing: knob fills a (knobSide × knobSide) box centered
+    // in its column; "FX N  −∞ dB" combined label sits directly below.
+    // No card chrome, no extra reserved rows — knob area is the entire
+    // bounds minus a single label-line at the bottom (matches OTTO's
+    // PanWidTab math: `availH = bounds.getHeight() - kLabelHeight`).
     const int n = static_cast<int> (cards_.size());
-    const int availH = bounds.getHeight() - kNameLabelHeight - kDbReadoutHeight - kColumnGap;
+    const int availH = bounds.getHeight() - kNameLabelHeight;
     const int availW = (bounds.getWidth() - kColumnGap * (n - 1)) / juce::jmax (1, n);
     const int knobSide = juce::jlimit (kMinKnobSize, kMaxKnobSize,
                                        juce::jmin (availH, availW));
-    const int colW = juce::jmax (knobSide, availW);
 
-    // Center the group horizontally when the columns don't fill the bounds.
-    const int totalW = colW * n + kColumnGap * (n - 1);
-    int x = bounds.getX() + juce::jmax (0, (bounds.getWidth() - totalW) / 2);
-    const int colTop = bounds.getY()
-                     + juce::jmax (0, (bounds.getHeight()
-                                       - (knobSide + kNameLabelHeight + kDbReadoutHeight)) / 2);
+    // Center the group horizontally + vertically (PanWid idiom).
+    const int totalW = knobSide * n + kColumnGap * (n - 1);
+    const int startX = bounds.getX() + juce::jmax (0, (bounds.getWidth()  - totalW) / 2);
+    const int centerY = bounds.getY()
+                      + juce::jmax (0, (bounds.getHeight()
+                                        - (knobSide + kNameLabelHeight)) / 2);
 
     for (std::size_t i = 0; i < cards_.size(); ++i)
     {
-        const int colX = x + static_cast<int> (i) * (colW + kColumnGap);
-        // Knob: square, centered in column.
-        auto knobBounds = juce::Rectangle<int> (colX + (colW - knobSide) / 2,
-                                                colTop, knobSide, knobSide);
-        // Label directly under knob; dB readout under label.
-        auto nameRow = juce::Rectangle<int> (colX, colTop + knobSide,
-                                             colW, kNameLabelHeight);
-        auto dbRow   = juce::Rectangle<int> (colX, colTop + knobSide + kNameLabelHeight,
-                                             colW, kDbReadoutHeight);
-
+        const int colX = startX + static_cast<int> (i) * (knobSide + kColumnGap);
+        auto knobBounds = juce::Rectangle<int> (colX, centerY, knobSide, knobSide);
+        auto labelRow   = juce::Rectangle<int> (colX, centerY + knobSide,
+                                                knobSide, kNameLabelHeight);
         cards_[i].knob     ->setBounds (knobBounds);
-        cards_[i].nameLabel->setBounds (nameRow);
-        cards_[i].dbReadout->setBounds (dbRow);
+        cards_[i].nameLabel->setBounds (labelRow);
+        // dB readout sits ON the label row (the label paints centered text,
+        // we add the dB suffix to the label itself; the standalone readout
+        // label disappears off-screen). updateDbReadout pushes the combined
+        // "FX N  -∞ dB" string into nameLabel each tick.
+        if (cards_[i].dbReadout) cards_[i].dbReadout->setBounds (0, 0, 0, 0);
     }
 }
 
@@ -190,7 +195,12 @@ void ChannelDetailSendsTab::updateDbReadout (std::size_t cardIdx)
 {
     if (cardIdx >= cards_.size()) return;
     const float level = static_cast<float> (cards_[cardIdx].knob->getValue());
-    cards_[cardIdx].dbReadout->setText (formatDb (level), juce::dontSendNotification);
+    // Combine FX-return name + dB readout into one label so the layout
+    // matches OTTO's PanWidTab (knob + single label below). Saves the
+    // vertical real estate a dedicated readout row would consume.
+    const auto& name = cardIdx < cardNames_.size() ? cardNames_[cardIdx] : juce::String();
+    cards_[cardIdx].nameLabel->setText (name + "  " + formatDb (level),
+                                        juce::dontSendNotification);
 }
 
 void ChannelDetailSendsTab::notifySendChanged (std::size_t cardIdx)

@@ -797,12 +797,26 @@ public:
             // Strip context overlay — invisible click-catcher on the bus/FX-return
             // strip's top name band. Right-click (desktop) + 500 ms long-press (iOS)
             // → "Rename…" → inline TextEditor. Mirrors OutputMixerPane slice 3.
+            // Slice EC-Polish-fix: a short left-tap routes to the bus-select
+            // path (the overlay was swallowing the operator's most natural
+            // click target — the name band — so bus / FX strips appeared
+            // unselectable).
             auto overlay = std::make_unique<ida::app::StripContextOverlay> (
                 idx,
                 [this] (int who) { showBusContextMenu (who); },
                 [this] (int who, juce::String s)
                 {
                     if (onBusRename) onBusRename (who, std::move (s));
+                },
+                [this] (int who)
+                {
+                    // Mirror what stripChannelSelected does for Bus / FXReturn,
+                    // without depending on which CompactFaderStrip subarea was
+                    // tapped (the overlay covers the name band — the bus's
+                    // own listener can't see this click).
+                    const auto type = busStrips_[static_cast<std::size_t> (who)]
+                                          ->getChannelType();
+                    stripChannelSelected (who, type);
                 });
             addAndMakeVisible (*overlay);
             busNameOverlays_.push_back (std::move (overlay));
@@ -1521,12 +1535,21 @@ public:
             // hosts the inline TextEditor when the operator commits to a
             // rename. Sits in front in Z order so its mouseDown fires before
             // the CompactFaderStrip's fader interaction below it.
+            // Slice EC-Polish-fix: short-tap routes to bus select (overlay
+            // was swallowing every click on the name band; mirror of the
+            // input-pane fix).
             auto overlay = std::make_unique<ida::app::StripContextOverlay> (
                 idx,
                 [this] (int who) { showBusContextMenu (who); },
                 [this] (int who, juce::String s)
                 {
                     if (onBusRename) onBusRename (who, std::move (s));
+                },
+                [this] (int who)
+                {
+                    const auto type = busStrips_[static_cast<std::size_t> (who)]
+                                          ->getChannelType();
+                    stripChannelSelected (who, type);
                 });
             addAndMakeVisible (*overlay);
             busNameOverlays_.push_back (std::move (overlay));
