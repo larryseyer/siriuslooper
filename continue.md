@@ -57,8 +57,8 @@ per channel. Send-zero turns FX-return processing off (RT optimization).
   not-run is the `MainComponentPluginEditorTests_NOT_BUILT` sentinel —
   unchanged). The +1 vs the prior 648-pass baseline is the slice-5b
   polish `audioStripForChannel` test.
-- `master` HEAD on origin: `2795356` (todo update) → spec write may
-  push this further; check `git log -3` at session start.
+- `master` HEAD on origin: `44b79b6` (design spec + todo + continue
+  refresh — last commit of the session).
 - OTTO submodule SHA: `3c84a409`.
 - lsfx_tapecolor submodule SHA: `d8b06b1` (Phase 1+2+3+4+5).
 
