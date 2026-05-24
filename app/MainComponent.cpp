@@ -1176,6 +1176,10 @@ public:
 
     // --- Aux-bus gesture relays (idx = bus-strip row index, parallel to setBusStrips) ---
     std::function<void()>                              onAddBus;
+    /// Blank-pane-area "Add FX return" gesture (mirror of InputMixerPane).
+    /// MainComponent calls `OutputMixer::addBus` with `BusKind::FxReturn`
+    /// so the phrase-channel Sends tab has targets to route into.
+    std::function<void()>                              onAddFxReturn;
     std::function<void (int busIdx, float gainLinear)> onBusGain;
     std::function<void (int busIdx, bool muted)>       onBusMute;
     std::function<void (int busIdx)>                   onBusInsertChainClicked;
@@ -1635,7 +1639,8 @@ private:
     void showBlankAreaMenu (juce::Point<int> screenPos)
     {
         juce::PopupMenu menu;
-        menu.addItem ("Add bus", [this] { if (onAddBus) onAddBus(); });
+        menu.addItem ("Add bus",       [this] { if (onAddBus)       onAddBus(); });
+        menu.addItem ("Add FX return", [this] { if (onAddFxReturn) onAddFxReturn(); });
         menu.showMenuAsync (juce::PopupMenu::Options{}.withTargetScreenArea (
             juce::Rectangle<int> (screenPos.x, screenPos.y, 1, 1)));
     }
@@ -2775,6 +2780,21 @@ MainComponent::MainComponent()
             outputMixer_->addBus (ida::BusConfig{ /*channelCount*/ 2,
                                   "Bus " + std::to_string (outputMixer_->busCount()),
                                   ida::BusKind::Bus });
+            audioDeviceManager_.addAudioCallback (audioCallback_.get());
+            rebuildOutputBusStrips();
+            refreshOutputDestinations();
+        };
+        // Mirror InputMixerPane's "Add FX return" gesture so phrase-channel
+        // strips have FX-return targets to route into via the Sends tab.
+        // Engine surface is E1 (BusKind::FxReturn on OutputMixer); UI surface
+        // was missing — the Sends tab on phrase strips was always empty.
+        outputMixerPane_->onAddFxReturn = [this]
+        {
+            if (outputMixer_->busCount() >= ida::OutputMixer::kMaxBuses) return;
+            audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+            outputMixer_->addBus (ida::BusConfig{ /*channelCount*/ 2,
+                                  "FX " + std::to_string (outputMixer_->busCount()),
+                                  ida::BusKind::FxReturn });
             audioDeviceManager_.addAudioCallback (audioCallback_.get());
             rebuildOutputBusStrips();
             refreshOutputDestinations();
