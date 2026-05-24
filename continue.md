@@ -16,92 +16,38 @@
    design (Mode A per-tape tri-state, Mode B insert-anywhere). Slice 2's
    audio hook is now LIVE for Mode A (BeforeWrite only — AfterRead is
    data-model-only until a tape-read path exists).
-3. Operator eyes-on still pending for **both** this session's slices:
-   * `191ef5f` (TAPECOLOR Slice 2 — deeper soak of the boot-hang fix
-     under longer playback).
-   * `<new>` (monitor slice, this session — verify mute kills the master
-     meter; see the **NEW THIS SESSION** block below).
+3. **Operator eyes-on still pending** on two shipped slices. Both should
+   be verified together with input signal on ch1 + ch2:
+   * `191ef5f` (TAPECOLOR Slice 2) — deeper soak of the boot-hang fix
+     under longer playback.
+   * `5c34ed6` (per-channel Monitor + mute kill-switch) — see the
+     5-step verification block at the bottom of `## ▶ OPERATOR
+     EYES-ON` below.
 
-## ▶ NEW THIS SESSION — Per-channel Monitor + mute kill-switch
+## ▶ OPERATOR EYES-ON — per-channel Monitor + mute kill-switch (`5c34ed6`)
 
-Operator-reported bug (2026-05-24): muted Input channel 1 → Output Mixer
-master meter still moved. Root cause was a startup auto-wire of identity
-`DirectLayer::addRawRoute` for every input pair (in `MainComponent::initialiseAudio`)
-that bypassed the InputMixer strip entirely. The slice fixes the bug AND
-turns the per-channel direct-layer choice into a first-class operator-
-visible control (whitepaper §7.1 "A channel can write to tape, feed direct,
-both, or neither — independent per-channel choices").
+Each Input strip now has a **third button** above the INS + Dest rows.
+Single click cycles **Off → Monitor → Direct → Off** (musician-facing
+pro-audio terms — "Monitor" = with channel processing; "Direct" = no
+processing, lowest latency). Default Off. Strip mute is a kill-switch
+for monitoring regardless of mode (the operator-reported bug — muted
+ch1 → master meter still moving — is the leak this fixes).
 
-**What landed:**
+Verification protocol:
 
-* New `core/include/ida/MonitorMode.h` enum (Off / Raw / Processed) with
-  wire-stable string tokens, mirroring the TapeColorMode pattern.
-* `ChannelStrip<Audio>::mutedAtomic()` — non-owning pointer to the strip's
-  mute atomic that DirectLayer reads to honour the operator's kill-switch.
-* `DirectLayer::addRawRoute` / `addProcessedRoute` extended with an
-  optional `const std::atomic<bool>* muteFlag = nullptr` parameter. Audio-
-  thread `routeBuffers` checks the flag before accumulating; nullptr
-  preserves the legacy passthrough behaviour for any caller that doesn't
-  want mute-gating.
-* `InputMixer` gained `setDirectLayer` (set-once non-owning collaborator),
-  `setChannelMonitorMode` (manages route lifecycle: add / swap / remove
-  on transition), `channelMonitorMode` / `channelMonitorOutputPair`
-  accessors. Per-channel state lives in a new
-  `channelMonitorRoutes_` unordered_map. The destructor sweeps + removes
-  all routes (the project-load path destroys+rebuilds the InputMixer in
-  place while DirectLayer survives — without the sweep, dangling muteFlag
-  pointers would crash on the next audio-callback resume).
-* `removeChannel` tears down the channel's monitor route BEFORE the
-  strip destructs.
-* Persistence: `InputChannelState` gained `monitorMode` +
-  `monitorOutputPair` fields; SessionFormat emits the JSON only when
-  non-default (compact), reads as Off when absent (back-compat),
-  fails-loud on unknown tokens.
-* `app/MainComponent.cpp`:
-  - The startup auto-wire `for (int ch = 0; ch < kDefaultStereoChannels; ++ch)
-    directLayer_->addRawRoute(InputId(ch), OutputChannelId(ch));` was
-    **DELETED**. Operators now opt in per channel via the Monitor button.
-  - `inputMixer_->setDirectLayer(directLayer_.get())` is called at init
-    and again on project load (after replacing inputMixer_).
-  - InputMixerPane gained a Monitor button per strip (a third bottom band
-    above the INS + Dest rows). Single click cycles **Off → Monitor →
-    Direct → Off**; label + tooltip use musician-facing pro-audio terms
-    (operator feedback 2026-05-24 — "Mon" / "Raw" was engineer-speak).
-    "Monitor" = with channel processing; "Direct" = no processing, lowest
-    latency (matches every hardware audio-interface UI: RME, UA Apollo,
-    Focusrite). Default Off.
-  - "Direct out" was dropped from the channel + bus main-out pickers
-    (engine-level `MainOutDest::HardwareOutput` retained for legacy /
-    back-compat — separate cleanup slice queued; see todo.md).
-  - `refreshInputDestinations` now pushes Monitor state too.
-
-**Tests:** 20 new cases in three files (all in the `[monitor]` Catch2
-tag). `ctest -E "(PluginEditor|MainComponentPlug)"` → **728 pass / 0
-fail** (was 708).
-
-* `tests/InputMixerMonitorModeLifecycleTests.cpp` — engine-level mode
-  state machine (default Off, route creation/removal/swap, removeChannel
-  cleanup, destructor sweep, output-pair round-trip, unset-DirectLayer
-  no-op).
-* `tests/InputMixerMonitorMuteLeakTests.cpp` — **the operator's failing
-  case**: a muted source's monitor signal is silent on the audio thread
-  regardless of mode. Per-route mute scoping (one route muted doesn't
-  affect another), Raw + Processed coverage.
-* `tests/SessionFormatMonitorModeTests.cpp` — round-trip Off / Raw /
-  Processed, monitorOutputPair when non-zero, compact-when-Off, fail-
-  loud on unknown token.
-
-**Operator eyes-on protocol (do this when next at the keyboard):**
-
-1. Launch `~/Desktop/IDA`, send signal to input pair 1, leave the strip's
-   third button (default label **Off**) alone → master meter is **still**
-   (no auto-wire anymore).
+1. Launch `~/Desktop/IDA`, send signal to input pair 1, leave the
+   strip's third button (default label **Off**) alone → master meter is
+   **still** (no startup auto-wire anymore — that's the leak source).
 2. Click the button on strip 1 → label flips to **Monitor** (processed),
    master meter moves.
 3. Mute strip 1 → master meter **goes still immediately** (the fix).
 4. Unmute → meter resumes. Click again → **Direct** (low-latency raw
    tap), meter behaviour same. Mute → still silent.
 5. Save the project, reopen → button state + output pair survive.
+
+Full design + rationale is in commit `5c34ed6`'s message and in
+`docs/IDA_Whitepaper_V8.md` §7 (the engine work realizes the §7.1
+"independent per-channel choices" contract).
 
 ## ▶ NEXT (FIRST when picking up cold) — Bump `external/lsfx_tapecolor` from `d8b06b1` → `a7ba9c3`
 
