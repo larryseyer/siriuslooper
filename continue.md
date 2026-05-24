@@ -1,59 +1,102 @@
-# Session Continuation — NEXT: bump `lsfx_tapecolor` (Phase 6/7/8), then Slice 2c (param UI) + Slice 3 (whitepaper)
+# Session Continuation — NEXT: debug monitor-slice bugs + spec-doc the Monitor UX, THEN bump `lsfx_tapecolor`
 
 > **For a fresh chat picking this up cold:** memory + project + user CLAUDE.md
 > load automatically. This file is the **forward-looking handoff** — only
 > what's next matters.
 
-## ▶ DO THIS FIRST
+## ▶ FIRST — Debug monitor-slice (`5c34ed6`) bugs
 
-1. Read `external/OTTO/CROSS_PROJECT_INBOX.md`. **At the time this handoff
-   was written OTTO had NOT yet posted its TAPECOLOR Phase-8 entry**
-   (operator confirmation 2026-05-24); they will post when their work
-   wraps. If a `[FROM OTTO → IDA]` Phase-8 entry IS now present, follow
-   its `For IDA's Claude:` guidance first — it supersedes the inspection
-   notes below.
-2. Re-read auto-memory `[[project_tapecolor_placement]]` — the two-mode
-   design (Mode A per-tape tri-state, Mode B insert-anywhere). Slice 2's
-   audio hook is now LIVE for Mode A (BeforeWrite only — AfterRead is
-   data-model-only until a tape-read path exists).
-3. **Operator eyes-on still pending** on two shipped slices. Both should
-   be verified together with input signal on ch1 + ch2:
-   * `191ef5f` (TAPECOLOR Slice 2) — deeper soak of the boot-hang fix
-     under longer playback.
-   * `5c34ed6` (per-channel Monitor + mute kill-switch) — see the
-     5-step verification block at the bottom of `## ▶ OPERATOR
-     EYES-ON` below.
+**Operator found bugs in the per-channel Monitor implementation shipped
+in `5c34ed6` (commit message: "feat: per-channel Monitor (direct-layer
+Off/Monitor/Direct) + mute kill-switch"). Specifics not yet captured —
+the operator flagged "there are bugs" at the end of the prior session
+without describing the symptoms.**
 
-## ▶ OPERATOR EYES-ON — per-channel Monitor + mute kill-switch (`5c34ed6`)
+Order of operations:
 
-Each Input strip now has a **third button** above the INS + Dest rows.
-Single click cycles **Off → Monitor → Direct → Off** (musician-facing
-pro-audio terms — "Monitor" = with channel processing; "Direct" = no
-processing, lowest latency). Default Off. Strip mute is a kill-switch
-for monitoring regardless of mode (the operator-reported bug — muted
-ch1 → master meter still moving — is the leak this fixes).
+1. **Ask the operator what they observed.** Do not start guessing. The
+   slice changed three independent things (DirectLayer route mute-flag,
+   InputMixer per-channel route lifecycle, UI button cycle) — narrowing
+   to the right layer needs the operator's actual symptom (which strip,
+   which mode, mute did/didn't kill it, meter behaviour, crash vs wrong
+   audio, etc.).
+2. Reproduce the symptom against the running .app (PID 21350 left
+   running from the prior session) or rebuild + relaunch. Add a failing
+   test that captures the symptom BEFORE touching the implementation
+   (TDD discipline — the existing `[monitor]` tag has 20 passing cases;
+   add a 21st that fails).
+3. Fix at the smallest scope that makes the test pass. Likely suspects
+   given the architectural shape:
+   * **Stereo source coverage** — `setChannelMonitorMode` registers ONE
+     route per channel using the channel's primary `InputId` (the
+     strip's left device channel). A stereo source feeds both L and R
+     into the strip but only one InputId reaches the DirectLayer raw
+     route. That means stereo strips with Raw mode would only hear the
+     LEFT side. (Processed mode is fine — it taps the post-strip
+     ChannelId buffer which is stereo.)
+   * **Output pair channel mapping** — the route maps `outputPair` to
+     `OutputChannelId(0)` only; the operator's Output Mixer master may
+     be expecting a different OutputChannelId convention.
+   * **Strip mute atomic lifetime / project-load reentry** — the dtor
+     sweep is correct on a clean shutdown, but the project-load path
+     (`MainComponent.cpp` ~line 6549) rebuilds InputMixer then calls
+     `importGraphState`, which calls `setChannelMonitorMode` AFTER the
+     strip exists — verify the strip's `mutedAtomic()` pointer is
+     stable across that sequence.
+   * **The "Off" label persisting at startup** — `setStrips` defaults
+     each `monitorModes_` entry to `MonitorMode::Off` and the button
+     label is set to "Off" in the ctor; the engine's monitor mode is
+     also Off by default; first `refreshInputDestinations` call should
+     sync them. Verify the button label is correct on first paint.
+4. **Do NOT** start anything else until the bug list is empty. The
+   `lsfx_tapecolor` bump (below) is the next slice after this.
 
-Verification protocol:
+## ▶ SECOND — Spec-doc the Monitor UX in the whitepaper
 
-1. Launch `~/Desktop/IDA`, send signal to input pair 1, leave the
-   strip's third button (default label **Off**) alone → master meter is
-   **still** (no startup auto-wire anymore — that's the leak source).
-2. Click the button on strip 1 → label flips to **Monitor** (processed),
-   master meter moves.
-3. Mute strip 1 → master meter **goes still immediately** (the fix).
-4. Unmute → meter resumes. Click again → **Direct** (low-latency raw
-   tap), meter behaviour same. Mute → still silent.
-5. Save the project, reopen → button state + output pair survive.
+Operator flagged 2026-05-24 that the spec docs need updating to match
+what landed in `5c34ed6`. The current `docs/IDA_Whitepaper_V8.md` §7
+("Direct Layer") describes the engine model (Raw / Processed) but does
+NOT pin down the operator-facing UX. After the bugs above are
+characterized + fixed, update:
 
-Full design + rationale is in commit `5c34ed6`'s message and in
-`docs/IDA_Whitepaper_V8.md` §7 (the engine work realizes the §7.1
-"independent per-channel choices" contract).
+* **§6.6.1** (Input Mixer pane) — document the per-strip Monitor button:
+  its position (third bottom band above INS + Dest), the three states
+  (Off / Monitor / Direct), the click-cycle gesture, the musician-facing
+  labels ("Direct" = pro-audio convention for low-latency hardware-
+  routed monitoring; "Monitor" = processed signal with channel EQ/CMP/FX).
+* **§7.2** (Raw vs Processed direct modes) — append a sentence noting
+  that the operator-facing UI exposes Raw as **Direct** and Processed
+  as **Monitor**, since that's the convention every pro audio interface
+  (RME, UA Apollo, Focusrite) uses and what musicians recognize.
+* **§7.3** (Anticipatory direct routing) — note that explicit operator
+  opt-in via the Monitor button is the current state; anticipatory
+  inference from arm-state / playback overlap / utility-signal hints is
+  the future layer (per `[[project_user_guide_alongside_whitepaper]]`,
+  also add to the user guide once the bugs are resolved).
 
-## ▶ NEXT (FIRST when picking up cold) — Bump `external/lsfx_tapecolor` from `d8b06b1` → `a7ba9c3`
+Plus a user-guide section explaining when an operator wants Monitor
+(want to hear my channel's EQ in my cans) vs Direct (latency-sensitive
+performance, hardware-style cue).
 
-This is the **first action** for the next chat, before any new Slice 2c /
-Slice 3 work. The submodule has progressed 3 phases since IDA was last
-pinned:
+## ▶ ALSO READ AT SESSION START
+
+* `external/OTTO/CROSS_PROJECT_INBOX.md` — OTTO had NOT posted its
+  TAPECOLOR Phase-8 entry yet at the close of the prior session
+  (2026-05-24 operator confirmation). If a `[FROM OTTO → IDA]` Phase-8
+  entry IS now present, its `For IDA's Claude:` guidance supersedes the
+  `lsfx_tapecolor` bump steps below.
+* Auto-memory `[[project_tapecolor_placement]]` — the two-mode TAPECOLOR
+  design (Mode A per-tape tri-state, Mode B insert-anywhere). Slice 2's
+  audio hook is LIVE for Mode A BeforeWrite; AfterRead is data-model-
+  only until a tape-read path exists.
+* TAPECOLOR Slice 2 (`191ef5f`) also still needs operator eyes-on (a
+  deeper soak of the boot-hang fix under longer playback).
+
+## ▶ THIRD — Bump `external/lsfx_tapecolor` from `d8b06b1` → `a7ba9c3`
+
+After the monitor bugs are fixed and the spec docs updated, the
+`lsfx_tapecolor` submodule still needs to advance 3 phases (`d8b06b1`
+→ `a7ba9c3`):
 
 | Phase | SHA       | What it adds (lsfx_tapecolor) | What IDA gains |
 |-------|-----------|-------------------------------|----------------|
