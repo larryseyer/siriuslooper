@@ -183,7 +183,14 @@ TEST_CASE ("OutputMixer survives serialize -> deserialize with an Internal-FX in
     const auto masterIt = std::find_if (round.buses.begin(), round.buses.end(),
         [&] (const ida::MixerBusState& b) { return b.busId != auxId.value(); });
     REQUIRE (masterIt != round.buses.end());
-    CHECK (masterIt->inserts.empty()); // inserts must not bleed onto the master bus
+    // Slice EC-Polish — Bus ctor auto-seeds [EQ, CMP] so master defaults
+    // to those two inserts after round-trip. The bleed check now verifies
+    // master's chain is EXACTLY the default seed (no RVB or DLY drifted in).
+    REQUIRE (masterIt->inserts.size() == 2);
+    CHECK (masterIt->inserts.entries()[0].kind == ida::EffectChainSlotKind::Internal);
+    CHECK (masterIt->inserts.entries()[0].internalId == InternalFxId::kEq);
+    CHECK (masterIt->inserts.entries()[1].kind == ida::EffectChainSlotKind::Internal);
+    CHECK (masterIt->inserts.entries()[1].internalId == InternalFxId::kCmp);
     REQUIRE (auxIt->inserts.size() == 1);
     CHECK (auxIt->inserts.entries()[0].kind == ida::EffectChainSlotKind::Internal);
     CHECK (auxIt->inserts.entries()[0].internalId == InternalFxId::kRvb);

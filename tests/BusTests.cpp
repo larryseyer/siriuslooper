@@ -52,7 +52,14 @@ TEST_CASE ("Bus constructor stores id and config", "[bus]")
 TEST_CASE ("Bus::setEffectChain copies the chain in", "[bus][effect-chain]")
 {
     Bus bus (BusId { 1 }, BusConfig { 2, "Reverb" });
-    CHECK (bus.effectChain().empty());
+    // Slice EC-Polish — Bus ctor auto-seeds [EQ, CMP] so every bus the
+    // operator creates has a working channel-strip-style insert chain
+    // from sample 0. `setEffectChain` replaces this wholesale.
+    REQUIRE (bus.effectChain().size() == 2);
+    CHECK (bus.effectChain().at (0).kind == ida::EffectChainSlotKind::Internal);
+    CHECK (bus.effectChain().at (0).internalId == ida::InternalFxId::kEq);
+    CHECK (bus.effectChain().at (1).kind == ida::EffectChainSlotKind::Internal);
+    CHECK (bus.effectChain().at (1).internalId == ida::InternalFxId::kCmp);
 
     PluginDescriptor descriptor;
     descriptor.format = PluginFormat::Vst3;

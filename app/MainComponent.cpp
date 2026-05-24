@@ -470,6 +470,37 @@ public:
         detailPanel_.cmpTab()   .addListener (this);
         detailPanel_.addListener (this);
         addChildComponent (detailPanel_);
+
+        // Escape-to-deselect — the operator's escape gesture from a
+        // selection. Especially load-bearing in full-screen EQ / CMP
+        // mode where the strip row is hidden and there's no other
+        // visible way to back out.
+        setWantsKeyboardFocus (true);
+    }
+
+    /// Clear any current selection + hide the detail panel + restore strip
+    /// row visibility. Public so showDetailFor / showBusDetailFor callers
+    /// can also force it.
+    void deselectAll()
+    {
+        for (int i = 0; i < stripCount(); ++i)
+            strips_[static_cast<std::size_t> (i)]->setSelected (false);
+        for (int i = 0; i < busStripCount(); ++i)
+            busStrips_[static_cast<std::size_t> (i)]->setSelected (false);
+        selectedStrip_ = -1;
+        selectedBus_   = -1;
+        detailPanel_.setVisible (false);
+        resized();
+    }
+
+    bool keyPressed (const juce::KeyPress& k) override
+    {
+        if (k == juce::KeyPress::escapeKey)
+        {
+            deselectAll();
+            return true;
+        }
+        return false;
     }
 
     // --- ChannelDetailListener (slice EC-Polish full-screen layout) -----------
@@ -598,14 +629,16 @@ public:
         // but a previous bus selection may have hidden Pan/Width + Sends).
         detailPanel_.setTabsAvailable ({ true, true, true, true });
         detailPanel_.setVisible (true);
+        // Grab focus so Escape (the deselect gesture) reaches this pane
+        // even from a freshly opened detail panel.
+        grabKeyboardFocus();
         resized();
     }
 
-    /// Bus-side detail surface: only EQ + CMP tabs are wired (no pan on a
-    /// stereo bus; per-bus sends aren't modeled yet). MainComponent collects
-    /// the probes by looking up the bus's IEffectChainHost view keyed by
-    /// `BusId.value()` and calls this. `busIdx` is the row index into
-    /// `busStrips_` (parallel to MainComponent::busStripIds_).
+    /// Bus-side detail surface: EQ + CMP tabs wired. Pan/Width + Sends
+    /// are hidden until the bus engine grows pan/width state + a bus-send
+    /// model (queued in todo.md as "bus pan/width + sends slice"). The
+    /// operator can still escape via Escape key or clicking another strip.
     void showBusDetailFor (int busIdx,
                            ida::EqConfig eqConfig, bool hasEqSlot,
                            ida::CmpConfig cmpConfig, bool hasCmpSlot)
@@ -615,6 +648,7 @@ public:
         detailPanel_.cmpTab().setChannelState ({ cmpConfig, hasCmpSlot });
         detailPanel_.setTabsAvailable ({ false, false, true, true });
         detailPanel_.setVisible (true);
+        grabKeyboardFocus();
         resized();
     }
 
@@ -866,15 +900,20 @@ public:
             strips_[static_cast<std::size_t> (idx)]->setEffectivelyMuted (effectivelyMuted);
     }
 
-    /// Full-screen detail trigger: when EQ or CMP is the active tab, the
-    /// graphical curve / meter needs the whole pane to be useful. PanWid +
-    /// Sends remain in the kDetailHeight band at the top.
+    /// Full-screen detail trigger: when EQ or CMP is the active tab AND
+    /// the slot is actually wired, the graphical curve / meter needs the
+    /// whole pane. Empty-slot (showing "+ Add EQ" / "+ Add CMP") stays at
+    /// the small detail band so the operator can still see the strip row
+    /// and click another strip to escape. PanWid + Sends never full-screen.
     bool isDetailFullScreen() const noexcept
     {
         if (! detailPanel_.isVisible()) return false;
         const auto t = detailPanel_.getActiveTab();
-        return t == ida::ui::ChannelDetail::Tab::EQ
-            || t == ida::ui::ChannelDetail::Tab::CMP;
+        if (t == ida::ui::ChannelDetail::Tab::EQ)
+            return detailPanel_.eqTab().hasEqSlot();
+        if (t == ida::ui::ChannelDetail::Tab::CMP)
+            return detailPanel_.cmpTab().hasCmpSlot();
+        return false;
     }
 
     void resized() override
@@ -1298,6 +1337,10 @@ public:
         detailPanel_.addListener (this);
         addChildComponent (detailPanel_);
 
+        // Escape-to-deselect — required when the operator lands in
+        // full-screen EQ / CMP and needs out.
+        setWantsKeyboardFocus (true);
+
         masterIns_ = std::make_unique<juce::TextButton>();
         masterIns_->setButtonText ("INS");
         masterIns_->onClick = [this]
@@ -1559,6 +1602,7 @@ public:
         // a bus / master selection).
         detailPanel_.setTabsAvailable ({ true, true, true, true });
         detailPanel_.setVisible (true);
+        grabKeyboardFocus();
         resized();
     }
 
@@ -1574,6 +1618,7 @@ public:
         detailPanel_.cmpTab().setChannelState ({ cmpConfig, hasCmpSlot });
         detailPanel_.setTabsAvailable ({ false, false, true, true });
         detailPanel_.setVisible (true);
+        grabKeyboardFocus();
         resized();
     }
 
@@ -1586,6 +1631,7 @@ public:
         detailPanel_.cmpTab().setChannelState ({ cmpConfig, hasCmpSlot });
         detailPanel_.setTabsAvailable ({ false, false, true, true });
         detailPanel_.setVisible (true);
+        grabKeyboardFocus();
         resized();
     }
 
@@ -1723,13 +1769,18 @@ public:
         longPressBlank_ = false;
     }
 
-    /// Full-screen trigger — same contract as InputMixerPane.
+    /// Full-screen trigger — same contract as InputMixerPane. Empty-slot
+    /// EQ / CMP stays at the small detail band so the operator can see
+    /// the strip row and escape.
     bool isDetailFullScreen() const noexcept
     {
         if (! detailPanel_.isVisible()) return false;
         const auto t = detailPanel_.getActiveTab();
-        return t == ida::ui::ChannelDetail::Tab::EQ
-            || t == ida::ui::ChannelDetail::Tab::CMP;
+        if (t == ida::ui::ChannelDetail::Tab::EQ)
+            return detailPanel_.eqTab().hasEqSlot();
+        if (t == ida::ui::ChannelDetail::Tab::CMP)
+            return detailPanel_.cmpTab().hasCmpSlot();
+        return false;
     }
 
     void resized() override
@@ -1853,6 +1904,32 @@ public:
 
     // --- ChannelDetailListener (slice EC-Polish full-screen layout) -----------
     void channelDetailTabChanged (int /*tabIndex*/) override { resized(); }
+
+    /// Clear any current selection + hide the detail panel. Mirrors
+    /// `InputMixerPane::deselectAll`.
+    void deselectAll()
+    {
+        for (int i = 0; i < phraseStripCount(); ++i)
+            phraseStrips_[static_cast<std::size_t> (i)]->setSelected (false);
+        for (int i = 0; i < busStripCount(); ++i)
+            busStrips_[static_cast<std::size_t> (i)]->setSelected (false);
+        if (master_) master_->setSelected (false);
+        selectedPhrase_ = -1;
+        selectedBus_    = -1;
+        selectedMaster_ = false;
+        detailPanel_.setVisible (false);
+        resized();
+    }
+
+    bool keyPressed (const juce::KeyPress& k) override
+    {
+        if (k == juce::KeyPress::escapeKey)
+        {
+            deselectAll();
+            return true;
+        }
+        return false;
+    }
 
     // --- CompactFaderStripListener — master (idx == kMasterStripId) vs aux vs
     // phrase. Phrase strips are distinguished from aux buses by their

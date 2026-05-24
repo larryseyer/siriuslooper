@@ -56,6 +56,12 @@ public:
     void setChannelState   (const ChannelState& state);
     void clearChannelState();
 
+    /// True iff an EQ slot is wired on the currently-bound channel (i.e.
+    /// the tab is showing the band editor, not the "+ Add EQ" empty state).
+    /// Used by the host pane to gate full-screen layout — empty-state
+    /// shouldn't full-screen because the operator would be stranded.
+    bool hasEqSlot() const noexcept { return hasEqSlot_; }
+
     void addListener    (ChannelDetailEQTabListener* l);
     void removeListener (ChannelDetailEQTabListener* l);
 

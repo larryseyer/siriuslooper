@@ -506,7 +506,12 @@ TEST_CASE ("OutputMixer bus->bus subgroup actually routes audio through the pare
     const auto busB = mixer.addBus (BusConfig { 2, "B" });
 
     // busB carries a one-slot chain so the halving host transforms anything
-    // that flows THROUGH busB. busA stays unity (empty chain).
+    // that flows THROUGH busB. busA + master must stay unity for the
+    // assertion to isolate busB's transform — slice EC-Polish auto-seeds
+    // [EQ, CMP] on every bus, so explicitly clear those two to keep the
+    // single-halve invariant.
+    mixer.setBusEffectChain (busA,     EffectChain {});
+    mixer.setBusEffectChain (BusId {0}, EffectChain {});  // master
     EffectChainEntry slot;
     slot.descriptor.name = "Halve";
     slot.displayName     = "Halve";

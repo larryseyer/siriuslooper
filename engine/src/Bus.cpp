@@ -17,12 +17,23 @@ namespace ida
 Bus::Bus (BusId id, BusConfig config)
     : id_ (id),
       config_ (std::move (config)),
+      effectChain_ (EffectChain{}
+                        .withAppended (EffectChainEntry::makeInternal (InternalFxId::kEq))
+                        .withAppended (EffectChainEntry::makeInternal (InternalFxId::kCmp))),
       mixBuffer_ (kMaxBusMixSamples * static_cast<std::size_t> (kMaxBusChannelsHard), 0.0f),
       processedBuffer_ (kMaxBusMixSamples * static_cast<std::size_t> (kMaxBusChannelsHard), 0.0f)
 {
     // Fail loud per CLAUDE.md rule 8 — silently truncating an out-of-range
     // channelCount in Bus::process would mask configuration mistakes.
     jassert (config_.channelCount >= 1 && config_.channelCount <= kMaxBusChannelsHard);
+
+    // Slice EC-Polish — buses, FX returns, and master all auto-seed EQ + CMP
+    // adapters (matches the slice-EC `ChannelStrip<Audio>` ctor seed). The
+    // host bind happens later in `setEffectChainHost` via the same dispatch
+    // sweep `setEffectChain` uses — so the seed is inert until a host is
+    // attached, then activates on the next host wiring. Without this seed,
+    // selecting a bus drops the operator into a full-screen EQ/CMP empty
+    // state with no obvious way back out.
 }
 
 Bus::Bus (Bus&& other) noexcept
@@ -65,9 +76,23 @@ void Bus::setEffectChain (EffectChain chain)
     // POST-mutation chain shape — important for the unbind-stale-slots
     // sweep that follows.
     effectChain_ = std::move (chain);
+    dispatchAllSlotsToHost();
+}
 
-    if (host_ == nullptr)
-        return;
+void Bus::setEffectChainHost (IEffectChainHost* host)
+{
+    host_ = host;
+    // Slice EC-Polish — bind any pre-seeded chain (the ctor's EQ + CMP
+    // default, or anything imported via setEffectChain before the host
+    // was set) so adapters bind as soon as the bus is wired. Mirrors
+    // ChannelStrip's setEffectChainHost contract. Inert when host is
+    // null or chain is empty.
+    dispatchAllSlotsToHost();
+}
+
+void Bus::dispatchAllSlotsToHost()
+{
+    if (host_ == nullptr) return;
 
     // P7 T3a-C — re-bind every potential slot. For each [0, kMaxSlots):
     //   * Internal slot → bind that adapter id (auto-prepared if host has

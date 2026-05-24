@@ -40,6 +40,9 @@ public:
     void setChannelState   (const ChannelState& state);
     void clearChannelState();
 
+    /// True iff a CMP slot is wired on the currently-bound channel.
+    bool hasCmpSlot() const noexcept { return hasCmpSlot_; }
+
     void addListener    (ChannelDetailCMPTabListener* l);
     void removeListener (ChannelDetailCMPTabListener* l);
 

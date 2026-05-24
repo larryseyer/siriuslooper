@@ -160,7 +160,7 @@ public:
     /// Set-once before the audio thread starts (same M5/M6 collaborator
     /// contract as `setEffectChain`); mutating after start is a
     /// threading-contract violation.
-    void setEffectChainHost (IEffectChainHost* host) noexcept { host_ = host; }
+    void setEffectChainHost (IEffectChainHost* host);
 
     IEffectChainHost* effectChainHost() const noexcept { return host_; }
 
@@ -269,6 +269,14 @@ private:
     void processChain (float* const* output,
                        int activeChannels, int clampedSamples,
                        float* peaksOut) const noexcept;
+
+    /// Slice EC-Polish — shared host re-dispatch helper. Walks every
+    /// potential slot index and binds Internal entries or unbinds others
+    /// via `host_->setInternalFxAtSlot`. Called from both `setEffectChain`
+    /// (replace path) and `setEffectChainHost` (initial bind path so a
+    /// pre-seeded chain wires up as soon as the host is attached).
+    /// Inert if `host_ == nullptr`.
+    void dispatchAllSlotsToHost();
 
     BusId             id_;
     BusConfig         config_;

@@ -214,6 +214,10 @@ public:
     ChannelDetailSendsTab&            sendsTab()  noexcept { return *sendsTab_;  }
     ChannelDetailEQTab&               eqTab()     noexcept { return *eqTab_;     }
     ChannelDetailCMPTab&              cmpTab()    noexcept { return *cmpTab_;    }
+    const otto::ui::ChannelDetailPanWidTab& panWidTab() const noexcept { return *panWidTab_; }
+    const ChannelDetailSendsTab&            sendsTab()  const noexcept { return *sendsTab_;  }
+    const ChannelDetailEQTab&               eqTab()     const noexcept { return *eqTab_;     }
+    const ChannelDetailCMPTab&              cmpTab()    const noexcept { return *cmpTab_;    }
 
     void addListener    (ChannelDetailListener* l);
     void removeListener (ChannelDetailListener* l);
