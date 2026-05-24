@@ -26,17 +26,20 @@ enum class MixerTerminalKind { Tape, HardwareOutput };
 struct MixerMainOut
 {
     enum class Kind { Terminal, Bus };
-    Kind              kind     { Kind::Terminal };
-    MixerTerminalKind terminal { MixerTerminalKind::Tape }; // valid when kind == Terminal
-    std::int64_t      tapeId   { 1 };                       // valid when terminal == Tape (1 = primary)
-    std::int64_t      busId    { 0 };                       // valid when kind == Bus
+    Kind              kind            { Kind::Terminal };
+    MixerTerminalKind terminal        { MixerTerminalKind::Tape }; // valid when kind == Terminal
+    std::int64_t      tapeId          { 1 };                       // valid when terminal == Tape (1 = primary)
+    std::int64_t      busId           { 0 };                       // valid when kind == Bus
+    int               hardwareOutPair { 0 };                       // valid when terminal == HardwareOutput; 0 = outputs [0,1]
 
     bool operator== (const MixerMainOut& o) const noexcept
     {
         if (kind != o.kind || terminal != o.terminal || busId != o.busId)
             return false;
         const bool isTape = (kind == Kind::Terminal && terminal == MixerTerminalKind::Tape);
-        return ! isTape || tapeId == o.tapeId;
+        if (isTape && tapeId != o.tapeId) return false;
+        const bool isHw   = (kind == Kind::Terminal && terminal == MixerTerminalKind::HardwareOutput);
+        return ! isHw || hardwareOutPair == o.hardwareOutPair;
     }
     bool operator!= (const MixerMainOut& o) const noexcept { return ! (*this == o); }
 };

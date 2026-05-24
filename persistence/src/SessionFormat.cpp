@@ -857,6 +857,8 @@ namespace
             obj->setProperty ("terminal", terminalKindToString (m.terminal));
             if (m.terminal == MixerTerminalKind::Tape)
                 obj->setProperty ("tapeId", juce::int64 (m.tapeId));
+            else if (m.terminal == MixerTerminalKind::HardwareOutput && m.hardwareOutPair != 0)
+                obj->setProperty ("hardwareOutPair", m.hardwareOutPair);
         }
         return objectVar (obj);
     }
@@ -880,6 +882,12 @@ namespace
                     m.tapeId = requireInt64 (t, "mainOut.tapeId");
                 else
                     m.tapeId = 1;
+            }
+            else if (m.terminal == MixerTerminalKind::HardwareOutput)
+            {
+                // Back-compat default 0 (outputs [0,1]) for pre-pair documents.
+                if (const auto p = optionalProperty (v, "hardwareOutPair"); ! p.isVoid())
+                    m.hardwareOutPair = requireInt (p, "mainOut.hardwareOutPair");
             }
         }
         else fail (("Unknown mainOut.kind: " + kind).toStdString());

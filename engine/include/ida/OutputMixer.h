@@ -137,8 +137,39 @@ public:
     /// Routes a bus's main-out direct to the HardwareOutput terminal,
     /// bypassing master. Mirrors `InputMixer::setBusMainOutToHardwareOutput`.
     /// Returns false if the BusId is unknown. The master bus's main-out is
-    /// always the terminal and cannot be redirected.
+    /// always the terminal; this single-arg overload forwards to the pair-
+    /// indexed overload with `pairIndex = 0` (preserves the existing
+    /// behaviour for master and aux alike).
     bool setBusMainOutToHardwareOutput (BusId bus);
+
+    /// Pair-indexed routing to the HardwareOutput terminal. `pairIndex` is
+    /// the stereo-pair offset into the physical output buffer: 0 = outputs
+    /// [0,1], 1 = outputs [2,3], … Accepts the master bus (`BusId{0}`)
+    /// because multi-output interfaces let the operator park master on any
+    /// pair. Negative values clamp to 0; the audio thread bounds-checks at
+    /// render time and falls back to pair 0 if the device's output channel
+    /// count shrinks below the requested pair. Returns false on unknown
+    /// bus id.
+    bool setBusMainOutToHardwareOutput (BusId bus, int pairIndex);
+
+    /// Reads bus `id`'s recorded hardware-output pair index. Returns 0 for
+    /// unknown ids and for buses whose main-out is currently a Bus
+    /// destination (the recorded index survives switching to a bus dest and
+    /// back). Message-thread accessor.
+    int busHardwareOutPair (BusId id) const noexcept;
+
+    /// Mirrors `InputMixer::busMainOutToBusWouldCycle`. Delegates to
+    /// `MixerGraph::wouldMainOutCycle`. False for unknown ids. The Output
+    /// Mixer UI calls this to pre-filter cycle-bound bus destinations from
+    /// the per-strip picker so the operator never sees a target the engine
+    /// would silently reject. Message-thread only.
+    bool busMainOutToBusWouldCycle (BusId from, BusId to) const noexcept;
+
+    /// Renames a bus. Writes the new name into `BusConfig::name`. Returns
+    /// false for the master bus (`BusId{0}` — master's name is canonical)
+    /// and for unknown ids. Message-thread only (the underlying string is
+    /// not guarded against the audio thread; do not call mid-render).
+    bool renameBus (BusId id, std::string newName);
 
     /// Total bus count (master + aux). Useful for cap checks at the UI
     /// layer before calling `addBus`. Mirrors `InputMixer::busCount`.
@@ -232,6 +263,14 @@ private:
 
     std::vector<ChannelEntry> channels_;
     std::vector<Bus>          buses_;
+
+    /// Per-bus hardware-output pair index, parallel to `buses_`. Default 0
+    /// (outputs [0,1]) for every newly-added bus. Updated on the message
+    /// thread by `setBusMainOutToHardwareOutput`; read on the audio thread
+    /// by `renderBuffer` to compute the destination channel offset.
+    /// Reserved to `kMaxBuses` in the ctor so `push_back` in `addBus` never
+    /// reallocates (matches the `buses_` reservation pattern).
+    std::vector<int>          busHardwareOutPair_;
 
     /// Dense send-level matrix sized `kMaxOutputChannels * kMaxBuses` in
     /// the constructor. 32 × 64 = 2048 floats = 8 KB total — small enough

@@ -145,6 +145,11 @@ public:
 
     const EffectChain& effectChain() const noexcept { return effectChain_; }
 
+    /// Message-thread setter — operator-driven bus rename. Writes through
+    /// to `config_.name`. Same threading contract as `setEffectChain`:
+    /// not callable while the audio thread is running.
+    void setName (std::string newName) { config_.name = std::move (newName); }
+
     /// Message-thread setter — wires the audio-thread effect-chain
     /// dispatcher (M7 S3). The bus does NOT own the host; lifetime is
     /// the caller's responsibility (the integration test owns one

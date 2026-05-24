@@ -1023,6 +1023,15 @@ public:
             if (onMasterInsertChainClicked) onMasterInsertChainClicked();
         };
         addAndMakeVisible (*masterIns_);
+
+        // Master per-pair destination button — visible only when the audio
+        // device exposes more than one stereo output pair (multi-output
+        // interfaces). On 2-channel devices the button stays hidden because
+        // there is no choice to make. Populated via setMasterDestination().
+        masterDestButton_ = std::make_unique<juce::TextButton>();
+        masterDestButton_->setButtonText ("—");
+        masterDestButton_->onClick = [this] { showMasterDestinationMenu(); };
+        addChildComponent (*masterDestButton_);   // hidden until setMasterDestination runs
     }
 
     /// One aux bus strip's display state. Output Mixer has no FX-return concept
@@ -1034,18 +1043,25 @@ public:
     enum class DestKind { Bus, HardwareOutput };
     /// One selectable destination in a bus's picker. `id` is the target BusId
     /// raw value when `kind == Bus` (0 = master), 0 for HardwareOutput.
-    /// Identity for ticking is the (kind, id) pair.
-    struct DestChoice { DestKind kind; std::int64_t id; juce::String name; };
+    /// `pairIndex` is the physical-output stereo-pair offset (0 = outs [0,1],
+    /// 1 = outs [2,3], …) and is ignored when `kind == Bus`. Identity for
+    /// ticking is the (kind, id, pairIndex) triple.
+    struct DestChoice { DestKind kind;
+                        std::int64_t id;
+                        juce::String name;
+                        int pairIndex { 0 }; };
     /// A bus's current destination (button label + what ticks in the popup).
     /// Defaults to Bus + id 0 (the master — engine default for a fresh aux bus).
     struct StripDest { DestKind currentKind { DestKind::Bus };
                        std::int64_t currentId { 0 };
+                       int          currentPairIndex { 0 };
                        juce::String currentName; };
 
     // --- Master gesture relays ---
     std::function<void (float gainLinear)> onMasterGain;
     std::function<void (bool muted)>       onMasterMute;
     std::function<void()>                  onMasterInsertChainClicked;
+    std::function<void (DestChoice dest)>  onMasterDestinationChosen;
 
     // --- Aux-bus gesture relays (idx = bus-strip row index, parallel to setBusStrips) ---
     std::function<void()>                              onAddBus;
@@ -1053,6 +1069,7 @@ public:
     std::function<void (int busIdx, bool muted)>       onBusMute;
     std::function<void (int busIdx)>                   onBusInsertChainClicked;
     std::function<void (int busIdx, DestChoice dest)>  onBusDestinationChosen;
+    std::function<void (int busIdx, juce::String newName)> onBusRename;
 
     void setMasterLevelDb (float dbL, float dbR)
     {
@@ -1076,6 +1093,7 @@ public:
         busStrips_.clear();
         busDestButtons_.clear();
         busInsButtons_.clear();
+        busNameOverlays_.clear();
         busStripDests_.clear();
         busChoices_.clear();
         for (int i = 0; i < static_cast<int> (infos.size()); ++i)
@@ -1104,6 +1122,22 @@ public:
             };
             addAndMakeVisible (*ins);
             busInsButtons_.push_back (std::move (ins));
+
+            // Strip context overlay — invisible click-catcher pinned to the
+            // top sliver of the strip (where the name label paints). Catches
+            // right-click + long-press for the "Rename…" context menu, and
+            // hosts the inline TextEditor when the operator commits to a
+            // rename. Sits in front in Z order so its mouseDown fires before
+            // the CompactFaderStrip's fader interaction below it.
+            auto overlay = std::make_unique<StripContextOverlay> (
+                idx,
+                [this] (int who) { showBusContextMenu (who); },
+                [this] (int who, juce::String s)
+                {
+                    if (onBusRename) onBusRename (who, std::move (s));
+                });
+            addAndMakeVisible (*overlay);
+            busNameOverlays_.push_back (std::move (overlay));
         }
         resized();
     }
@@ -1123,6 +1157,33 @@ public:
             const auto& label = perBus[static_cast<std::size_t> (i)].currentName;
             busDestButtons_[static_cast<std::size_t> (i)]->setButtonText (label.isEmpty() ? "—" : label);
         }
+    }
+
+    /// Pushes the master strip's destination state. On multi-output devices the
+    /// master destination button becomes visible and ticks the current pair;
+    /// on a 2-channel device the choice list contains a single entry, the
+    /// button stays hidden, and the bus is implicitly parked on pair 0.
+    void setMasterDestination (const std::vector<DestChoice>& choices,
+                               const StripDest& current)
+    {
+        masterChoices_ = choices;
+        masterDest_    = current;
+        const bool multiPair = choices.size() > 1;
+        if (masterDestButton_)
+        {
+            masterDestButton_->setVisible (multiPair);
+            masterDestButton_->setButtonText (current.currentName.isEmpty() ? "—"
+                                                                            : current.currentName);
+        }
+        resized();
+    }
+
+    /// Updates a single aux strip's visible name without rebuilding the strip
+    /// row (preserves fader / mute / meter state on rename).
+    void updateBusName (int busIdx, const juce::String& newName)
+    {
+        if (busIdx < 0 || busIdx >= busStripCount()) return;
+        busStrips_[static_cast<std::size_t> (busIdx)]->setChannelName (newName);
     }
 
     [[nodiscard]] int busStripCount() const noexcept
@@ -1199,12 +1260,18 @@ public:
 
         // Pro mixing-console layout: aux buses on the LEFT, master on the
         // RIGHT. Aux strips lay out left-to-right; master takes the rightmost
-        // strip slot via removeFromRight so it stays pinned regardless of how
-        // many aux strips exist. The picker row only spans aux strips —
-        // master has no destination picker (it's the terminal).
+        // strip slot via removeFromRight. The picker row spans aux strips
+        // and, on multi-output devices, master's per-pair picker too.
         for (int i = 0; i < busStripCount(); ++i)
         {
-            busStrips_[static_cast<std::size_t> (i)]->setBounds (area.removeFromLeft (kStripW));
+            auto stripBounds = area.removeFromLeft (kStripW);
+            busStrips_[static_cast<std::size_t> (i)]->setBounds (stripBounds);
+            // Overlay covers the top name-label band of the strip (where
+            // CompactFaderStrip paints the channel name). Sized to a thin
+            // sliver so it doesn't block fader interaction below it.
+            if (i < static_cast<int> (busNameOverlays_.size()))
+                busNameOverlays_[static_cast<std::size_t> (i)]->setBounds (
+                    stripBounds.withHeight (kNameOverlayHeight));
             busInsButtons_[static_cast<std::size_t> (i)]->setBounds (insRow.removeFromLeft (kStripW));
             busDestButtons_[static_cast<std::size_t> (i)]->setBounds (pickerRow.removeFromLeft (kStripW));
             area.removeFromLeft (kGap);
@@ -1217,9 +1284,12 @@ public:
             // Visual divider so master reads as the terminal, not "just another bus."
             area.removeFromRight (kGroupDividerW);
             insRow.removeFromRight (kGroupDividerW);
+            pickerRow.removeFromRight (kGroupDividerW);
         }
         if (master_)    master_->setBounds    (area.removeFromRight (kStripW));
         if (masterIns_) masterIns_->setBounds (insRow.removeFromRight (kStripW));
+        if (masterDestButton_ && masterDestButton_->isVisible())
+            masterDestButton_->setBounds (pickerRow.removeFromRight (kStripW));
     }
 
     void paint (juce::Graphics& g) override { g.fillAll (otto::Colours::bg2); }
@@ -1262,6 +1332,17 @@ private:
             juce::Rectangle<int> (screenPos.x, screenPos.y, 1, 1)));
     }
 
+    /// Tick predicate: a choice matches the current destination iff kind +
+    /// id agree, and additionally (for HardwareOutput choices) the pair
+    /// index agrees. Bus destinations don't carry a meaningful pairIndex.
+    static bool destMatches (const DestChoice& choice, const StripDest& cur) noexcept
+    {
+        if (choice.kind != cur.currentKind || choice.id != cur.currentId) return false;
+        if (choice.kind == DestKind::HardwareOutput)
+            return choice.pairIndex == cur.currentPairIndex;
+        return true;
+    }
+
     void showBusDestinationMenu (int idx)
     {
         if (idx < 0 || idx >= busStripCount()) return;
@@ -1272,7 +1353,7 @@ private:
         juce::PopupMenu menu;
         for (const auto& choice : choices)
         {
-            const bool ticked = choice.kind == cur.currentKind && choice.id == cur.currentId;
+            const bool ticked = destMatches (choice, cur);
             const DestChoice d = choice;
             menu.addItem (choice.name, /*enabled*/ true, ticked,
                           [this, idx, d] { if (onBusDestinationChosen) onBusDestinationChosen (idx, d); });
@@ -1281,19 +1362,152 @@ private:
             busDestButtons_[static_cast<std::size_t> (idx)].get()));
     }
 
+    void showMasterDestinationMenu()
+    {
+        if (masterChoices_.empty() || masterDestButton_ == nullptr) return;
+        juce::PopupMenu menu;
+        for (const auto& choice : masterChoices_)
+        {
+            const bool ticked = destMatches (choice, masterDest_);
+            const DestChoice d = choice;
+            menu.addItem (choice.name, /*enabled*/ true, ticked,
+                          [this, d] { if (onMasterDestinationChosen) onMasterDestinationChosen (d); });
+        }
+        menu.showMenuAsync (juce::PopupMenu::Options{}.withTargetComponent (
+            masterDestButton_.get()));
+    }
+
+    /// Per-aux-strip context menu — currently just "Rename…". Triggered by
+    /// the StripContextOverlay's right-click or long-press gesture.
+    void showBusContextMenu (int idx)
+    {
+        if (idx < 0 || idx >= busStripCount()) return;
+        if (idx >= static_cast<int> (busNameOverlays_.size())) return;
+        juce::PopupMenu menu;
+        const int who = idx;
+        menu.addItem ("Rename…", [this, who]
+        {
+            if (who >= 0 && who < static_cast<int> (busNameOverlays_.size()))
+                busNameOverlays_[static_cast<std::size_t> (who)]->beginRename (
+                    busStrips_[static_cast<std::size_t> (who)]->getChannelName());
+        });
+        menu.showMenuAsync (juce::PopupMenu::Options{}.withTargetComponent (
+            busNameOverlays_[static_cast<std::size_t> (idx)].get()));
+    }
+
+    /// Overlay sitting on the strip's name area. Captures right-click and
+    /// long-press for the per-strip context menu, and swaps in an inline
+    /// `juce::TextEditor` when the operator commits to a rename. Reuses the
+    /// TapesPane row's rename pattern (return / focus-lost both commit, a
+    /// `committed_` flag prevents double-fire).
+    class StripContextOverlay final : public juce::Component, private juce::Timer
+    {
+    public:
+        StripContextOverlay (int idx,
+                             std::function<void (int)> onContextMenu,
+                             std::function<void (int, juce::String)> onCommitName)
+            : idx_ (idx),
+              onContextMenu_ (std::move (onContextMenu)),
+              onCommitName_  (std::move (onCommitName))
+        {
+            // Transparent — the strip's painted name still shows through
+            // when no rename editor is visible.
+            setInterceptsMouseClicks (true, false);
+        }
+
+        void beginRename (const juce::String& currentName)
+        {
+            if (editor_ != nullptr) return;
+            editor_ = std::make_unique<juce::TextEditor>();
+            editor_->setText (currentName, false);
+            editor_->selectAll();
+            editor_->setColour (juce::TextEditor::backgroundColourId, otto::Colours::bg3);
+            editor_->setColour (juce::TextEditor::textColourId,       otto::Colours::textPrimary);
+            editor_->setColour (juce::TextEditor::outlineColourId,    otto::Colours::accent);
+            editor_->onReturnKey = [this] { commit(); };
+            editor_->onEscapeKey = [this] { cancel(); };
+            editor_->onFocusLost = [this] { commit(); };
+            addAndMakeVisible (*editor_);
+            editor_->setBounds (getLocalBounds());
+            editor_->grabKeyboardFocus();
+            committed_ = false;
+        }
+
+    private:
+        void mouseDown (const juce::MouseEvent& e) override
+        {
+            if (editor_ != nullptr) return;          // editor handles its own input
+            if (e.mods.isPopupMenu())
+            {
+                onContextMenu_ (idx_);
+                return;
+            }
+            longPressed_ = true;
+            startTimer (500);                        // matches blank-area long-press
+        }
+        void mouseDrag (const juce::MouseEvent& e) override
+        {
+            if (isTimerRunning() && e.getDistanceFromDragStart() > 8)
+            {
+                stopTimer();
+                longPressed_ = false;
+            }
+        }
+        void mouseUp (const juce::MouseEvent&) override
+        {
+            stopTimer();
+            longPressed_ = false;
+        }
+        void timerCallback() override
+        {
+            stopTimer();
+            if (longPressed_)
+            {
+                longPressed_ = false;
+                onContextMenu_ (idx_);
+            }
+        }
+        void commit()
+        {
+            if (committed_ || editor_ == nullptr) return;
+            committed_ = true;
+            const auto txt = editor_->getText().trim();
+            editor_.reset();
+            if (txt.isNotEmpty()) onCommitName_ (idx_, txt);
+        }
+        void cancel()
+        {
+            committed_ = true;   // skip the focus-lost path that follows
+            editor_.reset();
+        }
+
+        int idx_ { -1 };
+        std::function<void (int)> onContextMenu_;
+        std::function<void (int, juce::String)> onCommitName_;
+        std::unique_ptr<juce::TextEditor> editor_;
+        bool longPressed_ { false };
+        bool committed_   { false };
+    };
+
     // Master strip (always present)
     std::unique_ptr<otto::ui::CompactFaderStrip> master_;
     std::unique_ptr<juce::TextButton>            masterIns_;
+    std::unique_ptr<juce::TextButton>            masterDestButton_;
+    std::vector<DestChoice>                      masterChoices_;
+    StripDest                                    masterDest_;
 
     // Aux bus row (slice 2)
-    std::vector<std::unique_ptr<otto::ui::CompactFaderStrip>> busStrips_;
-    std::vector<std::unique_ptr<juce::TextButton>>            busDestButtons_;
-    std::vector<std::unique_ptr<juce::TextButton>>            busInsButtons_;
-    std::vector<StripDest>                                    busStripDests_;
-    std::vector<std::vector<DestChoice>>                      busChoices_;
+    std::vector<std::unique_ptr<otto::ui::CompactFaderStrip>>  busStrips_;
+    std::vector<std::unique_ptr<juce::TextButton>>             busDestButtons_;
+    std::vector<std::unique_ptr<juce::TextButton>>             busInsButtons_;
+    std::vector<std::unique_ptr<StripContextOverlay>>          busNameOverlays_;
+    std::vector<StripDest>                                     busStripDests_;
+    std::vector<std::vector<DestChoice>>                       busChoices_;
 
     bool                                                      longPressBlank_ { false };
     juce::Point<int>                                          longPressScreenPos_;
+
+    static constexpr int kNameOverlayHeight = 22;   // strip name band
 };
 
 // =============================================================================
@@ -2292,10 +2506,35 @@ MainComponent::MainComponent()
                     outputMixer_->routeBusToBus (fromId, ida::BusId{ dest.id });
                     break;
                 case OutputMixerPane::DestKind::HardwareOutput:
-                    outputMixer_->setBusMainOutToHardwareOutput (fromId);
+                    outputMixer_->setBusMainOutToHardwareOutput (fromId, dest.pairIndex);
                     break;
             }
             audioDeviceManager_.addAudioCallback (audioCallback_.get());
+            refreshOutputDestinations();
+        };
+        outputMixerPane_->onMasterDestinationChosen = [this] (OutputMixerPane::DestChoice dest)
+        {
+            // Master is always HardwareOutput-kind from setMasterDestination();
+            // the switch defends against a future surface that adds bus entries.
+            if (dest.kind != OutputMixerPane::DestKind::HardwareOutput) return;
+            audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+            outputMixer_->setBusMainOutToHardwareOutput (ida::BusId{ 0 }, dest.pairIndex);
+            audioDeviceManager_.addAudioCallback (audioCallback_.get());
+            refreshOutputDestinations();
+        };
+        outputMixerPane_->onBusRename = [this] (int busIdx, juce::String newName)
+        {
+            if (busIdx < 0 || busIdx >= static_cast<int> (outputBusStripIds_.size())) return;
+            const auto id = outputBusStripIds_[static_cast<std::size_t> (busIdx)];
+            // renameBus is message-thread only; bracket the audio callback to
+            // be symmetric with every other config mutator on this pane.
+            audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+            const bool ok = outputMixer_->renameBus (id, newName.toStdString());
+            audioDeviceManager_.addAudioCallback (audioCallback_.get());
+            if (! ok) return;
+            outputMixerPane_->updateBusName (busIdx, newName);
+            // Other strips' destination pickers may reference this bus by its
+            // old name — refresh so their labels and menu entries update too.
             refreshOutputDestinations();
         };
         tabs_.addTab ("Output Mixer", juce::Colours::black, outputMixerPane_.get(), false);
@@ -2951,11 +3190,33 @@ void MainComponent::refreshOutputDestinations()
 {
     if (outputMixerPane_ == nullptr) return;
 
+    using DestKind = OutputMixerPane::DestKind;
+
+    // Enumerate active hardware output pairs from the live audio device.
+    // Pair entries are labelled "Out 1-2", "Out 3-4", … matching the
+    // physical-output channel numbers (1-based for the operator). On a
+    // 2-channel device this yields a single entry.
+    struct HwPair { int pairIndex; juce::String label; };
+    std::vector<HwPair> hwPairs;
+    if (auto* dev = audioDeviceManager_.getCurrentAudioDevice())
+    {
+        const int activeOuts = dev->getActiveOutputChannels().countNumberOfSetBits();
+        for (int ch = 0, p = 0; ch + 1 < activeOuts; ch += 2, ++p)
+            hwPairs.push_back ({ p, "Out " + juce::String (ch + 1)
+                                      + "-" + juce::String (ch + 2) });
+    }
+    if (hwPairs.empty())
+        hwPairs.push_back ({ 0, "Out 1-2" });   // device-less fallback (test harness)
+
+    auto labelForPair = [&hwPairs] (int pairIndex) -> juce::String
+    {
+        for (const auto& p : hwPairs) if (p.pairIndex == pairIndex) return p.label;
+        return "Out 1-2";   // fallback when the device shrank below the recorded pair
+    };
+
     const int n = static_cast<int> (outputBusStripIds_.size());
     std::vector<std::vector<OutputMixerPane::DestChoice>> perBusChoices (static_cast<std::size_t> (n));
     std::vector<OutputMixerPane::StripDest>               perBus (static_cast<std::size_t> (n));
-
-    using DestKind = OutputMixerPane::DestKind;
 
     for (int i = 0; i < n; ++i)
     {
@@ -2964,37 +3225,42 @@ void MainComponent::refreshOutputDestinations()
 
         // Master is always the first option (and the engine default for any
         // freshly-added aux bus's main-out).
-        choices.push_back ({ DestKind::Bus, /*id*/ 0, "Master" });
+        choices.push_back ({ DestKind::Bus, /*id*/ 0, "Master", /*pairIndex*/ 0 });
 
-        // Every OTHER aux bus is a candidate. The engine cycle check rejects
-        // any route that would close a loop; the picker shows them all and
-        // refreshes the label after a rejected call so the operator sees the
-        // actual current state. Slice 3 polish: pre-filter cycle-bound targets.
+        // Every OTHER aux bus is a candidate, pre-filtered against cycles so
+        // the picker never offers a target the engine would silently reject.
         for (int j = 0; j < n; ++j)
         {
             if (i == j) continue;
             const auto otherId = outputBusStripIds_[static_cast<std::size_t> (j)];
+            if (outputMixer_->busMainOutToBusWouldCycle (myId, otherId)) continue;
             if (auto* otherBus = outputMixer_->busForId (otherId))
                 choices.push_back ({ DestKind::Bus, otherId.value(),
-                                     juce::String (otherBus->config().name) });
+                                     juce::String (otherBus->config().name),
+                                     /*pairIndex*/ 0 });
         }
 
-        // Direct out — bypasses master entirely (pre-master stem routing).
-        choices.push_back ({ DestKind::HardwareOutput, /*id*/ 0, "Direct out" });
+        // One entry per physical output pair — "direct out" = bypass master,
+        // land at that specific pair on the audio device.
+        for (const auto& p : hwPairs)
+            choices.push_back ({ DestKind::HardwareOutput, /*id*/ 0, p.label, p.pairIndex });
 
         // Current destination → label the picker button + tick the matching item.
         auto& dest = perBus[static_cast<std::size_t> (i)];
         if (outputMixer_->busMainOut (myId) == ida::OutputMixer::MainOutDest::HardwareOutput)
         {
-            dest.currentKind = DestKind::HardwareOutput;
-            dest.currentId   = 0;
-            dest.currentName = "Direct out";
+            const int pair = outputMixer_->busHardwareOutPair (myId);
+            dest.currentKind      = DestKind::HardwareOutput;
+            dest.currentId        = 0;
+            dest.currentPairIndex = pair;
+            dest.currentName      = labelForPair (pair);
         }
         else
         {
             const auto targetId = outputMixer_->busMainOutBus (myId);
-            dest.currentKind = DestKind::Bus;
-            dest.currentId   = targetId.value();
+            dest.currentKind      = DestKind::Bus;
+            dest.currentId        = targetId.value();
+            dest.currentPairIndex = 0;
             if (targetId.value() == 0)
                 dest.currentName = "Master";
             else if (auto* tgt = outputMixer_->busForId (targetId))
@@ -3003,6 +3269,20 @@ void MainComponent::refreshOutputDestinations()
     }
 
     outputMixerPane_->setBusDestinations (perBusChoices, perBus);
+
+    // Master destination picker — per-pair only (no bus entries; master is
+    // the terminal of the output graph). Hidden on single-pair devices.
+    std::vector<OutputMixerPane::DestChoice> masterChoices;
+    masterChoices.reserve (hwPairs.size());
+    for (const auto& p : hwPairs)
+        masterChoices.push_back ({ DestKind::HardwareOutput, /*id*/ 0, p.label, p.pairIndex });
+
+    OutputMixerPane::StripDest masterDest;
+    masterDest.currentKind      = DestKind::HardwareOutput;
+    masterDest.currentId        = 0;
+    masterDest.currentPairIndex = outputMixer_->busHardwareOutPair (ida::BusId{ 0 });
+    masterDest.currentName      = labelForPair (masterDest.currentPairIndex);
+    outputMixerPane_->setMasterDestination (masterChoices, masterDest);
 }
 
 // Resolves each strip's current main-out destination and builds the full choice

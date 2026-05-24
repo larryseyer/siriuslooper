@@ -576,3 +576,111 @@ TEST_CASE ("OutputMixer import of an empty snapshot keeps only the master bus", 
     CHECK (state.buses[0].busId == 0);
     CHECK (state.channels.empty());
 }
+
+// ---------------------------------------------------------------------------
+// Slice 3 — cycle predicate, per-output-pair routing, bus rename
+// ---------------------------------------------------------------------------
+
+TEST_CASE ("OutputMixer::busMainOutToBusWouldCycle mirrors the graph cycle check",
+           "[output-mixer][slice3][cycle]")
+{
+    OutputMixer mixer;
+    const auto a = mixer.addBus (BusConfig { 2, "A" });
+    const auto b = mixer.addBus (BusConfig { 2, "B" });
+
+    // A -> master is fine; B -> A is fine; A -> B is fine; B -> master is fine.
+    CHECK_FALSE (mixer.busMainOutToBusWouldCycle (a, BusId { 0 }));
+    CHECK_FALSE (mixer.busMainOutToBusWouldCycle (b, a));
+    REQUIRE (mixer.routeBusToBus (b, a));   // B feeds into A
+
+    // Now A -> B would close the loop A -> B -> A.
+    CHECK (mixer.busMainOutToBusWouldCycle (a, b));
+    // Sanity: the engine should also refuse the real route.
+    CHECK_FALSE (mixer.routeBusToBus (a, b));
+
+    // Unknown ids never report a cycle (defensive false).
+    CHECK_FALSE (mixer.busMainOutToBusWouldCycle (BusId { 999 }, a));
+    CHECK_FALSE (mixer.busMainOutToBusWouldCycle (a, BusId { 999 }));
+}
+
+TEST_CASE ("OutputMixer per-output-pair routing writes to the requested pair",
+           "[output-mixer][slice3][hardware-output-pair]")
+{
+    OutputMixer mixer;
+    const auto aux = mixer.addBus (BusConfig { 2, "Aux" });
+
+    // Default pair is 0 (outputs [0,1]).
+    CHECK (mixer.busHardwareOutPair (aux) == 0);
+    CHECK (mixer.busHardwareOutPair (BusId { 0 }) == 0);
+
+    // Route aux direct to hardware output pair 1 (outputs [2,3]). The master
+    // remains parked on pair 0.
+    REQUIRE (mixer.setBusMainOutToHardwareOutput (aux, /*pairIndex*/ 1));
+    CHECK (mixer.busMainOut (aux) == OutputMixer::MainOutDest::HardwareOutput);
+    CHECK (mixer.busHardwareOutPair (aux) == 1);
+
+    // Feed a channel that sends 1.0 into the aux (and the default 1.0 into
+    // the master). With aux on pair 1 and master on pair 0, the aux's
+    // contribution should land in outputs [2,3] and the master's
+    // contribution should land in outputs [0,1] — both at unity.
+    const auto ch = mixer.addChannel (SignalType::Audio);
+    mixer.routeChannelToBus (ch, aux, 1.0f);
+
+    constexpr int kFrames = 4;
+    std::array<float, kFrames> input;  input.fill (1.0f);
+    const float* inputs[1] = { input.data() };
+
+    std::array<float, kFrames> out0{}; out0.fill (0.0f);
+    std::array<float, kFrames> out1{}; out1.fill (0.0f);
+    std::array<float, kFrames> out2{}; out2.fill (0.0f);
+    std::array<float, kFrames> out3{}; out3.fill (0.0f);
+    float* outputs[4] = { out0.data(), out1.data(), out2.data(), out3.data() };
+
+    mixer.renderBuffer (inputs, 1, outputs, 4, kFrames);
+
+    // Master at pair 0 carries the channel's master send (1.0).
+    for (float v : out0) CHECK (v == Catch::Approx (1.0f));
+    for (float v : out1) CHECK (v == Catch::Approx (1.0f));
+    // Aux at pair 1 carries the channel's aux send (1.0), bypassing master.
+    for (float v : out2) CHECK (v == Catch::Approx (1.0f));
+    for (float v : out3) CHECK (v == Catch::Approx (1.0f));
+
+    // Master can also park on a non-zero pair (multi-output interfaces).
+    REQUIRE (mixer.setBusMainOutToHardwareOutput (BusId { 0 }, /*pairIndex*/ 1));
+    CHECK (mixer.busHardwareOutPair (BusId { 0 }) == 1);
+
+    // Pair index round-trips through persistence.
+    const auto exported = mixer.exportGraphState();
+    OutputMixer loaded;
+    loaded.importGraphState (exported);
+    CHECK (loaded.busHardwareOutPair (BusId { 0 }) == 1);
+    CHECK (loaded.busHardwareOutPair (aux) == 1);
+}
+
+TEST_CASE ("OutputMixer::renameBus updates the bus name; master is canonical",
+           "[output-mixer][slice3][rename]")
+{
+    OutputMixer mixer;
+    const auto aux = mixer.addBus (BusConfig { 2, "Bus 1" });
+
+    // Master rename is rejected — the name is canonical mixing-console nomenclature.
+    CHECK_FALSE (mixer.renameBus (BusId { 0 }, "Not Master"));
+    REQUIRE (mixer.busForId (BusId { 0 }) != nullptr);
+    CHECK (mixer.busForId (BusId { 0 })->config().name == "Master");
+
+    // Unknown ids are rejected.
+    CHECK_FALSE (mixer.renameBus (BusId { 999 }, "x"));
+
+    // Aux rename writes through to the live bus AND survives persistence.
+    REQUIRE (mixer.renameBus (aux, "Headphone Cue"));
+    CHECK (mixer.busForId (aux)->config().name == "Headphone Cue");
+
+    const auto exported = mixer.exportGraphState();
+    REQUIRE (exported.buses.size() == 2);
+    CHECK (exported.buses[1].name == "Headphone Cue");
+
+    OutputMixer loaded;
+    loaded.importGraphState (exported);
+    REQUIRE (loaded.busForId (aux) != nullptr);
+    CHECK (loaded.busForId (aux)->config().name == "Headphone Cue");
+}

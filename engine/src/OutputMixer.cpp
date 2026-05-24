@@ -38,7 +38,8 @@ namespace
     ida::MixerMainOut busMainOutSnapshot (const ida::MixerGraph& graph,
                                              ida::MixerNodeId node,
                                              const std::vector<ida::MixerNodeId>& busNodeIds,
-                                             const std::vector<ida::Bus>& buses)
+                                             const std::vector<ida::Bus>& buses,
+                                             int pairIndex)
     {
         using namespace ida;
         const auto dest = graph.mainOutOf (node);
@@ -47,6 +48,7 @@ namespace
         {
             out.kind = MixerMainOut::Kind::Terminal;
             out.terminal = MixerTerminalKind::HardwareOutput;
+            out.hardwareOutPair = pairIndex;
             return out;
         }
         out.kind = MixerMainOut::Kind::Bus;
@@ -72,10 +74,12 @@ OutputMixer::OutputMixer()
     // size stays 0 until addChannel/addBus is called.
     channels_.reserve (static_cast<std::size_t> (kMaxOutputChannels));
     buses_.reserve   (static_cast<std::size_t> (kMaxBuses));
+    busHardwareOutPair_.reserve (static_cast<std::size_t> (kMaxBuses));
 
     // Auto-create the master bus at BusId{0} per the M5 Session 2 spec.
     // The master always exists; removing it is not supported in M5.
     buses_.emplace_back (BusId { 0 }, BusConfig { 2, "Master" });
+    busHardwareOutPair_.push_back (0); // master defaults to physical outputs [0,1]
 
     // Register the master as a graph node whose main-out is the terminal.
     // busNodeIds_[0] corresponds to buses_[0] (BusId{0}, the master).
@@ -138,6 +142,7 @@ BusId OutputMixer::addBus (BusConfig config)
     const BusId id { nextBusId_++ };
     const BusKind busKind = config.kind; // capture before std::move in emplace_back
     buses_.emplace_back (id, std::move (config));
+    busHardwareOutPair_.push_back (0); // new buses default to pair 0
     // Forward the stashed effect-chain host to the newly registered bus
     // so post-`setEffectChainHost` `addBus` calls get the same wiring as
     // pre-existing buses. Null is a valid value (M5 inline path).
@@ -216,14 +221,57 @@ bool OutputMixer::routeBusToBus (BusId from, BusId to)
 
 bool OutputMixer::setBusMainOutToHardwareOutput (BusId bus)
 {
-    // Master is fixed to the terminal — re-pointing it is the same as
-    // leaving it alone, but rejecting here keeps parity with routeBusToBus's
-    // master-protection rule and makes the precondition explicit.
-    if (bus.value() == 0) return false;
+    // Single-arg overload preserves slice-2's "park on pair 0" behaviour
+    // for both master and aux buses. The pair-indexed overload below is the
+    // canonical setter; this one is kept as a convenience for callers that
+    // don't care about the pair.
+    return setBusMainOutToHardwareOutput (bus, 0);
+}
+
+bool OutputMixer::setBusMainOutToHardwareOutput (BusId bus, int pairIndex)
+{
     const auto bi = static_cast<std::size_t> (bus.value());
     if (bi >= busNodeIds_.size()) return false;
-    return graph_.setMainOut (busNodeIds_[bi],
-                              graph_.terminalNode (MixerTerminal::HardwareOutput));
+
+    // Master is already permanently routed to the terminal by the ctor, so
+    // setMainOut on the master node is effectively a no-op at the graph
+    // layer — but we still record the pair index so renderBuffer reads it
+    // in Step 4. For aux buses, the setMainOut call is the meaningful work.
+    const bool graphOk = graph_.setMainOut (
+        busNodeIds_[bi], graph_.terminalNode (MixerTerminal::HardwareOutput));
+    if (! graphOk && bus.value() != 0) return false;
+
+    busHardwareOutPair_[bi] = std::max (pairIndex, 0);
+    return true;
+}
+
+int OutputMixer::busHardwareOutPair (BusId id) const noexcept
+{
+    const auto bi = static_cast<std::size_t> (id.value());
+    if (bi >= busHardwareOutPair_.size()) return 0;
+    return busHardwareOutPair_[bi];
+}
+
+bool OutputMixer::busMainOutToBusWouldCycle (BusId from, BusId to) const noexcept
+{
+    const auto fi = static_cast<std::size_t> (from.value());
+    const auto ti = static_cast<std::size_t> (to.value());
+    if (fi >= busNodeIds_.size() || ti >= busNodeIds_.size()) return false;
+    return graph_.wouldMainOutCycle (busNodeIds_[fi], busNodeIds_[ti]);
+}
+
+bool OutputMixer::renameBus (BusId id, std::string newName)
+{
+    if (id.value() == 0) return false; // master name is canonical
+    for (auto& bus : buses_)
+    {
+        if (bus.id() == id)
+        {
+            bus.setName (std::move (newName));
+            return true;
+        }
+    }
+    return false;
 }
 
 int OutputMixer::busCount() const noexcept
@@ -360,8 +408,48 @@ void OutputMixer::renderBuffer (const float* const* inputChannelData,
     // RT-safety: evaluationOrder() returns a const& to a pre-built vector —
     // no allocation. busNodeIds_ lookup is a read-only linear scan (max 64
     // entries). No graph mutators are called here.
-    const MixerNodeId masterNode = busNodeIds_.empty() ? MixerNodeId{}
-                                                       : busNodeIds_.front();
+    const MixerNodeId masterNode   = busNodeIds_.empty() ? MixerNodeId{}
+                                                         : busNodeIds_.front();
+    const MixerNodeId terminalNode = graph_.terminalNode();
+
+    // Resolves a pair index into a pair of physical output buffer pointers
+    // with bounds-checked fallback. Returns the number of usable channels
+    // for `bus.process`: 2 on a real stereo pair, 1 on a degenerate mono
+    // output (Bus::process writes only the left half), 0 if no output is
+    // available at all (the caller skips bus.process entirely).
+    const auto resolveHardwarePair = [outputChannelData, numOutputChannels]
+                                     (int pairIndex, float** dst) noexcept -> int
+    {
+        const int safePair = pairIndex < 0 ? 0 : pairIndex;
+        const int leftCh   = safePair * 2;
+        const int rightCh  = leftCh + 1;
+        if (rightCh < numOutputChannels)
+        {
+            dst[0] = outputChannelData[leftCh];
+            dst[1] = outputChannelData[rightCh];
+            return 2;
+        }
+        if (numOutputChannels >= 2)
+        {
+            // Requested pair exceeds available output channels — fall back
+            // to pair 0 so the bus is still audible rather than dropped.
+            dst[0] = outputChannelData[0];
+            dst[1] = outputChannelData[1];
+            return 2;
+        }
+        if (numOutputChannels >= 1)
+        {
+            // Degenerate mono output — write left only, drop right (matches
+            // pre-slice-3 behaviour for the single-output renderInputGraph
+            // path; right is not addressable here).
+            dst[0] = outputChannelData[0];
+            dst[1] = nullptr;
+            return 1;
+        }
+        dst[0] = nullptr;
+        dst[1] = nullptr;
+        return 0;
+    };
 
     for (const MixerNodeId nodeId : graph_.evaluationOrder())
     {
@@ -377,18 +465,30 @@ void OutputMixer::renderBuffer (const float* const* inputChannelData,
 
         const Bus& bus = buses_[busIdx];
 
-        // Resolve destination: master node or terminal -> master mix buffer;
-        // otherwise the destination bus's mix buffer.
+        // Resolve destination:
+        //   - master node          -> master's mix buffer (subgroup-into-master)
+        //   - terminal (HardwareOutput) -> direct into physical outputs at this
+        //     bus's recorded pair index, bypassing master entirely (the real
+        //     "Direct out" semantic — slice-2 folded this through master,
+        //     which only worked on 2-output devices).
+        //   - another bus node     -> that bus's mix buffer (subgroup)
         const MixerNodeId destNode = graph_.mainOutOf (nodeId);
         float* destPtrs[2] = { nullptr, nullptr };
 
-        if (destNode == masterNode || destNode == graph_.terminalNode())
+        // destChannelCount tracks how many output channels the destination
+        // exposes; matters for the hardware-direct path's mono degenerate
+        // case. Subgroup destinations (master / other bus) are always
+        // 2-channel stereo per the hard invariant.
+        int destChannelCount = 2;
+
+        if (destNode == terminalNode)
         {
-            if (! buses_.empty())
-            {
-                destPtrs[0] = buses_.front().mixBufferChannel (0);
-                destPtrs[1] = buses_.front().mixBufferChannel (1);
-            }
+            destChannelCount = resolveHardwarePair (busHardwareOutPair_[busIdx], destPtrs);
+        }
+        else if (destNode == masterNode)
+        {
+            destPtrs[0] = buses_.front().mixBufferChannel (0);
+            destPtrs[1] = buses_.front().mixBufferChannel (1);
         }
         else
         {
@@ -404,23 +504,32 @@ void OutputMixer::renderBuffer (const float* const* inputChannelData,
             }
         }
 
-        // Bus::process: accumulates mix buffer into destPtrs, then zeros
-        // its own mix buffer. Handles effect-chain dispatch internally.
-        bus.process (destPtrs, 2, clampedSamples);
+        if (destChannelCount > 0)
+        {
+            // Bus::process: accumulates mix buffer into destPtrs, then zeros
+            // its own mix buffer. Handles effect-chain dispatch internally.
+            bus.process (destPtrs, destChannelCount, clampedSamples);
+        }
     }
 
     // Step 4 — master bus writes its accumulated mixBuffer additively into
-    // the physical output channels. Use Bus::process for this so the M7
-    // effect-chain integration has a single, well-named call site to grow
-    // into. (Bus::process is const + handles zeroing internally.)
-    for (const auto& bus : buses_)
+    // the physical output channels at its recorded pair index. On a
+    // 2-channel device the pair is always 0; on multi-output interfaces the
+    // operator can park master on any pair. A degenerate mono output drops
+    // the right half (matches pre-slice-3 behaviour).
+    float* masterDest[2] = { nullptr, nullptr };
+    const int masterChannelCount =
+        resolveHardwarePair (busHardwareOutPair_.empty() ? 0 : busHardwareOutPair_.front(),
+                             masterDest);
+    if (masterChannelCount > 0)
     {
-        if (bus.id() == BusId { 0 })
+        for (const auto& bus : buses_)
         {
-            bus.process (outputChannelData,
-                         std::min (numOutputChannels, 2),
-                         clampedSamples);
-            break;
+            if (bus.id() == BusId { 0 })
+            {
+                bus.process (masterDest, masterChannelCount, clampedSamples);
+                break;
+            }
         }
     }
 }
@@ -453,7 +562,8 @@ OutputMixerGraphState OutputMixer::exportGraphState() const
         entry.name         = bus.config().name;
         entry.kind         = bus.config().kind == BusKind::FxReturn
                                 ? MixerBusKind::FxReturn : MixerBusKind::Bus;
-        entry.mainOut      = busMainOutSnapshot (graph_, busNodeIds_[i], busNodeIds_, buses_);
+        entry.mainOut      = busMainOutSnapshot (graph_, busNodeIds_[i], busNodeIds_, buses_,
+                                                 busHardwareOutPair_[i]);
         entry.inserts      = bus.effectChain();
         state.buses.push_back (std::move (entry));   // master is index 0 by construction
     }
@@ -508,14 +618,24 @@ void OutputMixer::importGraphState (const OutputMixerGraphState& state)
         setBusEffectChain (BusId (b.busId), b.inserts);
     }
 
-    // Apply bus subgroup routing once all buses exist (master main-out is the
-    // terminal already; only Kind::Bus main-outs need routeBusToBus).
+    // Apply bus subgroup routing once all buses exist. Master main-out is the
+    // terminal already, but its hardwareOutPair still needs restoring; aux
+    // buses get either routeBusToBus (Kind::Bus) or
+    // setBusMainOutToHardwareOutput (Kind::Terminal) with the persisted pair.
     for (const auto& b : state.buses)
+    {
         if (b.mainOut.kind == MixerMainOut::Kind::Bus)
         {
             const bool ok = routeBusToBus (BusId (b.busId), BusId (b.mainOut.busId));
             jassert (ok); juce::ignoreUnused (ok);
         }
+        else if (b.mainOut.terminal == MixerTerminalKind::HardwareOutput)
+        {
+            const bool ok = setBusMainOutToHardwareOutput (BusId (b.busId),
+                                                            b.mainOut.hardwareOutPair);
+            jassert (ok); juce::ignoreUnused (ok);
+        }
+    }
 
     for (const auto& c : state.channels)
     {
