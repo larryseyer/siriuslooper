@@ -946,24 +946,25 @@ namespace
         return b;
     }
 
-    // Wire-stable tokens for MonitorMode (2026-05-24 monitor slice). Changing
-    // these strings is an on-disk format break.
+    // Wire-stable tokens for MonitorMode (V9 — whitepaper §7.2, operator
+    // design lock 2026-05-24). V9 emits only "Off" / "On"; the legacy V8
+    // tokens "Raw" and "Processed" still read (both coerce to On) so V8
+    // sessions load cleanly. Changing these strings is an on-disk format
+    // break.
     const char* monitorModeToken (MonitorMode mode) noexcept
     {
         switch (mode)
         {
-            case MonitorMode::Off:       return "Off";
-            case MonitorMode::Raw:       return "Raw";
-            case MonitorMode::Processed: return "Processed";
+            case MonitorMode::Off: return "Off";
+            case MonitorMode::On:  return "On";
         }
         return "Off"; // unreachable; defensive
     }
 
     MonitorMode monitorModeFromString (const juce::String& s)
     {
-        if (s == "Off")       return MonitorMode::Off;
-        if (s == "Raw")       return MonitorMode::Raw;
-        if (s == "Processed") return MonitorMode::Processed;
+        if (s == "Off")                              return MonitorMode::Off;
+        if (s == "On" || s == "Raw" || s == "Processed") return MonitorMode::On;
         fail (std::string ("unknown monitor_mode \"") + s.toStdString() + "\"");
     }
 
@@ -1012,6 +1013,8 @@ namespace
             c.preFaderSends = bool (p);
         // monitorMode is optional for back-compat: projects saved before the
         // 2026-05-24 monitor slice have no such field and must reload as Off.
+        // V8 sessions ("Raw" / "Processed" tokens) coerce to On on load —
+        // see monitorModeFromString above for the V9 collapse.
         if (const auto m = optionalProperty (v, "monitorMode"); ! m.isVoid())
             c.monitorMode = monitorModeFromString (m.toString());
         if (const auto op = optionalProperty (v, "monitorOutputPair"); ! op.isVoid())
