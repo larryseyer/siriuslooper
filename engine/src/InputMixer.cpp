@@ -630,6 +630,15 @@ void InputMixer::importGraphState (const InputMixerGraphState& state)
         if (c.monitorMode != MonitorMode::Off)
             setChannelMonitorMode (ChannelId (c.channelId), c.monitorMode);
 
+    // V9 §7.2 (2026-05-25) — replay per-bus MON in the same window as per-
+    // channel MON: after every bus has been minted (step 1 above) and BEFORE
+    // any structural change that depends on the OutputMixer collaborator's
+    // channel set. `setBusMonitorMode` will no-op cleanly when the OutputMixer
+    // is unattached (matching the channel-side stash semantics).
+    for (const auto& b : state.buses)
+        if (b.monitorMode != MonitorMode::Off)
+            setBusMonitorMode (BusId (b.busId), b.monitorMode);
+
     // 3. Apply main-outs (all nodes exist now, so no cycle false-positives).
     for (const auto& b : state.buses)    applyBusMainOut (BusId (b.busId), b.mainOut);
     for (const auto& c : state.channels) applyChannelMainOut (ChannelId (c.channelId), c.mainOut);

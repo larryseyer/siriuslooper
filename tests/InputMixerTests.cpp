@@ -1415,3 +1415,24 @@ TEST_CASE ("InputMixer::exportGraphState captures each bus's monitorMode",
     CHECK (sawOn);
     CHECK (sawOff);
 }
+
+TEST_CASE ("InputMixer::importGraphState replays bus monitorMode and re-mints the OutputMixer channel",
+           "[input-mixer][bus-monitor][persistence]")
+{
+    ida::InputMixer  src;
+    ida::OutputMixer srcOut;
+    src.attachOutputMixer (&srcOut);
+    const auto busId = src.addBus (ida::BusConfig { 2, "MyBus", ida::BusKind::Bus });
+    src.setBusMonitorMode (busId, ida::MonitorMode::On);
+
+    const auto snapshot = src.exportGraphState();
+
+    ida::InputMixer  dst;
+    ida::OutputMixer dstOut;
+    dst.attachOutputMixer (&dstOut);
+    dst.importGraphState (snapshot);
+
+    CHECK (dst.busMonitorMode (busId) == ida::MonitorMode::On);
+    REQUIRE (dst.busMonitorOutputChannel (busId).has_value());
+    CHECK (dstOut.channelCount() == srcOut.channelCount());
+}
