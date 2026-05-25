@@ -133,6 +133,12 @@ add_executable(IdaTests
     # whose audio source reads this input's post-strip buffer; MON off
     # removes it; idempotent re-entry; removeChannel cleans up too.
     InputMixerMonOutputChannelTests.cpp
+    # Input-bus MON T8 — full JSON round-trip E2E sanity. Proves the
+    # engine + persistence chain composes correctly under the actual
+    # disk-shaped path MainComponent invokes at save/load: export →
+    # serialize → deserialize → import. Mirror of the OutputMixer aux-bus
+    # JSON round-trip added in commit 2da5459.
+    InputMixerBusMonitorPersistenceTests.cpp
     # 2026-05-24 — pins the whitepaper-correct silence rule: an Output Mixer
     # phrase channel does NOT pipe live device input to master. Caught the
     # "M5 proxy" leak that bypassed the Input Mixer's Monitor button.
