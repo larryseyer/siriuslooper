@@ -126,6 +126,15 @@ private:
     /// refresh tick). Engine mutations are bracketed by audio-callback pause.
     /// Message-thread only; called from refreshPreparation + refreshPerformance.
     void refreshOutputMixerPhraseChannels();
+
+    /// V9 §6.3.1 / §7.2: walks every input channel; for those whose
+    /// MON is On, pushes a MonStripInfo to the OutputMixerPane's MON
+    /// band (LEFTMOST). The auto-created OutputMixer channel itself is
+    /// minted by `InputMixer::setChannelMonitorMode` — this method only
+    /// drives the GUI's visibility of those channels. Called from the
+    /// MON-toggle callback, the session-load rebind site, and any input-
+    /// channel add/remove site. Message-thread only.
+    void refreshOutputMixerMonChannels();
     /// Opens the InsertChainPopup anchored to aux bus `busIdx`'s INS button.
     /// Same detach/setEffectChain/re-attach shape as the input variants —
     /// see openInsertChainPopupForMasterBus.
@@ -418,6 +427,15 @@ private:
     /// others at 0; hardware-output choice zeroes every send).
     std::unordered_map<std::int64_t, ida::OutputChannelId>
                                  phraseChannelByConstituent_;
+
+    /// V9 MON strip binding. Indexed by mon-strip row, holds the *input*
+    /// ChannelId whose MON-on minted that strip's auto-created OutputMixer
+    /// channel. The OutputChannelId itself is resolved at call time via
+    /// `InputMixer::channelMonitorOutputChannel(chId)` — no separate map
+    /// because the InputMixer already owns the mapping. Empty when no
+    /// MON-on inputs exist (the default). Kept in sync by
+    /// refreshOutputMixerMonChannels().
+    std::vector<ida::ChannelId>  monStripInputChannelIds_;
 
     // --- Plugins tab ---
     class PluginListBox;

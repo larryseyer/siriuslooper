@@ -3862,6 +3862,11 @@ MainComponent::MainComponent()
             audioDeviceManager_.removeAudioCallback (audioCallback_.get());
             inputMixer_->setChannelMonitorMode (chId, mode);
             audioDeviceManager_.addAudioCallback (audioCallback_.get());
+
+            // V9 §6.3.1 / §7.2: MON-on auto-mints an OutputMixer channel
+            // (Slice 3) with its own ChannelStrip (this slice's T1) — so the
+            // Output Mixer pane needs to gain/lose a visible strip in lockstep.
+            refreshOutputMixerMonChannels();
         };
         inputMixerPane_->onBusRename = [this] (int busIdx, juce::String newName)
         {
@@ -4327,6 +4332,108 @@ MainComponent::MainComponent()
             audioDeviceManager_.addAudioCallback (audioCallback_.get());
             if (outputMixerPane_) outputMixerPane_->onPhraseSelect (phraseIdx);
         };
+
+        // V9 MON strip relays. Mirror of the phrase wiring above, but the
+        // strip lookup goes mon-row → input ChannelId →
+        // InputMixer::channelMonitorOutputChannel → OutputChannelId. The
+        // phrase Gain/Mute are currently stubbed because the phrase render
+        // path's strip wiring is a follow-up slice; MON wires both because
+        // those are the operator's primary mix surface for the live MON
+        // signal (whitepaper V9 §6.3.1 / §7.2).
+        auto resolveMonChannelId = [this] (int monIdx) -> std::optional<ida::OutputChannelId>
+        {
+            if (inputMixer_ == nullptr) return std::nullopt;
+            if (monIdx < 0
+                || monIdx >= static_cast<int> (monStripInputChannelIds_.size()))
+                return std::nullopt;
+            const auto chId = monStripInputChannelIds_[static_cast<std::size_t> (monIdx)];
+            return inputMixer_->channelMonitorOutputChannel (chId);
+        };
+        outputMixerPane_->onMonGain = [this, resolveMonChannelId] (int monIdx, float gainLinear)
+        {
+            auto chOpt = resolveMonChannelId (monIdx);
+            if (! chOpt.has_value() || outputMixer_ == nullptr) return;
+            if (auto* strip = outputMixer_->audioStripForChannel (*chOpt))
+                strip->setGain (gainLinear);
+        };
+        outputMixerPane_->onMonMute = [this, resolveMonChannelId] (int monIdx, bool muted)
+        {
+            auto chOpt = resolveMonChannelId (monIdx);
+            if (! chOpt.has_value() || outputMixer_ == nullptr) return;
+            if (auto* strip = outputMixer_->audioStripForChannel (*chOpt))
+                strip->setMuted (muted);
+        };
+        outputMixerPane_->onMonInsertChainClicked = [] (int) {};   // parity with onPhraseInsertChainClicked stub
+        outputMixerPane_->onMonDestinationChosen = [this, resolveMonChannelId]
+            (int monIdx, OutputMixerPane::DestChoice dest)
+        {
+            auto chOpt = resolveMonChannelId (monIdx);
+            if (! chOpt.has_value() || outputMixer_ == nullptr) return;
+            const auto outCh = *chOpt;
+
+            audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+            switch (dest.kind)
+            {
+                case OutputMixerPane::DestKind::Bus:
+                    outputMixer_->routeChannelToBus (outCh, ida::BusId { dest.id }, 1.0f);
+                    break;
+                case OutputMixerPane::DestKind::HardwareOutput:
+                    outputMixer_->setChannelMainOutToHardwareOutput (outCh, dest.pairIndex);
+                    break;
+            }
+            audioDeviceManager_.addAudioCallback (audioCallback_.get());
+            refreshOutputDestinations();
+        };
+        outputMixerPane_->onMonPan = [this, resolveMonChannelId] (int monIdx, float pan)
+        {
+            auto chOpt = resolveMonChannelId (monIdx);
+            if (! chOpt.has_value() || outputMixer_ == nullptr) return;
+            if (auto* strip = outputMixer_->audioStripForChannel (*chOpt))
+                strip->setPan ((pan + 1.0f) * 0.5f);   // [-1,+1] → [0,1]
+        };
+        outputMixerPane_->onMonWidth = [this, resolveMonChannelId] (int monIdx, float width)
+        {
+            auto chOpt = resolveMonChannelId (monIdx);
+            if (! chOpt.has_value() || outputMixer_ == nullptr) return;
+            if (auto* strip = outputMixer_->audioStripForChannel (*chOpt))
+                strip->setWidth (width);
+        };
+        outputMixerPane_->onMonSendChanged = [this, resolveMonChannelId]
+            (int monIdx, int fxReturnIdx, float level)
+        {
+            auto chOpt = resolveMonChannelId (monIdx);
+            if (! chOpt.has_value() || outputMixer_ == nullptr) return;
+            const auto outCh = *chOpt;
+            int seen = 0;
+            const int n = outputMixer_->busCount();
+            for (int i = 0; i < n; ++i)
+            {
+                if (outputMixer_->busKindAt (i) != ida::BusKind::FxReturn) continue;
+                if (seen == fxReturnIdx)
+                {
+                    outputMixer_->routeChannelToBus (outCh,
+                                                     outputMixer_->busIdAt (i),
+                                                     level);
+                    return;
+                }
+                ++seen;
+            }
+        };
+        outputMixerPane_->onMonPreFaderToggled = [this, resolveMonChannelId]
+            (int monIdx, bool preFader)
+        {
+            auto chOpt = resolveMonChannelId (monIdx);
+            if (! chOpt.has_value() || outputMixer_ == nullptr) return;
+            outputMixer_->setChannelSendIsPreFader (*chOpt, preFader);
+        };
+        // Detail-panel binding for MON strips is a follow-up slice; the
+        // strip itself fully responds to gain/mute/pan/width/destination/
+        // send/pre-fader via the relays above.
+        outputMixerPane_->onMonSelect              = [] (int) {};
+        outputMixerPane_->onMonEqConfigChanged     = [] (int, ida::EqConfig)  {};
+        outputMixerPane_->onMonEqSlotAddRequested  = [] (int)                 {};
+        outputMixerPane_->onMonCmpConfigChanged    = [] (int, ida::CmpConfig) {};
+        outputMixerPane_->onMonCmpSlotAddRequested = [] (int)                 {};
 
         // Slice EC-Polish — aux-bus + master selection opens the EQ/CMP-only
         // detail panel on the output pane. Same pattern as the input pane;
@@ -5544,6 +5651,43 @@ void MainComponent::refreshOutputMixerPhraseChannels()
     refreshOutputDestinations();
 }
 
+void MainComponent::refreshOutputMixerMonChannels()
+{
+    if (outputMixerPane_ == nullptr) return;
+    if (inputMixer_ == nullptr || outputMixer_ == nullptr) return;
+
+    // Walk the input strips in operator-visible row order so the MON
+    // band mirrors input-strip order left-to-right. inputStripChannelIds_
+    // is the same vector inputMixerPane_ uses for its strips, so the
+    // order is exactly the operator's row order.
+    std::vector<OutputMixerPane::MonStripInfo> infos;
+    std::vector<ida::ChannelId>                newIds;
+    infos.reserve  (inputStripChannelIds_.size());
+    newIds.reserve (inputStripChannelIds_.size());
+
+    for (std::size_t i = 0; i < inputStripChannelIds_.size(); ++i)
+    {
+        const auto chId = inputStripChannelIds_[i];
+        if (inputMixer_->channelMonitorMode (chId) != ida::MonitorMode::On)
+            continue;
+        if (! inputMixer_->channelMonitorOutputChannel (chId).has_value())
+            continue;
+
+        // Display name: "MON N" where N is the 1-based input strip row.
+        // Operator-named inputs are a future polish slice.
+        infos.push_back ({ chId, "MON " + juce::String ((int) i + 1) });
+        newIds.push_back (chId);
+    }
+
+    // Skip the pane rebuild when nothing structural changed (mirrors the
+    // phrase-strip refresh's short-circuit): avoids nuking an in-progress
+    // fader drag on an unrelated MON strip.
+    if (newIds == monStripInputChannelIds_) return;
+
+    monStripInputChannelIds_ = std::move (newIds);
+    outputMixerPane_->setMonStrips (infos);
+}
+
 void MainComponent::refreshOutputDestinations()
 {
     if (outputMixerPane_ == nullptr) return;
@@ -6004,6 +6148,7 @@ void MainComponent::toggleInputPairStereo (int stripIndex)
 void MainComponent::refreshPreparation()
 {
     refreshOutputMixerPhraseChannels();   // slice 5b: keep phrase strips in lockstep with the pill list
+    refreshOutputMixerMonChannels();      // V9: keep MON strips in lockstep with input-side MON toggles
     preparationPane_->setState (selectPreparationView (*undoStack_.current()));
     refreshTimeline();
     refreshDiagnostics();
@@ -6729,6 +6874,21 @@ void MainComponent::chooseFileAndLoad()
                         // otherwise be left dangling. attachOutputMixer is
                         // idempotent and both pointers are live here.
                         inputMixer_->attachOutputMixer (outputMixer_.get());
+                        // V9 MON-replay (whitepaper §6.3.1 / §7.2): the
+                        // inputMixer_->importGraphState above ran with no
+                        // attached OutputMixer, so per-channel MON state was
+                        // tracked but no OutputMixer channels were minted.
+                        // Now that the attachment is live, replay every
+                        // MON-on channel — setChannelMonitorMode(On) is
+                        // idempotent and mints the auto-created OutputMixer
+                        // channel (+ its ChannelStrip) for any channel
+                        // whose route was deferred.
+                        if (loadedInputMixer.has_value())
+                            for (const auto& c : loadedInputMixer->channels)
+                                if (c.monitorMode == ida::MonitorMode::On)
+                                    inputMixer_->setChannelMonitorMode (
+                                        ida::ChannelId (c.channelId),
+                                        ida::MonitorMode::On);
                         // The AudioCallback holds raw pointers to the mixers;
                         // re-bind it to the new instances before re-arming.
                         audioCallback_->setInputMixer  (inputMixer_.get());
