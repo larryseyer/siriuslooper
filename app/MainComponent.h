@@ -440,6 +440,17 @@ private:
     /// refreshOutputMixerMonChannels().
     std::vector<ida::ChannelId>  monStripInputChannelIds_;
 
+    /// V9 §7.2 (2026-05-25) — for each MON-band row whose SOURCE is a bus
+    /// (not an input channel), the BusId of the source. Parallel to
+    /// `monStripInputChannelIds_`: row i is bus-sourced iff
+    /// `monStripInputBusIds_[i] != ida::BusId{0}` (BusId 0 is master on
+    /// OutputMixer; on InputMixer there is no BusId 0, so it works as a
+    /// sentinel). Used by refresh-destination + refresh-meter paths to
+    /// resolve each row to its OutputChannelId via
+    /// `InputMixer::busMonitorOutputChannel` instead of
+    /// `InputMixer::channelMonitorOutputChannel`.
+    std::vector<ida::BusId>      monStripInputBusIds_;
+
     // --- Plugins tab ---
     class PluginListBox;
     class PluginsPane;

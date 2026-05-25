@@ -5829,8 +5829,12 @@ void MainComponent::refreshOutputMixer()
     {
         for (std::size_t i = 0; i < monStripInputChannelIds_.size(); ++i)
         {
-            const auto chId = monStripInputChannelIds_[i];
-            const auto outOpt = inputMixer_->channelMonitorOutputChannel (chId);
+            std::optional<ida::OutputChannelId> outOpt;
+            const auto busId = monStripInputBusIds_[i];
+            if (busId.value() != 0)
+                outOpt = inputMixer_->busMonitorOutputChannel (busId);
+            else
+                outOpt = inputMixer_->channelMonitorOutputChannel (monStripInputChannelIds_[i]);
             if (! outOpt.has_value()) continue;
             auto* s = outputMixer_->audioStripForChannel (*outOpt);
             if (s == nullptr) continue;
@@ -5959,41 +5963,49 @@ void MainComponent::refreshOutputMixerMonChannels()
     if (outputMixerPane_ == nullptr) return;
     if (inputMixer_ == nullptr || outputMixer_ == nullptr) return;
 
-    // Walk the input strips in operator-visible row order so the MON
-    // band mirrors input-strip order left-to-right. inputStripChannelIds_
-    // is the same vector inputMixerPane_ uses for its strips, so the
-    // order is exactly the operator's row order.
     std::vector<OutputMixerPane::MonStripInfo> infos;
-    std::vector<ida::ChannelId>                newIds;
-    infos.reserve  (inputStripChannelIds_.size());
-    newIds.reserve (inputStripChannelIds_.size());
+    std::vector<ida::ChannelId>                newChanIds;
+    std::vector<ida::BusId>                    newBusIds;
+    infos.reserve     (inputStripChannelIds_.size() + busStripIds_.size());
+    newChanIds.reserve(inputStripChannelIds_.size() + busStripIds_.size());
+    newBusIds.reserve (inputStripChannelIds_.size() + busStripIds_.size());
 
+    // 1. Channel-sourced MON strips, in input-strip row order.
     for (std::size_t i = 0; i < inputStripChannelIds_.size(); ++i)
     {
         const auto chId = inputStripChannelIds_[i];
-        if (inputMixer_->channelMonitorMode (chId) != ida::MonitorMode::On)
-            continue;
-        if (! inputMixer_->channelMonitorOutputChannel (chId).has_value())
-            continue;
-
-        // Display name: "MON N" where N is the 1-based input strip row.
-        // Operator-named inputs are a future polish slice.
+        if (inputMixer_->channelMonitorMode (chId) != ida::MonitorMode::On) continue;
+        if (! inputMixer_->channelMonitorOutputChannel (chId).has_value()) continue;
         infos.push_back ({ chId, "MON " + juce::String ((int) i + 1) });
-        newIds.push_back (chId);
+        newChanIds.push_back (chId);
+        newBusIds.push_back  (ida::BusId { 0 });   // sentinel — this row is channel-sourced
     }
 
-    // Skip the pane rebuild when nothing structural changed (mirrors the
-    // phrase-strip refresh's short-circuit): avoids nuking an in-progress
-    // fader drag on an unrelated MON strip. Destinations still need a
-    // refresh in case an aux bus was added/removed since the last call —
-    // mirror of the phrase short-circuit branch.
-    if (newIds == monStripInputChannelIds_)
+    // 2. Bus-sourced MON strips (V9 §7.2 2026-05-25), in bus-strip row order.
+    //    Labelled by the bus's user-given name (operator-recognizable).
+    for (std::size_t i = 0; i < busStripIds_.size(); ++i)
     {
-        refreshOutputDestinations();
+        const auto bId = busStripIds_[i];
+        if (inputMixer_->busMonitorMode (bId) != ida::MonitorMode::On) continue;
+        if (! inputMixer_->busMonitorOutputChannel (bId).has_value()) continue;
+        auto* bus = inputMixer_->busForId (bId);
+        if (bus == nullptr) continue;
+        // The first field is the source ChannelId; for bus rows it isn't
+        // meaningful — pass ChannelId{0} (sentinel; downstream code uses
+        // monStripInputBusIds_[row] != BusId{0} to distinguish).
+        infos.push_back ({ ida::ChannelId { 0 }, juce::String (bus->config().name) });
+        newChanIds.push_back (ida::ChannelId { 0 });
+        newBusIds.push_back  (bId);
+    }
+
+    if (newChanIds == monStripInputChannelIds_ && newBusIds == monStripInputBusIds_)
+    {
+        refreshOutputDestinations();   // dest labels may still need a refresh
         return;
     }
 
-    monStripInputChannelIds_ = std::move (newIds);
+    monStripInputChannelIds_ = std::move (newChanIds);
+    monStripInputBusIds_     = std::move (newBusIds);
     outputMixerPane_->setMonStrips (infos);
     refreshOutputDestinations();
 }
@@ -6159,9 +6171,15 @@ void MainComponent::refreshOutputDestinations()
     for (int i = 0; i < mn; ++i)
     {
         const auto inChId = monStripInputChannelIds_[static_cast<std::size_t> (i)];
-        const auto outOpt = (inputMixer_ != nullptr)
-                                ? inputMixer_->channelMonitorOutputChannel (inChId)
-                                : std::optional<ida::OutputChannelId> {};
+        std::optional<ida::OutputChannelId> outOpt;
+        if (inputMixer_ != nullptr)
+        {
+            const auto busId = monStripInputBusIds_[static_cast<std::size_t> (i)];
+            if (busId.value() != 0)
+                outOpt = inputMixer_->busMonitorOutputChannel (busId);
+            else
+                outOpt = inputMixer_->channelMonitorOutputChannel (inChId);
+        }
         if (! outOpt.has_value()) continue;
         const auto chId = *outOpt;
 
