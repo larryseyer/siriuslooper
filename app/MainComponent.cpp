@@ -4010,6 +4010,10 @@ MainComponent::MainComponent()
             // Other strips' destination pickers may reference this bus by its
             // old name — refresh so their labels and menu entries update too.
             refreshInputDestinations();
+            // V9 §7.2 (2026-05-25) — a MON-on bus's MON-row label is the bus
+            // name, so the rename must propagate to the Output Mixer's MON
+            // band too.
+            refreshOutputMixerMonChannels();
         };
         inputMixerPane_->onBusInsertChainClicked = [this] (int busIdx)
         {
@@ -4479,8 +4483,11 @@ MainComponent::MainComponent()
             if (monIdx < 0
                 || monIdx >= static_cast<int> (monStripInputChannelIds_.size()))
                 return std::nullopt;
-            const auto chId = monStripInputChannelIds_[static_cast<std::size_t> (monIdx)];
-            return inputMixer_->channelMonitorOutputChannel (chId);
+            const auto i = static_cast<std::size_t> (monIdx);
+            const auto busId = monStripInputBusIds_[i];
+            if (busId.value() != 0)
+                return inputMixer_->busMonitorOutputChannel (busId);
+            return inputMixer_->channelMonitorOutputChannel (monStripInputChannelIds_[i]);
         };
         outputMixerPane_->onMonGain = [this, resolveMonChannelId] (int monIdx, float gainLinear)
         {
@@ -5302,8 +5309,11 @@ MainComponent::collectMonSendsView (int monIdx) const
     if (outputMixer_ == nullptr || inputMixer_ == nullptr) return view;
     if (monIdx < 0
         || monIdx >= static_cast<int> (monStripInputChannelIds_.size())) return view;
-    const auto chId  = monStripInputChannelIds_[static_cast<std::size_t> (monIdx)];
-    const auto outOpt = inputMixer_->channelMonitorOutputChannel (chId);
+    const auto rowIdx   = static_cast<std::size_t> (monIdx);
+    const auto srcBusId = monStripInputBusIds_[rowIdx];
+    const auto outOpt = (srcBusId.value() != 0)
+                            ? inputMixer_->busMonitorOutputChannel (srcBusId)
+                            : inputMixer_->channelMonitorOutputChannel (monStripInputChannelIds_[rowIdx]);
     if (! outOpt.has_value()) return view;
     const auto outChId = *outOpt;
 
@@ -5329,8 +5339,11 @@ MainComponent::collectMonEqView (int monIdx) const
     if (outputMixer_ == nullptr || inputMixer_ == nullptr) return probe;
     if (monIdx < 0
         || monIdx >= static_cast<int> (monStripInputChannelIds_.size())) return probe;
-    const auto chId  = monStripInputChannelIds_[static_cast<std::size_t> (monIdx)];
-    const auto outOpt = inputMixer_->channelMonitorOutputChannel (chId);
+    const auto i     = static_cast<std::size_t> (monIdx);
+    const auto busId = monStripInputBusIds_[i];
+    const auto outOpt = (busId.value() != 0)
+                            ? inputMixer_->busMonitorOutputChannel (busId)
+                            : inputMixer_->channelMonitorOutputChannel (monStripInputChannelIds_[i]);
     if (! outOpt.has_value()) return probe;
     const auto outChId = *outOpt;
     auto* strip = outputMixer_->audioStripForChannel (outChId);
@@ -5352,8 +5365,11 @@ MainComponent::collectMonCmpView (int monIdx) const
     if (outputMixer_ == nullptr || inputMixer_ == nullptr) return probe;
     if (monIdx < 0
         || monIdx >= static_cast<int> (monStripInputChannelIds_.size())) return probe;
-    const auto chId  = monStripInputChannelIds_[static_cast<std::size_t> (monIdx)];
-    const auto outOpt = inputMixer_->channelMonitorOutputChannel (chId);
+    const auto i     = static_cast<std::size_t> (monIdx);
+    const auto busId = monStripInputBusIds_[i];
+    const auto outOpt = (busId.value() != 0)
+                            ? inputMixer_->busMonitorOutputChannel (busId)
+                            : inputMixer_->channelMonitorOutputChannel (monStripInputChannelIds_[i]);
     if (! outOpt.has_value()) return probe;
     const auto outChId = *outOpt;
     auto* strip = outputMixer_->audioStripForChannel (outChId);
