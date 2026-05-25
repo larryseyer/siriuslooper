@@ -6915,8 +6915,15 @@ void MainComponent::chooseFileAndLoad()
         juce::File::getSpecialLocation (juce::File::userDocumentsDirectory),
         "*.json");
 
+    // `openMode` alone leaves `canSelectFiles` unset, which JUCE maps to
+    // [NSOpenPanel setCanChooseFiles: NO] on macOS — the picker shows the
+    // .json files but greys them out (juce_FileChooser_mac.mm:71,115). The
+    // save site doesn't need this because NSSavePanel always accepts a typed
+    // filename. Mirror the directory-picker site below which sets canSelectXxx
+    // explicitly.
     sessionFileChooser_->launchAsync (
-        juce::FileBrowserComponent::openMode,
+        juce::FileBrowserComponent::openMode
+            | juce::FileBrowserComponent::canSelectFiles,
         [this] (const juce::FileChooser& fc)
         {
             const auto source = fc.getResult();
