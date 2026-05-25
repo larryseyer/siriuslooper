@@ -13,6 +13,7 @@
 #include "ida/MixerGraphState.h"
 #include "ida/OutputMixer.h"
 #include "ida/PluginDescriptor.h"
+#include "ida/SessionFormat.h"
 #include "ida/SignalType.h"
 
 #include <juce_core/juce_core.h>
@@ -1546,4 +1547,36 @@ TEST_CASE ("OutputMixer round-trips bus->FX-return send levels",
     CHECK (restored.busSendLevel (srcBus, fxRetA) == Catch::Approx (0.65f));
     CHECK (restored.busSendLevel (srcBus, fxRetB) == Catch::Approx (0.30f));
     CHECK (restored.exportGraphState() == state);
+}
+
+// End-to-end persistence round-trip through the JSON layer — mirror of the
+// app's save/load path: exportGraphState -> serializeMixerGraphState (JSON) ->
+// deserializeOutputMixerGraphState -> new mixer + importGraphState. The
+// existing pan/width/gain/muted test only crosses the engine boundary; this
+// one proves the JSON layer doesn't drop bus state on the way to disk.
+TEST_CASE ("OutputMixer aux-bus pan / width / gain / muted survive the full JSON round-trip",
+           "[output-mixer][persistence][json]")
+{
+    ida::OutputMixer mixer;
+    const auto busId = mixer.addBus (ida::BusConfig { 2, "OutAuxA", ida::BusKind::Bus });
+    auto* bus = mixer.busForId (busId);
+    REQUIRE (bus != nullptr);
+    bus->setGain  (0.5f);
+    bus->setMuted (true);
+    bus->setPan   (0.25f);
+    bus->setWidth (1.5f);
+
+    const auto exported = mixer.exportGraphState();
+    const auto json     = ida::persistence::serializeMixerGraphState (exported);
+    const auto reloaded = ida::persistence::deserializeOutputMixerGraphState (json);
+
+    ida::OutputMixer restored;
+    restored.importGraphState (reloaded);
+
+    auto* restoredBus = restored.busForId (busId);
+    REQUIRE (restoredBus != nullptr);
+    CHECK (restoredBus->gain()  == Catch::Approx (0.5f));
+    CHECK (restoredBus->muted());
+    CHECK (restoredBus->pan()   == Catch::Approx (0.25f));
+    CHECK (restoredBus->width() == Catch::Approx (1.5f));
 }

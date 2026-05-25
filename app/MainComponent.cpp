@@ -5894,11 +5894,18 @@ void MainComponent::refreshOutputMixerMonChannels()
 
     // Skip the pane rebuild when nothing structural changed (mirrors the
     // phrase-strip refresh's short-circuit): avoids nuking an in-progress
-    // fader drag on an unrelated MON strip.
-    if (newIds == monStripInputChannelIds_) return;
+    // fader drag on an unrelated MON strip. Destinations still need a
+    // refresh in case an aux bus was added/removed since the last call —
+    // mirror of the phrase short-circuit branch.
+    if (newIds == monStripInputChannelIds_)
+    {
+        refreshOutputDestinations();
+        return;
+    }
 
     monStripInputChannelIds_ = std::move (newIds);
     outputMixerPane_->setMonStrips (infos);
+    refreshOutputDestinations();
 }
 
 void MainComponent::refreshOutputDestinations()
@@ -6048,6 +6055,59 @@ void MainComponent::refreshOutputDestinations()
     }
 
     outputMixerPane_->setPhraseDestinations (perPhraseChoices, perPhrase);
+
+    // MON-strip picker. Same shape as the phrase block: each MON strip's
+    // destination is its auto-minted OutputMixer channel's main-out (Bus or
+    // HardwareOutput). Without this wiring `setMonDestinations` never runs
+    // and the dest button keeps the construction-time "—" placeholder, which
+    // renders as a garbled `â` on macOS because the strip-side font doesn't
+    // honor the construction-time UTF-8 bytes.
+    const int mn = static_cast<int> (monStripInputChannelIds_.size());
+    std::vector<std::vector<OutputMixerPane::DestChoice>> perMonChoices (static_cast<std::size_t> (mn));
+    std::vector<OutputMixerPane::StripDest>               perMon (static_cast<std::size_t> (mn));
+
+    for (int i = 0; i < mn; ++i)
+    {
+        const auto inChId = monStripInputChannelIds_[static_cast<std::size_t> (i)];
+        const auto outOpt = (inputMixer_ != nullptr)
+                                ? inputMixer_->channelMonitorOutputChannel (inChId)
+                                : std::optional<ida::OutputChannelId> {};
+        if (! outOpt.has_value()) continue;
+        const auto chId = *outOpt;
+
+        auto& choices = perMonChoices[static_cast<std::size_t> (i)];
+        choices.push_back ({ DestKind::Bus, /*id*/ 0, "Master", /*pairIndex*/ 0 });
+        for (const auto& busId : outputBusStripIds_)
+            if (auto* bus = outputMixer_->busForId (busId))
+                choices.push_back ({ DestKind::Bus, busId.value(),
+                                     juce::String (bus->config().name),
+                                     /*pairIndex*/ 0 });
+        for (const auto& p : hwPairs)
+            choices.push_back ({ DestKind::HardwareOutput, /*id*/ 0, p.label, p.pairIndex });
+
+        auto& dest = perMon[static_cast<std::size_t> (i)];
+        if (outputMixer_->channelMainOut (chId) == ida::OutputMixer::MainOutDest::HardwareOutput)
+        {
+            const int pair = outputMixer_->channelMainOutHardwareOutPair (chId);
+            dest.currentKind      = DestKind::HardwareOutput;
+            dest.currentId        = 0;
+            dest.currentPairIndex = pair;
+            dest.currentName      = labelForPair (pair);
+        }
+        else
+        {
+            const auto activeBus = outputMixer_->channelMainOutBus (chId);
+            dest.currentKind      = DestKind::Bus;
+            dest.currentId        = activeBus.value();
+            dest.currentPairIndex = 0;
+            if (activeBus.value() == 0)
+                dest.currentName = "Master";
+            else if (auto* bus = outputMixer_->busForId (activeBus))
+                dest.currentName = juce::String (bus->config().name);
+        }
+    }
+
+    outputMixerPane_->setMonDestinations (perMonChoices, perMon);
 }
 
 // Resolves each strip's current main-out destination and builds the full choice
