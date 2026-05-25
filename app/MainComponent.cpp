@@ -6894,6 +6894,24 @@ void MainComponent::chooseFileAndLoad()
                                     inputMixer_->setChannelMonitorMode (
                                         ida::ChannelId (c.channelId),
                                         ida::MonitorMode::On);
+                        // V9 follow-up: realign inputStripChannelIds_ to the
+                        // loaded channel ids so refreshOutputMixerMonChannels()
+                        // resolves the freshly-imported MON state. The strip
+                        // count comes from inputPairs_ (unchanged by load);
+                        // when it matches the loaded channel count (common
+                        // case — same device, same pairs) every strip rebinds
+                        // to its saved ChannelId. Mismatch (cross-device load)
+                        // leaves the overlap rebound and surfaces an existing
+                        // wider gap not in scope here.
+                        if (loadedInputMixer.has_value())
+                        {
+                            const auto& loadedChans = loadedInputMixer->channels;
+                            const auto n = std::min (inputStripChannelIds_.size(),
+                                                     loadedChans.size());
+                            for (std::size_t i = 0; i < n; ++i)
+                                inputStripChannelIds_[i] =
+                                    ida::ChannelId (loadedChans[i].channelId);
+                        }
                         // The AudioCallback holds raw pointers to the mixers;
                         // re-bind it to the new instances before re-arming.
                         audioCallback_->setInputMixer  (inputMixer_.get());
