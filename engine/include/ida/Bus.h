@@ -243,6 +243,17 @@ public:
     /// per-buffer `numSamples` they intend to mix.
     float* mixBufferChannel (int c) const noexcept;
 
+    /// V9 §7.2 (per-input-node MON): returns a stable pointer to the bus's
+    /// post-processing stereo output (`processedBuffer_`) for `side ∈ {0=L, 1=R}`,
+    /// or `nullptr` if `side` is out of range. Pointer is valid for the bus's
+    /// lifetime — `processedBuffer_` is sized once in the ctor and never resized.
+    /// Mirror of `InputMixer::postStripPointer(ChannelId, side)` for buses. The
+    /// audio-thread reader (`OutputMixer::setChannelAudioSource`) pins this once
+    /// and re-reads up to the current block size every block; `Bus::process`
+    /// writes the post-effects samples into `processedBuffer_` before the
+    /// OutputMixer's render pulls them.
+    const float* postProcessingPointer (int side) const noexcept;
+
     /// Slice E3 (2026-05-24) — RT-fast bypass flag. True iff this bus has
     /// at least one active sender (a channel sending at non-zero level,
     /// or a sub-bus whose main-out routes here). When false, `process`

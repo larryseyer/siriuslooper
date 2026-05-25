@@ -55,6 +55,7 @@ add_executable(IdaTests
     InputMixerTests.cpp
     OutputMixerTests.cpp
     BusTests.cpp
+    BusProcessedTapTests.cpp
     ProcessingChainTests.cpp
     TapeWriterTests.cpp
     NotificationBusTests.cpp

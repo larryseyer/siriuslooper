@@ -387,4 +387,11 @@ float* Bus::mixBufferChannel (int c) const noexcept
          + static_cast<std::size_t> (c) * kMaxBusMixSamples;
 }
 
+const float* Bus::postProcessingPointer (int side) const noexcept
+{
+    if (side < 0 || side > 1) return nullptr;
+    return processedBuffer_.data()
+         + static_cast<std::size_t> (side) * kMaxBusMixSamples;
+}
+
 } // namespace ida
