@@ -1539,6 +1539,7 @@ private:
         setBusMonitorModeAt (idx, next, /*notify*/ true);
     }
 
+public:
     /// Refresh button states from the engine — called by `refreshInputMixer`
     /// after any structural change (load, bus add/remove). `modes` is parallel
     /// to `busStrips_`.
@@ -1548,6 +1549,7 @@ private:
         for (int i = 0; i < n; ++i)
             setBusMonitorModeAt (i, modes[static_cast<std::size_t> (i)], /*notify*/ false);
     }
+private:
 
 
     std::vector<std::unique_ptr<otto::ui::CompactFaderStrip>> strips_;
@@ -6316,6 +6318,17 @@ void MainComponent::refreshInputDestinations()
         monitorModes.push_back (inputMixer_->channelMonitorMode (chId));
     inputMixerPane_->setMonitorModes (monitorModes);
 
+    // V9 §7.2 (2026-05-25) — bus-row MON button states. Mirror of the
+    // channel-row push above; keeps the bus strip's MON button in sync
+    // with engine state after load / bus add / structural rebuild.
+    {
+        std::vector<ida::MonitorMode> busModes;
+        busModes.reserve (busStripIds_.size());
+        for (const auto& bId : busStripIds_)
+            busModes.push_back (inputMixer_->busMonitorMode (bId));
+        inputMixerPane_->setBusMonitorModes (busModes);
+    }
+
     // Bus-row pickers. Each bus/FX-return strip can route its output to a pooled
     // tape, another PLAIN bus, or direct out. The choice list is built PER BUS:
     // feedback-cycle targets (and the bus itself) are filtered out, so the lists
@@ -6529,6 +6542,16 @@ void MainComponent::rebuildBusStrips()
     audioDeviceManager_.addAudioCallback (audioCallback_.get());
 
     inputMixerPane_->setBusStrips (infos);   // UI work — safe after re-add
+
+    // V9 §7.2 (2026-05-25) — newly-rebuilt strips default to MON Off; push
+    // engine state so an existing MON-on bus after a structural rebuild
+    // (e.g. load handler) shows the correct button label without waiting
+    // for the next `refreshInputMixer`.
+    std::vector<ida::MonitorMode> busModes;
+    busModes.reserve (busStripIds_.size());
+    for (const auto& bId : busStripIds_)
+        busModes.push_back (inputMixer_->busMonitorMode (bId));
+    inputMixerPane_->setBusMonitorModes (busModes);
 }
 
 void MainComponent::toggleInputPairStereo (int stripIndex)
