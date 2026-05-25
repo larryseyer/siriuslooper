@@ -13,13 +13,22 @@
 // that the OutputMixer channel's audio source is the InputMixer's
 // post-strip buffer is covered by InputMixerPostStripBufferTests + the
 // existing OutputMixer renderBuffer tests.
+//
+// V9 Slice 4 follow-up (2026-05-24): explicit MON+mute regression — muting
+// a strip while MON is on must zero the post-strip buffer, and therefore
+// silence the auto-created OutputMixer channel (which reads in-place from
+// that same pointer). This was implicitly covered by the now-deleted
+// InputMixerMonitorMuteLeakTests; we want it explicit again.
 #include "ida/Channel.h"
+#include "ida/ChannelStrip.h"
 #include "ida/InputMixer.h"
 #include "ida/MonitorMode.h"
 #include "ida/OutputMixer.h"
 #include "ida/SignalType.h"
 
 #include <catch2/catch_test_macros.hpp>
+
+#include <array>
 
 using ida::ChannelId;
 using ida::InputId;
@@ -69,4 +78,59 @@ TEST_CASE ("InputMixer MON owns an OutputMixer channel",
         input.removeChannel (chId);
         REQUIRE (output.channelCount() == 0);
     }
+}
+
+TEST_CASE ("MON+mute: strip mute yields silence at the auto-created OutputMixer channel",
+           "[input-mixer][mon][mute]")
+{
+    using ida::ChannelStrip;
+
+    OutputMixer output;
+    InputMixer  input;
+    input.attachOutputMixer (&output);
+
+    const auto chId = input.addChannel (InputId (0), SignalType::Audio);
+    input.setChannelInputSource (chId, 0, 1, /*stereo=*/true);
+    input.setChannelMonitorMode (chId, MonitorMode::On);
+    REQUIRE (output.channelCount() == 1);
+
+    // Drive a non-zero device input through the strip. Default strip gain
+    // is unity (no mute), so the post-strip buffer must carry the signal —
+    // and the auto-created OutputMixer channel reads in-place from that
+    // same pointer, so it would render audibly were nothing muted.
+    constexpr int n = 64;
+    std::array<float, n> left {}, right {};
+    for (int i = 0; i < n; ++i)
+    {
+        left[i]  = 0.5f;
+        right[i] = -0.5f;
+    }
+    const float* inputs[2] { left.data(), right.data() };
+    input.renderInputGraph (inputs, 2, nullptr, 0, n);
+
+    // Sanity check: unmuted, the post-strip seam carries SOMETHING. The
+    // exact post-strip value depends on default pan/width law applied to
+    // the stereo source; what matters here is non-silence — so that the
+    // post-mute zero is a real change, not a no-op.
+    REQUIRE (input.postStripPointer (chId, 0) != nullptr);
+    REQUIRE (input.postStripPointer (chId, 1) != nullptr);
+    REQUIRE (input.postStripPointer (chId, 0)[0] != 0.0f);
+    REQUIRE (input.postStripPointer (chId, 1)[0] != 0.0f);
+
+    // Mute the strip via the same path the UI's mute button drives.
+    auto* chain = input.processingChainFor (chId);
+    REQUIRE (chain != nullptr);
+    auto* strip = static_cast<ChannelStrip<SignalType::Audio>*> (chain);
+    strip->setMuted (true);
+
+    // Same non-zero device input, re-rendered.
+    input.renderInputGraph (inputs, 2, nullptr, 0, n);
+
+    // Post-strip is silent — and therefore the OutputMixer MON channel
+    // (which sources from this pointer) is silent too. Spot-check the
+    // first sample and a midpoint to catch a partial / fade scenario.
+    REQUIRE (input.postStripPointer (chId, 0)[0]      == 0.0f);
+    REQUIRE (input.postStripPointer (chId, 1)[0]      == 0.0f);
+    REQUIRE (input.postStripPointer (chId, 0)[n / 2]  == 0.0f);
+    REQUIRE (input.postStripPointer (chId, 1)[n / 2]  == 0.0f);
 }

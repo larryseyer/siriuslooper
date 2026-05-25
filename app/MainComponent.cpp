@@ -257,11 +257,10 @@ namespace
 }
 
 // =============================================================================
-// PreparationPane — PreparationView on top, a diagnostics row at the bottom,
-// and (since M1 Session 1) an audio-device section that exposes JUCE's stock
-// device selector plus the explicit `Enable monitoring` toggle the audio
-// callback gates input→output pass-through on. Monitoring is off at startup
-// (a hot mic plus live monitoring is one slip away from feedback).
+// PreparationPane — PreparationView on top, a diagnostics row at the bottom.
+// The audio-device picker lives in the Settings tab (SettingsPane). Per V9
+// §7.2 monitoring is per-channel: each input strip's MON button is the only
+// monitoring control — there is no global enable toggle.
 // =============================================================================
 class MainComponent::PreparationPane final : public juce::Component
 {
@@ -351,9 +350,8 @@ public:
         statusLabel_.setBounds      (topRow);
         area.removeFromTop (6);
 
-        // The audio-device picker + monitoring toggle now live in the Settings
-        // tab (SettingsPane), reclaiming the ~244px they used to occupy here for
-        // the tree/timeline.
+        // The audio-device picker lives in the Settings tab (SettingsPane),
+        // reclaiming the ~244px it used to occupy here for the tree/timeline.
         diagnosticsLabel_.setBounds (area.removeFromBottom (84));
         area.removeFromBottom (6);
         // M6 Session 3 — notifications list above diagnostics, both
@@ -396,8 +394,7 @@ private:
 class MainComponent::SettingsPane final : public juce::Component
 {
 public:
-    SettingsPane (juce::AudioDeviceManager& deviceManager,
-                  AudioCallback&            /*audioCallback*/)
+    SettingsPane (juce::AudioDeviceManager& deviceManager)
         : deviceSelector_ (deviceManager,
                            /*minInputChannels*/  0, /*maxInputChannels*/  2,
                            /*minOutputChannels*/ 0, /*maxOutputChannels*/ 2,
@@ -3400,7 +3397,7 @@ MainComponent::MainComponent()
     tabs_.addTab ("Preparation", juce::Colours::black, preparationPane_.get(), false);
 
     // --- Settings tab ---
-    settingsPane_ = std::make_unique<SettingsPane> (audioDeviceManager_, *audioCallback_);
+    settingsPane_ = std::make_unique<SettingsPane> (audioDeviceManager_);
     tabs_.addTab ("Settings", juce::Colours::black, settingsPane_.get(), false);
 
     // --- Input Mixer tab (white paper Part VI) ---
@@ -6537,8 +6534,13 @@ void MainComponent::chooseFileAndLoad()
                         // V9: re-bind the InputMixer's OutputMixer attachment
                         // AFTER both are re-minted so MON replay (in a future
                         // session-format extension) can engage routes.
-                        if (loadedInputMixer.has_value())
-                            inputMixer_->attachOutputMixer (outputMixer_.get());
+                        // Always re-attach regardless of which envelope side
+                        // was present: if only `output_mixer` was loaded, the
+                        // OutputMixer instance was destroyed and replaced, so
+                        // the surviving InputMixer's stored OutputMixer* would
+                        // otherwise be left dangling. attachOutputMixer is
+                        // idempotent and both pointers are live here.
+                        inputMixer_->attachOutputMixer (outputMixer_.get());
                         // The AudioCallback holds raw pointers to the mixers;
                         // re-bind it to the new instances before re-arming.
                         audioCallback_->setInputMixer  (inputMixer_.get());
