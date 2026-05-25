@@ -610,7 +610,7 @@ public:
     /// opens the per-strip InsertChainPopup anchored to the button (P7 T5 slice 5).
     std::function<void (int idx)>                      onInputInsertChainClicked;
     /// 2026-05-24 monitor slice. Operator changed the Monitor button state on
-    /// input strip `idx`. `mode` is the new MonitorMode (Off/Raw/Processed).
+    /// input strip `idx`. `mode` is the new MonitorMode (Off/On).
     /// MainComponent applies it via `InputMixer::setChannelMonitorMode` inside
     /// the audio-callback-detached bracket (same pattern as `onDestinationChosen`).
     std::function<void (int idx, ida::MonitorMode mode)> onMonitorModeChanged;
