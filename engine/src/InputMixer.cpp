@@ -223,8 +223,15 @@ void InputMixer::setChannelMonitorMode (ChannelId id, MonitorMode mode)
     // Mint a fresh OutputMixer channel and wire its audio source to this
     // input's post-strip stereo buffer (the V9 Slice 2 seam). Pointers
     // are stable for the input channel's lifetime; OutputMixer reads
-    // them every block.
+    // them every block. The minted channel also gets its own
+    // ChannelStrip<Audio> so the operator can mix it (gain/pan/mute/
+    // inserts/sends/destinations) as a peer of phrase channels per
+    // whitepaper V9 §6.3.1 / §7.2 — without a strip the post-strip
+    // input signal would land at master at unity with no per-channel
+    // control surface.
     const auto monChId = outputMixer_->addChannel (SignalType::Audio);
+    outputMixer_->setChannelStrip (monChId,
+        std::make_unique<ChannelStrip<SignalType::Audio>>());
     outputMixer_->setChannelAudioSource (monChId,
                                          postStripPointer (id, 0),
                                          postStripPointer (id, 1));

@@ -78,6 +78,57 @@ TEST_CASE ("InputMixer MON owns an OutputMixer channel",
         input.removeChannel (chId);
         REQUIRE (output.channelCount() == 0);
     }
+
+    SECTION ("MON on → the auto-created OutputMixer channel carries a ChannelStrip<Audio>")
+    {
+        input.setChannelMonitorMode (chId, MonitorMode::On);
+        const auto monChId = input.channelMonitorOutputChannel (chId);
+        REQUIRE (monChId.has_value());
+        REQUIRE (output.audioStripForChannel (*monChId) != nullptr);
+    }
+
+    SECTION ("MON on + MON output strip muted → no signal at master after render")
+    {
+        using ida::ChannelStrip;
+
+        input.setChannelInputSource (chId, 0, 1, /*stereo=*/true);
+        input.setChannelMonitorMode (chId, MonitorMode::On);
+        const auto monChId = input.channelMonitorOutputChannel (chId);
+        REQUIRE (monChId.has_value());
+
+        constexpr int n = 64;
+        std::array<float, n> left {}, right {};
+        for (int i = 0; i < n; ++i) { left[i] = 0.5f; right[i] = -0.5f; }
+        const float* inputs[2] { left.data(), right.data() };
+
+        std::array<float, n> outL {}, outR {};
+        float* outputs[2] { outL.data(), outR.data() };
+
+        // Unmuted: input flows through input strip → post-strip buffer
+        // → MON output strip (unmuted) → master → outputs[].
+        input.renderInputGraph (inputs, 2, nullptr, 0, n);
+        output.renderBuffer (nullptr, 0, outputs, 2, n);
+        const bool anyAudibleUnmuted =
+            (outL[0] != 0.0f) || (outR[0] != 0.0f)
+         || (outL[n / 2] != 0.0f) || (outR[n / 2] != 0.0f);
+        REQUIRE (anyAudibleUnmuted);
+
+        // Mute the MON OUTPUT strip (distinct from the input strip's mute —
+        // that path is covered by the "MON+mute" test below). Re-render
+        // with fresh output buffers and expect silence at master.
+        auto* monStrip = output.audioStripForChannel (*monChId);
+        REQUIRE (monStrip != nullptr);
+        monStrip->setMuted (true);
+
+        outL.fill (0.0f);
+        outR.fill (0.0f);
+        input.renderInputGraph (inputs, 2, nullptr, 0, n);
+        output.renderBuffer (nullptr, 0, outputs, 2, n);
+        REQUIRE (outL[0] == 0.0f);
+        REQUIRE (outR[0] == 0.0f);
+        REQUIRE (outL[n / 2] == 0.0f);
+        REQUIRE (outR[n / 2] == 0.0f);
+    }
 }
 
 TEST_CASE ("MON+mute: strip mute yields silence at the auto-created OutputMixer channel",
