@@ -1321,3 +1321,73 @@ TEST_CASE ("InputMixer::setBusMonitorMode(On) mints an OutputMixer channel and b
     REQUIRE (in.busMonitorOutputChannel (busId).has_value());
     CHECK (out.channelCount() == channelsBefore + 1);
 }
+
+TEST_CASE ("InputMixer::setBusMonitorMode(Off) after On removes the auto-minted OutputMixer channel",
+           "[input-mixer][bus-monitor]")
+{
+    ida::InputMixer  in;
+    ida::OutputMixer out;
+    in.attachOutputMixer (&out);
+    const auto busId = in.addBus (ida::BusConfig { 2, "B", ida::BusKind::Bus });
+    in.setBusMonitorMode (busId, ida::MonitorMode::On);
+    const auto countAfterOn = out.channelCount();
+    REQUIRE (in.busMonitorOutputChannel (busId).has_value());
+
+    in.setBusMonitorMode (busId, ida::MonitorMode::Off);
+
+    CHECK (in.busMonitorMode (busId) == ida::MonitorMode::Off);
+    CHECK_FALSE (in.busMonitorOutputChannel (busId).has_value());
+    CHECK (out.channelCount() == countAfterOn - 1);
+}
+
+TEST_CASE ("InputMixer::setBusMonitorMode(On) is idempotent — second On does not mint a second channel",
+           "[input-mixer][bus-monitor]")
+{
+    ida::InputMixer  in;
+    ida::OutputMixer out;
+    in.attachOutputMixer (&out);
+    const auto busId = in.addBus (ida::BusConfig { 2, "B", ida::BusKind::Bus });
+
+    in.setBusMonitorMode (busId, ida::MonitorMode::On);
+    const auto chFirst = *in.busMonitorOutputChannel (busId);
+    const auto count1  = out.channelCount();
+
+    in.setBusMonitorMode (busId, ida::MonitorMode::On);
+
+    CHECK (*in.busMonitorOutputChannel (busId) == chFirst);
+    CHECK (out.channelCount() == count1);
+}
+
+TEST_CASE ("InputMixer::setBusMonitorMode for an unknown BusId is a silent no-op",
+           "[input-mixer][bus-monitor]")
+{
+    ida::InputMixer  in;
+    ida::OutputMixer out;
+    in.attachOutputMixer (&out);
+    const auto before = out.channelCount();
+
+    in.setBusMonitorMode (ida::BusId { 9999 }, ida::MonitorMode::On);
+
+    CHECK (in.busMonitorMode (ida::BusId { 9999 }) == ida::MonitorMode::Off);
+    CHECK_FALSE (in.busMonitorOutputChannel (ida::BusId { 9999 }).has_value());
+    CHECK (out.channelCount() == before);
+}
+
+TEST_CASE ("InputMixer::setBusMonitorMode(On) without an attached OutputMixer stashes the mode",
+           "[input-mixer][bus-monitor]")
+{
+    ida::InputMixer in;
+    // Deliberately do NOT attach an OutputMixer.
+    const auto busId = in.addBus (ida::BusConfig { 2, "B", ida::BusKind::Bus });
+
+    in.setBusMonitorMode (busId, ida::MonitorMode::On);
+
+    CHECK (in.busMonitorMode (busId) == ida::MonitorMode::On);
+    CHECK_FALSE (in.busMonitorOutputChannel (busId).has_value());
+    // After the fact, attach and verify that the stash exists but does NOT
+    // auto-engage (matching the channel-side contract — caller drives replay).
+    ida::OutputMixer out;
+    in.attachOutputMixer (&out);
+    CHECK (in.busMonitorMode (busId) == ida::MonitorMode::On);
+    CHECK_FALSE (in.busMonitorOutputChannel (busId).has_value());
+}
