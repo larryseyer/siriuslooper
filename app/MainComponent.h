@@ -181,6 +181,7 @@ private:
     };
     [[nodiscard]] ChannelSendsView collectInputSendsView  (int stripIdx) const;
     [[nodiscard]] ChannelSendsView collectOutputSendsView (int phraseIdx) const;
+    [[nodiscard]] ChannelSendsView collectMonSendsView    (int monIdx)    const;
 
     /// Slice EC: snapshot the channel strip's current EQ slot index +
     /// live `EqConfig` (or default + `hasSlot=false` if no EQ slot is
@@ -205,6 +206,8 @@ private:
     [[nodiscard]] ChannelCmpProbe collectInputCmpView  (int stripIdx) const;
     [[nodiscard]] ChannelFxProbe  collectOutputEqView  (int phraseIdx) const;
     [[nodiscard]] ChannelCmpProbe collectOutputCmpView (int phraseIdx) const;
+    [[nodiscard]] ChannelFxProbe  collectMonEqView     (int monIdx)    const;
+    [[nodiscard]] ChannelCmpProbe collectMonCmpView    (int monIdx)    const;
     /// Slice EC-Polish: bus/FX-return strips can now hold EQ + CMP. The
     /// probes are keyed by the bus-row index (parallel to busStripIds_ on
     /// the input pane, outputBusStripIds_ on the output pane). The output

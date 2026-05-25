@@ -1931,6 +1931,32 @@ public:
         resized();
     }
 
+    /// MON-strip detail surface — identical surface to phrase (Pan/Width +
+    /// Sends + EQ + CMP) per the 2026-05-24 operator design lock. `monIdx`
+    /// is the row index into `monStrips_`, parallel to
+    /// MainComponent::monStripInputChannelIds_.
+    void showMonDetailFor (int monIdx, float panMinus1to1, float width,
+                           std::vector<ida::ui::FxReturnInfo> fxReturns,
+                           std::vector<float> sendLevels,
+                           bool preFader,
+                           ida::EqConfig eqConfig, bool hasEqSlot,
+                           ida::CmpConfig cmpConfig, bool hasCmpSlot)
+    {
+        if (monIdx < 0 || monIdx >= monStripCount()) return;
+        detailPanel_.setChannel (monIdx, otto::ui::ChannelType::FXReturn);
+        detailPanel_.panWidTab().setPan (panMinus1to1);
+        detailPanel_.panWidTab().setWidth (width);
+        detailPanel_.sendsTab().setChannelState ({ std::move (fxReturns),
+                                                   std::move (sendLevels),
+                                                   preFader });
+        detailPanel_.eqTab().setChannelState ({ eqConfig, hasEqSlot });
+        detailPanel_.cmpTab().setChannelState ({ cmpConfig, hasCmpSlot });
+        detailPanel_.setTabsAvailable ({ true, true, true, true });
+        detailPanel_.setVisible (true);
+        grabKeyboardFocus();
+        resized();
+    }
+
     /// Aux-bus detail surface (EQ + CMP only). Mirrors
     /// `InputMixerPane::showBusDetailFor`. `busIdx` is the row index into
     /// `busStrips_`, parallel to MainComponent::outputBusStripIds_.
@@ -4431,14 +4457,81 @@ MainComponent::MainComponent()
             if (! chOpt.has_value() || outputMixer_ == nullptr) return;
             outputMixer_->setChannelSendIsPreFader (*chOpt, preFader);
         };
-        // Detail-panel binding for MON strips is a follow-up slice; the
-        // strip itself fully responds to gain/mute/pan/width/destination/
-        // send/pre-fader via the relays above.
-        outputMixerPane_->onMonSelect              = [] (int) {};
-        outputMixerPane_->onMonEqConfigChanged     = [] (int, ida::EqConfig)  {};
-        outputMixerPane_->onMonEqSlotAddRequested  = [] (int)                 {};
-        outputMixerPane_->onMonCmpConfigChanged    = [] (int, ida::CmpConfig) {};
-        outputMixerPane_->onMonCmpSlotAddRequested = [] (int)                 {};
+        // MON detail panel binding — identical surface to phrase (Pan/Width
+        // + Sends + EQ + CMP) per the 2026-05-24 operator design lock.
+        // Mirror of the phrase detail-panel wiring (lines ~4200+ / ~4280+),
+        // with monIdx → input ChannelId → OutputMixer channel resolution
+        // via inputMixer_->channelMonitorOutputChannel.
+        outputMixerPane_->onMonSelect = [this, resolveMonChannelId] (int monIdx)
+        {
+            auto chOpt = resolveMonChannelId (monIdx);
+            if (! chOpt.has_value() || outputMixer_ == nullptr) return;
+            auto* s = outputMixer_->audioStripForChannel (*chOpt);
+            if (s == nullptr) return;
+            auto sends = collectMonSendsView (monIdx);
+            const auto eqProbe  = collectMonEqView  (monIdx);
+            const auto cmpProbe = collectMonCmpView (monIdx);
+            outputMixerPane_->showMonDetailFor (monIdx,
+                                                s->pan() * 2.0f - 1.0f,
+                                                s->width(),
+                                                std::move (sends.fxReturns),
+                                                std::move (sends.sendLevels),
+                                                sends.preFader,
+                                                eqProbe.config,  eqProbe.hasSlot,
+                                                cmpProbe.config, cmpProbe.hasSlot);
+        };
+        outputMixerPane_->onMonEqConfigChanged =
+            [this, resolveMonChannelId] (int monIdx, ida::EqConfig cfg)
+        {
+            const auto probe = collectMonEqView (monIdx);
+            if (! probe.hasSlot) return;
+            auto chOpt = resolveMonChannelId (monIdx);
+            if (! chOpt.has_value()) return;
+            audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+            effectChainHost_.setInternalEqConfigAt (chOpt->value(), probe.slotIdx, cfg);
+            audioDeviceManager_.addAudioCallback (audioCallback_.get());
+        };
+        outputMixerPane_->onMonCmpConfigChanged =
+            [this, resolveMonChannelId] (int monIdx, ida::CmpConfig cfg)
+        {
+            const auto probe = collectMonCmpView (monIdx);
+            if (! probe.hasSlot) return;
+            auto chOpt = resolveMonChannelId (monIdx);
+            if (! chOpt.has_value()) return;
+            audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+            effectChainHost_.setInternalCmpConfigAt (chOpt->value(), probe.slotIdx, cfg);
+            audioDeviceManager_.addAudioCallback (audioCallback_.get());
+        };
+        outputMixerPane_->onMonEqSlotAddRequested =
+            [this, resolveMonChannelId] (int monIdx)
+        {
+            auto chOpt = resolveMonChannelId (monIdx);
+            if (! chOpt.has_value() || outputMixer_ == nullptr) return;
+            auto* strip = outputMixer_->audioStripForChannel (*chOpt);
+            if (strip == nullptr) return;
+            auto chain = strip->effectChain()
+                              .withAppended (ida::EffectChainEntry::makeInternal (
+                                                  ida::InternalFxId::kEq));
+            audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+            strip->setEffectChain (chain);
+            audioDeviceManager_.addAudioCallback (audioCallback_.get());
+            if (outputMixerPane_) outputMixerPane_->onMonSelect (monIdx);
+        };
+        outputMixerPane_->onMonCmpSlotAddRequested =
+            [this, resolveMonChannelId] (int monIdx)
+        {
+            auto chOpt = resolveMonChannelId (monIdx);
+            if (! chOpt.has_value() || outputMixer_ == nullptr) return;
+            auto* strip = outputMixer_->audioStripForChannel (*chOpt);
+            if (strip == nullptr) return;
+            auto chain = strip->effectChain()
+                              .withAppended (ida::EffectChainEntry::makeInternal (
+                                                  ida::InternalFxId::kCmp));
+            audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+            strip->setEffectChain (chain);
+            audioDeviceManager_.addAudioCallback (audioCallback_.get());
+            if (outputMixerPane_) outputMixerPane_->onMonSelect (monIdx);
+        };
 
         // Slice EC-Polish — aux-bus + master selection opens the EQ/CMP-only
         // detail panel on the output pane. Same pattern as the input pane;
@@ -5079,6 +5172,88 @@ MainComponent::collectOutputCmpView (int phraseIdx) const
     const auto it  = phraseChannelByConstituent_.find (cid.value());
     if (it == phraseChannelByConstituent_.end()) return probe;
     const auto outChId = it->second;
+    auto* strip = outputMixer_->audioStripForChannel (outChId);
+    if (strip == nullptr) return probe;
+
+    const auto slotOpt = findInternalSlot (strip->effectChain(), ida::InternalFxId::kCmp);
+    if (! slotOpt.has_value()) return probe;
+    probe.slotIdx = *slotOpt;
+    probe.hasSlot = true;
+    if (auto cfg = effectChainHost_.internalCmpConfigAt (outChId.value(), probe.slotIdx))
+        probe.config = *cfg;
+    return probe;
+}
+
+// =============================================================================
+// MON-strip probes — mirror of the phrase collectors above, but the row →
+// OutputChannelId resolver goes monIdx → input ChannelId →
+// InputMixer::channelMonitorOutputChannel. The MON-output channel is owned by
+// the OutputMixer (auto-minted by setChannelMonitorMode(On)), so the EQ/CMP
+// and send lookups use the same outputMixer_/effectChainHost_ surfaces as
+// phrase strips.
+// =============================================================================
+
+MainComponent::ChannelSendsView
+MainComponent::collectMonSendsView (int monIdx) const
+{
+    ChannelSendsView view;
+    if (outputMixer_ == nullptr || inputMixer_ == nullptr) return view;
+    if (monIdx < 0
+        || monIdx >= static_cast<int> (monStripInputChannelIds_.size())) return view;
+    const auto chId  = monStripInputChannelIds_[static_cast<std::size_t> (monIdx)];
+    const auto outOpt = inputMixer_->channelMonitorOutputChannel (chId);
+    if (! outOpt.has_value()) return view;
+    const auto outChId = *outOpt;
+
+    const int n = outputMixer_->busCount();
+    for (int i = 0; i < n; ++i)
+    {
+        if (outputMixer_->busKindAt (i) != ida::BusKind::FxReturn) continue;
+        const auto busId = outputMixer_->busIdAt (i);
+        auto* bus = outputMixer_->busForId (busId);
+        if (bus == nullptr) continue;
+        view.fxReturns.push_back ({ juce::String (bus->config().name),
+                                    ida::palette::hueForId (busId.value()) });
+        view.sendLevels.push_back (outputMixer_->sendLevelFor (outChId, busId));
+    }
+    view.preFader = outputMixer_->channelSendIsPreFader (outChId);
+    return view;
+}
+
+MainComponent::ChannelFxProbe
+MainComponent::collectMonEqView (int monIdx) const
+{
+    ChannelFxProbe probe;
+    if (outputMixer_ == nullptr || inputMixer_ == nullptr) return probe;
+    if (monIdx < 0
+        || monIdx >= static_cast<int> (monStripInputChannelIds_.size())) return probe;
+    const auto chId  = monStripInputChannelIds_[static_cast<std::size_t> (monIdx)];
+    const auto outOpt = inputMixer_->channelMonitorOutputChannel (chId);
+    if (! outOpt.has_value()) return probe;
+    const auto outChId = *outOpt;
+    auto* strip = outputMixer_->audioStripForChannel (outChId);
+    if (strip == nullptr) return probe;
+
+    const auto slotOpt = findInternalSlot (strip->effectChain(), ida::InternalFxId::kEq);
+    if (! slotOpt.has_value()) return probe;
+    probe.slotIdx = *slotOpt;
+    probe.hasSlot = true;
+    if (auto cfg = effectChainHost_.internalEqConfigAt (outChId.value(), probe.slotIdx))
+        probe.config = *cfg;
+    return probe;
+}
+
+MainComponent::ChannelCmpProbe
+MainComponent::collectMonCmpView (int monIdx) const
+{
+    ChannelCmpProbe probe;
+    if (outputMixer_ == nullptr || inputMixer_ == nullptr) return probe;
+    if (monIdx < 0
+        || monIdx >= static_cast<int> (monStripInputChannelIds_.size())) return probe;
+    const auto chId  = monStripInputChannelIds_[static_cast<std::size_t> (monIdx)];
+    const auto outOpt = inputMixer_->channelMonitorOutputChannel (chId);
+    if (! outOpt.has_value()) return probe;
+    const auto outChId = *outOpt;
     auto* strip = outputMixer_->audioStripForChannel (outChId);
     if (strip == nullptr) return probe;
 
