@@ -921,6 +921,29 @@ namespace
         return out;
     }
 
+    // Wire-stable tokens for MonitorMode (V9 — whitepaper §7.2, operator
+    // design lock 2026-05-24). V9 emits only "Off" / "On"; the legacy V8
+    // tokens "Raw" and "Processed" still read (both coerce to On) so V8
+    // sessions load cleanly. Changing these strings is an on-disk format
+    // break. Declared up here so both bus-side and channel-side serializers
+    // below can share them.
+    const char* monitorModeToken (MonitorMode mode) noexcept
+    {
+        switch (mode)
+        {
+            case MonitorMode::Off: return "Off";
+            case MonitorMode::On:  return "On";
+        }
+        return "Off"; // unreachable; defensive
+    }
+
+    MonitorMode monitorModeFromString (const juce::String& s)
+    {
+        if (s == "Off")                                  return MonitorMode::Off;
+        if (s == "On" || s == "Raw" || s == "Processed") return MonitorMode::On;
+        fail (std::string ("unknown monitor_mode \"") + s.toStdString() + "\"");
+    }
+
     juce::var busStateToVar (const MixerBusState& b)
     {
         auto obj = makeObject();
@@ -937,6 +960,12 @@ namespace
         if (b.muted)              obj->setProperty ("muted", true);
         if (b.pan   != 0.5f)      obj->setProperty ("pan",   b.pan);
         if (b.width != 1.0f)      obj->setProperty ("width", b.width);
+        // V9 §7.2 (2026-05-25) — default-suppress per the opt-in rule (mirror
+        // of InputChannelState's monitorMode handling at inputChannelToVar
+        // below). Token helpers monitorModeToken / monitorModeFromString are
+        // the same as on the channel side.
+        if (b.monitorMode != MonitorMode::Off)
+            obj->setProperty ("monitorMode", juce::String (monitorModeToken (b.monitorMode)));
         return objectVar (obj);
     }
     MixerBusState busStateFromVar (const juce::var& v)
@@ -953,29 +982,9 @@ namespace
         if (auto pm = optionalProperty (v, "muted"); ! pm.isVoid()) b.muted      = (bool) pm;
         if (auto pp = optionalProperty (v, "pan");   ! pp.isVoid()) b.pan        = static_cast<float> ((double) pp);
         if (auto pw = optionalProperty (v, "width"); ! pw.isVoid()) b.width      = static_cast<float> ((double) pw);
+        if (auto pmm = optionalProperty (v, "monitorMode"); ! pmm.isVoid())
+            b.monitorMode = monitorModeFromString (pmm.toString());
         return b;
-    }
-
-    // Wire-stable tokens for MonitorMode (V9 — whitepaper §7.2, operator
-    // design lock 2026-05-24). V9 emits only "Off" / "On"; the legacy V8
-    // tokens "Raw" and "Processed" still read (both coerce to On) so V8
-    // sessions load cleanly. Changing these strings is an on-disk format
-    // break.
-    const char* monitorModeToken (MonitorMode mode) noexcept
-    {
-        switch (mode)
-        {
-            case MonitorMode::Off: return "Off";
-            case MonitorMode::On:  return "On";
-        }
-        return "Off"; // unreachable; defensive
-    }
-
-    MonitorMode monitorModeFromString (const juce::String& s)
-    {
-        if (s == "Off")                              return MonitorMode::Off;
-        if (s == "On" || s == "Raw" || s == "Processed") return MonitorMode::On;
-        fail (std::string ("unknown monitor_mode \"") + s.toStdString() + "\"");
     }
 
     juce::var inputChannelToVar (const InputChannelState& c)

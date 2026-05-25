@@ -25,6 +25,7 @@
 
 #include <juce_core/juce_core.h>
 
+#include <cstring>
 #include <memory>
 #include <stdexcept>
 #include <variant>
@@ -573,4 +574,50 @@ TEST_CASE ("MixerBusState legacy load (no pan/width/gain/muted keys) returns def
     CHECK_FALSE (parsed.buses[0].muted);
     CHECK_FALSE (parsed.buses[0].pan        != 0.5f);
     CHECK_FALSE (parsed.buses[0].width      != 1.0f);
+}
+
+TEST_CASE ("MixerBusState JSON: monitorMode default-suppress + On round-trip",
+           "[sessionformat][bus-monitor]")
+{
+    // Round-trip through the InputMixerGraphState wrapper (which is what
+    // serializeMixerGraphState actually does on disk). Two buses: one left at
+    // default Off (must not emit the key — keeps pre-bus-MON sessions byte-
+    // identical), one set to On (must round-trip cleanly).
+    ida::MixerBusState off;
+    off.busId = 1; off.name = "Off"; off.kind = ida::MixerBusKind::Bus;
+    off.mainOut.kind = ida::MixerMainOut::Kind::Terminal;
+    off.mainOut.terminal = ida::MixerTerminalKind::Tape;
+
+    ida::MixerBusState on = off;
+    on.busId = 2; on.name = "On";
+    on.monitorMode = ida::MonitorMode::On;
+
+    ida::InputMixerGraphState s;
+    s.buses.push_back (off);
+    s.buses.push_back (on);
+    s.nextBusId = 3;
+
+    const auto wireText = ida::persistence::serializeMixerGraphState (s);
+    // Default-suppress: the Off bus must not emit "monitorMode" anywhere in
+    // its wire fragment. The On bus is the only one that emits it; count
+    // occurrences rather than relying on a brittle full-fragment substring.
+    int monitorModeOccurrences = 0;
+    const auto wireRaw = wireText.toStdString();
+    std::string::size_type pos = 0;
+    while ((pos = wireRaw.find ("monitorMode", pos)) != std::string::npos)
+    {
+        ++monitorModeOccurrences;
+        pos += std::strlen ("monitorMode");
+    }
+    CHECK (monitorModeOccurrences == 1);   // Only the On bus emits it
+    // V9 emits the token "On". Substring check rather than full key:value
+    // match because JUCE inserts spaces around `:` that vary by version.
+    CHECK (wireText.contains ("\"On\""));
+    CHECK_FALSE (wireText.contains ("\"Raw\""));
+    CHECK_FALSE (wireText.contains ("\"Processed\""));
+
+    const auto restored = ida::persistence::deserializeInputMixerGraphState (wireText);
+    REQUIRE (restored.buses.size() == 2);
+    CHECK (restored.buses[0].monitorMode == ida::MonitorMode::Off);
+    CHECK (restored.buses[1].monitorMode == ida::MonitorMode::On);
 }
