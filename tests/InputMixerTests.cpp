@@ -1292,9 +1292,9 @@ TEST_CASE ("InputMixer round-trips bus pan / width / gain / muted",
 
     auto* restoredBus = restored.busForId (busId);
     REQUIRE (restoredBus != nullptr);
-    CHECK_FALSE (restoredBus->gain()  != 0.5f);
-    CHECK       (restoredBus->muted());
-    CHECK_FALSE (restoredBus->pan()   != 0.25f);
-    CHECK_FALSE (restoredBus->width() != 1.5f);
+    CHECK (restoredBus->gain()  == Catch::Approx (0.5f));
+    CHECK (restoredBus->muted());
+    CHECK (restoredBus->pan()   == Catch::Approx (0.25f));
+    CHECK (restoredBus->width() == Catch::Approx (1.5f));
     CHECK (restored.exportGraphState() == state);
 }
