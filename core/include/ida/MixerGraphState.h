@@ -103,6 +103,9 @@ struct MixerBusState
     /// `On` mints an OutputMixer channel reading this bus's post-processing
     /// buffer (see `Bus::postProcessingPointer`). Default `Off` per the
     /// explicit-opt-in rule.
+    /// No `monitorOutputPair` sibling: bus MON inherits master routing (same
+    /// as the V9 channel-MON path), so the disk-back-compat int that
+    /// `InputChannelState` keeps for V8 sessions has no analogue here.
     MonitorMode            monitorMode  { MonitorMode::Off };
 
     bool operator== (const MixerBusState& o) const noexcept
