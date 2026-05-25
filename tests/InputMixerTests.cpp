@@ -1273,3 +1273,27 @@ TEST_CASE ("InputMixer export/import round-trips the preFaderSends flag",
     CHECK_FALSE (loaded.channelSendIsPreFader (chB));
     CHECK (loaded.exportGraphState() == exported);
 }
+
+TEST_CASE ("InputMixer round-trips bus pan / width / gain / muted",
+           "[InputMixer][persistence]")
+{
+    ida::InputMixer mixer;
+    const auto busId = mixer.addBus (ida::BusConfig { 2, "AuxA", ida::BusKind::Bus });
+    auto* bus = mixer.busForId (busId);
+    REQUIRE (bus != nullptr);
+    bus->setGain  (0.5f);
+    bus->setMuted (true);
+    bus->setPan   (0.25f);
+    bus->setWidth (1.5f);
+
+    const auto state = mixer.exportGraphState();
+    ida::InputMixer restored;
+    restored.importGraphState (state);
+
+    auto* restoredBus = restored.busForId (busId);
+    REQUIRE (restoredBus != nullptr);
+    CHECK_FALSE (restoredBus->gain()  != 0.5f);
+    CHECK       (restoredBus->muted());
+    CHECK_FALSE (restoredBus->pan()   != 0.25f);
+    CHECK_FALSE (restoredBus->width() != 1.5f);
+}

@@ -436,6 +436,10 @@ InputMixerGraphState InputMixer::exportGraphState() const
         entry.mainOut      = mainOutSnapshot (busNodeIds_[i]);
         entry.sends        = sendSnapshot (busNodeIds_[i]);
         entry.inserts      = bus.effectChain();
+        entry.gainLinear   = bus.gain();
+        entry.muted        = bus.muted();
+        entry.pan          = bus.pan();
+        entry.width        = bus.width();
         state.buses.push_back (std::move (entry));
     }
 
@@ -504,6 +508,13 @@ void InputMixer::importGraphState (const InputMixerGraphState& state)
         config.kind         = b.kind == MixerBusKind::FxReturn ? BusKind::FxReturn : BusKind::Bus;
         addBus (config); // mints b.busId (dense) and registers the graph node
         setBusEffectChain (BusId (b.busId), b.inserts);
+        if (auto* freshBus = busForId (BusId (b.busId)))
+        {
+            freshBus->setGain  (b.gainLinear);
+            freshBus->setMuted (b.muted);
+            freshBus->setPan   (b.pan);
+            freshBus->setWidth (b.width);
+        }
     }
 
     // 2. Channels — register with persisted ChannelIds (constructed directly so
