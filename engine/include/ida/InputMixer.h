@@ -250,6 +250,23 @@ public:
     /// ChannelId is unknown. Diagnostic / test seam.
     std::optional<OutputChannelId> channelMonitorOutputChannel (ChannelId) const noexcept;
 
+    // V9 §7.2 (2026-05-25) — per-bus MON, mirror of `setChannelMonitorMode`.
+    // Same lifecycle: `On` auto-creates an OutputMixer channel reading this
+    // bus's post-processing stereo tap (`Bus::postProcessingPointer`); `Off`
+    // removes it. Idempotent. Without an attached OutputMixer the request is
+    // stashed (a later `attachOutputMixer` + replay engages the route). Unknown
+    // busId is a silent no-op (defensive — mirror of channel).
+    void                            setBusMonitorMode (BusId, MonitorMode);
+
+    /// Message-thread accessor. Unknown id reads as `MonitorMode::Off`.
+    MonitorMode                     busMonitorMode (BusId) const noexcept;
+
+    /// Message-thread accessor — the OutputChannelId of the auto-created monitor
+    /// channel for this bus on the attached OutputMixer, or `std::nullopt` when
+    /// MON is Off, the InputMixer has no OutputMixer attached at On time, or the
+    /// bus id is unknown. Diagnostic / test seam.
+    std::optional<OutputChannelId>  busMonitorOutputChannel (BusId) const noexcept;
+
     /// Message-thread accessor. Returns a stable pointer to the channel's
     /// post-strip output buffer for the requested side (0=L, 1=R), or
     /// `nullptr` if no channel with that id exists or `side` is out of
@@ -366,6 +383,12 @@ private:
         std::optional<OutputChannelId> outputChannelId;
     };
     std::unordered_map<std::int64_t, MonitorRouteState> channelMonitorRoutes_;
+
+    /// V9 §7.2 — per-bus MON state. Same shape as `channelMonitorRoutes_` but
+    /// keyed on `BusId.value()`. Entry present only when MON is On for that bus
+    /// (the `outputChannelId` is the auto-minted OutputMixer channel reading the
+    /// bus's processed-tap pointer). MON → Off erases the entry.
+    std::unordered_map<std::int64_t, MonitorRouteState> busMonitorRoutes_;
 
     /// V9 Slice 2 — per-channel post-strip stereo output. Allocated on
     /// `addChannel` (message thread) and freed on `removeChannel`. The

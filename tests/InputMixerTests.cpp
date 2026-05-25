@@ -13,6 +13,7 @@
 #include "ida/ITapeSink.h"
 #include "ida/MixerGraphState.h"
 #include "ida/NotificationBus.h"
+#include "ida/OutputMixer.h"
 #include "ida/OverloadProtection.h"
 #include "ida/TapeStore.h"
 #include "ida/TapeWriter.h"
@@ -1297,4 +1298,26 @@ TEST_CASE ("InputMixer round-trips bus pan / width / gain / muted",
     CHECK (restoredBus->pan()   == Catch::Approx (0.25f));
     CHECK (restoredBus->width() == Catch::Approx (1.5f));
     CHECK (restored.exportGraphState() == state);
+}
+
+TEST_CASE ("InputMixer::setBusMonitorMode(On) mints an OutputMixer channel and binds it to the bus's processed-tap pointer",
+           "[input-mixer][bus-monitor]")
+{
+    ida::InputMixer  in;
+    ida::OutputMixer out;
+    in.attachOutputMixer (&out);
+
+    const auto busId = in.addBus (ida::BusConfig { 2, "DrumBus", ida::BusKind::Bus });
+    REQUIRE (in.busForId (busId) != nullptr);
+
+    // Default state: MON Off, no auto-channel.
+    CHECK (in.busMonitorMode (busId) == ida::MonitorMode::Off);
+    CHECK_FALSE (in.busMonitorOutputChannel (busId).has_value());
+    const auto channelsBefore = out.channelCount();
+
+    in.setBusMonitorMode (busId, ida::MonitorMode::On);
+
+    CHECK (in.busMonitorMode (busId) == ida::MonitorMode::On);
+    REQUIRE (in.busMonitorOutputChannel (busId).has_value());
+    CHECK (out.channelCount() == channelsBefore + 1);
 }

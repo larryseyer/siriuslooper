@@ -257,6 +257,79 @@ InputMixer::channelMonitorOutputChannel (ChannelId id) const noexcept
     return std::nullopt;
 }
 
+void InputMixer::setBusMonitorMode (BusId id, MonitorMode mode)
+{
+    // Unknown bus → silent no-op (defensive; mirror of channel-MON contract).
+    auto* bus = busForId (id);
+    if (bus == nullptr) return;
+
+    auto it = busMonitorRoutes_.find (id.value());
+
+    if (mode == MonitorMode::Off)
+    {
+        if (it != busMonitorRoutes_.end())
+        {
+            if (it->second.outputChannelId.has_value() && outputMixer_ != nullptr)
+                outputMixer_->removeChannel (*it->second.outputChannelId);
+            busMonitorRoutes_.erase (it);
+        }
+        return;
+    }
+
+    // mode == On.
+    // Idempotent: a second On call while the OutputMixer channel already
+    // exists is a no-op (don't mint a duplicate channel).
+    if (it != busMonitorRoutes_.end() && it->second.outputChannelId.has_value())
+        return;
+
+    // Without an attached OutputMixer, track the mode so a later
+    // `attachOutputMixer` + replay path can engage the bus, but mint nothing
+    // in the meantime. Mirror of the channel-side deferral.
+    if (outputMixer_ == nullptr)
+    {
+        MonitorRouteState state;
+        state.mode = MonitorMode::On;
+        busMonitorRoutes_[id.value()] = std::move (state);
+        return;
+    }
+
+    // Mint a fresh OutputMixer channel and wire its audio source to this
+    // bus's post-processing stereo buffer. Pointer is stable for the bus's
+    // lifetime (the InputMixer::buses_ vector is reserve()d to kMaxInputBuses
+    // up-front and never reallocates — see `Bus::postProcessingPointer`'s
+    // stability contract); OutputMixer reads it every block. The minted
+    // channel also gets its own ChannelStrip<Audio> so the operator can mix
+    // it (gain/pan/mute/inserts/sends/destinations) as a peer of phrase
+    // channels per whitepaper V9 §7.2 — same shape as the per-channel MON
+    // path.
+    const auto monChId = outputMixer_->addChannel (SignalType::Audio);
+    outputMixer_->setChannelStrip (monChId,
+        std::make_unique<ChannelStrip<SignalType::Audio>>());
+    outputMixer_->setChannelAudioSource (monChId,
+                                         bus->postProcessingPointer (0),
+                                         bus->postProcessingPointer (1));
+
+    MonitorRouteState state;
+    state.mode            = MonitorMode::On;
+    state.outputChannelId = monChId;
+    busMonitorRoutes_[id.value()] = std::move (state);
+}
+
+MonitorMode InputMixer::busMonitorMode (BusId id) const noexcept
+{
+    if (auto it = busMonitorRoutes_.find (id.value()); it != busMonitorRoutes_.end())
+        return it->second.mode;
+    return MonitorMode::Off;
+}
+
+std::optional<OutputChannelId>
+InputMixer::busMonitorOutputChannel (BusId id) const noexcept
+{
+    if (auto it = busMonitorRoutes_.find (id.value()); it != busMonitorRoutes_.end())
+        return it->second.outputChannelId;
+    return std::nullopt;
+}
+
 const float* InputMixer::postStripPointer (ChannelId id, int side) const noexcept
 {
     if (side < 0 || side > 1) return nullptr;
