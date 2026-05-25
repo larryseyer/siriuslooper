@@ -64,46 +64,6 @@
   4. Keep the runtime resample path as a fallback for non-standard
      rates (operator-named devices at exotic SR).
 
-### 2026-05-24 — Bus pan + width + bus-side sends (NEXT SLICE)
-- Files: engine/include/ida/Bus.h + .cpp (add `pan_`, `width_` atomics +
-  per-buffer equal-power pan + mid/side width matrix in `processInline` /
-  `processChain`); engine/include/ida/InputMixer.h + OutputMixer.h
-  (add `setBusSend (sourceBusId, targetBusId, level)` + cycle detection);
-  app/MainComponent.cpp (drop the `setTabsAvailable ({false, false, true, true})`
-  hide so PanWid + Sends show on bus selection; add `onBusPan` / `onBusWidth`
-  / `onBusSendChanged` listener forwards routed to the new engine API);
-  ui/include/ida/ChannelDetail.h (no change needed — already exposes all
-  four tabs).
-- What was deferred: in slice EC-Polish-fix the operator asked for buses
-  + FX returns + master to expose Pan/Width AND Sends (when FX returns
-  exist) on top of EQ + CMP. The slice only delivered EQ + CMP visibility
-  + auto-seed + escape key; pan/width on buses needs engine work
-  (Bus has no pan/width state yet) and bus-side sends need a new routing
-  primitive (InputMixer / OutputMixer only model channel→bus sends,
-  not bus→bus / bus→FX-return sends).
-- Why deferred: scope of one slice. The trap-fix (auto-seed + escape +
-  empty-state safety) was the urgent piece. Engine surface area for
-  bus-side pan/width/sends is a self-contained next slice.
-- What's needed to finish:
-  1. Add `std::atomic<float> pan_ {0.5f}, width_ {1.0f}` to `Bus`. Wire
-     `setPan` / `pan()` / `setWidth` / `width()`. Apply in `processInline`
-     and `processChain` post-fader (equal-power pan for channels >= 2;
-     mid/side width: `mid = (L+R)/2; side = (L-R)/2; L' = mid + side*w;
-     R' = mid - side*w`). Add unit tests for both paths.
-  2. Wire bus pan/width through MainComponent: drop the bus `setTabsAvailable
-     ({false, false, true, true})` call and replace with `{true, false, true, true}`
-     (still no sends until step 3 ships); add `onBusPan` / `onBusWidth`
-     callbacks on both panes that resolve via `inputMixer_->busForId(...)`
-     / `outputMixer_->busForId(...)`.
-  3. Add `InputMixer::setBusSend (sourceBusId, targetBusId, level)` with
-     cycle detection (DFS from target back to source). Mirror on
-     OutputMixer (bus→bus already exists via routeBusToBus; this is the
-     send-level analog). Wire bus-side `onSendChanged` on the panes →
-     `setTabsAvailable ({true, true, true, true})` and route to the new
-     engine setter.
-  4. Persistence: bus pan/width + bus-send matrix entries → MixerBusState.
-- Reference: this slice committed today as EC-Polish-fix; see continue.md.
-
 ### 2026-05-23 — ida-notary keychain profile (OPERATOR ONE-TIME SETUP)
 - Files: app/CMakeLists.txt (already references `ida-notary` as `IDA_NOTARY_PROFILE`)
 - What was deferred: re-storing notarytool credentials under the new profile
@@ -218,20 +178,6 @@
   in the same shape as the load-bearing migrations already shipped in T2.2/T2.3 (`tests/MixerGraphPersistenceTests.cpp`,
   `tests/SessionFormatTests.cpp`, `tests/ArchivalModeTests.cpp` — partial: only the round-trip-exercising 3 of 13).
   Land as part of the T3 PR(s) that introduce the kind-guard; do NOT pre-emptively migrate.
-
-### 2026-05-22 — Preparation tab "Load .json" — .json files are greyed out in the picker
-- Files: likely app/MainComponent.cpp (the Preparation tab's "Load" button
-  handler + the juce::FileChooser invocation; wildcard pattern probably
-  excludes "*.json").
-- What was deferred: operator opened Preparation tab → Load → file picker
-  appears but .json files are greyed out / not selectable. Load is non-
-  functional from this entry point.
-- Why deferred: surfaced during the 2026-05-22 OTTO brainstorm; no
-  investigation yet.
-- What's needed to finish: locate the FileChooser pattern for the
-  Preparation Load button; verify it includes "*.json"; if it does,
-  investigate whether a parent FileFilter is overriding it. Verify
-  end-to-end by selecting a known-good .json file and confirming load.
 
 ### 2026-05-22 — Input Mixer destination pickers show a stale label after removeTape (P6b holistic-review Minor)
 - Files: app/MainComponent.cpp (`removeTape` ~2503-2536; `refreshInputDestinations`/`refreshInputMixer`).
