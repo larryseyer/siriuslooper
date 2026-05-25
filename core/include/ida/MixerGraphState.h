@@ -91,9 +91,9 @@ struct MixerBusState
     MixerMainOut           mainOut;
     std::vector<MixerSend> sends;
     EffectChain            inserts;
-    // 2026-05-25 — operator-set fader / pan / width / mute, mirroring the
-    // engine atomics on `Bus`. Defaults equal `Bus`'s defaults so existing
-    // sessions (which never wrote these) load with no audible change.
+    // Operator-set fader / pan / width / mute, mirroring the engine atomics on
+    // `Bus`. Defaults equal `Bus`'s defaults so a session that never wrote
+    // these fields loads with no audible change.
     float                  gainLinear   { 1.0f };
     bool                   muted        { false };
     float                  pan          { 0.5f };
@@ -104,8 +104,10 @@ struct MixerBusState
         return busId == o.busId && channelCount == o.channelCount && name == o.name
             && kind == o.kind && mainOut == o.mainOut && sends == o.sends
             && inserts == o.inserts
-            && gainLinear == o.gainLinear && muted == o.muted
-            && pan == o.pan && width == o.width;
+            && std::bit_cast<std::uint32_t> (gainLinear) == std::bit_cast<std::uint32_t> (o.gainLinear)
+            && muted == o.muted
+            && std::bit_cast<std::uint32_t> (pan) == std::bit_cast<std::uint32_t> (o.pan)
+            && std::bit_cast<std::uint32_t> (width) == std::bit_cast<std::uint32_t> (o.width);
     }
     bool operator!= (const MixerBusState& o) const noexcept { return ! (*this == o); }
 };

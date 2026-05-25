@@ -569,8 +569,8 @@ TEST_CASE ("MixerBusState legacy load (no pan/width/gain/muted keys) returns def
     })";
     const auto parsed = ida::persistence::deserializeInputMixerGraphState (legacy);
     REQUIRE (parsed.buses.size() == 1);
-    CHECK (parsed.buses[0].gainLinear == 1.0f);
-    CHECK (parsed.buses[0].muted      == false);
-    CHECK (parsed.buses[0].pan        == 0.5f);
-    CHECK (parsed.buses[0].width      == 1.0f);
+    CHECK_FALSE (parsed.buses[0].gainLinear != 1.0f);
+    CHECK_FALSE (parsed.buses[0].muted);
+    CHECK_FALSE (parsed.buses[0].pan        != 0.5f);
+    CHECK_FALSE (parsed.buses[0].width      != 1.0f);
 }
