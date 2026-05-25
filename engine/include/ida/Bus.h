@@ -245,13 +245,24 @@ public:
 
     /// V9 §7.2 (per-input-node MON): returns a stable pointer to the bus's
     /// post-processing stereo output (`processedBuffer_`) for `side ∈ {0=L, 1=R}`,
-    /// or `nullptr` if `side` is out of range. Pointer is valid for the bus's
-    /// lifetime — `processedBuffer_` is sized once in the ctor and never resized.
-    /// Mirror of `InputMixer::postStripPointer(ChannelId, side)` for buses. The
-    /// audio-thread reader (`OutputMixer::setChannelAudioSource`) pins this once
-    /// and re-reads up to the current block size every block; `Bus::process`
-    /// writes the post-effects samples into `processedBuffer_` before the
-    /// OutputMixer's render pulls them.
+    /// or `nullptr` if `side` is out of range.
+    ///
+    /// **Stability contract (load-bearing for the audio-thread reader):** the
+    /// pointer is valid as long as the owning `Bus` object isn't moved.
+    /// `processedBuffer_` itself is sized once in the ctor and never resized,
+    /// so reads through this pointer stay in bounds for the bus's lifetime —
+    /// but a `Bus` move would invalidate it (`processedBuffer_` is a
+    /// `std::vector<float>`, and move-construction transfers its storage).
+    /// What makes this safe in practice: `InputMixer::buses_` is `reserve()`d
+    /// to `kMaxInputBuses` in the InputMixer ctor and `addBus` caps at the
+    /// same ceiling, so no `push_back` ever triggers a reallocation that
+    /// would move the existing `Bus` objects. There is no erase path either.
+    ///
+    /// Mirror of `InputMixer::postStripPointer(ChannelId, side)` for buses.
+    /// The audio-thread reader (`OutputMixer::setChannelAudioSource`) pins
+    /// this once and re-reads up to the current block size every block;
+    /// `Bus::process` writes the post-effects samples into `processedBuffer_`
+    /// before the OutputMixer's render pulls them.
     const float* postProcessingPointer (int side) const noexcept;
 
     /// Slice E3 (2026-05-24) — RT-fast bypass flag. True iff this bus has
