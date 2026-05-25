@@ -13,6 +13,7 @@
 #include "ida/TapeId.h"
 #include "ida/TapeMode.h"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -238,6 +239,21 @@ public:
     /// no active monitor route. Diagnostic / test seam.
     int channelMonitorOutputPair (ChannelId) const noexcept;
 
+    /// Message-thread accessor. Returns a stable pointer to the channel's
+    /// post-strip output buffer for the requested side (0=L, 1=R), or
+    /// `nullptr` if no channel with that id exists or `side` is out of
+    /// range. The pointer remains valid until `removeChannel(id)` or
+    /// destruction. Audio-thread readers (OutputMixer) cache the pointer
+    /// once and re-read into it every block — `renderInputGraph` copies
+    /// the strip's stereo output into this buffer in-place every call,
+    /// so the data behind the pointer is fresh per block.
+    ///
+    /// V9 Slice 2 of the whitepaper-conformance plan introduced this seam;
+    /// Slice 3 uses it to wire MON-on to an auto-created OutputMixer
+    /// channel via `OutputMixer::setChannelAudioSource(monChannelId, L, R)`,
+    /// replacing the DirectLayer's bypass-the-OutputMixer write path.
+    const float* postStripPointer (ChannelId id, int side) const noexcept;
+
     // Mixer-strip input source (whitepaper §6.1/§6.2) -----------------------
     /// Assigns which physical device channel(s) feed this mixer channel's
     /// stereo strip. `stereo` true → `leftDeviceChannel`/`rightDeviceChannel`
@@ -339,6 +355,19 @@ private:
         int                                 outputPair { 0 };
     };
     std::unordered_map<std::int64_t, MonitorRouteState> channelMonitorRoutes_;
+
+    /// V9 Slice 2 — per-channel post-strip stereo output. Allocated on
+    /// `addChannel` (message thread) and freed on `removeChannel`. The
+    /// inner vector pair is the L/R buffer; pointers are stable for the
+    /// channel's lifetime (the outer `unordered_map`'s `value_type` slot
+    /// never moves once inserted, and the inner `std::vector<float>`'s
+    /// `data()` pointer is stable as long as nobody resizes — and we
+    /// never resize after the initial `assign` in `addChannel`).
+    /// `renderInputGraph` memcpys the strip's L/R output into [0] and [1]
+    /// of the entry every block. Audio-thread reads through the pointer
+    /// returned by `postStripPointer(id, side)` are safe.
+    std::unordered_map<std::int64_t, std::array<std::vector<float>, 2>> postStrip_;
+
     std::int64_t nextChannelId_ { 1 };
 
     MixerGraph graph_ { { MixerTerminal::Tape, MixerTerminal::HardwareOutput } };

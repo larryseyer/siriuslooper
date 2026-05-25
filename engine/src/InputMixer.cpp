@@ -116,6 +116,18 @@ ChannelId InputMixer::addChannel (InputId source, SignalType type)
 
     channels_.emplace (id.value(), Channel (id, type, source, mode));
     channelNodeIds_.emplace (id.value(), graph_.addNode (MixerNodeKind::Channel));
+
+    // V9 Slice 2 — allocate the per-channel post-strip stereo storage on
+    // the message thread (audio thread never touches `postStrip_`'s map
+    // structure; it only reads through the pointer handed back by
+    // `postStripPointer`). Sized to `kMaxScratchSamples`, the engine-wide
+    // scratch ceiling shared with `scratchLeft_/scratchRight_`. Both sides
+    // are zeroed; that's the silent-default OutputMixer reads if Slice 3
+    // cached the pointer before the first `renderInputGraph` call.
+    auto& slot = postStrip_[id.value()];
+    slot[0].assign (kMaxScratchSamples, 0.0f);
+    slot[1].assign (kMaxScratchSamples, 0.0f);
+
     return id;
 }
 
@@ -157,6 +169,12 @@ void InputMixer::removeChannel (ChannelId id)
     channels_.erase (id.value());
     channelSources_.erase (id.value());
     channelPreFaderSends_.erase (id.value());
+
+    // V9 Slice 2 — free the post-strip storage. Caller is responsible for
+    // not removing a channel while OutputMixer is still reading the pointer
+    // on the audio thread (Slice 3's MON-off path tears down the OutputMixer
+    // channel BEFORE this call, mirroring the monitor-route teardown above).
+    postStrip_.erase (id.value());
 }
 
 void InputMixer::setChannelMonitorMode (ChannelId id, MonitorMode mode, int outputPair)
@@ -234,6 +252,14 @@ int InputMixer::channelMonitorOutputPair (ChannelId id) const noexcept
     if (auto it = channelMonitorRoutes_.find (id.value()); it != channelMonitorRoutes_.end())
         return it->second.outputPair;
     return 0;
+}
+
+const float* InputMixer::postStripPointer (ChannelId id, int side) const noexcept
+{
+    if (side < 0 || side > 1) return nullptr;
+    auto it = postStrip_.find (id.value());
+    if (it == postStrip_.end()) return nullptr;
+    return it->second[static_cast<std::size_t> (side)].data();
 }
 
 bool InputMixer::channelSendIsPreFader (ChannelId id) const noexcept
@@ -481,6 +507,14 @@ void InputMixer::importGraphState (const InputMixerGraphState& state)
                            Channel (id, c.signalType, InputId (c.inputSourceId), c.tapeMode));
         channelSources_[c.channelId] = { c.source.left, c.source.right, c.source.stereo };
         channelNodeIds_[c.channelId] = graph_.addNode (MixerNodeKind::Channel);
+
+        // V9 Slice 2 — `importGraphState` bypasses `addChannel`, so the
+        // post-strip storage must be allocated here too. Without this the
+        // seam returns nullptr for any persisted channel after a project
+        // reload, breaking Slice 3's MON-on lookup.
+        auto& slot = postStrip_[c.channelId];
+        slot[0].assign (kMaxScratchSamples, 0.0f);
+        slot[1].assign (kMaxScratchSamples, 0.0f);
 
         if (c.signalType == SignalType::Audio)
             if (auto* chain = channels_.at (c.channelId).processing.get())
@@ -980,6 +1014,20 @@ void InputMixer::renderInputGraph (const float* const* deviceIn, int numDeviceCh
         float* stereo[2] { scratchLeft_.data(), scratchRight_.data() };
         auto* strip = static_cast<ChannelStrip<SignalType::Audio>*> (channel.processing.get());
         strip->process (stereo, 2, n); // also updates peak/LUFS meters
+
+        // V9 Slice 2 — publish the post-strip stereo into the channel's
+        // stable seam buffer so Slice 3's OutputMixer channel (cached by
+        // pointer) reads the freshly-processed signal this block. RT-safe:
+        // member-owned storage sized at `addChannel`, no allocation, no
+        // locks, plain memcpy. The slot is guaranteed present because
+        // `addChannel` reserves it; defensive lookup keeps the audio
+        // thread silent on a race we don't expect to see.
+        if (auto psIt = postStrip_.find (chValue); psIt != postStrip_.end())
+        {
+            const auto bytes = static_cast<std::size_t> (n) * sizeof (float);
+            std::memcpy (psIt->second[0].data(), scratchLeft_.data(),  bytes);
+            std::memcpy (psIt->second[1].data(), scratchRight_.data(), bytes);
+        }
 
         const MixerNodeId chNode = nodeForChannel (channel.id);
         const MixerNodeId dest   = graph_.mainOutOf (chNode);

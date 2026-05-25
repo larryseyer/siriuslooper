@@ -128,6 +128,11 @@ add_executable(IdaTests
     InputMixerMonitorModeLifecycleTests.cpp
     InputMixerMonitorMuteLeakTests.cpp
     SessionFormatMonitorModeTests.cpp
+    # V9 conformance Slice 2 — per-channel post-strip buffer is the stable
+    # pointer Slice 3 hands to OutputMixer::setChannelAudioSource(...) when
+    # MON goes on. Pins: non-null while channel exists, null after remove,
+    # pointer-stable across renderInputGraph blocks.
+    InputMixerPostStripBufferTests.cpp
     # 2026-05-24 — pins the whitepaper-correct silence rule: an Output Mixer
     # phrase channel does NOT pipe live device input to master. Caught the
     # "M5 proxy" leak that bypassed the Input Mixer's Monitor button.
