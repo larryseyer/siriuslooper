@@ -119,10 +119,16 @@ struct InputChannelState
     std::vector<MixerSend> sends;
     EffectChain            inserts;
     bool                   preFaderSends     { false };
-    /// 2026-05-24 monitor slice: per-channel direct-layer monitor mode.
-    /// Default Off (whitepaper §7.3 — explicit operator opt-in). When non-Off,
-    /// `monitorOutputPair` selects the destination OutputChannelId pair.
+    /// V9 (whitepaper §7.2): per-channel direct-layer monitor mode.
+    /// Two states: `Off` (no monitoring) / `On` (post-strip tap into an
+    /// auto-created OutputMixer channel — `InputMixer::attachOutputMixer`).
+    /// Default `Off` per the explicit-opt-in rule (whitepaper §7.3).
     MonitorMode            monitorMode       { MonitorMode::Off };
+    /// V8 disk back-compat only — unused at runtime in V9. Kept in the
+    /// struct so older session files load without schema migration; export
+    /// writes `0`. The V9 MON path does not pick an output pair (the
+    /// auto-created OutputMixer channel inherits master's routing). See
+    /// `SessionFormat.cpp` deserialize and `InputMixer::importGraphState`.
     int                    monitorOutputPair { 0 };
 
     bool operator== (const InputChannelState& o) const noexcept
