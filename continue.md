@@ -1,38 +1,102 @@
-# Session Continuation — bus persistence slice landed; Load picker bug fixed; verification awaiting
+# Session Continuation — bus persistence shipped; verify surfaced 2 bugs to fix next chat
 
 ## ▶ 0. Read these first (2 minutes)
 
-1. **The Load-picker fix landed this chat (`6ce87d6`).** The "files greyed
-   out" bug that's been around for days is gone. Operator save+load
-   round-trip verification of the bus state persistence is now unblocked.
-   See §1 below.
-2. `docs/superpowers/plans/2026-05-25-bus-state-persistence.md` — the
-   5-task plan executed this chat (4 implementation tasks landed; the
-   verify-and-handoff task is what you're reading).
-3. Prior chat handoffs (`d0aceb8` and earlier) are superseded; nothing
-   to read there.
+1. **Bus persistence slice shipped** (9 commits, tip `46440ef`, 714/714
+   green, Load-picker greyed-out bug fixed). See §2 for the commit list
+   and §4 for what each one did.
+2. **Operator-verify started; 2 bugs surfaced — both queued at the top
+   of §1 below.** Bus pan on the Input Mixer round-trips correctly. The
+   Output Mixer pan does NOT round-trip, and the MON-strip destination
+   button renders a garbled `â` (UTF-8 em-dash interpreted as Latin-1)
+   because `setMonDestinations` was never wired into the refresh path.
 
 ---
 
-## ▶ 1. What needs the operator's eyes-on NEXT
+## ▶ 1. WHAT'S NEXT (priority order)
 
-**Open IDA (already running on the freshly-built `6ce87d6` bundle) and
-verify the bus state save+load round-trip:**
+### A. Output Mixer pan does NOT survive save+load — operator confirmed
 
-1. Add at least one aux bus on the **Input Mixer** side and one on the
-   **Output Mixer** side.
-2. Select an aux bus → change its Pan (hard left), Width (mono = 0.0),
-   gain (down ~20 dB), Mute it. Repeat on the Output Mixer side.
-3. If FX returns exist on either mixer: open the aux bus's detail
-   panel → Sends tab → set one FX-return send level to ~0.6.
-4. Save the project (Cmd-S). Quit IDA.
-5. Relaunch IDA. **Load** the project just saved — the `.json` files
-   should NO LONGER be greyed out (this chat's `6ce87d6` fix).
-6. Reselect each modified aux bus. Confirm Pan / Width / Gain / Mute /
-   send-level all match what was set in step 2-3.
+**Symptom:** Operator-verified the bus state round-trip on `6ce87d6`.
+Input Mixer aux-bus pan round-trips correctly. Output Mixer aux-bus pan
+does **NOT** come back after save → quit → load. Other Output Mixer bus
+fields (width / gain / muted) were not specifically called out — assume
+they should be verified too once pan is fixed.
 
-If anything regresses, flag the case (which mixer, which field) and we'll
-diagnose against the round-trip tests that pinned each field this chat.
+**Important:** The engine round-trip test landed this chat
+(`tests/OutputMixerTests.cpp` — `"OutputMixer round-trips bus pan / width
+/ gain / muted"`, added in `f6fcf53`) is GREEN. So the engine layer
+(`exportGraphState` → JSON → `importGraphState` → `setPan/setWidth/...`)
+provably round-trips on its own. The bug must be in the **load handler's
+plumbing between disk and the live mixer**, not in the engine path that
+the test covers.
+
+**Investigation starting points:**
+- `app/MainComponent.cpp` session-load block around `:6855-6920` (the
+  envelope unpack + `outputMixer_->importGraphState(...)` call).
+- Check whether the loaded `OutputMixerGraphState` is being applied to
+  the `outputMixer_` instance that the UI actually reads from, or to a
+  detached one. (The InputMixer side replaces `inputMixer_ =
+  std::make_unique<...>()` and the OutputMixer should too — verify.)
+- Check whether the GUI re-syncs from the freshly-loaded mixer after
+  load — the InputMixer side needed `inputStripChannelIds_` realignment
+  in a prior chat (`e8818f0`). The OutputMixer side may have an
+  analogous staleness.
+- The `MixerBusState.pan` field IS serialized + deserialized (proven
+  by Task 1 test + Task 3 test). So `state.buses[i].pan` is correct on
+  disk and in memory. The break is between that and the live
+  `outputMixer_->busForId(...)->pan()` the GUI reads.
+
+**Why I'm certain it's not the engine:** four tests pin the
+round-trip — `MixerBusState round-trips pan / width / gain / muted` +
+`MixerBusState legacy load` + `OutputMixer round-trips bus pan / width /
+gain / muted` + the aggregate `restored.exportGraphState() == state`
+in that last test. If the engine path were broken, those would fail.
+They pass.
+
+### B. MON output-strip destination button renders as `â`
+
+**Symptom:** Look at the MON output strip's bottom row: the destination
+button (where the phrase strip next to it shows `Master`) displays a
+single garbled `â` character.
+
+**Diagnosis:** `app/MainComponent.cpp:2128` sets the constructor-time
+placeholder via `destBtn->setButtonText ("—")` (UTF-8 em-dash, bytes
+`E2 80 94`). On macOS the byte `E2` interpreted as Latin-1 is `â`. The
+other strips (phrase / bus / master) ALSO seed `"—"` at construction
+but get the placeholder replaced by `refreshOutputDestinations()` →
+`setBusDestinations` / `setPhraseDestinations` before the user sees it.
+
+**`setMonDestinations` is defined at `app/MainComponent.cpp:2149` but
+NEVER CALLED.** Confirmed via:
+
+```bash
+grep -n "setMonDestinations\b" /Users/larryseyer/IDA/app/MainComponent.cpp
+```
+
+Only the definition site (2149) appears — no call site. The phrase /
+bus / master equivalents are called from `refreshOutputDestinations` /
+`refreshOutputMixer` at lines 5986, 6050, etc.
+
+**Fix shape:** Wire `setMonDestinations` into `refreshOutputDestinations`
+mirroring the phrase pattern (lines around 6020-6050). For each MON
+strip, compute its destination choices + current destination label
+(MON outputs route the same way as phrase strips — bus / hardware-output
+pair) and push them to the pane via `setMonDestinations`. Once the real
+label is set, the garbled placeholder is gone too.
+
+(Optional defensive fix: convert the construction-time `"—"` placeholders
+to `juce::String::fromUTF8 ("\xe2\x80\x94")` so a hypothetical pane that
+forgets to wire its setter still renders cleanly. Lower priority — the
+real bug is the missing wiring.)
+
+### C. (After A + B) finish operator-verify on the bus persistence slice
+
+Once A is fixed, repeat the round-trip test the operator started:
+1. Aux bus on each mixer → set Pan / Width / Gain / Mute / FX-return
+   send level on it.
+2. Save → quit → relaunch → load.
+3. Confirm all four fields + the send-level survive on BOTH mixers.
 
 ---
 
@@ -41,128 +105,91 @@ diagnose against the round-trip tests that pinned each field this chat.
 | SHA | Subject |
 |---|---|
 | `932b996` | feat: MixerBusState carries pan/width/gain/muted; SessionFormat round-trips with default-suppress |
-| `a77036f` | chore: MixerBusState op== uses bit_cast (matches MixerSend); legacy test uses CHECK_FALSE-!= form to silence Wfloat-equal |
+| `a77036f` | chore: MixerBusState op== uses bit_cast (matches MixerSend); legacy test uses CHECK_FALSE-!= form |
 | `28b763a` | feat: InputMixer exports + imports bus pan/width/gain/muted |
 | `a4f26bf` | test: InputMixer bus round-trip — assert full exportGraphState equality + use kebab-case tag |
 | `f6fcf53` | feat: OutputMixer exports + imports bus pan/width/gain/muted |
-| `93c76e6` | test: use Catch::Approx for bus round-trip float checks (better failure messages, matches file convention) |
+| `93c76e6` | test: use Catch::Approx for bus round-trip float checks |
 | `7033ee5` | feat: OutputMixer exports + imports bus->FX-return send levels |
-| `850ce49` | test+docs: OutputMixer bus-send round-trip — add multi-send + equality assertions; clarify export-asymmetry + jassert comments |
-| `6ce87d6` | **fix: session-load file picker — add canSelectFiles flag (NSOpenPanel was greying every file)** |
+| `850ce49` | test+docs: OutputMixer bus-send round-trip — multi-send + equality assertions; clarify comments |
+| `6ce87d6` | fix: session-load file picker — add canSelectFiles flag (NSOpenPanel was greying every file) |
+| `46440ef` | docs: continue.md + todo.md — bus persistence slice landed; Load picker bug fixed; verification awaiting |
 
-9 commits total. Branch tip is `6ce87d6` on `master` (local == origin).
+Branch tip is **`46440ef`** on `master` (local == origin) before this
+handoff refresh; the handoff refresh you're reading lands as the next
+commit.
 
 ---
 
-## ▶ 3. Baseline as of `6ce87d6`
+## ▶ 3. Baseline as of `46440ef`
 
 | Check | Result |
 |---|---|
-| `git rev-parse HEAD` / `origin/master` | `6ce87d6…` (local == origin) |
+| `git rev-parse HEAD` / `origin/master` | `46440ef…` |
 | Branch | `master` |
-| `ctest -E "(PluginEditor|MainComponentPlug)"` | **714/714 pass**, 33 s (was 709; +5 new persistence tests) |
-| Clean rebuild (`rm -rf build`) | Yes, before Task 5 verify step |
-| Operator bus-persistence save+load verify | ⏳ **awaiting — Load is unblocked now** |
-| Load-picker `.json` greyed out | ✅ FIXED in `6ce87d6` |
+| `ctest -E "(PluginEditor|MainComponentPlug)"` | **714/714 pass**, 33 s (was 709; +5 persistence tests) |
+| Clean rebuild | Yes, before operator verify |
+| Operator save+load: Input Mixer bus pan | ✅ works |
+| Operator save+load: Output Mixer bus pan | ❌ **FAILS** — see §1A |
+| MON output-strip destination button | ❌ shows `â` — see §1B |
+| Load picker `.json` greyed out | ✅ FIXED in `6ce87d6` |
 
 ---
 
-## ▶ 4. What each commit changed
+## ▶ 4. What each commit changed (skip if you read §2)
 
-### `932b996` + `a77036f` — `MixerBusState` carries pan/width/gain/muted
-- `core/include/ida/MixerGraphState.h`: 4 new fields (`gainLinear`, `muted`,
-  `pan`, `width`) with `Bus`-default initializers. `operator==` uses
-  `std::bit_cast<std::uint32_t>` for the floats (matches `MixerSend`).
-- `persistence/src/SessionFormat.cpp`: `busStateToVar` writes the new keys
-  with default-suppression. `busStateFromVar` reads via `optionalProperty`,
-  defaulting to struct-init values when absent — legacy sessions load
-  byte-identically with no behavior change.
-- Tests: round-trip + legacy-load assertions in `tests/SessionFormatTests.cpp`.
+Compressed because §1A/B are the live work — the slice itself is done.
 
-### `28b763a` + `a4f26bf` — InputMixer engine round-trip
-- `engine/src/InputMixer.cpp`: `exportGraphState` captures the 4 fields
-  per bus; `importGraphState` re-applies via
-  `busForId(...)->setGain/setMuted/setPan/setWidth`.
-- Test in `tests/InputMixerTests.cpp` with aggregate
-  `CHECK (restored.exportGraphState() == state)` and kebab-case tag.
-
-### `f6fcf53` + `93c76e6` — OutputMixer engine round-trip
-- Same shape as InputMixer; both newly-added aux buses AND the
-  pre-existing master (`BusId{0}`) round-trip their pan/width/gain/muted.
-- All bus-round-trip tests on both mixers switched to `Catch::Approx`
-  for cleaner failure messages.
-
-### `7033ee5` + `850ce49` — OutputMixer bus→FX-return send levels
-- `engine/src/OutputMixer.cpp`: export-side loop captures every
-  non-zero `busSendLevel` into `entry.sends`; import-side second pass
-  replays `setBusSend` for each persisted send after every bus exists
-  (forward references between buses are legal). InputMixer side was
-  already symmetric — this commit closes the OutputMixer-only gap.
-
-### `6ce87d6` — Load picker greyed-out fix (the long-standing bug)
-- `app/MainComponent.cpp:6918`: `juce::FileBrowserComponent::openMode` was
-  the only flag on the load `launchAsync`. JUCE maps `(flags & canSelectFiles) == 0`
-  to `[NSOpenPanel setCanChooseFiles: NO]` (verified in
+- **`932b996` + `a77036f`** — `MixerBusState` gains
+  `gainLinear`/`muted`/`pan`/`width` with default-suppress JSON; struct
+  `operator==` uses `std::bit_cast` for floats (matches `MixerSend`).
+- **`28b763a` + `a4f26bf`** — `InputMixer::exportGraphState` captures
+  the 4 fields per bus; `importGraphState` re-applies via
+  `busForId(...)->setGain/setMuted/setPan/setWidth`. Aggregate
+  equality assertion in test.
+- **`f6fcf53` + `93c76e6`** — Same on the OutputMixer side
+  (applies to master too, since the import loop runs for `BusId{0}`).
+  Float assertions switched to `Catch::Approx`.
+- **`7033ee5` + `850ce49`** — `OutputMixer::exportGraphState` captures
+  bus→FX-return send levels; `importGraphState` second-pass replays
+  via `setBusSend` once every bus exists. InputMixer side was already
+  symmetric — this closes the OutputMixer-only gap.
+- **`6ce87d6`** — `app/MainComponent.cpp:6918` was missing
+  `| juce::FileBrowserComponent::canSelectFiles`. JUCE maps that to
+  `[NSOpenPanel setCanChooseFiles: NO]` (verified at
   `external/JUCE/modules/juce_gui_basics/native/juce_FileChooser_mac.mm:71,115`).
-  Net effect: every file in the picker was greyed out and the Open button
-  was disabled. Save worked because `NSSavePanel` doesn't honor
-  `canChooseFiles` — it always accepts a typed filename.
-- Fix: OR `| juce::FileBrowserComponent::canSelectFiles` into the flags.
-  Mirrors the convention at `:7202` (the plugin folder chooser, which
-  uses `openMode | canSelectDirectories`).
-- Inline comment in the code points at the JUCE source lines so the
-  next reader sees the diagnosis without re-tracing it.
+  Save was unaffected because `NSSavePanel` doesn't honor it.
 
 ---
 
-## ▶ 5. Out of scope (queued)
+## ▶ 5. Out of scope (queued; demoted below §1)
 
-In rough priority (load-picker bug retired):
-
-1. **Phrase strip meter is dead.** Same root cause shape as the MON meter
-   fix from the prior chat (`d2aca82`): `refreshOutputMixer()` has no
-   `setPhraseStripLevelDb` path. Mirror the MON-meter pattern with
-   `phraseStripConstituentIds_` + `phraseChannelByConstituent_` as the
-   resolver. Operator hasn't asked yet — surface when phrase mixing
-   becomes the next operator focus.
-2. **`MainComponentPluginEditorTests` SIGTERMs** — pre-existing, flagged
-   in three prior `continue.md`s. Still not investigated.
+1. **Phrase strip meter is dead.** Mirror of the MON meter fix from prior
+   chat (`d2aca82`). One-task slice; surface when phrase mixing comes
+   into operator focus.
+2. **`MainComponentPluginEditorTests` SIGTERMs** — pre-existing, four
+   prior `continue.md`s now.
 3. **`InputMixerMonitorMuteLeakTests.cpp` references the deleted
-   `DirectLayer` header.** This test file fails to compile; the build
-   skips it cleanly but the test isn't running. Either delete the file
-   or port its assertions to the V9 ChannelStrip + post-strip seam path.
-4. **TAPECOLOR OTTO inbox** — 3 `[FROM OTTO → IDA]` `needs-ack` entries
-   in `external/OTTO/CROSS_PROJECT_INBOX.md` (SHAs `8b14034`, `41a2ae4`,
-   `a7ba9c3`). Operator's standing direction: OTTO is still debugging,
-   defer until they're done.
+   `DirectLayer` header.** Compile-fails; build skips. Delete or port.
+4. **TAPECOLOR OTTO inbox** — 3 `[FROM OTTO → IDA]` `needs-ack`
+   entries. Operator standing direction: defer while OTTO is debugging.
 
 ---
 
-## ▶ 6. Memory delta this chat
-
-None. The 9 commits + queued operator-verify are the durable record.
-No new design pivots; no surprised conventions worth memorizing.
-
-(The Load-picker bug's diagnosis lives inline in the code comment at
-`app/MainComponent.cpp:6911-6918`. No memory entry needed — it's pinned
-in-source.)
-
----
-
-## ▶ 7. House rules respected
+## ▶ 6. House rules respected
 
 - ✅ Worked on `master`, no feature branch.
 - ✅ Commit + push to `origin/master` after every task / fix.
-- ✅ Single-line commit titles per `bash/bu.sh` constraint.
-- ✅ Clean rebuild before Task 5 verify step (714/714 green).
+- ✅ Single-line commit titles.
+- ✅ Clean rebuild before operator-verify.
 - ✅ Subagent-driven implementation with two-stage spec + code-quality
   review per task; follow-on fixes landed where reviewers caught real
   issues.
-- ✅ `continue.md` refreshed (this file). `todo.md` had two entries
-  retired (Load-picker bug + Bus-pan-width-sends "NEXT SLICE" which
-  shipped today as the persistence slice).
+- ✅ `continue.md` refreshed (this file); `todo.md` had two entries
+  retired this chat (Load-picker bug + Bus-pan-width-sends "NEXT SLICE").
 
 ---
 
-*End of bus-persistence + load-picker-fix handoff. Erase once operator
-verification confirms the save+load round-trip works end-to-end.*
+*End of bus-persistence + load-picker-fix + verify-surfaced-bugs handoff.
+Next chat: read §1A → fix Output Mixer pan load path → §1B fix MON
+destinations wiring → §1C re-run the operator round-trip verification.*
