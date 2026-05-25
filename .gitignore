@@ -83,3 +83,6 @@ external/*
 # Exception: lsfx_tapecolor is the shared tape-emulation FX module owned
 # by OTTO; IDA consumes the same submodule. SHA tracked via .gitmodules.
 !external/lsfx_tapecolor
+
+# === Superpowers brainstorming sessions (visual companion mockups) ===
+.superpowers/
