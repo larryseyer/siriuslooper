@@ -741,17 +741,15 @@ public:
             addAndMakeVisible (*ins);
             inputStripInsButtons_.push_back (std::move (ins));
 
-            // 2026-05-24 monitor slice — Monitor button. Operator-facing
-            // direct-layer toggle. A single click cycles through all three
-            // whitepaper-defined states: Off → Processed → Raw → Off. One
-            // gesture for desktop + touch — no separate right-click/long-
-            // press path needed since the cycle is short and the current
-            // state shows in the label + tooltip. Default Off (whitepaper
-            // §7.3 — operator opts in explicitly).
+            // V9 Slice 5 — MON button. Two-state toggle per whitepaper §7.2
+            // (Off ↔ On). One click flips. Default Off — operator opts in
+            // explicitly. (Right-click + long-press are reserved for other
+            // per-strip gestures landing in later slices.)
             auto mon = std::make_unique<juce::TextButton>();
             mon->setButtonText ("Off");
-            mon->setTooltip ("Monitoring off");
-            mon->onClick = [this, idx] { cycleMonitorModeAt (idx); };
+            mon->setTooltip ("MON off — you do not hear this input through IDA. "
+                             "Click to enable monitoring.");
+            mon->onClick = [this, idx] { toggleMonitorModeAt (idx); };
             addAndMakeVisible (*mon);
             monitorButtons_.push_back (std::move (mon));
             monitorModes_.push_back (ida::MonitorMode::Off);
@@ -1459,11 +1457,9 @@ private:
     // 2026-05-24 monitor slice — central setter. Updates the cached mode,
     // syncs the button label/tooltip, and (when `notify`) fires the
     // engine-bound callback. Called from the click handler and the
-    // message-thread setMonitorModes refresh. Labels deliberately use the
-    // musician-facing pro-audio convention — "Direct" is the universal
-    // term every hardware audio interface (RME, UA Apollo, Focusrite, etc.)
-    // uses for low-latency hardware-routed monitoring; "Monitor" is the
-    // operator-facing word for "I want to hear this in my headphones."
+    // message-thread setMonitorModes refresh. V9 §7.2 collapsed MON to a
+    // two-state toggle (Off ↔ On); the V8 "Direct" raw-path state was
+    // deleted along with DirectLayer.
     void setMonitorModeAt (int idx, ida::MonitorMode mode, bool notify)
     {
         if (idx < 0 || idx >= static_cast<int> (monitorModes_.size())) return;
@@ -1475,15 +1471,13 @@ private:
         {
             case ida::MonitorMode::Off:
                 label   = "Off";
-                tooltip = "Monitoring off";
+                tooltip = "MON off — you do not hear this input through IDA. "
+                          "Click to enable monitoring.";
                 break;
-            case ida::MonitorMode::Processed:
-                label   = "Monitor";
-                tooltip = "Monitoring with channel processing (EQ, dynamics, FX)";
-                break;
-            case ida::MonitorMode::Raw:
-                label   = "Direct";
-                tooltip = "Direct monitoring (no processing, lowest latency)";
+            case ida::MonitorMode::On:
+                label   = "MON";
+                tooltip = "MON on — you hear this input through IDA, "
+                          "post-strip processing. Click to disable.";
                 break;
         }
         button.setButtonText (label);
@@ -1491,17 +1485,15 @@ private:
         if (notify && onMonitorModeChanged) onMonitorModeChanged (idx, mode);
     }
 
-    // 2026-05-24 monitor slice — cycle through Off → Processed → Raw → Off,
-    // invoked from right-click and long-press paths. Pairs the two gestures
-    // per the long-press-mirrors-right-click rule (every right-click action
-    // on touch needs a long-press partner).
-    void cycleMonitorModeAt (int idx)
+    // V9 Slice 5 — MON is a two-state toggle (Off ↔ On). The single click
+    // is the only gesture; the V8 tri-state cycle (Off → Processed → Raw)
+    // is gone along with DirectLayer.
+    void toggleMonitorModeAt (int idx)
     {
         if (idx < 0 || idx >= static_cast<int> (monitorModes_.size())) return;
         const auto cur  = monitorModes_[static_cast<std::size_t> (idx)];
-        const auto next = (cur == ida::MonitorMode::Off)       ? ida::MonitorMode::Processed
-                        : (cur == ida::MonitorMode::Processed) ? ida::MonitorMode::Raw
-                                                               : ida::MonitorMode::Off;
+        const auto next = (cur == ida::MonitorMode::Off) ? ida::MonitorMode::On
+                                                         : ida::MonitorMode::Off;
         setMonitorModeAt (idx, next, /*notify*/ true);
     }
 
@@ -1510,9 +1502,8 @@ private:
     std::vector<std::unique_ptr<juce::TextButton>>            destButtons_;
     /// Per-input-strip INS buttons (P7 T5 slice 5). Parallel to strips_.
     std::vector<std::unique_ptr<juce::TextButton>>            inputStripInsButtons_;
-    /// 2026-05-24 monitor slice — per-input-strip Monitor button. Parallel to
-    /// strips_. Click cycles Off ↔ Processed (the 90% case); right-click +
-    /// long-press cycles Off → Processed → Raw → Off.
+    /// V9 Slice 5 — per-input-strip MON button. Parallel to strips_. Click
+    /// toggles Off ↔ On (whitepaper §7.2 — two-state).
     std::vector<std::unique_ptr<juce::TextButton>>            monitorButtons_;
     std::vector<ida::MonitorMode>                             monitorModes_;
     std::vector<StripDest>                                    stripDests_;
@@ -3696,19 +3687,16 @@ MainComponent::MainComponent()
         {
             openInsertChainPopupForChannel (idx);
         };
-        // 2026-05-24 monitor slice — Monitor button gesture. Mutating the
-        // DirectLayer route table races the audio thread (routeBuffers reads
-        // rawRoutes_/processedRoutes_), so bracket the same way the routing
+        // V9 Slice 5 — MON button gesture. setChannelMonitorMode now also
+        // auto-creates the OutputMixer channel that owns the post-strip tap
+        // (Slice 3), so bracket the audio callback the same way the routing
         // pickers do (`onDestinationChosen` above).
         inputMixerPane_->onMonitorModeChanged = [this] (int idx, ida::MonitorMode mode)
         {
             if (idx < 0 || idx >= static_cast<int> (inputStripChannelIds_.size())) return;
             const auto chId = inputStripChannelIds_[static_cast<std::size_t> (idx)];
             audioDeviceManager_.removeAudioCallback (audioCallback_.get());
-            // outputPair 0 = the first stereo pair, matching the pre-2026-05-24
-            // auto-wire's identity-route default. Multi-pair destination picking
-            // is a follow-on slice (todo.md).
-            inputMixer_->setChannelMonitorMode (chId, mode, /*outputPair*/ 0);
+            inputMixer_->setChannelMonitorMode (chId, mode);
             audioDeviceManager_.addAudioCallback (audioCallback_.get());
         };
         inputMixerPane_->onBusRename = [this] (int busIdx, juce::String newName)
