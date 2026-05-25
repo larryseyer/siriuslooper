@@ -950,7 +950,9 @@ OutputMixerGraphState OutputMixer::exportGraphState() const
         // Capture bus -> any-bus sends (typically FX returns; the master
         // is a legal source per `setBusSend`). Walk every other bus; skip
         // self-sends (`setBusSend` rejects them). Default 0 levels are
-        // dropped to keep the JSON small.
+        // dropped to keep the JSON small. O(N² × E) total over the export
+        // (vs. InputMixer's single-pass O(E) `sendSnapshot`); harmless on
+        // the message thread at the kMaxBuses (64) ceiling.
         for (std::size_t j = 0; j < buses_.size(); ++j)
         {
             if (j == i) continue;
@@ -1028,8 +1030,9 @@ void OutputMixer::importGraphState (const OutputMixerGraphState& state)
 
     // Replay bus -> any-bus sends now that every bus exists (forward
     // references between buses are legal). `setBusSend` enforces non-self
-    // and cycle detection; jassert on failure so a malformed snapshot
-    // halts the load rather than silently dropping routing.
+    // and cycle detection; jassert on failure surfaces a malformed snapshot
+    // in debug. Release builds drop the bad send silently — mirror of the
+    // InputMixer convention at the matching site.
     for (const auto& b : state.buses)
     {
         for (const auto& s : b.sends)

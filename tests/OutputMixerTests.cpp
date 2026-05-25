@@ -1535,11 +1535,15 @@ TEST_CASE ("OutputMixer round-trips bus->FX-return send levels",
 {
     ida::OutputMixer mixer;
     const auto srcBus = mixer.addBus (ida::BusConfig { 2, "SrcBus", ida::BusKind::Bus });
-    const auto fxRet  = mixer.addBus (ida::BusConfig { 2, "FxRet",  ida::BusKind::FxReturn });
-    REQUIRE (mixer.setBusSend (srcBus, fxRet, 0.65f));
+    const auto fxRetA = mixer.addBus (ida::BusConfig { 2, "FxRetA", ida::BusKind::FxReturn });
+    const auto fxRetB = mixer.addBus (ida::BusConfig { 2, "FxRetB", ida::BusKind::FxReturn });
+    REQUIRE (mixer.setBusSend (srcBus, fxRetA, 0.65f));
+    REQUIRE (mixer.setBusSend (srcBus, fxRetB, 0.30f));
 
     const auto state = mixer.exportGraphState();
     ida::OutputMixer restored;
     restored.importGraphState (state);
-    CHECK (restored.busSendLevel (srcBus, fxRet) == Catch::Approx (0.65f));
+    CHECK (restored.busSendLevel (srcBus, fxRetA) == Catch::Approx (0.65f));
+    CHECK (restored.busSendLevel (srcBus, fxRetB) == Catch::Approx (0.30f));
+    CHECK (restored.exportGraphState() == state);
 }
