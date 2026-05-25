@@ -135,7 +135,12 @@ add_executable(IdaTests
     # 2026-05-24 — pins the whitepaper-correct silence rule: an Output Mixer
     # phrase channel does NOT pipe live device input to master. Caught the
     # "M5 proxy" leak that bypassed the Input Mixer's Monitor button.
-    OutputMixerPhraseChannelSilenceTests.cpp)
+    OutputMixerPhraseChannelSilenceTests.cpp
+    # V9 conformance Slice 6 — Constituent::withEffectChainClonedFrom is the
+    # API surface for the whitepaper V9 §6.3.2 dry-tap FX-migration rule.
+    # Pins value semantics (deep copy, empty source clears the chain).
+    # Capture-path call site lands in M6+.
+    ConstituentEffectChainCloneTests.cpp)
 
 # T3a: EqAdapterTests includes "fx/EqAdapter.h" (engine-private header) and
 # EqAdapter.h transitively includes <otto/effects/PlayerEQ.h>. Both paths

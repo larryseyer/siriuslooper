@@ -101,6 +101,24 @@ public:
     Constituent withoutTapeReference() const;
     Constituent withEffectChain (EffectChain chain) const;
     Constituent withoutEffectChain() const;
+
+    /// Copy-on-write builder that deep-clones `source` into a new
+    /// Constituent's `effectChain_`. If `source` is empty (no inserts),
+    /// the resulting Constituent has no effect chain (consistent with
+    /// `withoutEffectChain()`).
+    ///
+    /// V9 §6.3.2 dry-tap rule: when an input channel is in non-destructive
+    /// (dry-tap) mode and a tape capture produces a new phrase Constituent,
+    /// the capture-side code must invoke this builder with the input strip's
+    /// EffectChain so that the phrase's local effects start as a copy of
+    /// the strip's chain at capture time. The phrase's chain then evolves
+    /// independently (copy-on-write per §6.8).
+    ///
+    /// CALL SITE PENDING (M6+): the phrase-capture path that creates a
+    /// Constituent from tape data — once it lands — must call this builder
+    /// on every dry-tap channel's resulting phrase. Grep for this comment
+    /// to find the rule when wiring capture.
+    [[nodiscard]] Constituent withEffectChainClonedFrom (const EffectChain& source) const;
     Constituent withChildAdded (ChildPtr child) const;
     Constituent withChildReplaced (std::size_t index, ChildPtr child) const;
     Constituent withChildRemoved (std::size_t index) const;

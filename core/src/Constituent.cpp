@@ -122,6 +122,17 @@ Constituent Constituent::withoutEffectChain() const
     return next;
 }
 
+Constituent Constituent::withEffectChainClonedFrom (const EffectChain& source) const
+{
+    // V9 §6.3.2 dry-tap FX migration: an empty source means the strip has no
+    // inserts to migrate, so the phrase ends up with no chain at all — same
+    // observable state as `withoutEffectChain()`. EffectChain's copy
+    // semantics handle the deep clone on the non-empty path.
+    if (source.empty())
+        return withoutEffectChain();
+    return withEffectChain (source);
+}
+
 Constituent Constituent::withChildAdded (ChildPtr child) const
 {
     if (child == nullptr)

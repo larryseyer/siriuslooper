@@ -220,6 +220,15 @@ public:
     void removeChannel (ChannelId);
     void setChannelTapeMode (ChannelId, TapeMode);
 
+    // V9 dry-tap FX migration (§6.3.2): when a phrase is captured from a
+    // channel whose TapeMode == NonDestructive (= "dry tap"), the
+    // capture-path code (M6+) must call
+    //     Constituent::withEffectChainClonedFrom (strip.effectChain())
+    // on the resulting phrase, so that the phrase's local effects start as
+    // a copy of the Input strip's chain at capture time. The Input strip's
+    // own chain stays put; only the phrase gets a fresh copy. See
+    // whitepaper V9 §6.3.2 + §6.7.
+
     // V9 Slice 3 — per-channel MON toggle (whitepaper V9 §5.2 / §7.2). Set on
     // the message thread; the InputMixer owns the lifecycle of an auto-created
     // OutputMixer channel that reads this channel's post-strip stereo buffer
