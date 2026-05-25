@@ -21,9 +21,11 @@
 #include "ida/InputMixer.h"
 #include "ida/SignalType.h"
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
+#include <cmath>
 #include <cstring>
 
 TEST_CASE ("InputMixer post-strip buffer lifecycle", "[input-mixer][post-strip]")
@@ -99,8 +101,15 @@ TEST_CASE ("InputMixer post-strip buffer reflects strip output after renderInput
 
     // Drive a non-zero device input through the strip; the strip's default
     // gain is unity (no mute), so the post-strip buffer must carry the
-    // signal verbatim — Slice 3 will hand this pointer to OutputMixer and
-    // the seam only works if the writes actually happen.
+    // signal scaled only by the equal-power pan law — Slice 3 will hand
+    // this pointer to OutputMixer and the seam only works if the writes
+    // actually happen.
+    //
+    // ChannelStrip<Audio> applies an equal-power (-3 dB) pan curve: at the
+    // default centre pan (p=0.5), each side is multiplied by cos(pi/4) =
+    // sin(pi/4) = 1/sqrt(2) ~= 0.7071. Hard-panning to recover a unity
+    // factor would silence the opposite side on a stereo source, so the
+    // honest fix is to assert the pan-law-scaled value with a tolerance.
     std::array<float, 256> left {}, right {};
     for (std::size_t i = 0; i < left.size(); ++i)
     {
@@ -114,8 +123,12 @@ TEST_CASE ("InputMixer post-strip buffer reflects strip output after renderInput
     const float* postR = mixer.postStripPointer (chId, 1);
     REQUIRE (postL != nullptr);
     REQUIRE (postR != nullptr);
-    REQUIRE (postL[0]   == 0.25f);
-    REQUIRE (postL[128] == 0.25f);
-    REQUIRE (postR[0]   == -0.25f);
-    REQUIRE (postR[128] == -0.25f);
+
+    const float kCentrePanGain = 1.0f / std::sqrt (2.0f);
+    const float kExpectedL     =  0.25f * kCentrePanGain;
+    const float kExpectedR     = -0.25f * kCentrePanGain;
+    REQUIRE (postL[0]   == Catch::Approx (kExpectedL).margin (1e-5));
+    REQUIRE (postL[128] == Catch::Approx (kExpectedL).margin (1e-5));
+    REQUIRE (postR[0]   == Catch::Approx (kExpectedR).margin (1e-5));
+    REQUIRE (postR[128] == Catch::Approx (kExpectedR).margin (1e-5));
 }
