@@ -513,6 +513,7 @@ InputMixerGraphState InputMixer::exportGraphState() const
         entry.muted        = bus.muted();
         entry.pan          = bus.pan();
         entry.width        = bus.width();
+        entry.monitorMode  = busMonitorMode (bus.id());
         state.buses.push_back (std::move (entry));
     }
 

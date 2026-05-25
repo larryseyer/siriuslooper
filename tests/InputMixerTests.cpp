@@ -1391,3 +1391,27 @@ TEST_CASE ("InputMixer::setBusMonitorMode(On) without an attached OutputMixer st
     CHECK (in.busMonitorMode (busId) == ida::MonitorMode::On);
     CHECK_FALSE (in.busMonitorOutputChannel (busId).has_value());
 }
+
+TEST_CASE ("InputMixer::exportGraphState captures each bus's monitorMode",
+           "[input-mixer][bus-monitor][persistence]")
+{
+    ida::InputMixer  in;
+    ida::OutputMixer out;
+    in.attachOutputMixer (&out);
+    const auto monBus = in.addBus (ida::BusConfig { 2, "OnBus",  ida::BusKind::Bus });
+    const auto offBus = in.addBus (ida::BusConfig { 2, "OffBus", ida::BusKind::Bus });
+    in.setBusMonitorMode (monBus, ida::MonitorMode::On);
+    // offBus left at default Off.
+
+    const auto state = in.exportGraphState();
+
+    REQUIRE (state.buses.size() >= 2);
+    bool sawOn = false, sawOff = false;
+    for (const auto& b : state.buses)
+    {
+        if (b.busId == monBus.value()) { sawOn  = true; CHECK (b.monitorMode == ida::MonitorMode::On);  }
+        if (b.busId == offBus.value()) { sawOff = true; CHECK (b.monitorMode == ida::MonitorMode::Off); }
+    }
+    CHECK (sawOn);
+    CHECK (sawOff);
+}
