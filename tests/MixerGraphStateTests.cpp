@@ -80,3 +80,18 @@ TEST_CASE ("OutputMixerGraphState equality and per-field inequality", "[mixergra
     SECTION ("channel inserts")  { auto b = a; b.channels[0].inserts = EffectChain{}.withAppended (makeEntry ("y")); CHECK (a != b); }
     SECTION ("nextBusId")        { auto b = a; b.nextBusId = 9;                                CHECK (a != b); }
 }
+
+TEST_CASE ("MixerBusState carries monitorMode with Off default and round-trips equality",
+           "[mixer-graph-state][bus-monitor]")
+{
+    ida::MixerBusState a;
+    CHECK (a.monitorMode == ida::MonitorMode::Off);
+
+    ida::MixerBusState b;
+    CHECK (a == b);                           // default == default
+
+    a.monitorMode = ida::MonitorMode::On;
+    CHECK (a != b);                           // a differs on the new field
+    b.monitorMode = ida::MonitorMode::On;
+    CHECK (a == b);                           // both On → equal again
+}

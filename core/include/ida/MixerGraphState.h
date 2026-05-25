@@ -98,6 +98,12 @@ struct MixerBusState
     bool                   muted        { false };
     float                  pan          { 0.5f };
     float                  width        { 1.0f };
+    /// V9 §7.2 (2026-05-25): per-input-side-node MON toggle. `Off` means the
+    /// bus is silent in the room (it still writes wherever main-out routes);
+    /// `On` mints an OutputMixer channel reading this bus's post-processing
+    /// buffer (see `Bus::postProcessingPointer`). Default `Off` per the
+    /// explicit-opt-in rule.
+    MonitorMode            monitorMode  { MonitorMode::Off };
 
     bool operator== (const MixerBusState& o) const noexcept
     {
@@ -107,7 +113,8 @@ struct MixerBusState
             && std::bit_cast<std::uint32_t> (gainLinear) == std::bit_cast<std::uint32_t> (o.gainLinear)
             && muted == o.muted
             && std::bit_cast<std::uint32_t> (pan) == std::bit_cast<std::uint32_t> (o.pan)
-            && std::bit_cast<std::uint32_t> (width) == std::bit_cast<std::uint32_t> (o.width);
+            && std::bit_cast<std::uint32_t> (width) == std::bit_cast<std::uint32_t> (o.width)
+            && monitorMode == o.monitorMode;
     }
     bool operator!= (const MixerBusState& o) const noexcept { return ! (*this == o); }
 };
