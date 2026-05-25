@@ -6699,6 +6699,12 @@ void MainComponent::removeTape (ida::TapeId id)
     refreshTimeline();
     refreshCaptureControls();
     refreshDiagnostics();
+    // P6b holistic-review Minor (2026-05-22): channels/buses routed to the
+    // removed tape are silently rerouted to the primary by
+    // MixerGraph::removeTerminal — but their picker labels still show the
+    // old tape name until the next unrelated refreshInputMixer. Force a
+    // refresh here so the UI matches the engine immediately.
+    refreshInputMixer();
 }
 
 void MainComponent::refreshTapesPane()

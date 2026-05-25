@@ -148,17 +148,6 @@
   `tests/SessionFormatTests.cpp`, `tests/ArchivalModeTests.cpp` — partial: only the round-trip-exercising 3 of 13).
   Land as part of the T3 PR(s) that introduce the kind-guard; do NOT pre-emptively migrate.
 
-### 2026-05-22 — Input Mixer destination pickers show a stale label after removeTape (P6b holistic-review Minor)
-- Files: app/MainComponent.cpp (`removeTape` ~2503-2536; `refreshInputDestinations`/`refreshInputMixer`).
-- What was deferred: when a tape is removed, the engine (`MixerGraph::removeTerminal`) silently reroutes
-  every orphaned main-out to the primary tape, but `removeTape` refreshes only the Tapes pane / timeline /
-  capture / diagnostics — NOT the Input Mixer. So a channel OR bus picker routed to the removed tape keeps
-  displaying the old tape name until the next unrelated `refreshInputMixer`. Affects the pre-existing
-  channel picker identically — P6b's bus picker just inherits it; NOT a P6b regression.
-- Why deferred: cosmetic (the engine route is already correct); out of P6b Task B scope.
-- What's needed to finish: call `refreshInputMixer()` (which calls `refreshInputDestinations()`) at the
-  end of `removeTape`, after the pool/mirror updates. One line.
-
 ### 2026-05-22 — Plugin scanning is broken at ALL entry points (broadens prior "GUI lockup on Scan button")
 - Files: host/ (out-of-process plugin host), app/MainComponent.cpp (Plugins
   tab Scan + any insert-chain plugin-picker entry point).
