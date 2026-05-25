@@ -52,7 +52,6 @@ add_executable(IdaTests
     SignalTypeTests.cpp
     ChannelTests.cpp
     ChannelStripTests.cpp
-    DirectLayerTests.cpp
     InputMixerTests.cpp
     OutputMixerTests.cpp
     BusTests.cpp
@@ -116,17 +115,13 @@ add_executable(IdaTests
     # public simulate* test seams drive the callback contract without
     # painting pixels (pixel rendering is operator-eyes-on at slice 5).
     InsertChainPopupTests.cpp
-    # 2026-05-24 monitor slice — per-channel direct-layer monitor mode +
-    # the operator-reported mute-leak fix. Three test files:
-    #   MonitorModeLifecycleTests — Off/Raw/Processed transitions create,
-    #     swap, and remove DirectLayer routes (engine-level lifecycle).
-    #   MuteLeakTests — the operator's failing case: a muted channel's
-    #     monitor signal goes silent on the audio thread regardless of
-    #     mode (the kill-switch reading of mute).
+    # V9 monitor slice — per-channel MON (Off/On) two-state toggle.
+    #   MonitorModeLifecycleTests — Off ↔ On transitions create and remove
+    #     the auto-minted OutputMixer channel that reads the input's post-
+    #     strip stereo buffer (engine-level lifecycle).
     #   SessionFormatMonitorModeTests — round-trip + back-compat (missing
     #     field reads as Off, unknown token throws).
     InputMixerMonitorModeLifecycleTests.cpp
-    InputMixerMonitorMuteLeakTests.cpp
     SessionFormatMonitorModeTests.cpp
     # V9 conformance Slice 2 — per-channel post-strip buffer is the stable
     # pointer Slice 3 hands to OutputMixer::setChannelAudioSource(...) when

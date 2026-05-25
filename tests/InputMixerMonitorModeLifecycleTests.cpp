@@ -1,14 +1,10 @@
 // V9 Slice 3 monitor lifecycle — engine-level lifecycle of the per-channel
 // MonitorMode (Off / On) and its synchronization with the attached
-// OutputMixer's channel registry. V9 collapses the previous tri-state
-// (Off / Raw / Processed) to a binary toggle; the InputMixer no longer
-// drives DirectLayer routes — instead MON-on auto-creates an OutputMixer
+// OutputMixer's channel registry. MON-on auto-creates an OutputMixer
 // channel whose audio source reads this input's post-strip buffer.
 //
 // These tests pin the message-thread state machine that the UI's Monitor
-// button drives via `InputMixer::setChannelMonitorMode`. The mute-leak
-// contract still lives in `InputMixerMonitorMuteLeakTests.cpp` (DirectLayer
-// level — that path remains until Slice 4 deletes DirectLayer entirely).
+// button drives via `InputMixer::setChannelMonitorMode`.
 #include "ida/Channel.h"
 #include "ida/InputMixer.h"
 #include "ida/MonitorMode.h"

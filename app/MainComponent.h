@@ -8,7 +8,6 @@
 #include "ida/CaptureSession.h"
 #include "ida/ChannelDetail.h"
 #include "ida/ChannelStrip.h"
-#include "ida/DirectLayer.h"
 #include "ida/EngineConfig.h"
 #include "ida/InputDescriptor.h"
 #include "ida/FlacTapeSink.h"
@@ -281,19 +280,18 @@ private:
     std::unique_ptr<Lmc>                  lmc_;
     EngineConfig                          engineConfig_;
     juce::AudioDeviceManager              audioDeviceManager_;
-    // M4 Session 3 — engine-side mixers and DirectLayer the audio callback
-    // now drives. Declared before audioCallback_ so destruction unwinds the
-    // callback first (it's destroyed before the mixers it holds non-owning
-    // pointers into). The MainComponent destructor also explicitly removes
-    // the callback from the device manager before any teardown begins, so
-    // the audio thread can't see a half-destroyed mixer.
+    // Engine-side mixers the audio callback drives. Declared before
+    // audioCallback_ so destruction unwinds the callback first (it's
+    // destroyed before the mixers it holds non-owning pointers into).
+    // The MainComponent destructor also explicitly removes the callback
+    // from the device manager before any teardown begins, so the audio
+    // thread can't see a half-destroyed mixer.
     // Tape-UI slice — single source of truth for which tapes exist; mirrored
     // into the input mixer's routing terminals at startup. Declared before
     // inputMixer_ so it outlives the mixer on destruction.
     ida::TapePool                      tapePool_;
     std::unique_ptr<InputMixer>           inputMixer_;
     std::unique_ptr<OutputMixer>          outputMixer_;
-    std::unique_ptr<DirectLayer>          directLayer_;
     // Tape slice 3 — declared before audioCallback_ so the sink outlives the
     // callback: the callback's last audio delivery (via InputMixer→ITapeSink)
     // must land before the sink's worker thread drains and finalises the files.

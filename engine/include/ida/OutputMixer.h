@@ -38,15 +38,12 @@ namespace ida
 /// M5 auto-registration policy: OutputMixer comes up EMPTY. MainComponent
 /// does not auto-register channels — operator UX for mixer config is
 /// M22+. Result: in M5, the OutputMixer path is a true no-op until tests
-/// or future code calls `addChannel`. This is intentional. DirectLayer's
-/// bypass path provides the default monitoring; OutputMixer is the
-/// produced-mix path that becomes meaningful once Constituents render
-/// into channels (M6+).
-///
-/// M5 channel audio source: per channel, the OutputMixer's audio source
-/// is the corresponding input device channel (one-to-one, same index as
-/// DirectLayer's raw routes). This is a pre-Constituent-rendering proxy
-/// — M6+ replaces it with real Constituent renders.
+/// or future code calls `addChannel`. This is intentional. V9 Slice 3's
+/// per-channel MON auto-creates OutputMixer channels whose audio source
+/// reads the matching InputMixer channel's post-strip stereo buffer (the
+/// only sanctioned input → output path per whitepaper V9 §5.2 / §7.2);
+/// OutputMixer is otherwise the produced-mix path that becomes meaningful
+/// once Constituents render into channels (M6+).
 ///
 /// Threading contract (inherited from M4, see continue.md constraint #6):
 /// every configuration mutator (`addChannel`, `setChannelStrip`, `addBus`,
@@ -330,12 +327,13 @@ public:
     /// cleared via setChannelAudioSource(id, nullptr, nullptr); the Constituent
     /// renderer slice wires its rendered output here. Unknown id = silent no-op.
     ///
-    /// Whitepaper §5.2 / §6 / §7: input → output is sanctioned ONLY via the
-    /// Input Mixer's DirectLayer (operator's per-channel Monitor button).
-    /// OutputMixer phrase channels render Constituent audio, not live input.
-    /// This API makes the source explicit; the prior auto-mapping from
-    /// `inputChannelData[id-1]` ("M5 proxy") leaked live input to master
-    /// independent of the Monitor button and was removed in the same slice.
+    /// Whitepaper V9 §5.2 / §6 / §7.2: input → output is sanctioned ONLY via
+    /// an auto-created OutputMixer channel whose audio source reads the
+    /// matching InputMixer channel's post-strip stereo buffer (the operator's
+    /// per-channel MON button). OutputMixer phrase channels render Constituent
+    /// audio, not live input. This API makes the source explicit; the prior
+    /// auto-mapping from `inputChannelData[id-1]` ("M5 proxy") leaked live
+    /// input to master independent of the MON button and was removed.
     void setChannelAudioSource (OutputChannelId,
                                 const float* left, const float* right) noexcept;
 
@@ -352,10 +350,8 @@ public:
     /// only reads.
     ///
     /// Output write semantics: ADDITIVE into the physical `output[c]`
-    /// buffers. DirectLayer (bypass path) and OutputMixer (produced-mix
-    /// path) both write additively into the same output buffers; the
-    /// caller (AudioCallback) zeroes the outputs once at the start of
-    /// the buffer.
+    /// buffers. The caller (AudioCallback) zeroes the outputs once at the
+    /// start of the buffer so this can safely accumulate.
     ///
     /// The signature stays JUCE-free for the same reason `ChannelStrip::
     /// process` does.

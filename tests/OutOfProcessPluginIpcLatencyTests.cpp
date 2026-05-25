@@ -1,6 +1,6 @@
 // Round-trip latency smoke for OutOfProcessPluginInstance's shared-memory
 // SPSC ring transport (M7 S2c). Hidden by default ([.rt-smoke] convention,
-// matching DirectLayer + OutputMixer); runs only on explicit Catch2 filter
+// matching OutputMixer's RT smoke); runs only on explicit Catch2 filter
 // or when the operator selects the [plugin-ipc] tag.
 //
 // The test spawns an identity-mode host, runs warmup + timed round-trips

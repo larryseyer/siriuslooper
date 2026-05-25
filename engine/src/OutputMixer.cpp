@@ -641,13 +641,13 @@ void OutputMixer::renderBuffer (const float* const* inputChannelData,
     // Step 1 — for each registered channel, fill its scratch from the
     // per-channel audio source set via `setChannelAudioSource` (and strip-
     // process the post-fader scratch). Channels with no source (the default)
-    // stay at silence. Per whitepaper §5.2 / §6 / §7 the input mixer's
-    // DirectLayer is the only sanctioned input → output path; phrase channels
-    // render Constituent / tape playback. Until that source path lands,
-    // production runs with every channel's source = nullptr and the master
-    // bus reads silence — the 2026-05-24 fix for the operator-reported
-    // master-meter leak with Monitor=Off. `inputChannelData` is reserved for
-    // a future routing slice and intentionally unused here.
+    // stay at silence. Per whitepaper V9 §5.2 / §6 / §7.2 the only sanctioned
+    // input → output path is an auto-created OutputMixer channel reading
+    // the matching InputMixer channel's post-strip stereo buffer (the
+    // operator's per-channel MON button). Phrase channels render Constituent
+    // / tape playback. With no MON-on channels and no Constituent source the
+    // master bus reads silence. `inputChannelData` is reserved for a future
+    // routing slice and intentionally unused here.
     juce::ignoreUnused (inputChannelData, numInputChannels);
     for (std::size_t i = 0; i < channels_.size(); ++i)
     {

@@ -359,8 +359,7 @@ TEST_CASE ("InputMixer applies ChannelStrip<Audio> gain before enqueueing to Tap
 
     mixer.processBuffer (ch, asBytes, byteCount);
 
-    // Source buffer must be unmodified — DirectLayer raw routes read the
-    // same float pointers; mutating would break the raw-monitor contract.
+    // Source buffer must be unmodified — the raw-input contract holds.
     for (float v : inputFloats) CHECK (v == 1.0f);
 
     // The partial's bytes must decode to all-0.5f.

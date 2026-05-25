@@ -116,15 +116,11 @@ public:
     bool muted() const noexcept { return muted_.load (std::memory_order_relaxed); }
 
     /// Non-owning pointer to the mute atomic for collaborators that need to
-    /// read the strip's mute state outside the strip's own `process()`. Today's
-    /// only caller is `DirectLayer`, which stamps the pointer on a raw or
-    /// processed route at message-thread route-registration time and reads it
-    /// on the audio thread to skip accumulation when the strip is muted (the
-    /// operator-facing kill-switch reading of mute, whitepaper §7 + the
-    /// 2026-05-24 monitor-leak fix). Pointer lifetime is the strip's lifetime;
-    /// `InputMixer::setChannelMonitorMode` removes the route before the strip
-    /// is destroyed (channel removal), so the pointer is never dangling on the
-    /// audio thread.
+    /// read the strip's mute state outside the strip's own `process()`.
+    /// Pointer lifetime is the strip's lifetime. (Previously stamped onto
+    /// DirectLayer routes; V9 Slice 4 deleted DirectLayer and the mute
+    /// kill-switch now lives inside the channel's own process() path —
+    /// this accessor remains as a generic strip surface.)
     const std::atomic<bool>* mutedAtomic() const noexcept { return &muted_; }
 
     /// Post-fader peak level for each side of the last processed block, in [0, ∞).

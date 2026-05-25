@@ -7,9 +7,8 @@
 // that copied inputChannelData[id-1] into the channel scratch as a
 // placeholder for Constituent rendering. The placeholder never got
 // replaced, and it leaked live input straight through the master bus —
-// independent of the Input Mixer's per-channel Monitor button, which
-// gates the DirectLayer route table (the only sanctioned input→output
-// path per whitepaper §5.2 / §7.1).
+// independent of the Input Mixer's per-channel MON button (the only
+// sanctioned input→output path per whitepaper V9 §5.2 / §7.2).
 //
 // The fix removes the proxy; phrase channels now stay silent until a real
 // audio source feeds them. Until that source path lands (Constituent
@@ -36,8 +35,9 @@ TEST_CASE ("OutputMixer phrase channels do not pipe live input to master",
 {
     // Reproduces the reported bug: with a phrase-style channel registered
     // and live input present at the device, the master bus must read zero
-    // — the Input Mixer's Monitor button is the only sanctioned input→
-    // output path, and it lives entirely in the DirectLayer.
+    // — the Input Mixer's MON button is the only sanctioned input→output
+    // path (V9 §7.2; via an auto-created OutputMixer channel reading the
+    // input's post-strip buffer).
     OutputMixer mixer;
     const auto ch = mixer.addChannel (SignalType::Audio);
     mixer.setChannelStrip (ch, std::make_unique<ChannelStrip<SignalType::Audio>> ());

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "ida/DirectLayer.h"
 #include "ida/EngineConfig.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
@@ -22,10 +21,12 @@ class NotificationBus;
 /// Part V plus Part 5.6's realtime-safety contract, lowered to JUCE's
 /// `AudioIODeviceCallback`.
 ///
-/// Session 1 of M1 landed the skeleton: identity input→output pass-through
-/// behind an explicit `Enable monitoring` gate (the gate exists because a
-/// looper on stage with a hot mic and live monitoring is one slip away from
-/// feedback). Session 2 wires the LMC sample-clock — if an Lmc is attached,
+/// Session 1 of M1 landed the skeleton; V9 Slice 4 collapsed the global
+/// `Enable monitoring` gate (the M1 raw bypass) — per-channel MON is now
+/// driven through an auto-created OutputMixer channel reading the input's
+/// post-strip buffer (whitepaper V9 §5.2 / §7.2; see InputMixer::
+/// attachOutputMixer + setChannelMonitorMode). Session 2 wires the LMC
+/// sample-clock — if an Lmc is attached,
 /// every buffer ends with a single `lmc->advanceBySamples(...)` call so the
 /// LMC tracks the device's hardware-counted sample-clock (white paper §4.4).
 /// Session 3 attaches the remaining engine pieces (Asrc, AudioDeviceCalibration)
@@ -37,25 +38,19 @@ class NotificationBus;
 /// Realtime-safety invariants (V7 §5.6, codified for this class):
 ///  * No allocation, no lock acquisition, no synchronous I/O, no unbounded
 ///    loops in any method below other than the constructor/destructor.
-///  * The monitoring flag is plain `std::atomic<bool>` written from the
-///    message thread, read from the audio thread — no fence beyond the
-///    default-acquire/release.
 ///  * Channel count is read once per buffer from the JUCE arguments; the
 ///    class never assumes a fixed layout.
 ///
 /// Threading contract — configure-before-audio-starts:
 ///  * All collaborator setters (`setInputMixer`, `setOutputMixer`,
-///    `setDirectLayer`, `setLmc`, `setAsrcInputs`, `setAsrcOutputs`,
-///    `setCalibration`, `setNotificationBus`) are SET-ONCE on the message
-///    thread BEFORE `audioDeviceAboutToStart` is called. The audio thread
-///    reads the collaborator pointers without synchronization — mutation
-///    during a live callback is undefined behavior. Stop the device before
-///    reconfiguring.
-///  * Inherited from `DirectLayer.h`'s contract (continue.md M4
-///    constraint #6); M5 OutputMixer extends it. Operator-facing
-///    mutation-during-audio surfaces are a post-M5 concern and will
-///    require either a stop-callback-mutate-restart guard or a real
-///    lock-free publish.
+///    `setLmc`, `setAsrcInputs`, `setAsrcOutputs`, `setCalibration`,
+///    `setNotificationBus`) are SET-ONCE on the message thread BEFORE
+///    `audioDeviceAboutToStart` is called. The audio thread reads the
+///    collaborator pointers without synchronization — mutation during a
+///    live callback is undefined behavior. Stop the device before
+///    reconfiguring. Operator-facing mutation-during-audio surfaces are
+///    a post-M5 concern and will require either a stop-callback-mutate-
+///    restart guard or a real lock-free publish.
 class AudioCallback final : public juce::AudioIODeviceCallback
 {
 public:
@@ -100,23 +95,19 @@ public:
         calibration_ = calibration;
     }
 
-    /// M4 Session 3 — attach the engine-side mixers and DirectLayer the
-    /// audio thread now drives. Set-once on the message thread before
-    /// `audioDeviceAboutToStart`; non-owning. The mixers/layer must outlive
-    /// this callback (MainComponent guarantees this by declaring the
-    /// AudioCallback after the mixers, so destruction unwinds in reverse).
+    /// Attach the engine-side mixers the audio thread drives. Set-once on
+    /// the message thread before `audioDeviceAboutToStart`; non-owning.
+    /// The mixers must outlive this callback (MainComponent guarantees
+    /// this by declaring the AudioCallback after the mixers, so destruction
+    /// unwinds in reverse).
     ///
-    /// `directLayer_` is `const` because M4 Session 2's `routeBuffers` is
-    /// const and the audio thread never registers routes. `outputMixer_`
-    /// is `const` for the same reason — M5 Session 3's `renderBuffer` is
-    /// `const noexcept` (V7 plan line 386: "render is a function of state,
-    /// not a state mutator"; all state mutation lives in the message-
-    /// thread setters). `inputMixer_` stays non-const because
-    /// `InputMixer::processBuffer` mutates internal state (TapeWriter
-    /// queue push, overload reporting).
+    /// `outputMixer_` is `const` because `renderBuffer` is `const noexcept`
+    /// (V7 plan line 386: "render is a function of state, not a state
+    /// mutator"; all state mutation lives in the message-thread setters).
+    /// `inputMixer_` stays non-const because `InputMixer::processBuffer`
+    /// mutates internal state (TapeWriter queue push, overload reporting).
     void setInputMixer  (InputMixer*  mixer) noexcept   { inputMixer_  = mixer;  }
     void setOutputMixer (const OutputMixer* mixer) noexcept { outputMixer_ = mixer; }
-    void setDirectLayer (const DirectLayer* layer) noexcept { directLayer_ = layer; }
 
     /// M6 Session 2 — attach the engine→UI truthfulness channel (V5 §8.6).
     /// The audio thread posts `DeviceEvent` notifications from
@@ -143,18 +134,6 @@ public:
     void audioDeviceStopped() override;
 
     // -- message-thread surface ----------------------------------------------------
-    /// Toggle pass-through monitoring. Default is `false` — the audio
-    /// thread writes silence to output until monitoring is explicitly armed.
-    void setMonitoringEnabled (bool enabled) noexcept
-    {
-        monitoringEnabled_.store (enabled, std::memory_order_release);
-    }
-
-    bool isMonitoringEnabled() const noexcept
-    {
-        return monitoringEnabled_.load (std::memory_order_acquire);
-    }
-
     /// Sample rate JUCE last reported in `audioDeviceAboutToStart`. Zero
     /// before the first start and after a stop.
     double currentSampleRate() const noexcept
@@ -197,23 +176,12 @@ private:
     std::vector<class Asrc*>             asrcOutputs_;
     const AudioDeviceCalibration*        calibration_ { nullptr };
 
-    // M4 Session 3 — collaborator pointers and pre-allocated scratch for
-    // DirectLayer::routeBuffers. Per the DirectLayer caller contract, span
-    // storage must NOT allocate on the audio thread; these vectors are sized
-    // in `audioDeviceAboutToStart` (message thread) and only index-mutated
-    // (never resized) by the callback. ProcessedChannelBufferView scratch is
-    // intentionally absent — M4 wires only the RawRoute path; see the comment
-    // next to the empty processedChannels span in AudioCallback.cpp.
+    // Collaborator pointers — set-once on the message thread before
+    // `audioDeviceAboutToStart` and read by the audio thread without locks.
     InputMixer*        inputMixer_  { nullptr };
     const OutputMixer* outputMixer_ { nullptr };
-    const DirectLayer* directLayer_ { nullptr };
     NotificationBus*   notificationBus_ { nullptr };
-    std::vector<RawInputBufferView> rawInputScratch_;
-    std::vector<OutputBufferView>   outputScratch_;
-    int activeRawScratchCount_    { 0 };
-    int activeOutputScratchCount_ { 0 };
 
-    std::atomic<bool>   monitoringEnabled_       { false };
     std::atomic<double> currentSampleRate_       { 0.0 };
     std::atomic<int>    currentBufferSize_       { 0 };
     std::atomic<double> lastCallbackElapsedSec_  { 0.0 };

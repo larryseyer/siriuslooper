@@ -328,8 +328,8 @@ TEST_CASE ("OutputMixer::renderBuffer writes additively into pre-populated outpu
     mixer.renderBuffer (nullptr, 0, outputs, 2, kFrames);
 
     // Pre-existing 0.25 + (input 0.5 * master send 1.0) = 0.75. Proves
-    // DirectLayer's bypass writes are preserved when OutputMixer runs
-    // after DirectLayer in the AudioCallback.
+    // OutputMixer writes additively into the output buffers, preserving
+    // any pre-existing content the AudioCallback may have placed there.
     for (float v : outLeft)  CHECK (v == Catch::Approx (0.75f));
     for (float v : outRight) CHECK (v == Catch::Approx (0.75f));
 }
@@ -402,8 +402,7 @@ TEST_CASE ("OutputMixer::addBus returns sentinel and preserves cap on overflow",
 // the 32-channel/8-bus configuration is the worst-case M5 OutputMixer
 // load. Asserts the per-call elapsed stays well inside the 5.33ms
 // 256-sample-at-48kHz buffer budget. Hidden by default (Catch2 leading-dot
-// tag convention) — runs only when explicitly filtered, matching the
-// DirectLayer `[.rt-smoke]` pattern.
+// tag convention) — runs only when explicitly filtered.
 
 TEST_CASE ("OutputMixer::renderBuffer 32-channel x 8-bus RT smoke",
            "[output-mixer][.rt-smoke]")

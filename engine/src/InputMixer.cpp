@@ -83,7 +83,6 @@ void InputMixer::setOverloadProtection (OverloadProtection* o) noexcept { overlo
 void InputMixer::setTapeStore (ida::persistence::TapeStore* store) noexcept { tapeStore_ = store; }
 void InputMixer::setNotificationBus (NotificationBus* bus) noexcept { notificationBus_ = bus; }
 void InputMixer::setTapeSink (ITapeSink* sink) noexcept { tapeSink_ = sink; }
-void InputMixer::setDirectLayer (DirectLayer* layer) noexcept { directLayer_ = layer; }
 void InputMixer::attachOutputMixer (OutputMixer* output) noexcept { outputMixer_ = output; }
 
 void InputMixer::registerInput (InputId id, const InputDescriptor& desc)
@@ -211,8 +210,8 @@ void InputMixer::setChannelMonitorMode (ChannelId id, MonitorMode mode)
 
     // Without an attached OutputMixer, track the mode so a later
     // `attachOutputMixer` + replay path can engage the channel, but mint
-    // nothing in the meantime. Mirrors the prior DirectLayer-unbound
-    // policy and the set-once-non-owning invariant on `outputMixer_`.
+    // nothing in the meantime. Honors the set-once-non-owning invariant
+    // on `outputMixer_`.
     if (outputMixer_ == nullptr)
     {
         MonitorRouteState state;
@@ -702,10 +701,8 @@ void InputMixer::processBuffer (ChannelId id,
     // byte-aligned — AudioCallback passes `reinterpret_cast<const std::byte*>`
     // of the live `float*` buffer), run ChannelStrip<Audio>::process in-place
     // on the scratch, then memcpy the scratch back into the TapeWriteMessage.
-    // The source `bytes` pointer is never mutated — DirectLayer's raw routes
-    // read the same float pointers from AudioCallback and a write through
-    // would break the raw-monitor contract. Non-Audio channels skip the DSP
-    // path entirely (their chains are stubs until M9/M12/M13).
+    // The source `bytes` pointer is never mutated. Non-Audio channels skip
+    // the DSP path entirely (their chains are stubs until M9/M12/M13).
     const bool isAudio = (channel.signalType == SignalType::Audio
                           && channel.processing != nullptr);
 

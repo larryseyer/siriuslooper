@@ -388,18 +388,17 @@ private:
 };
 
 // =============================================================================
-// SettingsPane — the Settings tab. Holds the audio-device picker and the
-// monitoring toggle (moved here from the Preparation tab, where the stock JUCE
-// selector dominated the layout). Settings that don't belong in the performer's
-// glanceable surfaces live here.
+// SettingsPane — the Settings tab. Holds the audio-device picker. Settings
+// that don't belong in the performer's glanceable surfaces live here. (The
+// V8 global monitoring toggle is gone — V9 §7.2 moved MON to a per-channel
+// button on each input strip.)
 // =============================================================================
 class MainComponent::SettingsPane final : public juce::Component
 {
 public:
     SettingsPane (juce::AudioDeviceManager& deviceManager,
-                  AudioCallback&            audioCallback)
-        : audioCallback_ (audioCallback),
-          deviceSelector_ (deviceManager,
+                  AudioCallback&            /*audioCallback*/)
+        : deviceSelector_ (deviceManager,
                            /*minInputChannels*/  0, /*maxInputChannels*/  2,
                            /*minOutputChannels*/ 0, /*maxOutputChannels*/ 2,
                            /*showMidiInputOptions*/  false,
@@ -411,15 +410,6 @@ public:
         audioHeaderLabel_.setFont (juce::FontOptions (14.0f, juce::Font::bold));
         addAndMakeVisible (audioHeaderLabel_);
         addAndMakeVisible (deviceSelector_);
-
-        monitoringToggle_.setButtonText ("Enable monitoring (input → output pass-through)");
-        monitoringToggle_.setToggleState (audioCallback_.isMonitoringEnabled(),
-                                          juce::dontSendNotification);
-        monitoringToggle_.onClick = [this]
-        {
-            audioCallback_.setMonitoringEnabled (monitoringToggle_.getToggleState());
-        };
-        addAndMakeVisible (monitoringToggle_);
     }
 
     void resized() override
@@ -427,14 +417,11 @@ public:
         auto area = getLocalBounds().reduced (12);
         audioHeaderLabel_.setBounds (area.removeFromTop (22));
         deviceSelector_.setBounds   (area.removeFromTop (220));
-        monitoringToggle_.setBounds (area.removeFromTop (24));
     }
 
 private:
-    AudioCallback&                     audioCallback_;
     juce::Label                        audioHeaderLabel_;
     juce::AudioDeviceSelectorComponent deviceSelector_;
-    juce::ToggleButton                 monitoringToggle_;
 };
 
 // =============================================================================
@@ -1454,12 +1441,10 @@ private:
         return -1;
     }
 
-    // 2026-05-24 monitor slice — central setter. Updates the cached mode,
-    // syncs the button label/tooltip, and (when `notify`) fires the
-    // engine-bound callback. Called from the click handler and the
-    // message-thread setMonitorModes refresh. V9 §7.2 collapsed MON to a
-    // two-state toggle (Off ↔ On); the V8 "Direct" raw-path state was
-    // deleted along with DirectLayer.
+    // Central monitor-mode setter. Updates the cached mode, syncs the
+    // button label/tooltip, and (when `notify`) fires the engine-bound
+    // callback. Called from the click handler and the message-thread
+    // setMonitorModes refresh. V9 §7.2: two-state toggle (Off ↔ On).
     void setMonitorModeAt (int idx, ida::MonitorMode mode, bool notify)
     {
         if (idx < 0 || idx >= static_cast<int> (monitorModes_.size())) return;
@@ -1487,7 +1472,7 @@ private:
 
     // V9 Slice 5 — MON is a two-state toggle (Off ↔ On). The single click
     // is the only gesture; the V8 tri-state cycle (Off → Processed → Raw)
-    // is gone along with DirectLayer.
+    // is gone.
     void toggleMonitorModeAt (int idx)
     {
         if (idx < 0 || idx >= static_cast<int> (monitorModes_.size())) return;
@@ -3208,23 +3193,18 @@ MainComponent::MainComponent()
     monotonicClock_  = std::make_shared<SteadyMonotonicClock>();
     lmc_             = std::make_unique<Lmc> (monotonicClock_);
 
-    // M4 Session 3 — the audio callback now drives engine-side mixers and
-    // a DirectLayer. Mixers are constructed before the callback so the
-    // raw pointers handed to setInputMixer/setOutputMixer/setDirectLayer
-    // are live for the callback's entire lifetime.
+    // Audio callback drives engine-side mixers. Mixers are constructed
+    // before the callback so the raw pointers handed to setInputMixer /
+    // setOutputMixer are live for the callback's entire lifetime.
     //
-    // 2026-05-24 monitor slice: the auto-wire of identity routes
-    // (input pair N → output pair N for every device pair) was DELETED here.
-    // The operator opts in per channel via the Monitor button on each input
-    // strip (Off / Raw / Processed — whitepaper §7.1 line 691: "A channel
-    // can write to tape, feed direct, both, or neither — independent
-    // per-channel choices"). InputMixer owns the DirectLayer route
-    // lifecycle and stamps the strip's mute atomic on every route so mute
-    // is a true kill-switch (the fix for the operator-reported mute leak).
+    // V9 §7.2: MON is per channel (Off ↔ On) via the button on each input
+    // strip. InputMixer::attachOutputMixer wires the seam — MON-on auto-
+    // creates an OutputMixer channel whose audio source reads the matching
+    // input's post-strip stereo buffer (whitepaper V9 §5.2 / §7.2). The V8
+    // identity-auto-wire and the global monitoring gate are both gone.
     inputMixer_      = std::make_unique<InputMixer>();
     outputMixer_     = std::make_unique<OutputMixer>();
-    directLayer_     = std::make_unique<DirectLayer>();
-    inputMixer_->setDirectLayer (directLayer_.get());
+    inputMixer_->attachOutputMixer (outputMixer_.get());
 
     // M6 Session 2 — construct the truthfulness bus before the audio callback
     // so the setter below sees a live pointer, and pre-reserve the drain
@@ -3273,7 +3253,6 @@ MainComponent::MainComponent()
     audioCallback_->setLmc (lmc_.get());
     audioCallback_->setInputMixer  (inputMixer_.get());
     audioCallback_->setOutputMixer (outputMixer_.get());
-    audioCallback_->setDirectLayer (directLayer_.get());
     audioCallback_->setNotificationBus (notificationBus_.get());
     // M7 S7 — supervisor restart / permanent-bypass events post via
     // INotificationSink. Without this wiring the operator opens an
@@ -6546,10 +6525,6 @@ void MainComponent::chooseFileAndLoad()
                             inputMixer_->setNotificationBus (notificationBus_.get());
                             inputMixer_->setTapeSink (tapeColoringSink_.get());
                             inputMixer_->setEffectChainHost (&effectChainHost_);
-                            // 2026-05-24 monitor slice — bind the DirectLayer
-                            // BEFORE importGraphState so per-channel
-                            // MonitorMode replay can register routes.
-                            inputMixer_->setDirectLayer (directLayer_.get());
                             ida::mirrorTapePool (tapePool_, *inputMixer_);
                             inputMixer_->importGraphState (*loadedInputMixer);
                         }
@@ -6559,6 +6534,11 @@ void MainComponent::chooseFileAndLoad()
                             outputMixer_->setEffectChainHost (&effectChainHost_);
                             outputMixer_->importGraphState (*loadedOutputMixer);
                         }
+                        // V9: re-bind the InputMixer's OutputMixer attachment
+                        // AFTER both are re-minted so MON replay (in a future
+                        // session-format extension) can engage routes.
+                        if (loadedInputMixer.has_value())
+                            inputMixer_->attachOutputMixer (outputMixer_.get());
                         // The AudioCallback holds raw pointers to the mixers;
                         // re-bind it to the new instances before re-arming.
                         audioCallback_->setInputMixer  (inputMixer_.get());

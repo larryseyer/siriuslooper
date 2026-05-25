@@ -3,7 +3,6 @@
 #include "ida/Bus.h"
 #include "ida/Channel.h"
 #include "ida/ChannelDefaults.h"
-#include "ida/DirectLayer.h"
 #include "ida/InputDescriptor.h"
 #include "ida/ITapeSink.h"
 #include "ida/MixerGraph.h"
@@ -184,23 +183,13 @@ public:
     void setOverloadProtection (OverloadProtection* overload) noexcept;
     void setTapeStore (ida::persistence::TapeStore* store) noexcept;
 
-    /// Message-thread setter — binds the DirectLayer this input mixer
-    /// historically drove per-channel monitor routes through (pre-V9). V9
-    /// Slice 3 collapsed the MON path onto an auto-created OutputMixer
-    /// channel (`attachOutputMixer`); the V9-conformance plan's Slice 4
-    /// deletes DirectLayer entirely. Until then this setter remains so
-    /// callers compile, but `setChannelMonitorMode` no longer touches
-    /// `directLayer_`. Mirrors the set-once-non-owning pattern used by
-    /// `setTapeSink` / `setNotificationBus`.
-    void setDirectLayer (DirectLayer* layer) noexcept;
-
     /// V9 Slice 3 — wires the InputMixer to an OutputMixer. The MON button's
     /// lifecycle owns an auto-created channel on this OutputMixer; the
     /// InputMixer uses the OutputMixer's `setChannelAudioSource()` seam to
     /// hand off post-strip buffer pointers per whitepaper V9 §5.2 / §7.2.
     ///
     /// Non-owning. The OutputMixer must outlive the InputMixer. Set-once
-    /// before the audio thread starts (same contract as `setDirectLayer`).
+    /// before the audio thread starts (same contract as `setTapeSink`).
     /// When unset, `setChannelMonitorMode(.., On)` is a silent no-op at
     /// the route-lifecycle layer — the per-channel mode is still tracked
     /// so a later `attachOutputMixer` + replay can engage routes, but no
@@ -263,8 +252,7 @@ public:
     ///
     /// V9 Slice 2 of the whitepaper-conformance plan introduced this seam;
     /// Slice 3 uses it to wire MON-on to an auto-created OutputMixer
-    /// channel via `OutputMixer::setChannelAudioSource(monChannelId, L, R)`,
-    /// replacing the DirectLayer's bypass-the-OutputMixer write path.
+    /// channel via `OutputMixer::setChannelAudioSource(monChannelId, L, R)`.
     const float* postStripPointer (ChannelId id, int side) const noexcept;
 
     // Mixer-strip input source (whitepaper §6.1/§6.2) -----------------------
@@ -417,7 +405,6 @@ private:
     ida::persistence::TapeStore* tapeStore_ { nullptr };
     NotificationBus* notificationBus_ { nullptr };
     ITapeSink* tapeSink_ { nullptr };
-    DirectLayer* directLayer_ { nullptr };
     /// V9 Slice 3 — non-owning, set-once. The OutputMixer the MON button
     /// auto-creates channels on. Lifetime is the caller's responsibility;
     /// the OutputMixer must outlive the InputMixer (see `~InputMixer`
@@ -436,9 +423,7 @@ private:
     // Session 1: `processBuffer` copies the inbound byte stream into this
     // float buffer, calls `ChannelStrip<Audio>::process` for Audio channels,
     // and copies the processed result back into the TapeWriteMessage. The
-    // source `bytes` pointer is never mutated — DirectLayer's raw routes
-    // read the same float buffers from AudioCallback and a write through
-    // them would break the raw-monitor contract.
+    // source `bytes` pointer is never mutated.
     std::vector<float> processingScratch_;
 
     // Audio-thread stereo-gather scratch for `processDeviceInputs` — two rows

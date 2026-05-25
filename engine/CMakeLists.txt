@@ -20,7 +20,6 @@ add_library(IdaEngine STATIC
     src/OverloadProtection.cpp
     src/Channel.cpp
     src/Bus.cpp
-    src/DirectLayer.cpp
     src/InputMixer.cpp
     src/OutputMixer.cpp
     src/ProcessingChain.cpp

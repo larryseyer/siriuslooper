@@ -1,10 +1,9 @@
 // V9 conformance — Slice 2: the per-channel post-strip buffer seam.
 //
 // InputMixer exposes its per-channel post-strip (post-ChannelStrip) stereo
-// output as a stable pointer that Slice 3 will hand to
-// OutputMixer::setChannelAudioSource(...) when MON goes on, replacing the
-// DirectLayer's bypass-the-OutputMixer write path. The contract this test
-// pins:
+// output as a stable pointer that Slice 3 hands to
+// OutputMixer::setChannelAudioSource(...) when MON goes on. The contract
+// this test pins:
 //   * `postStripPointer(id, 0|1)` is non-null while the channel exists,
 //     null for unknown ids and out-of-range sides.
 //   * The pointer is stable across renderInputGraph calls — the seam's

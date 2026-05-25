@@ -48,8 +48,8 @@ private:
     std::int64_t value_;
 };
 
-/// Identifies a single output channel within the OutputMixer / DirectLayer
-/// destination space. Strong-typed for the same reasons as `InputId` and
+/// Identifies a single output channel within the OutputMixer destination
+/// space. Strong-typed for the same reasons as `InputId` and
 /// `ChannelId`; M4 ships this as a thin opaque integer wrapper (per V7
 /// alignment plan M4 Risks line 368: "M4 defines it as an opaque ID with
 /// an `int` underlying"). M5 promotes it by having `OutputMixer::addChannel`
