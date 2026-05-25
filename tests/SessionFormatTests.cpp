@@ -530,3 +530,47 @@ TEST_CASE ("a malformed tape-pool document throws", "[sessionformat][tape-pool]"
     CHECK_THROWS_AS (ida::persistence::deserializeTapePool ("{not json}"),
                      std::runtime_error);
 }
+
+TEST_CASE ("MixerBusState round-trips pan / width / gain / muted",
+           "[SessionFormat][MixerBusState]")
+{
+    ida::MixerBusState in;
+    in.busId        = 7;
+    in.channelCount = 2;
+    in.name         = "AuxA";
+    in.kind         = ida::MixerBusKind::Bus;
+    in.gainLinear   = 0.75f;
+    in.muted        = true;
+    in.pan          = 0.25f;
+    in.width        = 1.5f;
+
+    ida::InputMixerGraphState s;
+    s.buses.push_back (in);
+
+    const auto json   = ida::persistence::serializeMixerGraphState (s);
+    const auto parsed = ida::persistence::deserializeInputMixerGraphState (json);
+    REQUIRE (parsed.buses.size() == 1);
+    CHECK (parsed.buses[0] == in);
+}
+
+TEST_CASE ("MixerBusState legacy load (no pan/width/gain/muted keys) returns defaults",
+           "[SessionFormat][MixerBusState]")
+{
+    const juce::String legacy = R"({
+      "version": 1,
+      "buses": [ {
+        "busId": 3, "channelCount": 2, "name": "Legacy",
+        "kind": "Bus",
+        "mainOut": { "kind": "Terminal", "terminal": "HardwareOutput" },
+        "inserts": { "entries": [] }
+      } ],
+      "channels": [],
+      "nextBusId": 4, "nextChannelId": 1
+    })";
+    const auto parsed = ida::persistence::deserializeInputMixerGraphState (legacy);
+    REQUIRE (parsed.buses.size() == 1);
+    CHECK (parsed.buses[0].gainLinear == 1.0f);
+    CHECK (parsed.buses[0].muted      == false);
+    CHECK (parsed.buses[0].pan        == 0.5f);
+    CHECK (parsed.buses[0].width      == 1.0f);
+}

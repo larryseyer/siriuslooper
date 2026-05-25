@@ -931,6 +931,12 @@ namespace
         obj->setProperty ("mainOut",      mainOutToVar (b.mainOut));
         obj->setProperty ("sends",        sendsToVar (b.sends));
         obj->setProperty ("inserts",      effectChainToVar (b.inserts));
+        // Default-suppress so legacy sessions stay byte-identical and freshly-
+        // saved projects with default bus state stay compact.
+        if (b.gainLinear != 1.0f) obj->setProperty ("gain",  b.gainLinear);
+        if (b.muted)              obj->setProperty ("muted", true);
+        if (b.pan   != 0.5f)      obj->setProperty ("pan",   b.pan);
+        if (b.width != 1.0f)      obj->setProperty ("width", b.width);
         return objectVar (obj);
     }
     MixerBusState busStateFromVar (const juce::var& v)
@@ -943,6 +949,10 @@ namespace
         b.mainOut      = mainOutFromVar (requireProperty (v, "mainOut"));
         b.sends        = sendsFromVar (optionalProperty (v, "sends"));
         b.inserts      = effectChainFromVar (requireProperty (v, "inserts"));
+        if (auto pg = optionalProperty (v, "gain");  ! pg.isVoid()) b.gainLinear = static_cast<float> ((double) pg);
+        if (auto pm = optionalProperty (v, "muted"); ! pm.isVoid()) b.muted      = (bool) pm;
+        if (auto pp = optionalProperty (v, "pan");   ! pp.isVoid()) b.pan        = static_cast<float> ((double) pp);
+        if (auto pw = optionalProperty (v, "width"); ! pw.isVoid()) b.width      = static_cast<float> ((double) pw);
         return b;
     }
 

@@ -91,12 +91,21 @@ struct MixerBusState
     MixerMainOut           mainOut;
     std::vector<MixerSend> sends;
     EffectChain            inserts;
+    // 2026-05-25 — operator-set fader / pan / width / mute, mirroring the
+    // engine atomics on `Bus`. Defaults equal `Bus`'s defaults so existing
+    // sessions (which never wrote these) load with no audible change.
+    float                  gainLinear   { 1.0f };
+    bool                   muted        { false };
+    float                  pan          { 0.5f };
+    float                  width        { 1.0f };
 
     bool operator== (const MixerBusState& o) const noexcept
     {
         return busId == o.busId && channelCount == o.channelCount && name == o.name
             && kind == o.kind && mainOut == o.mainOut && sends == o.sends
-            && inserts == o.inserts;
+            && inserts == o.inserts
+            && gainLinear == o.gainLinear && muted == o.muted
+            && pan == o.pan && width == o.width;
     }
     bool operator!= (const MixerBusState& o) const noexcept { return ! (*this == o); }
 };
