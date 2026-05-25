@@ -2197,6 +2197,18 @@ public:
             busStrips_[static_cast<std::size_t> (busIdx)]->setLUFSLevel (lufs);
     }
 
+    void setMonStripLevelDb (int monIdx, float dbL, float dbR)
+    {
+        if (monIdx >= 0 && monIdx < monStripCount())
+            monStrips_[static_cast<std::size_t> (monIdx)]->setLevel (dbL, dbR);
+    }
+
+    void setMonStripLufs (int monIdx, float lufs)
+    {
+        if (monIdx >= 0 && monIdx < monStripCount())
+            monStrips_[static_cast<std::size_t> (monIdx)]->setLUFSLevel (lufs);
+    }
+
     /// Screen bounds of aux bus `busIdx`'s INS button, used to anchor the
     /// InsertChainPopup CallOutBox. Empty rect if out of range.
     juce::Rectangle<int> busInsButtonScreenArea (int busIdx) const
@@ -5718,6 +5730,27 @@ void MainComponent::refreshOutputMixer()
                                                   linToDb (bus->peakRight()));
             outputMixerPane_->setBusStripLufs (i, bus->lufsShortTerm());
         }
+
+    // MON strip meters — walk the same input ChannelIds the MON-strip pane
+    // was built from, resolve each to its auto-minted OutputMixer channel,
+    // and feed the strip's peak + LUFS from the OutputMixer-side strip
+    // (the live post-fader/post-EQ/post-CMP signal the operator is mixing).
+    if (inputMixer_ != nullptr)
+    {
+        for (std::size_t i = 0; i < monStripInputChannelIds_.size(); ++i)
+        {
+            const auto chId = monStripInputChannelIds_[i];
+            const auto outOpt = inputMixer_->channelMonitorOutputChannel (chId);
+            if (! outOpt.has_value()) continue;
+            auto* s = outputMixer_->audioStripForChannel (*outOpt);
+            if (s == nullptr) continue;
+            outputMixerPane_->setMonStripLevelDb (static_cast<int> (i),
+                                                  linToDb (s->peakLeft()),
+                                                  linToDb (s->peakRight()));
+            outputMixerPane_->setMonStripLufs (static_cast<int> (i),
+                                               s->lufsShortTerm());
+        }
+    }
 }
 
 void MainComponent::rebuildOutputBusStrips()
