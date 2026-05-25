@@ -4,6 +4,7 @@
 
 ---
 
+**Version:** V9 (2026-05-24) — replaces V8. Part VII is rewritten: the raw-vs-processed direct-monitoring split is removed in favour of a single per-channel **MON** toggle (post-strip, auto-creates an output-mixer channel). §6.3 gains an explicit **MON × Tape** orthogonality truth table (with the amp-in-the-room scenario) and aligns operator-vocabulary `wet tap` / `dry tap` with the engine-vocabulary `commit-to-tape` / `non-destructive`. Dry tap additionally copies the Input strip's FX chain to the resulting phrase's local effects so the operator can keep editing post-capture. See §6.3.1, §6.3.2, §7.2.
 **Status:** Implementation reference
 **License:** The IDA software is licensed under AGPLv3 with an Apple App Store distribution exception. The bundled Larry Seyer Acoustic Drum Library selection is proprietary and separately licensed. See `../LICENSE`, `LICENSE-THIRD-PARTY.md`, and `SAMPLE-LICENSE.md`. This document — the white paper — is offered for permissive public release.
 
@@ -23,7 +24,7 @@ The reframe is built on three principles that hold together:
 
 3. **A loop is an idea, and ideas are worth repeating.** Every architectural decision exists to serve the capture, repetition, and arrangement of musical ideas without the friction that has always come with that capture.
 
-What follows is built around a **Logical Master Clock (LMC)** treated as the only honest external timebase at the membrane, an **input mixer → tape → output mixer** signal path in which both mixers handle live audio, live MIDI, live video, and file I/O as first-class signal types, a **direct layer** that bypasses the tape for sub-millisecond live monitoring, the tape as the always-running source of truth, a unified **Constituent hierarchy** (tape → loop → phrase → section → song → set) in which each level operates in its own conceptual time domain, and a user interface that trusts the musician absolutely.
+What follows is built around a **Logical Master Clock (LMC)** treated as the only honest external timebase at the membrane, an **input mixer → tape → output mixer** signal path in which both mixers handle live audio, live MIDI, live video, and file I/O as first-class signal types, a **direct layer** that bypasses the tape for low-latency live monitoring (the per-channel **MON** toggle of §7.2), the tape as the always-running source of truth, a unified **Constituent hierarchy** (tape → loop → phrase → section → song → set) in which each level operates in its own conceptual time domain, and a user interface that trusts the musician absolutely.
 
 The result is a looper that can do things existing loopers cannot — including capturing polymetric phrases, supporting structural improvisation through role-fillable phrases, and reproducing micro-timing and feel exactly — while also doing the things existing loopers already do, without the friction that has always come with them. The architecture is a complete production environment from physical input to physical output, with no architectural distinction between live signals and file I/O.
 
@@ -129,7 +130,7 @@ The boundary is most legible in comparison. On the axes that matter to a perform
 | Punishment for imprecise timing | In-points and out-points commit at the footswitch press | Boundaries refined retroactively from the tape |
 | Polymetric / polytemporal coexistence | Single shared grid; loops must agree on tempo and meter | Each Constituent in its own conceptual time domain |
 | Micro-timing fidelity | Quantized or smoothed by the recording grid | Preserved exactly; conceptual time has no quantization grid |
-| Live monitoring latency | One audio-buffer round trip minimum | Sub-millisecond via direct layer, independent of tape |
+| Live monitoring latency | One audio-buffer round trip minimum | Low-latency via direct layer (post-strip **MON**), independent of tape |
 | Arrangement | Outside the looper's scope, handled by a host DAW | First-class; the set list is a Constituent |
 | Archival recoverability | Wet rendering only; original takes lost on overdub | Dry tape and parameter tape preserved; symbolic fidelity is unconditional |
 | Failure handling | Glitch on plug-in crash; corruption on power loss | Audio never glitches; tape integrity sacred across power loss |
@@ -328,7 +329,7 @@ This is the fundamental architectural inversion of this looper. Most loopers cou
 
 ### 5.2 The signal path: input mixer → tape → output mixer, with direct layer
 
-The engine's architecture is a three-stage signal path with a parallel bypass. At each end is a **mixer** — a software object that handles channel topology, signal conditioning, and the crossing between physical and conceptual time. In the middle is the **tape**, the always-running source of truth. Bypassing the tape entirely is the *direct layer* (see Glossary), a parallel signal path used for sub-millisecond live monitoring and reinforcement. The direct layer is detailed in Part VII.
+The engine's architecture is a three-stage signal path with a parallel bypass. At each end is a **mixer** — a software object that handles channel topology, signal conditioning, and the crossing between physical and conceptual time. In the middle is the **tape**, the always-running source of truth. Bypassing the tape entirely is the *direct layer* (see Glossary), a parallel signal path used for low-latency live monitoring via the per-channel **MON** toggle of §7.2. The direct layer is detailed in Part VII.
 
 ```
                        ┌──────── DIRECT LAYER ────────┐
@@ -340,11 +341,11 @@ Physical inputs → INPUT MIXER → TAPE → OUTPUT MIXER → Physical outputs
 
 Each channel in the input mixer makes its own routing decisions: whether it writes to tape (and in what mode), whether it feeds the direct layer (and in what mode), and to which destinations. Each channel in the output mixer similarly chooses among physical outputs, file destinations, MIDI outputs, video outputs, and internal buses. **Routing decisions are per-channel, not per-input or per-output**, because the channel is the natural unit of processing and routing in mixer architecture.
 
-**The input mixer** is the inbound stage. It accepts four signal types as first-class inputs: **live audio, live MIDI, live video, and file inputs**. Routing decisions exist at two layers: **input-layer** decisions about the source itself (raw direct monitor on/off, source enable, source-level defaults that channels inherit) and **channel-layer** decisions about the processed signal (tape mode, processed direct routing, destinations, per-channel processing). One input may feed multiple channels with different musical roles; multiple inputs may sum into one channel. The input layer is configured once at setup; the channel layer is where the user works musically. Each channel applies capture-time conditioning appropriate to its signal type — gain staging, EQ, dynamics, and bus routing for audio; transpose, velocity curve, and event filtering for MIDI; scaling, color, and format conversion for video; transport and rate control for file inputs. Each channel may operate in *commit-to-tape* mode or *non-destructive* mode. Critically, the input mixer is **a full creative mixer**, not merely a structural router. See Part VI for the deeper treatment.
+**The input mixer** is the inbound stage. It accepts four signal types as first-class inputs: **live audio, live MIDI, live video, and file inputs**. Routing decisions exist at two layers: **input-layer** decisions about the source itself (source enable, input source format, source-level defaults that channels inherit, file transport) and **channel-layer** decisions about the processed signal (tape mode, **MON** on/off, destinations, per-channel processing). One input may feed multiple channels with different musical roles; multiple inputs may sum into one channel. The input layer is configured once at setup; the channel layer is where the user works musically. Each channel applies capture-time conditioning appropriate to its signal type — gain staging, EQ, dynamics, and bus routing for audio; transpose, velocity curve, and event filtering for MIDI; scaling, color, and format conversion for video; transport and rate control for file inputs. Each channel may operate in *commit-to-tape* mode (wet tap) or *non-destructive* mode (dry tap). **MON** is independent of tape (§6.3.1). Critically, the input mixer is **a full creative mixer**, not merely a structural router. See Part VI for the deeper treatment.
 
 **The output mixer** is the outbound stage. It accepts the rendered output of the Constituent hierarchy — every active loop, phrase, and section, rendered against absolute time at the present moment — as well as direct-layer signals bypassing the tape, and produces four output types as first-class destinations: **live audio, live MIDI, live video, and file outputs**. Routing decisions are similarly two-layered: **channel-layer** decisions about each output channel's processing and destinations, and **output-layer** decisions about each physical or file destination (master gain, dither, file format, format conversion). Each output mixer channel applies channel-strip processing and chooses its destinations per channel: physical outputs, file destinations, internal buses, monitor sends, or any combination. Like the input mixer, it is **a full creative mixer**, with per-Constituent channel strips, session-level effect buses, recallable mix snapshots, and master bus processing.
 
-**The tape** sits between them and is the input mixer's primary destination, but not its only one. An input channel chooses per channel where its processed signal goes: to a **bus** or to a **tape** — and, for monitoring, to the **direct layer**, which carries the signal to an output-mixer channel without touching tape. Monitoring *through* the channel's processing and inserts is the *processed* mode of the direct layer (tapped after the channel chain); the stateless sub-millisecond mode is *raw* (tapped before it). Physical outputs belong to the output mixer alone — the input mixer never writes them directly (see Part VII). Tape routing is itself flexible: many hardware inputs may sum into a single tape, or each may take its own. Everything the output mixer renders is sourced from tape (via the Constituent hierarchy), and the output mixer routes only to outputs and buses, never to tape. The tape remains the architectural pivot point: above it (toward the user) is the world of musical ideas; below it (toward the hardware) is the world of samples and frames.
+**The tape** sits between them and is the input mixer's primary destination, but not its only one. An input channel chooses per channel where its processed signal goes: to a **bus** or to a **tape** — and, for monitoring, the channel's **MON** toggle taps the post-strip signal into the **direct layer**, which carries the signal to an output-mixer channel without touching tape (the single mode of §7.2). Physical outputs belong to the output mixer alone — the input mixer never writes them directly (see Part VII). Tape routing is itself flexible: many hardware inputs may sum into a single tape, or each may take its own. Everything the output mixer renders is sourced from tape (via the Constituent hierarchy), and the output mixer routes only to outputs and buses, never to tape. The tape remains the architectural pivot point: above it (toward the user) is the world of musical ideas; below it (toward the hardware) is the world of samples and frames.
 
 Between these three stages, the engine operates entirely in conceptual time. Numerical time exists only at the input mixer's inbound membrane (where samples arrive) and the output mixer's outbound membrane (where samples leave).
 
@@ -488,10 +489,10 @@ The input mixer makes routing decisions at two distinct layers, each meaningful 
 | --- | --- | --- |
 | **About** | The source itself | The processed signal |
 | **When configured** | Once at setup; rarely revisited | During musical work; changes with the music |
-| **Decisions** | Input source format (mono / stereo, split/collapse) · Raw direct monitor on/off · Source enable · Source-level defaults · File transport (start, rate, loop region) | Channel processing chain · Tape mode (commit-to-tape / non-destructive / no-tape) · Processed direct routing · Destinations (tapes, buses, outputs) |
+| **Decisions** | Input source format (mono / stereo, split/collapse) · Source enable · Source-level defaults · File transport (start, rate, loop region) | Channel processing chain · Tape mode (commit-to-tape / non-destructive / no-tape) — i.e. **wet tap / dry tap / no tape** (§6.3.2) · **MON** on/off (§6.3.1) · Destinations (tapes, buses) |
 | **Captured in snapshots?** | No — these are session topology | Yes — these are mix state |
 
-The two layers compose cleanly. One input may feed multiple channels with different musical roles: a guitar input might feed a "Clean Guitar" channel and a "Distorted Guitar" channel, each with its own processing and tape routing, while sharing the same input-layer raw-direct setting. Multiple inputs may sum into one channel. **The user works almost entirely at the channel layer; the input layer is configured once and forgotten.**
+The two layers compose cleanly. One input may feed multiple channels with different musical roles: a guitar input might feed a "Clean Guitar" channel and a "Distorted Guitar" channel, each with its own processing, tape routing, and MON state. Multiple inputs may sum into one channel. **The user works almost entirely at the channel layer; the input layer is configured once and forgotten.**
 
 **Input source format (mono / stereo).** An input-layer decision that does not violate the stereo-only invariant (§6.1): each channel sources either one device channel (mono — presented dual-mono and positioned with pan) or two (stereo — left and right). The channel itself is stereo regardless. A stereo channel **splits** into two independent mono-source channels and **collapses** back; the split/collapse control lives in the channel's settings, not on the strip face, so the default mixer (clean stereo strips for the common stereo-interface case) is never cluttered by a permanent mono affordance. This keeps the stereo invariant absolute internally while matching how operators actually wire mono mics and stereo line sources to the same console.
 
@@ -518,6 +519,32 @@ This is appropriate when:
 - The performance is exploratory and the engineer wants to preserve options
 
 The two modes coexist freely across channels. A single session might have a vocal channel in non-destructive mode (because the singer's tone might need adjustment in the mix) and a guitar channel in commit-to-tape mode (because the amp simulation is part of the song's identity). The data model supports both natively, because *processing parameters are themselves a tape* — committing to tape is just choosing not to keep the parameter tape separately.
+
+### 6.3.1 MON and Tape are independent
+
+Every input channel carries two independent toggles: **MON** (does the performer hear this input through IDA?) and **Tape** (is this input captured?). Both are per-channel, both are independently settable, and neither implies the other.
+
+|  MON  |  Tape  | Behaviour                                                                                                                                |
+|-------|--------|------------------------------------------------------------------------------------------------------------------------------------------|
+|  off  |  off   | Channel idle.                                                                                                                            |
+|  off  |  on    | *"Amp in the room."* The performer hears the source acoustically (a guitar amp standing next to them, a piano in the room); IDA captures it silently. Routing the same signal back through IDA's monitors would double the sound — MON off prevents that. |
+|  on   |  off   | Monitor-only / rehearsal — nothing committed.                                                                                            |
+|  on   |  on    | Standard tracking — the performer hears the input through IDA *and* the tape captures it.                                                |
+
+The two axes are independent on purpose. Coupling them — *"MON on means Tape on"* — would force the operator to fight the system in the amp-in-the-room case and in any rehearsal scenario where the performer wants to hear themselves without committing anything. The MON decision belongs to the performer's ears; the Tape decision belongs to the historical record. They never have to agree.
+
+When MON is on, the post-strip signal arrives at an **auto-created channel in the output mixer** (§5.2, §6.6, §7.2) — a peer of the per-phrase channels, with its own gain, pan, inserts, and routing. The channel appears when MON is on and vanishes when MON is off. The performer hears their own input mixed with phrase playback through master, just like any other output-mixer channel.
+
+### 6.3.2 Tape tap: wet or dry, and what happens to the strip's FX
+
+When **Tape** is on, a third per-channel decision determines *what* gets captured. This is the operator-vocabulary handle for the commit-to-tape vs. non-destructive choice already described:
+
+- **Wet tap** ( = commit-to-tape mode). The Input strip's processing — EQ, dynamics, inserts — is baked into the tape. No post-capture editing of those effects; the print is final.
+- **Dry tap** ( = non-destructive mode). The raw pre-strip signal is captured to tape. The strip's processing is **monitor-only at capture time** (the performer still hears it through MON), and at capture the Input strip's FX chain is **copied to the resulting phrase's channel** in the output mixer as that phrase's initial **local effects** (§6.7). The operator can then edit those effects on the output-mixer side anytime — replace, tweak, remove — without ever touching the dry tape. The effects travel with the phrase as part of its identity (§6.7), copy-on-write per §6.8.
+
+In either case, the Input strip's FX chain **stays on the strip** as the operator's persistent processing configuration for that input — it is what the next take will use. The strip's FX are never "moved" off the strip; dry tap just *also* seeds them into the phrase as local effects at the moment each phrase is captured. Wet tap does not seed them — the FX are already inside the tape, baked into the captured signal.
+
+The wet/dry choice is per-channel and independent of MON. The choice is itself part of the artistic act: dry tap preserves options at the cost of two tapes per channel and post-capture editing surface; wet tap commits at the moment of capture and yields a smaller phrase footprint.
 
 ## 6.4 The user chooses the session's tape topology
 
@@ -556,7 +583,7 @@ The output mixer receives the Constituent hierarchy's rendered output and direct
 - **Minimal defaults (§6.1.1).** A fresh session's input mixer contains **only** channels matching the active physical inputs; the output mixer contains **only** channels matching the active physical outputs. **No buses, no FX returns, no reverb or delay are pre-placed.** The performer adds what they want via the blank-area create gesture, and the upcoming **preset** system will recall common configurations (e.g. a band-style template with RVB+DLY returns and a drum bus) in one gesture. This honours the rule that the software does not assume which signal-flow the performer wants.
 - **Every node carries an insert chain.** Channels, buses, and FX returns each host an ordered chain of insert effects (up to eight slots per node). Each insert slot holds **either** a hosted third-party plugin (VST/CLAP) **or** one of IDA's own built-in effects. The four built-in effects — **EQ, Compressor, Reverb, Delay** — are **core product**: they ship with every copy of IDA, cover the foundations of mix processing without any third-party install, and are designed to be the first choice for routine work. Third-party plugin hosting is **additional** to the built-in set, not a substitute for it; the two are interchangeable in the same slots, and an insert chain may mix built-in and hosted effects freely. The parameter surfaces and the slot model are documented in `docs/design/ida-internal-fx.md`. Inserts are not a bus-only privilege; the per-channel strip is itself a full effects host.
 - **Master bus processing.** Master EQ, master compression, master limiting if desired. The final stage before the outbound membrane.
-- **Output routing.** Per-channel decisions about which physical outputs, file destinations, MIDI ports, or video destinations each channel feeds. Main outputs, monitor outputs, headphone outputs, FOH feeds, render-to-file destinations — all configurable per channel.
+- **Output routing.** Per-channel decisions about which physical outputs, file destinations, MIDI ports, or video destinations each channel feeds. Configurable per channel.
 
 ## 6.7 The dual effects architecture: local vs. bus
 
@@ -688,48 +715,46 @@ This is the architectural mechanism that makes the looper viable for *live perfo
 
 This is important because it preserves the architectural integrity of everything else built in this paper. The tape remains the source of truth. Loops, phrases, Constituents — all sourced from tape. The direct layer is a *signal bypass*, used for monitoring, sound reinforcement, and any other case where the signal needs to reach the output without being remembered.
 
-**The direct layer coexists freely with the tape path.** They are not mutually exclusive. A typical setup routes signals to *both*: the tape gets the signal for capture and looping; the direct layer gets the signal for immediate monitoring. A channel can write to tape, feed direct, both, or neither — independent per-channel choices.
+**The direct layer coexists freely with the tape path.** They are not mutually exclusive. A typical setup routes signals to *both*: the tape gets the signal for capture and looping; the direct layer gets the signal for immediate monitoring. A channel can write to tape, feed **MON** (the direct layer), both, or neither — independent per-channel choices. See §6.3.1 for the MON × Tape truth table.
 
-## 7.2 Two modes of direct routing: raw and processed
+## 7.2 The MON toggle — one mode, per channel, post-strip
 
-The direct layer offers two modes for each input, the user's choice:
+The direct layer offers exactly one monitoring mode per input channel: **MON**.
 
-**Raw direct.** The signal is tapped *before* the input mixer's channel processing and routed straight to the output. True sub-millisecond zero-processing latency. The performer hears their instrument exactly as the preamp captured it, with no digital coloration. This is the appropriate choice when the performer wants pristine, unprocessed self-monitoring (a guitarist who wants to hear their physical instrument; a vocalist who finds processed monitoring distracting; any context where the direct sound is musically preferred).
+**Tap point.** When MON is on for an input channel, the signal is tapped **post-strip** — after the channel's processing chain (gain staging, EQ, dynamics, inserts). The performer hears their input *with* the processing the operator has applied. This is the default and only direct-layer mode in IDA.
 
-Raw direct is implemented at the **input layer**, before any channel processing. It is a per-input decision: each physical or file input has a "raw direct on/off" setting that determines whether the input's signal is also dispatched to the direct path immediately upon arrival.
+**Destination.** The post-strip signal arrives at an **auto-created channel in the output mixer** (§5.2, §6.6). That output-mixer channel is a peer of the per-phrase channels — it appears when MON is on, vanishes when MON is off, carries gain, pan, inserts, and routing like every other output-mixer channel, and is mixed alongside phrase playback through master. The performer hears their own input mixed with their loops, through the same signal path, with no separate monitor bus or control-room section.
 
-**Processed direct.** The signal is tapped *after* the input mixer's channel processing and routed to the output. Adds a few milliseconds of latency (the cost of the processing chain), but the performer hears their signal with the gain staging, EQ, compression, and effects the engineer has applied. This is the appropriate choice when the processing is part of the performer's monitoring need (a vocalist whose compressor defines their sound; a guitarist hearing their amp simulation; any context where unprocessed monitoring would be musically wrong).
+**Latency.** A few milliseconds — the cost of the processing chain. IDA does not provide a sub-millisecond *raw-direct* mode. The architectural decision is that **processed monitoring is the right default for idea creation**: the performer hears their own EQ, compression, amp simulation, and other inserts while they play, and what they hear is what informs the take. The rare sub-ms-latency case (a vocalist who finds even a few ms of processed monitoring distracting) is left to the audio interface's vendor-side zero-latency direct monitoring upstream of IDA.
 
-Processed direct is implemented at the **channel layer**, after channel processing. It is a per-channel decision: each channel strip has a "processed direct" routing option that sends the channel's processed signal to the direct path.
+**Independence from tape.** MON is decoupled from tape capture. The same input channel may capture to tape with MON off (the *amp-in-the-room* case) or carry MON without committing (rehearsal). See §6.3.1 for the orthogonality table and §6.3.2 for what tape captures (wet tap or dry tap) when Tape is on.
 
-**Both modes may be active simultaneously for the same input.** A vocalist's mic might have raw direct routed to one monitor send (for low-latency cue) and processed direct routed to a different monitor send (so they can hear the production mix). The two paths coexist; the user routes each to its appropriate destination.
+**Independence from the strip's mute.** The strip's mute is the operator-facing kill-switch and silences MON regardless of where in the chain the tap sits. Muting an input is always heard; MON cannot defeat a mute.
 
-## 7.3 The system decides direct routing automatically
+## 7.3 Future direction: MON inference
 
-A core principle of this architecture (Part I.5) is that the system anticipates the user's needs. Direct routing is a paradigm example: **the user does not configure a direct-routing matrix manually. The system infers which signals need direct monitoring from context and configures the direct paths automatically.**
+The locked V9 behaviour is the **explicit per-channel MON toggle** of §7.2 — the operator turns MON on or off per input. This is the operator-facing default and the only behaviour the implementation must provide.
 
-The signals the system reads:
+A future-direction layer on top of that toggle is **MON inference**: the system anticipates which channels want monitoring from context and flips MON on or off automatically, with the explicit toggle remaining as the always-available override. This honours the trust-the-user principle of Part I.5 — the system makes the assumption the operator almost always wants ("you're playing — you want to hear yourself"), but the assumption is overridable, visible, and never imposed.
 
-- **Whether the channel is currently armed for capture.** Active channels almost always want direct monitoring; idle channels almost certainly don't.
-- **Whether a loop or phrase is currently playing back the same source.** If the channel is being recorded *and* the playback of its recent capture is audible, double-monitoring causes phase/comb issues. The system mutes the direct path during such playback, or fades between them at the appropriate moment.
-- **Whether the input is declared as a utility signal** (click, talkback, scratch reference). These have known monitoring patterns — click goes only to the performer's monitor send, never to FOH; talkback routes only when its push-to-talk is active.
-- **Recent performer action.** If a footswitch engaged record on channel N, the system knows N is now the active performer signal and routes its direct path accordingly.
-- **The thermal/processing tier.** On marginal hardware, the system biases toward raw-direct (lower cost) over processed-direct (higher cost) for the same channel.
+The signals such an inference layer would read:
 
-The user can override any inference (preparation mode), but they should rarely need to. **Inference is correct nearly always; override is the escape hatch.**
+- **Whether the channel is currently armed for capture.** Active channels almost always want monitoring; idle channels almost certainly don't.
+- **Whether a loop or phrase is currently playing back the same source.** If the channel is being recorded *and* the playback of its recent capture is audible, double-monitoring causes phase/comb issues. The system would mute the MON path during such playback, or fade between them at the appropriate moment.
+- **Whether the input is declared as a utility signal** (click, scratch reference). These have known monitoring patterns — click goes only to the performer's monitor, never to render.
+- **Recent performer action.** If a footswitch engaged record on channel N, the system knows N is now the active performer signal.
+- **The capability tier** (Part XV). On marginal hardware, inference biases toward conservative MON-off when other signals are already routed.
 
-This is harder to implement than a static routing matrix, but it is significantly better UX. The performer simply hears themselves. They do not think about routing; they think about music.
+The implementation order is explicit-toggle first (V9), inference layer second (a later milestone). The locked behaviour does not depend on the inference layer to be useful; the inference layer is a UX refinement.
 
 ## 7.4 What the direct layer enables musically
 
-This is not just monitoring. Once direct routing exists, it enables a class of musical operations that would otherwise be impossible or awkward:
+Once MON exists, it enables a class of musical operations that would otherwise be impossible or awkward:
 
-- **Live processing without latency.** A guitarist whose signal goes through the input mixer's effects chain hears that effect chain in real time via processed-direct, with no tape round-trip. The effects are applied to the direct signal as well as the tape signal.
-- **Talkback.** A bandleader speaking into a talkback mic routed directly to specific monitor destinations (the bassist's in-ears) without ever being recorded.
-- **Live FX as a performance instrument.** A vocalist whose direct signal is sent through a granular delay or pitch shifter, with the shifted result going both to FOH (live) and to tape (captured for later looping). The performer manipulates the effect parameters in real time and the result is both heard immediately and preserved.
-- **Reinforcement of un-amplified sources.** An acoustic guitar mic'd and sent direct to FOH for live amplification, simultaneously captured to tape for looping. The audience hears the live performance via direct; the looper builds on the same signal via tape.
-- **Click-through-to-FOH protection.** A click track going to the drummer's headphones directly (sub-millisecond) while the click never appears in the FOH feed and is never captured on tape.
-- **Side-by-side comparison.** Direct and tape-played-back versions of the same source heard simultaneously, for verifying processing decisions or checking latency compensation.
+- **Live processing as part of the idea.** A guitarist whose signal goes through the input mixer's amp simulation and effects hears that chain in real time via MON, with no tape round-trip. The performer plays *into* their processing, and the processing shapes what they play next.
+- **Live FX as a performance instrument.** A vocalist whose MON signal is sent through a granular delay or pitch shifter hears the shifted result while they sing; the same shifted result is also what tape captures (if tape tap = wet) or the dry input is captured with the FX chain migrating to the resulting phrase's local effects (if tape tap = dry — §6.3.2). The performer manipulates the effect parameters in real time and the result is both heard immediately and preserved for repetition.
+- **Side-by-side comparison.** Live MON and tape-played-back versions of the same source heard simultaneously, for verifying processing decisions or checking how a phrase will sit against a fresh take.
+- **Hear-without-print and print-without-hear.** MON and Tape are independent (§6.3.1). The performer can rehearse silently to tape (the amp-in-the-room case, MON off / Tape on) or check a sound without committing (MON on / Tape off). Neither toggle drags the other.
 
 ## 7.5 The direct layer and the trust principle
 
@@ -1841,7 +1866,7 @@ The hope is that other developers — those building loopers as commercial produ
 
 **Causal consistency** — The consistency model used across the ensemble layer. Coordination events are applied in an order consistent with their causal relationships (one event happens after another that may have influenced it), determined by vector clocks attached to every coordination message. Stronger than eventual consistency, weaker than linearizability; the right point on the spectrum for collaborative musical editing.
 
-**Channel layer** — One of the two routing layers of the input mixer. Governs decisions about the processed signal: tape mode, processed direct routing, destinations, and per-channel processing. The user works musically at this layer.
+**Channel layer** — One of the two routing layers of the input mixer. Governs decisions about the processed signal: tape mode (wet tap / dry tap), **MON** on/off, destinations, and per-channel processing. The user works musically at this layer.
 
 **Channel strip** — The mixer's per-channel processing chain: gain, pan, EQ, dynamics, sends. The standard unit of mixer architecture.
 
@@ -1853,7 +1878,7 @@ The hope is that other developers — those building loopers as commercial produ
 
 **CRDT (Conflict-Free Replicated Data Type)** — A data structure that replicates across nodes and merges without manual conflict resolution. The append-only-tape + immutable-Constituent architecture is naturally CRDT-compatible.
 
-**Direct layer** — A parallel signal path that runs from the input mixer to the output mixer without touching the tape. Used for sub-millisecond live monitoring and reinforcement. Carries signal, not time-anchored data. Architecturally separate from the data-and-time concerns of the rest of the system.
+**Direct layer** — A parallel signal path that runs from the input mixer to the output mixer without touching the tape. Used for low-latency live monitoring via the per-channel **MON** toggle (§7.2). Carries signal, not time-anchored data. Architecturally separate from the data-and-time concerns of the rest of the system.
 
 **Ensemble LMC** — The shared logical master clock across a distributed ensemble. Calibrated against the elected master node.
 
@@ -1867,9 +1892,9 @@ The hope is that other developers — those building loopers as commercial produ
 
 **Identity** — The persistent ID of a Constituent, surviving all content revisions. "The verse" remains the verse across edits.
 
-**Input layer** — One of the two routing layers of the input mixer. Governs decisions about each physical or file source itself: raw direct monitor, source enable, source-level defaults. Configured once at setup; rarely revisited.
+**Input layer** — One of the two routing layers of the input mixer. Governs decisions about each physical or file source itself: source enable, input source format, source-level defaults, file transport. Configured once at setup; rarely revisited.
 
-**Input mixer** — The inbound stage of the signal path. A full creative mixer that handles four signal modalities (live audio, live MIDI, live video, file inputs), with routing decisions at two layers (input layer and channel layer). Each channel may operate in commit-to-tape or non-destructive mode.
+**Input mixer** — The inbound stage of the signal path. A full creative mixer that handles four signal modalities (live audio, live MIDI, live video, file inputs), with routing decisions at two layers (input layer and channel layer). Each channel may operate in commit-to-tape mode (wet tap) or non-destructive mode (dry tap), and carries an independent **MON** on/off toggle for monitoring (§6.3.1, §6.3.2, §7.2).
 
 **Inspiration** — The fragile creative state during which the performer captures musical ideas. Designed for above all other considerations.
 
@@ -1895,7 +1920,7 @@ The hope is that other developers — those building loopers as commercial produ
 
 **Non-destructive mode** — Input mixer mode in which dry signal is captured to one tape while processing parameters are captured to a parallel parameter tape. Allows retroactive editing of input processing without touching the captured signal. Opposed to commit-to-tape mode.
 
-**Output mixer** — The outbound stage of the signal path. A full creative mixer that handles four output modalities (live audio, live MIDI, live video, file outputs), with per-Constituent channel strips, direct-layer channels, session-level effect buses, send/return architecture, mix snapshots, and master bus processing.
+**Output mixer** — The outbound stage of the signal path. A full creative mixer that handles four output modalities (live audio, live MIDI, live video, file outputs), with per-Constituent channel strips, direct-layer channels (auto-created from each input's MON toggle — §7.2), session-level effect buses, send/return architecture, mix snapshots, and master bus processing.
 
 **Out-of-process host** — The architectural commitment that every plug-in instance runs in its own operating-system process, communicating with the engine via lock-free shared-memory ring buffers. Makes the "audio never glitches on plug-in failure" invariant load-bearing rather than aspirational.
 
@@ -1907,9 +1932,7 @@ The hope is that other developers — those building loopers as commercial produ
 
 **Polytemporal** — Multiple time domains (metric and unmetered) coexisting in the same parent.
 
-**Processed direct** — Direct-layer mode in which the signal is routed to the output after passing through the channel's processing chain. Adds the channel processing's latency but lets the performer monitor the processed sound. Per-channel decision.
-
-**Raw direct** — Direct-layer mode in which the signal is routed to the output before any channel processing. True sub-millisecond zero-processing latency. Per-input decision; the input's signal is dispatched to direct immediately upon arrival at the membrane.
+**MON** — The single per-channel direct-layer toggle on an input strip. When on, the channel's post-strip signal is tapped into the direct layer and arrives at an auto-created channel in the output mixer, where it is mixed alongside phrase playback. Independent of tape (see §6.3.1 for the MON × Tape truth table). Adds the channel processing's few milliseconds of latency; IDA does not provide a sub-millisecond raw-direct mode (§7.2).
 
 **Repetition rules** — The five-axis description of how a Constituent plays back: trigger, cardinality, phase, mutation, termination.
 
@@ -2005,10 +2028,10 @@ The following decisions, taken together, are the architecture. Each is stated wi
 62. **The mix is the music.** Mixing is part of the creative work, not an opaque downstream rendering step. This is why mixing belongs inside the looper, not after it.
 63. **Both mixers are modality-agnostic.** They handle live audio, live MIDI, live video, and file I/O as first-class signal types with the same architectural status, eliminating the seams between live capture, MIDI, video, and file import/export.
 64. **File I/O is not modal.** Importing a file is just creating a tape with a synthesized capture timestamp; rendering is just playback aimed at a file destination. There is no separate render engine and no online-vs-offline mode discrepancy.
-65. **The direct layer is a parallel signal path that bypasses the tape**, enabling sub-millisecond live monitoring and reinforcement. It carries signal, not time-anchored data, and is architecturally separate from the data-and-time concerns of the rest of the system.
-66. **The direct layer offers raw and processed modes**, user's choice per input. Raw direct bypasses all channel processing (true zero-latency); processed direct routes the post-channel signal with a few milliseconds of processing latency.
-67. **The system decides direct routing automatically.** The user does not configure a static routing matrix; the system infers direct-routing decisions from context (channel arm state, playback overlap, declared utility signals, performer action, capability tier). The user can override; the system anticipates.
-68. **Routing decisions exist at two layers: input layer and channel layer.** Input-layer decisions are about the source itself (raw direct, source enable, defaults). Channel-layer decisions are about the processed signal (tape mode, processed direct, destinations, processing). The user works at the channel layer; the input layer is configured once.
+65. **The direct layer is a parallel signal path that bypasses the tape**, enabling low-latency live monitoring via the per-channel **MON** toggle. It carries signal, not time-anchored data, and is architecturally separate from the data-and-time concerns of the rest of the system.
+66. **The direct layer has one monitoring mode: MON, post-strip, per channel.** When MON is on for an input channel, the post-strip signal is tapped into the direct layer and arrives at an auto-created channel in the output mixer; the performer hears their own input mixed with phrase playback through master. There is no separate raw-direct mode — the rare sub-millisecond case is left to the audio interface's vendor-side zero-latency monitoring upstream of IDA. **MON and Tape are independent** (§6.3.1).
+67. **MON is operator-controlled; auto-inference is a future direction.** The locked behaviour is the explicit per-channel MON toggle. A future layer would infer MON state from channel arm, playback overlap, declared utility signals, performer action, and capability tier — overridable by the explicit toggle. The locked behaviour does not depend on the inference layer (§7.3).
+68. **Routing decisions exist at two layers: input layer and channel layer.** Input-layer decisions are about the source itself (source enable, input source format, defaults, file transport). Channel-layer decisions are about the processed signal (tape mode = wet tap / dry tap, MON on/off, destinations, processing). The user works at the channel layer; the input layer is configured once.
 69. **The user chooses the session's tape topology.** The number of tapes is determined by the user's channel configuration, not by the system. Tapes appear because channels demand them. Channels may write to zero, one, two, or multiple tapes; tapes may be fed by one channel, multiple channels (sub-mixes), or zero channels (historical content).
 70. **The tape format and Constituent model are MIDI 2.0-native.** UMP packets are stored on tape exactly as received. Per-note expression — per-note pitch bend, per-note pressure, MPE-style channel allocation, 32-bit controllers — is a first-class automatable parameter, not a special case.
 71. **MIDI 1.0 input is upcast to UMP at the membrane.** A 7-bit CC and a 32-bit per-note controller occupy the same architectural slot. The engine never sees a distinction between MIDI 1.0 and MIDI 2.0 once events have crossed the membrane.
@@ -2079,11 +2102,11 @@ The diagram is a sketch; the section walkthrough below is the canonical descript
 
 At session startup, the system performed a one-time-per-device loopback calibration (§5.5). The audio interface's round-trip latency is stored. The capability tier was selected at 7:40 PM based on the laptop's measured throughput; Comfortable allows 24-bit PCM tape format, a 12-second retroactive ring, VHQ-quality ASRC, and per-channel effect chains.
 
-The performer has configured one input channel, *Guitar Clean*. The channel's input-layer settings say raw direct monitor is on (§7.2). The channel-layer settings say tape mode is non-destructive (§6.3): two tapes will be written in parallel — one carrying the dry guitar signal, one carrying the channel's processing parameters as a parameter tape.
+The performer has configured one input channel, *Guitar Clean*. The channel-layer settings say **MON is on** (§7.2) — the performer will hear their guitar through IDA — and tape mode is **non-destructive** (= dry tap, §6.3.2): two tapes will be written in parallel — one carrying the dry guitar signal, one carrying the channel's processing parameters as a parameter tape. The Input strip's processing chain will additionally be copied to the resulting phrase's local effects (§6.3.2) so the operator can keep editing it after the take.
 
 At 7:42 PM, the tape is already running. **Everything is always recorded** (§8.1). The performer has been noodling for two minutes; those two minutes exist on tape as timestamped audio events, available for retroactive capture.
 
-The LMC (§4.1) is locked to local CPU monotonic. No GPS, no PTP, no Link — solo session — but the LMC is honest: it knows it has only the laptop's clock to discipline against, and the calibration table records that. The performer hears their guitar via the direct layer (§7.2), routed raw-direct from the input mixer to the main outputs with sub-millisecond latency.
+The LMC (§4.1) is locked to local CPU monotonic. No GPS, no PTP, no Link — solo session — but the LMC is honest: it knows it has only the laptop's clock to discipline against, and the calibration table records that. The performer hears their guitar via the direct layer (§7.2) — the channel's MON tap routes the post-strip signal to an auto-created channel in the output mixer, mixed through master with the few-milliseconds latency of the processing chain.
 
 ### C.2 The capture moment
 
