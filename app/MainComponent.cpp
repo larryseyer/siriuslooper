@@ -4146,12 +4146,9 @@ MainComponent::MainComponent()
         };
 
         // --- Phrase-channel relays (slice 5b) --------------------------------
-        // Gain + mute are visual-only in 5b: phrase channels don't feed audio
-        // yet (5a left the render path untouched, per design doc §5a). The
-        // CompactFaderStrip owns the visual state; engine wiring lights up
-        // when the render path lands. INS-button popup is a separate slice.
-        outputMixerPane_->onPhraseGain               = [] (int, float) {};
-        outputMixerPane_->onPhraseMute               = [] (int, bool)  {};
+        // Phrase gain/mute drive the engine ChannelStrip (mirror of MON wiring
+        // at the resolveMonChannelId block below). INS-button popup is a
+        // separate slice.
         outputMixerPane_->onPhraseInsertChainClicked = [] (int)        {};
         outputMixerPane_->onPhraseDestinationChosen = [this]
             (int phraseIdx, OutputMixerPane::DestChoice dest)
@@ -4221,6 +4218,14 @@ MainComponent::MainComponent()
         outputMixerPane_->onPhraseWidth = [resolvePhraseStrip] (int phraseIdx, float width)
         {
             if (auto* s = resolvePhraseStrip (phraseIdx)) s->setWidth (width);
+        };
+        outputMixerPane_->onPhraseGain = [resolvePhraseStrip] (int phraseIdx, float gainLinear)
+        {
+            if (auto* s = resolvePhraseStrip (phraseIdx)) s->setGain (gainLinear);
+        };
+        outputMixerPane_->onPhraseMute = [resolvePhraseStrip] (int phraseIdx, bool muted)
+        {
+            if (auto* s = resolvePhraseStrip (phraseIdx)) s->setMuted (muted);
         };
         // Sends-tab gestures on the output side. Same fxReturnIdx → BusId walk
         // as the input pane, but `routeChannelToBus` (additive on FxReturn-kind
