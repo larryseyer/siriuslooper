@@ -133,6 +133,10 @@ add_executable(IdaTests
     # MON goes on. Pins: non-null while channel exists, null after remove,
     # pointer-stable across renderInputGraph blocks.
     InputMixerPostStripBufferTests.cpp
+    # V9 conformance Slice 3 — MON on auto-creates an OutputMixer channel
+    # whose audio source reads this input's post-strip buffer; MON off
+    # removes it; idempotent re-entry; removeChannel cleans up too.
+    InputMixerMonOutputChannelTests.cpp
     # 2026-05-24 — pins the whitepaper-correct silence rule: an Output Mixer
     # phrase channel does NOT pipe live device input to master. Caught the
     # "M5 proxy" leak that bypassed the Input Mixer's Monitor button.

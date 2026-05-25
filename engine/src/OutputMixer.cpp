@@ -549,6 +549,11 @@ int OutputMixer::busCount() const noexcept
     return static_cast<int> (buses_.size());
 }
 
+int OutputMixer::channelCount() const noexcept
+{
+    return static_cast<int> (channels_.size());
+}
+
 BusId OutputMixer::busIdAt (int index) const noexcept
 {
     if (index < 0 || index >= static_cast<int> (buses_.size())) return BusId { 0 };

@@ -2,6 +2,7 @@
 
 #include "ida/ChannelStrip.h"
 #include "ida/NotificationBus.h"
+#include "ida/OutputMixer.h"
 #include "ida/OverloadProtection.h"
 #include "ida/TapeStore.h"
 #include "ida/TapeWriter.h"
@@ -64,16 +65,17 @@ InputMixer::InputMixer()
 
 InputMixer::~InputMixer()
 {
-    // 2026-05-24 monitor slice — remove every DirectLayer route the mixer
-    // owns BEFORE the strips destruct. Each route holds a non-owning pointer
-    // to the strip's mute atomic; on the project-load path the InputMixer
-    // is destroyed-then-reconstructed while the DirectLayer (owned by
-    // MainComponent) survives, so any route left behind would later be
-    // read with a dangling muteFlag on the next audio-callback resume.
-    if (directLayer_ != nullptr)
+    // V9 Slice 3 — remove every auto-created MON channel from the attached
+    // OutputMixer BEFORE this InputMixer's `postStrip_` storage destructs.
+    // OutputMixer's `setChannelAudioSource` holds raw pointers into those
+    // buffers; leaving the channel registered would let the next audio
+    // callback dereference dangling memory on the project-load path
+    // (MainComponent destroys+rebuilds the InputMixer while the OutputMixer
+    // survives the swap).
+    if (outputMixer_ != nullptr)
         for (auto& [_, state] : channelMonitorRoutes_)
-            if (state.route.has_value())
-                directLayer_->removeRoute (*state.route);
+            if (state.outputChannelId.has_value())
+                outputMixer_->removeChannel (*state.outputChannelId);
 }
 
 void InputMixer::setTapeWriter (TapeWriter* writer) noexcept       { tapeWriter_ = writer; }
@@ -82,6 +84,7 @@ void InputMixer::setTapeStore (ida::persistence::TapeStore* store) noexcept { ta
 void InputMixer::setNotificationBus (NotificationBus* bus) noexcept { notificationBus_ = bus; }
 void InputMixer::setTapeSink (ITapeSink* sink) noexcept { tapeSink_ = sink; }
 void InputMixer::setDirectLayer (DirectLayer* layer) noexcept { directLayer_ = layer; }
+void InputMixer::attachOutputMixer (OutputMixer* output) noexcept { outputMixer_ = output; }
 
 void InputMixer::registerInput (InputId id, const InputDescriptor& desc)
 {
@@ -133,16 +136,17 @@ ChannelId InputMixer::addChannel (InputId source, SignalType type)
 
 void InputMixer::removeChannel (ChannelId id)
 {
-    // 2026-05-24 monitor slice: tear down the DirectLayer route BEFORE the
-    // channel's strip is destroyed. The route holds a non-owning pointer to
-    // the strip's `muted_` atomic; reading a dangling pointer on the audio
-    // thread would be a use-after-free. Caller is responsible for the
-    // audio-callback-detached bracket around removeChannel; here we just
-    // ensure the route comes out first.
+    // V9 Slice 3: tear down the auto-created MON OutputMixer channel BEFORE
+    // this channel's `postStrip_` storage is freed. OutputMixer's
+    // `setChannelAudioSource` holds raw pointers into those buffers; reading
+    // a dangling pointer on the audio thread would be a use-after-free.
+    // Caller is responsible for the audio-callback-detached bracket around
+    // removeChannel; here we just ensure the OutputMixer channel comes out
+    // first (and only then `postStrip_.erase` later in this function).
     if (auto it = channelMonitorRoutes_.find (id.value()); it != channelMonitorRoutes_.end())
     {
-        if (directLayer_ != nullptr && it->second.route.has_value())
-            directLayer_->removeRoute (*it->second.route);
+        if (outputMixer_ != nullptr && it->second.outputChannelId.has_value())
+            outputMixer_->removeChannel (*it->second.outputChannelId);
         channelMonitorRoutes_.erase (it);
     }
 
@@ -177,66 +181,58 @@ void InputMixer::removeChannel (ChannelId id)
     postStrip_.erase (id.value());
 }
 
-void InputMixer::setChannelMonitorMode (ChannelId id, MonitorMode mode, int outputPair)
+void InputMixer::setChannelMonitorMode (ChannelId id, MonitorMode mode)
 {
     auto chIt = channels_.find (id.value());
     if (chIt == channels_.end()) return;                          // unknown id — silent no-op
     if (chIt->second.signalType != SignalType::Audio) return;     // monitor is audio-only
 
-    // Read the existing route state (entry exists only when a route is live).
     auto it = channelMonitorRoutes_.find (id.value());
-    const bool hadRoute = (it != channelMonitorRoutes_.end()) && it->second.route.has_value();
-
-    // Tear down any existing route. Cheap when there isn't one; correct on
-    // every transition (Off → Raw/Processed, Raw ↔ Processed, * → Off,
-    // outputPair change).
-    if (hadRoute && directLayer_ != nullptr)
-        directLayer_->removeRoute (*it->second.route);
 
     if (mode == MonitorMode::Off)
     {
-        // The entry exists only while a route is live; drop it on transition
-        // to Off so subsequent reads of `channelMonitorMode` return the
-        // documented default.
+        // Tear down the auto-created OutputMixer channel (if one exists)
+        // and drop the per-channel entry so `channelMonitorMode` reads
+        // the documented Off default.
         if (it != channelMonitorRoutes_.end())
+        {
+            if (it->second.outputChannelId.has_value() && outputMixer_ != nullptr)
+                outputMixer_->removeChannel (*it->second.outputChannelId);
             channelMonitorRoutes_.erase (it);
+        }
         return;
     }
 
-    // From here, mode is Raw or Processed and we need a fresh route. The
-    // DirectLayer collaborator is the gate — without it we still update the
-    // mode table so a later `setDirectLayer` + replay can attach, but no
-    // route exists in the meantime.
-    MonitorRouteState state;
-    state.mode       = mode;
-    state.outputPair = outputPair;
+    // mode == On.
+    // Idempotent: a second On call while the OutputMixer channel already
+    // exists is a no-op (don't mint a duplicate channel).
+    if (it != channelMonitorRoutes_.end() && it->second.outputChannelId.has_value())
+        return;
 
-    if (directLayer_ != nullptr)
+    // Without an attached OutputMixer, track the mode so a later
+    // `attachOutputMixer` + replay path can engage the channel, but mint
+    // nothing in the meantime. Mirrors the prior DirectLayer-unbound
+    // policy and the set-once-non-owning invariant on `outputMixer_`.
+    if (outputMixer_ == nullptr)
     {
-        // Pull the strip's mute atomic so the route honors the operator's
-        // kill-switch (the 2026-05-24 mute-leak fix). The strip outlives the
-        // route by construction (removeChannel removes the route first).
-        auto* strip = static_cast<ChannelStrip<SignalType::Audio>*> (chIt->second.processing.get());
-        const std::atomic<bool>* mute = (strip != nullptr) ? strip->mutedAtomic() : nullptr;
-
-        const auto dst = OutputChannelId (outputPair);
-        if (mode == MonitorMode::Raw)
-        {
-            // Raw taps the physical input (whitepaper §7.2 — pre-strip,
-            // sub-millisecond, no digital colouration). Source is the
-            // channel's primary InputId (the strip's left device channel —
-            // a stereo source's right side is handled by the second InputId
-            // on the audio thread; this slice's UI ships one route per strip
-            // matching the operator's per-channel toggle).
-            state.route = directLayer_->addRawRoute (chIt->second.source, dst, mute);
-        }
-        else
-        {
-            // Processed taps after the strip (whitepaper §7.2 — post-FX).
-            state.route = directLayer_->addProcessedRoute (id, dst, mute);
-        }
+        MonitorRouteState state;
+        state.mode = MonitorMode::On;
+        channelMonitorRoutes_[id.value()] = std::move (state);
+        return;
     }
 
+    // Mint a fresh OutputMixer channel and wire its audio source to this
+    // input's post-strip stereo buffer (the V9 Slice 2 seam). Pointers
+    // are stable for the input channel's lifetime; OutputMixer reads
+    // them every block.
+    const auto monChId = outputMixer_->addChannel (SignalType::Audio);
+    outputMixer_->setChannelAudioSource (monChId,
+                                         postStripPointer (id, 0),
+                                         postStripPointer (id, 1));
+
+    MonitorRouteState state;
+    state.mode            = MonitorMode::On;
+    state.outputChannelId = monChId;
     channelMonitorRoutes_[id.value()] = std::move (state);
 }
 
@@ -247,11 +243,12 @@ MonitorMode InputMixer::channelMonitorMode (ChannelId id) const noexcept
     return MonitorMode::Off;
 }
 
-int InputMixer::channelMonitorOutputPair (ChannelId id) const noexcept
+std::optional<OutputChannelId>
+InputMixer::channelMonitorOutputChannel (ChannelId id) const noexcept
 {
     if (auto it = channelMonitorRoutes_.find (id.value()); it != channelMonitorRoutes_.end())
-        return it->second.outputPair;
-    return 0;
+        return it->second.outputChannelId;
+    return std::nullopt;
 }
 
 const float* InputMixer::postStripPointer (ChannelId id, int side) const noexcept
@@ -461,8 +458,13 @@ InputMixerGraphState InputMixer::exportGraphState() const
             entry.preFaderSends = pf->second != 0;
         if (auto mr = channelMonitorRoutes_.find (rawId); mr != channelMonitorRoutes_.end())
         {
-            entry.monitorMode       = mr->second.mode;
-            entry.monitorOutputPair = mr->second.outputPair;
+            entry.monitorMode = mr->second.mode;
+            // V9 collapsed MonitorMode to {Off,On} — there is no per-channel
+            // output-pair anymore (the OutputMixer auto-channel inherits the
+            // master's hardware-output pair). The legacy field stays in
+            // MixerGraphState for V8 back-compat on disk (SessionFormat
+            // suppresses the JSON property when the value is 0).
+            entry.monitorOutputPair = 0;
         }
         state.channels.push_back (std::move (entry));
     }
@@ -524,16 +526,18 @@ void InputMixer::importGraphState (const InputMixerGraphState& state)
             channelPreFaderSends_[c.channelId] = 1;
     }
 
-    // 2026-05-24 monitor slice — replay the per-channel monitor mode AFTER
-    // sends/main-outs are applied (mode is independent of those, but the
-    // strip must exist before its mute atomic is read by addRawRoute /
-    // addProcessedRoute). When the DirectLayer collaborator isn't bound at
-    // import time, the mode is stashed and a later `setDirectLayer` does
-    // NOT auto-replay — callers that load a project before binding the
-    // DirectLayer must replay manually (today MainComponent binds first).
+    // V9 Slice 3 — replay the per-channel MON mode AFTER sends/main-outs
+    // are applied (mode is independent of those, but the strip must exist
+    // before its post-strip buffer is wired to the OutputMixer's audio
+    // source). When the OutputMixer collaborator isn't attached at import
+    // time, the mode is stashed and a later `attachOutputMixer` does NOT
+    // auto-replay — callers that load a project before attaching the
+    // OutputMixer must replay manually (today MainComponent attaches first).
+    // The legacy `monitorOutputPair` is intentionally ignored — V9 has no
+    // per-channel output-pair concept.
     for (const auto& c : state.channels)
         if (c.monitorMode != MonitorMode::Off)
-            setChannelMonitorMode (ChannelId (c.channelId), c.monitorMode, c.monitorOutputPair);
+            setChannelMonitorMode (ChannelId (c.channelId), c.monitorMode);
 
     // 3. Apply main-outs (all nodes exist now, so no cycle false-positives).
     for (const auto& b : state.buses)    applyBusMainOut (BusId (b.busId), b.mainOut);

@@ -236,6 +236,13 @@ public:
     /// layer before calling `addBus`. Mirrors `InputMixer::busCount`.
     int busCount() const noexcept;
 
+    /// V9 Slice 3 diagnostic — total live output-channel count (after any
+    /// `removeChannel` cleanups). Used by tests that pin the MON-owned
+    /// auto-channel lifecycle: MON off ⇒ no auto channel, MON on ⇒ exactly
+    /// one auto channel per input, idempotent re-entry, removeChannel
+    /// cleanup. Message-thread accessor.
+    int channelCount() const noexcept;
+
     /// Indexed bus accessor (0..busCount()-1). Index 0 is the master.
     /// Returns the invalid sentinel `BusId{0}` for out-of-range indices
     /// — same defensive default as `InputMixer::busIdAt`. Message-thread.
