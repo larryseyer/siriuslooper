@@ -1,36 +1,5 @@
 # IDA — Deferred Items
 
-### 2026-05-24 — Hide EQ + CMP from insert-slot picker (every channel already has them)
-- Files: ui/include/ida/InsertChainPopup.h + matching .cpp (the picker that
-  populates the insert-slot menu); engine/include/ida/InternalFxFactory.h
-  (catalog enumerator if one exists — the `kEq`/`kCmp`/`kRvb`/`kDly`/
-  `kTapeColor` IDs are surfaced from here); plus any UI menu builder that
-  reads the full internal-FX catalog when offering plugins for an insert
-  slot.
-- What was deferred: the insert-chain picker currently offers EQ + CMP
-  alongside RVB / DLY / TAPECOLOR / 3rd-party VST/CLAP. Per the operator
-  rule (2026-05-24): every input + output + bus channel already has a
-  built-in EQ and CMP on the channel strip's EQ + CMP tabs. Offering
-  them again in the insert path would let an operator double-insert
-  EQ or CMP per channel, which is both confusing and an architectural
-  redundancy. EQ + CMP must be reachable ONLY from the channel-strip
-  tabs, never from the insert-slot picker.
-- Why deferred: design decision arrived mid-session while TAPECOLOR
-  Slice 2 was in flight; orthogonal to the tape-color work. The fix is
-  a UI-side filter (drop kEq + kCmp from the offered list) plus a
-  matching menu-builder pass; the factory + adapters stay as-is (other
-  paths — render pipeline, host plugin chain — may still legitimately
-  construct them programmatically). TAPECOLOR Slice 2 must not bundle
-  it or the slice will balloon.
-- What's needed to finish:
-  1. Find the menu-builder that enumerates `InternalFxId` for the
-     insert-chain picker. Filter out `kEq` and `kCmp`.
-  2. Add a test that pins the contract: the picker's offered list does
-     NOT contain "EQ" / "CMP" entries.
-  3. Update the operator-facing user guide (per
-     `[[project_user_guide_alongside_whitepaper]]`) to call out that
-     EQ + CMP live on every strip's tabs, not in inserts.
-
 ### 2026-05-24 — TAPECOLOR IRs: offline pre-bake instead of runtime resample
 - Files: external/lsfx_tapecolor/dsp/ConvolutionStage.cpp
   (`decodePlaceholderIR` + `loadMachineInternal` — currently decodes

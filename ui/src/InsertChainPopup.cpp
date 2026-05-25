@@ -14,8 +14,17 @@ namespace
 // ComboBox item IDs. JUCE forbids item id 0 (used for "no selection"), so
 // the picker starts at 1. The mapping is bidirectional and explicit — we do
 // NOT lean on the int value of `InternalFxId` because the display order
-// (Empty → EQ → CMP → DLY → RVB, signal-chain convention) differs from the
-// enum's storage order (kEq=0 / kCmp=1 / kRvb=2 / kDly=3).
+// (Empty → DLY → RVB, signal-chain convention) differs from the enum's
+// storage order (kEq=0 / kCmp=1 / kRvb=2 / kDly=3).
+//
+// Operator rule (2026-05-24): EQ + CMP are NOT offered by the insert
+// picker. Every channel / bus / FX-return already carries a dedicated EQ
+// and CMP on the strip's EQ + CMP tabs; offering them again here would
+// permit a confusing double-insert with no audible upside. The `kEq` /
+// `kCmp` arms of the converters below stay so a slot that already holds
+// EQ / CMP (constructed programmatically by the render pipeline or other
+// non-operator code) still round-trips through `comboIdFor` / `fxIdForCombo`
+// without UB; the missing menu items simply render the row as blank.
 constexpr int kComboIdEmpty = 1;
 constexpr int kComboIdEq    = 2;
 constexpr int kComboIdCmp   = 3;
@@ -61,8 +70,6 @@ public:
         : owner_ (owner), slot_ (slotIndex)
     {
         picker_.addItem ("Empty", kComboIdEmpty);
-        picker_.addItem ("EQ",    kComboIdEq);
-        picker_.addItem ("CMP",   kComboIdCmp);
         picker_.addItem ("DLY",   kComboIdDly);
         picker_.addItem ("RVB",   kComboIdRvb);
         picker_.setSelectedId (kComboIdEmpty, juce::dontSendNotification);
@@ -225,6 +232,13 @@ void InsertChainPopup::simulateClose()
 void InsertChainPopup::handlePickerChange (std::size_t slot, std::optional<InternalFxId> id)
 {
     if (slot >= EffectChain::kMaxSlots)
+        return;
+    // Operator rule (2026-05-24): EQ + CMP live on every channel-strip's
+    // EQ + CMP tabs and are not pickable from the insert chain. The picker
+    // menu omits them, and this defensive guard ensures the test seam
+    // (simulatePickFx) and any future call site also honour the rule —
+    // policy enforced in one place.
+    if (id.has_value() && (*id == InternalFxId::kEq || *id == InternalFxId::kCmp))
         return;
     slots_[slot] = SlotState { id, false }; // picking a fresh fx resets bypass (mirrors engine contract)
     refreshRow (slot);

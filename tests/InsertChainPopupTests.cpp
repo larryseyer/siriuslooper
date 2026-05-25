@@ -71,14 +71,50 @@ TEST_CASE ("InsertChainPopup setInitialChain seeds slot state and simulatePickFx
     popup.setOnSlotChanged ([&] (std::size_t s, std::optional<InternalFxId> id)
                             { events.push_back ({ s, id }); });
 
-    popup.simulatePickFx (0, InternalFxId::kCmp);
+    popup.simulatePickFx (0, InternalFxId::kDly);
 
     REQUIRE (events.size() == 1);
     CHECK (events[0].slot == 0);
     REQUIRE (events[0].id.has_value());
-    CHECK (*events[0].id == InternalFxId::kCmp);
+    CHECK (*events[0].id == InternalFxId::kDly);
     REQUIRE (popup.slotStates()[0].id.has_value());
-    CHECK (*popup.slotStates()[0].id == InternalFxId::kCmp);
+    CHECK (*popup.slotStates()[0].id == InternalFxId::kDly);
+}
+
+TEST_CASE ("InsertChainPopup picker rejects EQ and CMP (operator rule 2026-05-24 — strip-tab only)",
+           "[insert-chain-popup]")
+{
+    juce::ScopedJuceInitialiser_GUI juceInit;
+    InsertChainPopup popup;
+
+    // Seed a known starting state so we can prove the reject leaves it untouched.
+    EffectChain chain;
+    chain = chain.withAppended (EffectChainEntry::makeInternal (InternalFxId::kRvb));
+    popup.setInitialChain (chain);
+
+    std::vector<SlotChangedEvent> events;
+    popup.setOnSlotChanged ([&] (std::size_t s, std::optional<InternalFxId> id)
+                            { events.push_back ({ s, id }); });
+
+    // EQ pick — rejected. No callback, no state change.
+    popup.simulatePickFx (0, InternalFxId::kEq);
+    CHECK (events.empty());
+    REQUIRE (popup.slotStates()[0].id.has_value());
+    CHECK (*popup.slotStates()[0].id == InternalFxId::kRvb);
+
+    // CMP pick — also rejected.
+    popup.simulatePickFx (0, InternalFxId::kCmp);
+    CHECK (events.empty());
+    REQUIRE (popup.slotStates()[0].id.has_value());
+    CHECK (*popup.slotStates()[0].id == InternalFxId::kRvb);
+
+    // Positive control: DLY still works through the same seam.
+    popup.simulatePickFx (0, InternalFxId::kDly);
+    REQUIRE (events.size() == 1);
+    REQUIRE (events[0].id.has_value());
+    CHECK (*events[0].id == InternalFxId::kDly);
+    REQUIRE (popup.slotStates()[0].id.has_value());
+    CHECK (*popup.slotStates()[0].id == InternalFxId::kDly);
 }
 
 TEST_CASE ("InsertChainPopup simulatePickFx with nullopt fires onSlotChanged with nullopt (remove)",

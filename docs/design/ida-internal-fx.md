@@ -153,6 +153,29 @@ restate it.
 
 ---
 
+## Operator-UI reachability rule (2026-05-24)
+
+EQ and CMP are first-class on every channel / bus / FX-return: they live
+on the strip's dedicated **EQ** and **CMP** tabs, not in the insert
+chain. The insert picker therefore offers only **DLY**, **RVB**, and
+(once the host plugin scanner is healthy) **3rd-party VST/CLAP**. EQ
+and CMP do not appear as choices in the insert picker; double-inserting
+them would be a redundancy with no audible upside, since the strip
+already runs an EQ and a CMP in front of the insert chain by design.
+
+The data model is unchanged — `EffectChainEntry` with
+`InternalFxId::kEq` or `kCmp` remains a legitimate construction by
+non-operator code paths (render pipeline, programmatic chain setup). The
+rule is strictly about the operator-facing **picker** UI.
+
+Enforcement lives in `ui/src/InsertChainPopup.cpp`: the picker's
+ComboBox omits EQ and CMP, and `handlePickerChange` defensively rejects
+those ids so the policy is centralized in one place. The contract is
+pinned by `tests/InsertChainPopupTests.cpp` ("InsertChainPopup picker
+rejects EQ and CMP").
+
+---
+
 ## What this doc does NOT cover
 
 - **Implementation specifics** of the adapter wrapping. See Decision 3 in
