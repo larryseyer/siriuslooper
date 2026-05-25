@@ -1504,3 +1504,28 @@ TEST_CASE ("OutputMixer::setBusSend with level=0 removes the FX-return contribut
     for (float v : outLeft)  CHECK (v == Catch::Approx (1.0f));
     for (float v : outRight) CHECK (v == Catch::Approx (1.0f));
 }
+
+TEST_CASE ("OutputMixer round-trips bus pan / width / gain / muted",
+           "[output-mixer][persistence]")
+{
+    ida::OutputMixer mixer;
+    const auto busId = mixer.addBus (ida::BusConfig { 2, "OutAuxA", ida::BusKind::Bus });
+    auto* bus = mixer.busForId (busId);
+    REQUIRE (bus != nullptr);
+    bus->setGain  (0.5f);
+    bus->setMuted (true);
+    bus->setPan   (0.25f);
+    bus->setWidth (1.5f);
+
+    const auto state = mixer.exportGraphState();
+    ida::OutputMixer restored;
+    restored.importGraphState (state);
+
+    auto* restoredBus = restored.busForId (busId);
+    REQUIRE (restoredBus != nullptr);
+    CHECK_FALSE (restoredBus->gain()  != 0.5f);
+    CHECK       (restoredBus->muted());
+    CHECK_FALSE (restoredBus->pan()   != 0.25f);
+    CHECK_FALSE (restoredBus->width() != 1.5f);
+    CHECK (restored.exportGraphState() == state);
+}

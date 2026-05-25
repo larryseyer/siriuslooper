@@ -943,6 +943,10 @@ OutputMixerGraphState OutputMixer::exportGraphState() const
         entry.mainOut      = busMainOutSnapshot (graph_, busNodeIds_[i], busNodeIds_, buses_,
                                                  busHardwareOutPair_[i]);
         entry.inserts      = bus.effectChain();
+        entry.gainLinear   = bus.gain();
+        entry.muted        = bus.muted();
+        entry.pan          = bus.pan();
+        entry.width        = bus.width();
         state.buses.push_back (std::move (entry));   // master is index 0 by construction
     }
 
@@ -1001,6 +1005,13 @@ void OutputMixer::importGraphState (const OutputMixerGraphState& state)
             addBus (config);
         }
         setBusEffectChain (BusId (b.busId), b.inserts);
+        if (auto* freshBus = busForId (BusId (b.busId)))
+        {
+            freshBus->setGain  (b.gainLinear);
+            freshBus->setMuted (b.muted);
+            freshBus->setPan   (b.pan);
+            freshBus->setWidth (b.width);
+        }
     }
 
     // Apply bus subgroup routing once all buses exist. Master main-out is the
