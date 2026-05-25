@@ -947,6 +947,18 @@ OutputMixerGraphState OutputMixer::exportGraphState() const
         entry.muted        = bus.muted();
         entry.pan          = bus.pan();
         entry.width        = bus.width();
+        // Capture bus -> any-bus sends (typically FX returns; the master
+        // is a legal source per `setBusSend`). Walk every other bus; skip
+        // self-sends (`setBusSend` rejects them). Default 0 levels are
+        // dropped to keep the JSON small.
+        for (std::size_t j = 0; j < buses_.size(); ++j)
+        {
+            if (j == i) continue;
+            const auto targetId = buses_[j].id();
+            const float level = busSendLevel (bus.id(), targetId);
+            if (level > 0.0f)
+                entry.sends.push_back ({ targetId.value(), level });
+        }
         state.buses.push_back (std::move (entry));   // master is index 0 by construction
     }
 
@@ -1011,6 +1023,20 @@ void OutputMixer::importGraphState (const OutputMixerGraphState& state)
             freshBus->setMuted (b.muted);
             freshBus->setPan   (b.pan);
             freshBus->setWidth (b.width);
+        }
+    }
+
+    // Replay bus -> any-bus sends now that every bus exists (forward
+    // references between buses are legal). `setBusSend` enforces non-self
+    // and cycle detection; jassert on failure so a malformed snapshot
+    // halts the load rather than silently dropping routing.
+    for (const auto& b : state.buses)
+    {
+        for (const auto& s : b.sends)
+        {
+            const bool ok = setBusSend (BusId (b.busId), BusId (s.busId), s.level);
+            jassert (ok);
+            juce::ignoreUnused (ok);
         }
     }
 

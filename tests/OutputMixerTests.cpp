@@ -1529,3 +1529,17 @@ TEST_CASE ("OutputMixer round-trips bus pan / width / gain / muted",
     CHECK (restoredBus->width() == Catch::Approx (1.5f));
     CHECK (restored.exportGraphState() == state);
 }
+
+TEST_CASE ("OutputMixer round-trips bus->FX-return send levels",
+           "[output-mixer][persistence]")
+{
+    ida::OutputMixer mixer;
+    const auto srcBus = mixer.addBus (ida::BusConfig { 2, "SrcBus", ida::BusKind::Bus });
+    const auto fxRet  = mixer.addBus (ida::BusConfig { 2, "FxRet",  ida::BusKind::FxReturn });
+    REQUIRE (mixer.setBusSend (srcBus, fxRet, 0.65f));
+
+    const auto state = mixer.exportGraphState();
+    ida::OutputMixer restored;
+    restored.importGraphState (state);
+    CHECK (restored.busSendLevel (srcBus, fxRet) == Catch::Approx (0.65f));
+}
