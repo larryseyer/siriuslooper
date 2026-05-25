@@ -1611,6 +1611,18 @@ public:
     /// pane-side callbacks can identify which phrase the operator touched.
     struct PhraseStripInfo { ida::ConstituentId id { 0 }; juce::String name; };
 
+    /// One MON-channel strip's display state. LEFTMOST band in the pane
+    /// (left of phrase strips, mirroring signal flow: live monitoring →
+    /// phrase playback → buses → master). Carries the input ChannelId
+    /// the operator can use to map back to the corresponding input strip,
+    /// and a name string MainComponent supplies (typically "MON N" where
+    /// N is the 1-based input-strip row). Whitepaper V9 §6.3.1 / §7.2:
+    /// peer of phrase channels, full strip controls. Discriminated from
+    /// phrase strips on the listener callbacks via `ChannelType::FXReturn`
+    /// (Output Mixer has no FX-return concept of its own — see the class
+    /// comment above — so the enum tag is free for MON's use).
+    struct MonStripInfo { ida::ChannelId inputChannelId { 0 }; juce::String name; };
+
     /// A bus destination kind. Output buses have no Tape option (the Output
     /// Mixer is the mixdown side; tape is the Input Mixer's terminal).
     enum class DestKind { Bus, HardwareOutput };
@@ -1706,6 +1718,27 @@ public:
     /// CMP-tab "+ Add CMP" empty-state button.
     std::function<void (int phraseIdx)>                    onPhraseCmpSlotAddRequested;
 
+    // --- MON-channel gesture relays. Mirror of the onPhrase* surface;
+    // idx = mon-strip row index, parallel to setMonStrips. Engine-side
+    // mapping (mon row index → OutputChannelId) lives in MainComponent.
+    // Discriminated from phrase strips at the listener layer by
+    // ChannelType::FXReturn on the strip (IDA's Output Mixer has no
+    // FX-return concept of its own).
+    std::function<void (int monIdx, float gainLinear)> onMonGain;
+    std::function<void (int monIdx, bool muted)>       onMonMute;
+    std::function<void (int monIdx)>                   onMonInsertChainClicked;
+    std::function<void (int monIdx, DestChoice dest)>  onMonDestinationChosen;
+    std::function<void (int monIdx)>                   onMonSelect;
+    std::function<void (int monIdx, float pan)>        onMonPan;
+    std::function<void (int monIdx, float width)>      onMonWidth;
+    std::function<void (int monIdx, int fxReturnIdx, float level)>
+                                                       onMonSendChanged;
+    std::function<void (int monIdx, bool preFader)>    onMonPreFaderToggled;
+    std::function<void (int monIdx, ida::EqConfig cfg)>  onMonEqConfigChanged;
+    std::function<void (int monIdx)>                     onMonEqSlotAddRequested;
+    std::function<void (int monIdx, ida::CmpConfig cfg)> onMonCmpConfigChanged;
+    std::function<void (int monIdx)>                     onMonCmpSlotAddRequested;
+
     void setMasterLevelDb (float dbL, float dbR)
     {
         if (master_) master_->setLevel (dbL, dbR);
@@ -1734,6 +1767,9 @@ public:
             addChildComponent (*pill);
             channelPills_.push_back (std::move (pill));
         };
+        for (int i = 0; i < monStripCount(); ++i)
+            makePill (monStrips_[static_cast<std::size_t> (i)]->getChannelName(),
+                      i, otto::ui::ChannelType::FXReturn);
         for (int i = 0; i < phraseStripCount(); ++i)
             makePill (phraseStrips_[static_cast<std::size_t> (i)]->getChannelName(),
                       i, otto::ui::ChannelType::Instrument);
@@ -2031,6 +2067,85 @@ public:
         return static_cast<int> (phraseStrips_.size());
     }
 
+    /// Mirror of setPhraseStrips for MON strips. Drives the leftmost
+    /// strip band — strips appear when MainComponent::refreshOutputMixer-
+    /// MonChannels sees a MON-on input. Order matches the input-mixer
+    /// row order so the operator's spatial mental model is preserved.
+    /// MON strips carry `ChannelType::FXReturn` so the listener callbacks
+    /// can discriminate them from phrase strips (ChannelType::Instrument)
+    /// even though both use 0-based row indices.
+    void setMonStrips (const std::vector<MonStripInfo>& infos)
+    {
+        monStrips_.clear();
+        monDestButtons_.clear();
+        monInsButtons_.clear();
+        monStripDests_.clear();
+        monChoices_.clear();
+        // MON strip identities change on a rebuild — drop the selection.
+        if (selectedMon_ >= 0)
+        {
+            selectedMon_ = -1;
+            if (selectedPhrase_ < 0 && selectedBus_ < 0 && ! selectedMaster_)
+                detailPanel_.setVisible (false);
+        }
+        for (int i = 0; i < static_cast<int> (infos.size()); ++i)
+        {
+            auto strip = std::make_unique<otto::ui::CompactFaderStrip> (
+                i, otto::ui::ChannelType::FXReturn);
+            strip->setChannelName (infos[static_cast<std::size_t> (i)].name);
+            strip->setOutputComboVisible (false);   // pane owns routing, not the combo
+            strip->addListener (this);
+            addAndMakeVisible (*strip);
+            monStrips_.push_back (std::move (strip));
+
+            auto destBtn = std::make_unique<juce::TextButton>();
+            destBtn->setButtonText ("—");
+            const int idx = i;
+            destBtn->onClick = [this, idx] { showMonDestinationMenu (idx); };
+            addAndMakeVisible (*destBtn);
+            monDestButtons_.push_back (std::move (destBtn));
+            monStripDests_.push_back ({});
+
+            auto ins = std::make_unique<juce::TextButton>();
+            ins->setButtonText ("INS");
+            ins->onClick = [this, idx]
+            {
+                if (onMonInsertChainClicked) onMonInsertChainClicked (idx);
+            };
+            addAndMakeVisible (*ins);
+            monInsButtons_.push_back (std::move (ins));
+        }
+        rebuildChannelPills();
+        resized();
+    }
+
+    /// Mirror of setPhraseDestinations for MON strips.
+    void setMonDestinations (const std::vector<std::vector<DestChoice>>& perMonChoices,
+                             const std::vector<StripDest>& perMon)
+    {
+        monChoices_ = perMonChoices;
+        jassert (static_cast<int> (perMon.size()) == monStripCount());
+        for (int i = 0; i < monStripCount() && i < static_cast<int> (perMon.size()); ++i)
+        {
+            monStripDests_[static_cast<std::size_t> (i)] = perMon[static_cast<std::size_t> (i)];
+            const auto& label = perMon[static_cast<std::size_t> (i)].currentName;
+            monDestButtons_[static_cast<std::size_t> (i)]->setButtonText (label.isEmpty() ? "—" : label);
+        }
+    }
+
+    [[nodiscard]] int monStripCount() const noexcept
+    {
+        return static_cast<int> (monStrips_.size());
+    }
+
+    /// Screen bounds of MON strip `monIdx`'s INS button, mirror of
+    /// `phraseInsButtonScreenArea`.
+    juce::Rectangle<int> monInsButtonScreenArea (int monIdx) const
+    {
+        if (monIdx < 0 || monIdx >= static_cast<int> (monInsButtons_.size())) return {};
+        return monInsButtons_[static_cast<std::size_t> (monIdx)]->getScreenBounds();
+    }
+
     /// Screen bounds of phrase strip `phraseIdx`'s INS button, used to anchor
     /// the InsertChainPopup CallOutBox. Empty rect if out of range.
     juce::Rectangle<int> phraseInsButtonScreenArea (int phraseIdx) const
@@ -2257,6 +2372,24 @@ public:
             }
         }
 
+        // MON strips (V9 §6.3.1 / §7.2) — LEFTMOST band, left-to-right, in
+        // input-strip row order (refreshOutputMixerMonChannels owns the
+        // enumeration). Inter-strip gap between MON strips; a final gap
+        // after the last MON strip separates the MON band from the phrase
+        // band (which itself eats from the same `area` left edge below).
+        for (int i = 0; i < monStripCount(); ++i)
+        {
+            auto stripBounds = area.removeFromLeft (kStripW);
+            monStrips_[static_cast<std::size_t> (i)]->setBounds (stripBounds);
+            monInsButtons_[static_cast<std::size_t> (i)]->setBounds (insRow.removeFromLeft (kStripW));
+            monDestButtons_[static_cast<std::size_t> (i)]->setBounds (pickerRow.removeFromLeft (kStripW));
+            // Always insert an inter-strip gap; after the last MON strip
+            // that same gap acts as the band separator before phrase strips.
+            area.removeFromLeft (kGap);
+            insRow.removeFromLeft (kGap);
+            pickerRow.removeFromLeft (kGap);
+        }
+
         // Phrase strips (slice 5b) fill the remaining LEFT band, left-to-right,
         // in PillState (DFS) order — MainComponent::refreshOutputMixerPhraseChannels
         // owns the enumeration. No inter-strip gap after the last (rightmost)
@@ -2285,6 +2418,8 @@ public:
     /// `InputMixerPane::deselectAll`.
     void deselectAll()
     {
+        for (int i = 0; i < monStripCount(); ++i)
+            monStrips_[static_cast<std::size_t> (i)]->setSelected (false);
         for (int i = 0; i < phraseStripCount(); ++i)
             phraseStrips_[static_cast<std::size_t> (i)]->setSelected (false);
         for (int i = 0; i < busStripCount(); ++i)
@@ -2292,6 +2427,7 @@ public:
         if (master_) master_->setSelected (false);
         selectedPhrase_ = -1;
         selectedBus_    = -1;
+        selectedMon_    = -1;
         selectedMaster_ = false;
         detailPanel_.setVisible (false);
         resized();
@@ -2314,6 +2450,8 @@ public:
     void stripGainChanged (int idx, otto::ui::ChannelType type, float gain) override
     {
         if (idx == kMasterStripId) { if (onMasterGain) onMasterGain (gain); }
+        else if (type == otto::ui::ChannelType::FXReturn)
+        { if (onMonGain) onMonGain (idx, gain); }
         else if (type == otto::ui::ChannelType::Instrument)
         { if (onPhraseGain) onPhraseGain (idx, gain); }
         else if (onBusGain)        onBusGain (idx, gain);
@@ -2321,6 +2459,8 @@ public:
     void stripMuteChanged (int idx, otto::ui::ChannelType type, bool muted) override
     {
         if (idx == kMasterStripId) { if (onMasterMute) onMasterMute (muted); }
+        else if (type == otto::ui::ChannelType::FXReturn)
+        { if (onMonMute) onMonMute (idx, muted); }
         else if (type == otto::ui::ChannelType::Instrument)
         { if (onPhraseMute) onPhraseMute (idx, muted); }
         else if (onBusMute)        onBusMute (idx, muted);
@@ -2329,13 +2469,17 @@ public:
     void stripChannelSelected (int idx, otto::ui::ChannelType type) override
     {
         const bool isMaster = (idx == kMasterStripId);
-        const bool isPhrase = (! isMaster) && (type == otto::ui::ChannelType::Instrument);
-        const bool isAux    = (! isMaster) && (! isPhrase);
+        const bool isMon    = (! isMaster) && (type == otto::ui::ChannelType::FXReturn);
+        const bool isPhrase = (! isMaster) && (! isMon)
+                              && (type == otto::ui::ChannelType::Instrument);
+        const bool isAux    = (! isMaster) && (! isMon) && (! isPhrase);
 
-        // Phrase, aux-bus, and master are mutually exclusive selections.
+        // MON, phrase, aux-bus, and master are mutually exclusive selections.
         // Clear the OTHER rows' highlights so the affordance stays honest.
         auto clearAll = [this]
         {
+            for (int i = 0; i < monStripCount(); ++i)
+                monStrips_[static_cast<std::size_t> (i)]->setSelected (false);
             for (int i = 0; i < phraseStripCount(); ++i)
                 phraseStrips_[static_cast<std::size_t> (i)]->setSelected (false);
             for (int i = 0; i < busStripCount(); ++i)
@@ -2343,12 +2487,24 @@ public:
             if (master_) master_->setSelected (false);
         };
 
-        if (isPhrase)
+        if (isMon)
+        {
+            clearAll();
+            if (idx >= 0 && idx < monStripCount())
+                monStrips_[static_cast<std::size_t> (idx)]->setSelected (true);
+            selectedMon_    = idx;
+            selectedPhrase_ = -1;
+            selectedBus_    = -1;
+            selectedMaster_ = false;
+            if (onMonSelect) onMonSelect (idx);
+        }
+        else if (isPhrase)
         {
             clearAll();
             phraseStrips_[static_cast<std::size_t> (idx)]->setSelected (true);
             selectedPhrase_ = idx;
             selectedBus_    = -1;
+            selectedMon_    = -1;
             selectedMaster_ = false;
             if (onPhraseSelect) onPhraseSelect (idx);
         }
@@ -2359,6 +2515,7 @@ public:
                 busStrips_[static_cast<std::size_t> (idx)]->setSelected (true);
             selectedPhrase_ = -1;
             selectedBus_    = idx;
+            selectedMon_    = -1;
             selectedMaster_ = false;
             if (onBusSelect) onBusSelect (idx);
         }
@@ -2368,6 +2525,7 @@ public:
             if (master_) master_->setSelected (true);
             selectedPhrase_ = -1;
             selectedBus_    = -1;
+            selectedMon_    = -1;
             selectedMaster_ = true;
             if (onMasterSelect) onMasterSelect();
         }
@@ -2557,6 +2715,25 @@ private:
             phraseDestButtons_[static_cast<std::size_t> (idx)].get()));
     }
 
+    void showMonDestinationMenu (int idx)
+    {
+        if (idx < 0 || idx >= monStripCount()) return;
+        if (idx >= static_cast<int> (monChoices_.size())) return;
+        const auto& choices = monChoices_[static_cast<std::size_t> (idx)];
+        if (choices.empty()) return;
+        const auto& cur = monStripDests_[static_cast<std::size_t> (idx)];
+        juce::PopupMenu menu;
+        for (const auto& choice : choices)
+        {
+            const bool ticked = destMatches (choice, cur);
+            const DestChoice d = choice;
+            menu.addItem (choice.name, /*enabled*/ true, ticked,
+                          [this, idx, d] { if (onMonDestinationChosen) onMonDestinationChosen (idx, d); });
+        }
+        menu.showMenuAsync (juce::PopupMenu::Options{}.withTargetComponent (
+            monDestButtons_[static_cast<std::size_t> (idx)].get()));
+    }
+
     /// Per-aux-strip context menu — currently just "Rename…". Triggered by
     /// the StripContextOverlay's right-click or long-press gesture.
     void showBusContextMenu (int idx)
@@ -2597,6 +2774,16 @@ private:
     std::vector<StripDest>                                     phraseStripDests_;
     std::vector<std::vector<DestChoice>>                       phraseChoices_;
 
+    // MON-channel row (V9 §6.3.1 / §7.2) — LEFTMOST band, in input-strip
+    // row order. Auto-created peer of phrase channels: appears when an
+    // input strip flips MON on, vanishes when MON is off. Same shape as
+    // the phrase row.
+    std::vector<std::unique_ptr<otto::ui::CompactFaderStrip>>  monStrips_;
+    std::vector<std::unique_ptr<juce::TextButton>>             monDestButtons_;
+    std::vector<std::unique_ptr<juce::TextButton>>             monInsButtons_;
+    std::vector<StripDest>                                     monStripDests_;
+    std::vector<std::vector<DestChoice>>                       monChoices_;
+
     // Tabbed detail panel (slice U + slice EC + slice EC-Polish). One of
     // selectedPhrase_ / selectedBus_ / selectedMaster_ is "active" at a time;
     // others sit at sentinel values. Mutual exclusion is enforced in
@@ -2604,6 +2791,7 @@ private:
     ida::ui::ChannelDetail                                     detailPanel_;
     int                                                        selectedPhrase_ { -1 };
     int                                                        selectedBus_    { -1 };
+    int                                                        selectedMon_    { -1 };
     bool                                                       selectedMaster_ { false };
     std::vector<std::unique_ptr<juce::TextButton>>             channelPills_;
     /// Back button — only visible in EQ/CMP full-screen mode. Clicking
