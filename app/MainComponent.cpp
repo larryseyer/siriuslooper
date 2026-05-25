@@ -3980,6 +3980,22 @@ MainComponent::MainComponent()
             // Output Mixer pane needs to gain/lose a visible strip in lockstep.
             refreshOutputMixerMonChannels();
         };
+        // V9 §7.2 (2026-05-25) — bus-row MON relay. Mirror of `onMonitorModeChanged`
+        // above, addressing the bus by busStripIds_[busIdx] and routing through
+        // `setBusMonitorMode`. The audio-callback bracket is required because
+        // `setBusMonitorMode` mutates the OutputMixer's channel registry (addChannel /
+        // removeChannel are message-thread only).
+        inputMixerPane_->onBusMonitorModeChanged = [this] (int busIdx, ida::MonitorMode mode)
+        {
+            if (busIdx < 0 || busIdx >= static_cast<int> (busStripIds_.size())) return;
+            const auto busId = busStripIds_[static_cast<std::size_t> (busIdx)];
+            audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+            inputMixer_->setBusMonitorMode (busId, mode);
+            audioDeviceManager_.addAudioCallback (audioCallback_.get());
+
+            // The Output Mixer pane gains / loses a MON-band strip in lockstep.
+            refreshOutputMixerMonChannels();
+        };
         inputMixerPane_->onBusRename = [this] (int busIdx, juce::String newName)
         {
             if (busIdx < 0 || busIdx >= static_cast<int> (busStripIds_.size())) return;
