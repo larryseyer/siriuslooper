@@ -10,6 +10,12 @@
    the 4-task plan that executed in this chat. All four tasks ✅.
 3. Prior chat's V9 conformance work landed at `bd1c487` (8 slices, 710/710).
    That handoff has been superseded; nothing to read there.
+4. **`docs/superpowers/plans/2026-05-24-mon-phrase-followups.md`** — the
+   queued plan that rolls up the three follow-ups in §5 below (phrase
+   gain/mute wiring + session-load `inputStripChannelIds_` investigation
+   + MON detail panel). Drafted at the end of this chat; ready to execute
+   in a new chat via `superpowers:executing-plans` or
+   `superpowers:subagent-driven-development`.
 
 ---
 
