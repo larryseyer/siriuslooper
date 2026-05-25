@@ -7293,6 +7293,20 @@ void MainComponent::chooseFileAndLoad()
                                     inputMixer_->setChannelMonitorMode (
                                         ida::ChannelId (c.channelId),
                                         ida::MonitorMode::On);
+                        // V9 §7.2 (2026-05-25) — same MON-replay treatment for
+                        // input buses. importGraphState above ran before this
+                        // OutputMixer attachment, so per-bus MON state was
+                        // tracked but no OutputMixer channels were minted. Now
+                        // that the attachment is live, replay every MON-on bus
+                        // — setBusMonitorMode(On) is idempotent and mints the
+                        // auto-created OutputMixer channel (+ its ChannelStrip)
+                        // for any bus whose route was deferred.
+                        if (loadedInputMixer.has_value())
+                            for (const auto& b : loadedInputMixer->buses)
+                                if (b.monitorMode == ida::MonitorMode::On)
+                                    inputMixer_->setBusMonitorMode (
+                                        ida::BusId (b.busId),
+                                        ida::MonitorMode::On);
                         // V9 follow-up: realign inputStripChannelIds_ to the
                         // loaded channel ids so refreshOutputMixerMonChannels()
                         // resolves the freshly-imported MON state. The strip
