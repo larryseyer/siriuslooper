@@ -598,6 +598,10 @@ public:
     /// MainComponent applies it via `InputMixer::setChannelMonitorMode` inside
     /// the audio-callback-detached bracket (same pattern as `onDestinationChosen`).
     std::function<void (int idx, ida::MonitorMode mode)> onMonitorModeChanged;
+    /// Operator toggled MON on bus row `busIdx`. `mode` is the new MonitorMode
+    /// (Off/On). MainComponent applies it via `InputMixer::setBusMonitorMode`
+    /// inside the same audio-callback bracket the channel-row handler uses.
+    std::function<void (int busIdx, ida::MonitorMode mode)> onBusMonitorModeChanged;
     /// The INS button on bus strip `busIdx` was clicked. Same shape as the channel
     /// callback; MainComponent reads the bus's EffectChain instead of a channel's.
     std::function<void (int busIdx)>                   onBusInsertChainClicked;
@@ -809,6 +813,8 @@ public:
         busStrips_.clear();
         busDestButtons_.clear();
         busStripInsButtons_.clear();
+        busMonitorButtons_.clear();
+        busMonitorModes_.clear();
         busNameOverlays_.clear();
         busStripDests_.clear();
         busChoices_.clear();
@@ -850,6 +856,20 @@ public:
             };
             addAndMakeVisible (*ins);
             busStripInsButtons_.push_back (std::move (ins));
+
+            // V9 §7.2 (2026-05-25) — MON button on the bus row. Same shape as the
+            // channel-row MON button (search for `monitorButtons_` in this file):
+            // two-state toggle, default Off, single-click flips. Without this an
+            // input aux bus that sums signals has no architectural path to be heard
+            // (whitepaper §6.6 + §7.2).
+            auto mon = std::make_unique<juce::TextButton>();
+            mon->setButtonText ("Off");
+            mon->setTooltip ("MON off — you do not hear this bus through IDA. "
+                             "Click to enable monitoring.");
+            mon->onClick = [this, idx] { toggleBusMonitorModeAt (idx); };
+            addAndMakeVisible (*mon);
+            busMonitorButtons_.push_back (std::move (mon));
+            busMonitorModes_.push_back (ida::MonitorMode::Off);
 
             // Strip context overlay — invisible click-catcher on the bus/FX-return
             // strip's top name band. Right-click (desktop) + 500 ms long-press (iOS)
@@ -1037,6 +1057,7 @@ public:
             for (auto& s : busStrips_)           s->setVisible (false);
             for (auto& b : busDestButtons_)      b->setVisible (false);
             for (auto& b : busStripInsButtons_)  b->setVisible (false);
+            for (auto& b : busMonitorButtons_)   b->setVisible (false);
             for (auto& o : busNameOverlays_)     o->setVisible (false);
 
             // Channel pill row at the bottom of the pane — slice EC-Polish-fix.
@@ -1095,6 +1116,7 @@ public:
         for (auto& s : busStrips_)           s->setVisible (true);
         for (auto& b : busDestButtons_)      b->setVisible (true);
         for (auto& b : busStripInsButtons_)  b->setVisible (true);
+        for (auto& b : busMonitorButtons_)   b->setVisible (true);
         for (auto& o : busNameOverlays_)     o->setVisible (true);
         for (auto& p : channelPills_)        if (p) p->setVisible (false);
         if (backButton_) backButton_->setVisible (false);
@@ -1137,9 +1159,9 @@ public:
         // Bus / FX-return strips sit to the right of the channel strips, after a
         // wider divider gap. Each gets a picker button in the same bottom band as
         // the channel pickers (pickerRow has tracked the column cursor in lock-step).
-        // Buses have no Monitor button — the per-channel direct-layer decision
-        // lives on input channels per whitepaper §7.1 ("A channel can ... feed
-        // direct ..."), not on intermediate subgroups.
+        // V9 §7.2 (2026-05-25) — bus rows now carry their own MON button in the
+        // monitorRow band, parallel to the channel-row MON. Input aux buses sum
+        // signals (whitepaper §6.6) and need an architectural path to be heard.
         if (busStripCount() > 0)
         {
             area.removeFromLeft (kGroupDividerW);       // visual divider between the two groups
@@ -1156,6 +1178,7 @@ public:
             if (i < static_cast<int> (busNameOverlays_.size()))
                 busNameOverlays_[static_cast<std::size_t> (i)]->setBounds (
                     stripBounds.withHeight (kNameOverlayHeight));
+            busMonitorButtons_[static_cast<std::size_t> (i)]->setBounds (monitorRow.removeFromLeft (kStripW));
             busStripInsButtons_[static_cast<std::size_t> (i)]->setBounds (insRow.removeFromLeft (kStripW));
             busDestButtons_[static_cast<std::size_t> (i)]->setBounds (pickerRow.removeFromLeft (kStripW));
             area.removeFromLeft (kGap);
@@ -1479,6 +1502,53 @@ private:
         setMonitorModeAt (idx, next, /*notify*/ true);
     }
 
+    /// Mirror of `setMonitorModeAt` for bus rows. Updates the button label /
+    /// tooltip and (if `notify`) fires `onBusMonitorModeChanged`. V9 §7.2: two-
+    /// state toggle (Off ↔ On).
+    void setBusMonitorModeAt (int idx, ida::MonitorMode mode, bool notify)
+    {
+        if (idx < 0 || idx >= static_cast<int> (busMonitorButtons_.size())) return;
+        busMonitorModes_[static_cast<std::size_t> (idx)] = mode;
+
+        juce::String label, tooltip;
+        switch (mode)
+        {
+            case ida::MonitorMode::Off:
+                label   = "Off";
+                tooltip = "MON off — you do not hear this bus through IDA. "
+                          "Click to enable monitoring.";
+                break;
+            case ida::MonitorMode::On:
+                label   = "MON";
+                tooltip = "MON on — you hear this bus through IDA, "
+                          "post-processing. Click to disable monitoring.";
+                break;
+        }
+        busMonitorButtons_[static_cast<std::size_t> (idx)]->setButtonText (label);
+        busMonitorButtons_[static_cast<std::size_t> (idx)]->setTooltip (tooltip);
+        if (notify && onBusMonitorModeChanged) onBusMonitorModeChanged (idx, mode);
+    }
+
+    /// One-click flip from current mode (Off → On / On → Off).
+    void toggleBusMonitorModeAt (int idx)
+    {
+        if (idx < 0 || idx >= static_cast<int> (busMonitorModes_.size())) return;
+        const auto next = busMonitorModes_[static_cast<std::size_t> (idx)] == ida::MonitorMode::Off
+                              ? ida::MonitorMode::On
+                              : ida::MonitorMode::Off;
+        setBusMonitorModeAt (idx, next, /*notify*/ true);
+    }
+
+    /// Refresh button states from the engine — called by `refreshInputMixer`
+    /// after any structural change (load, bus add/remove). `modes` is parallel
+    /// to `busStrips_`.
+    void setBusMonitorModes (const std::vector<ida::MonitorMode>& modes)
+    {
+        const int n = std::min ((int) modes.size(), (int) busMonitorButtons_.size());
+        for (int i = 0; i < n; ++i)
+            setBusMonitorModeAt (i, modes[static_cast<std::size_t> (i)], /*notify*/ false);
+    }
+
 
     std::vector<std::unique_ptr<otto::ui::CompactFaderStrip>> strips_;
     std::vector<std::unique_ptr<juce::TextButton>>            destButtons_;
@@ -1515,6 +1585,10 @@ private:
     std::vector<std::unique_ptr<juce::TextButton>>            busDestButtons_;
     /// Per-bus-strip INS buttons (P7 T5 slice 5). Parallel to busStrips_.
     std::vector<std::unique_ptr<juce::TextButton>>            busStripInsButtons_;
+    /// V9 §7.2 (2026-05-25) — per-bus-strip MON button. Parallel to busStrips_.
+    /// Click toggles Off ↔ On (mirror of `monitorButtons_` on the channel row).
+    std::vector<std::unique_ptr<juce::TextButton>>            busMonitorButtons_;
+    std::vector<ida::MonitorMode>                             busMonitorModes_;
     /// Per-bus-strip rename overlays (slice 4). Parallel to busStrips_.
     std::vector<std::unique_ptr<ida::app::StripContextOverlay>> busNameOverlays_;
     std::vector<StripDest>                                    busStripDests_;
