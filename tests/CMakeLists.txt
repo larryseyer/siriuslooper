@@ -12,6 +12,7 @@ add_executable(IdaTests
     TapePoolTests.cpp
     TapePoolMirrorTests.cpp
     PromotionTests.cpp
+    FileInputDescriptorTests.cpp
     InputDescriptorTests.cpp
     RepetitionRulesTests.cpp
     PhraseTests.cpp
