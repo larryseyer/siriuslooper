@@ -222,6 +222,8 @@ TEST_CASE ("InputMixer file-input channel renders silence when registry doesn't 
 
     const float* postL = mixer.postStripPointer (channelId, 0);
     const float* postR = mixer.postStripPointer (channelId, 1);
+    REQUIRE (postL != nullptr);
+    REQUIRE (postR != nullptr);
     for (int n = 0; n < numFrames; ++n)
     {
         REQUIRE (postL[n] == Catch::Approx (0.0f));
