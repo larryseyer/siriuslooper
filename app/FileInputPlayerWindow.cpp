@@ -609,7 +609,6 @@ void FileInputPlayerWindow::showCustomOpacityDialog()
                     const float a = juce::jlimit (0.5f, 1.0f,
                                                   static_cast<float> (sliderOwned->getValue()));
                     registry_.setFileInputWindowOpacity (id_, a);
-                    // No setAlpha — Content::paint already reads the descriptor.
                 }
                 else
                 {

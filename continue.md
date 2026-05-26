@@ -1,69 +1,71 @@
-# Session Continuation — file-input AUDIO ROUTING slice CLOSED; 4 follow-ons queued in todo.md
+# Session Continuation — file-input PLAYER WINDOW POLISH slice CLOSED; 3 follow-ons queued in todo.md
 
 ## ▶ 0. Read these first (60 seconds)
 
-1. **The file-input audio-routing slice is done.** Press ▶ on a file-input
-   player window → audio reaches the speakers. Operator-verified on
-   `ebab565` (2026-05-26): "Tape play works." The predecessor file-input
-   slice (UI + registry + worker, closed at `aa67fcd`) had the engine
-   wiring as its honestly-deferred follow-on; this slice closes it.
-2. **Baseline.** `master` at `ebab565`, local == origin (confirm with
-   `git log -1 --oneline` and `git status --short`). Pre-existing
-   `IDA_Naming_Decision.md` rename is unrelated, leave it.
-3. **Test surface.** `ctest --test-dir build -E "(PluginEditor|MainComponentPlug)" -j` → **773 / 773** (baseline 762 + 11 new from Tasks 2-5 of this slice: 3 in `FileInputSourceTests`, 1 in `FileInputRegistryTests`, 7 in the new `InputMixerFileInputTests`). Allow 3 transient flakes (#279 OOP-host / #350 stateBlobForSlot / #756 Bus-process-OOP) — all pass on `--rerun-failed`. `./build/tests/IdaTests "[file-input]"` → 35 cases / ~2800 assertions.
-4. **Four follow-ons surfaced during operator eyes-on (2026-05-26).** All
-   four are in `todo.md` with full design notes; operator's direction:
-   "spec them." Order of complexity (smallest → largest):
-   - (A) Player window: frameless + semi-transparent + always-on-top.
-   - (B) Transport sync (LMC start/stop/ignore).
-   - (C) File-input MIDI source.
-   - (D) File-input Video source.
+1. **The file-input player window polish slice is done.** Window is now
+   frameless, semi-transparent background (controls stay sharp), drag
+   anywhere on background to move, close via right-click "Close window" or
+   Cmd-W/Ctrl-W, and a persisted "Always on top" pin toggle. This closes
+   follow-on (A) from the previous handoff — 3 follow-ons remain (B/C/D).
+2. **Baseline.** `master` at the wrap-up commit (confirm with
+   `git log -1 --oneline` and `git status --short`).
+3. **Test surface.** `ctest --test-dir build -E "(PluginEditor|MainComponentPlug)" -j`
+   → **776 / 776** (baseline 773 + 3 new from this slice: 1 in
+   `FileInputRegistryTests` for the setter, 2 in `FileInputPersistenceTests`
+   for round-trip + missing-key default). Allow up to 3 transient flakes
+   (identity varies — #279 / #350 / #756 / #70 / #413 / #598 / #215 / #739
+   all observed; all pass on `--rerun-failed`).
+4. **3 follow-ons remain** (queued in `todo.md`, dated 2026-05-26):
+   - (B) Transport sync (LMC start/stop/ignore) — medium
+   - (C) File-input MIDI source — medium-large
+   - (D) File-input Video source — largest
 
 ---
 
-## ▶ 1. What landed (audio-routing slice — Tasks 1–6)
+## ▶ 1. What landed (player window polish slice — T1–T8 + 2 follow-ons)
 
-Spec + plan (`e313e34` + `4c06d86`) preceded the slice. 10 commits, chronological:
+Spec + plan (`be9e688` + `2898716`) preceded the slice. 10 commits, chronological:
 
 | Commit | Task | Subject |
 |---|---|---|
-| `602f035` | T1 | core — IFileInputSourceRegistry interface + kFileInputIdBase constant |
-| `c5c7507` | T1↻ | core — kFileInputIdBase uses inline constexpr (avoid per-TU internal linkage) |
-| `b4f9343` | T2 | audio — FileInputSource raw-pointer pullInto overload + pullIntoStatic thunk |
-| `f366a0a` | T3 | audio — FileInputRegistry implements IFileInputSourceRegistry |
-| `d9f0922` | T4 | engine — InputMixer file-input dispatch via cached FileInputPullCallable |
-| `9b5b179` | T4↻ | engine — InputMixer file-input loop runs when deviceIn is null + clarify RT-safety contract comment |
-| `ffc1412` | T5 | test — InputMixer file-input dispatch edge cases (no-registry, unknown id, mixed, multi-call, false-return) |
-| `c68210e` | T5↻ | test — case 6 also verifies recovery after pull returns false (per spec) |
-| `4b75a0f` | T5↻ | test — add postStripPointer null guards to file-input unknown-id case |
-| `ebab565` | T6 | app — wire FileInputRegistry into InputMixer; file-input audio now reaches speakers |
+| `7097541` | T1   | app — file-input player window honours Cmd-W / Ctrl-W close |
+| `71183e8` | T2   | app — file-input player right-click menu gains 'Close window' |
+| `a87f8b8` | T3   | app — file-input player window drags via ComponentDragger on Content |
+| `d98d870` | T3↻  | app — forward right-click from Content to parent's context menu + guard mouseDrag |
+| `e3d4830` | T4   | app — file-input player window is frameless with bg-only windowOpacity (controls stay sharp) |
+| `4a15f47` | T4↻  | app — file-input player uses getDesktopWindowStyleFlags + transparent parent bg |
+| `d02aac1` | T5   | core — FileInputDescriptor gains persisted alwaysOnTop field |
+| `1747a50` | T6   | audio — FileInputRegistry::setFileInputAlwaysOnTop + unit test |
+| `9115aef` | T7   | persistence — FileInputDescriptor.alwaysOnTop round-trips through session JSON |
+| `0222c50` | T8   | app — file-input player window pins via 'Always on top' menu toggle (persisted) |
 
-(↻ = code-quality-review follow-on. Every task ran through implementer → spec review → code-quality review per `superpowers:subagent-driven-development`.)
+(↻ = code-quality review follow-on. Each task ran through implementer → spec review → code-quality review per `superpowers:subagent-driven-development`. T3↻ closed a real regression — JUCE doesn't bubble mouseDown to parents, so right-click on Content background would have lost the context menu once T4 dropped the title bar. T4↻ closed two real Criticals — `addToDesktop(flags)` violates `TopLevelWindow`'s contract; the parent's `fillResizableWindowBackground` drowned out Content's alpha until `setBackgroundColour(...withAlpha(0.0f))` made the parent fill transparent.)
 
-**Where the engine pull happens:** `engine/src/InputMixer.cpp` `renderInputGraph` has a parallel loop over `channelFilePulls_` (a map of `ChannelId → FileInputPullCallable`) that invokes the cached function pointer, silence-fills on false return, then runs strip + routing exactly like the device-input loop. The device-input loop is now wrapped in `if (deviceIn != nullptr && numDeviceChannels > 0)` so the file-input loop survives the headless / no-device scenario.
+**Where the chrome lives:** `app/FileInputPlayerWindow.cpp` ctor sets `setUsingNativeTitleBar(false)`, `setTitleBarHeight(0)`, `setOpaque(false)`, `setBackgroundColour(getBackgroundColour().withAlpha(0.0f))`, then reads `d->alwaysOnTop` from the registry and calls `setAlwaysOnTop(...)`. A `getDesktopWindowStyleFlags()` override ORs `windowIsSemiTransparent` into the base flag set; JUCE's `TopLevelWindow::recreateDesktopWindow()` calls it automatically when `setUsingNativeTitleBar(false)` triggers peer recreation.
 
-**Where the JUCE-free seam lives:** `engine/include/ida/IFileInputSourceRegistry.h` defines `FileInputPullCallable { fn, userdata }` (POD; `noexcept` function pointer) + `IFileInputSourceRegistry` (1 pure-virtual). `FileInputRegistry` (audio/) implements it; resolution happens on the message thread at `setChannelFileInputSource` time and caches the callable. Audio thread never touches the registry.
+**Where the bg paint lives:** `Content::paint` reads `windowOpacity` from the descriptor each frame and does `g.fillAll(bg.withAlpha(alpha))`. The parent's `ResizableWindow::paint` now paints a transparent fill, so Content's alpha is the only visible background. All `setAlpha()` calls are gone from the file.
 
-**Where the app wiring lives:** `app/MainComponent.cpp` MainComponent ctor calls `inputMixer_->setFileInputSourceRegistry(&fileInputRegistry_)` once (alongside the other one-shot setters). `rebuildInputStrips()` calls `inputMixer_->setChannelFileInputSource(channelId, inputId)` for file-input strips (vs. `setChannelInputSource` for hardware). Both setters run inside the existing `removeAudioCallback / addAudioCallback` bracket that `rebuildInputStrips()` already provides.
+**Where drag-to-move lives:** `Content::mouseDown` calls `dragger_.startDraggingComponent(getTopLevelComponent(), e)` on left-click; `Content::mouseDrag` calls `dragger_.dragComponent(...)`. Right-click on `mouseDown` forwards to the parent's `showOpacityMenu()` via `findParentComponentOfClass` (necessary because JUCE doesn't bubble unconsumed mouseDown). `mouseDrag` is guarded against `isPopupMenu` so a right-click drag doesn't call `dragComponent` without a matching `startDraggingComponent`.
 
-**Why no extra bracket on `registerFileInput`:** `FileInputRegistry::sources_` is `unordered_map<int64_t, unique_ptr<FileInputSource>>`. Rehash moves the unique_ptr but NOT the pointee. The audio thread's cached `FileInputSource*` (via channelFilePulls_'s userdata) remains valid across registry rehashes. The cached-callable installation happens via `rebuildInputStrips()` which already brackets the audio callback.
+**Where close lives:** `keyPressed` matches `KeyPress('w', commandModifier, 0)` → `closeButtonPressed()` (one branch covers Cmd-W on macOS and Ctrl-W elsewhere). `showOpacityMenu` builds a root menu of `[Close window] [—separator—] [Always on top toggle] [Window opacity ▸]`. Both routes call the same `closeButtonPressed()` that the (now-gone) title-bar X used to.
+
+**Where always-on-top lives:**
+- Field: `core/include/ida/FileInputDescriptor.h::FileInputDescriptor::alwaysOnTop { false }`
+- Setter: `audio/src/FileInputRegistry.cpp::setFileInputAlwaysOnTop(id, bool)` — descriptor mutation only, message-thread
+- Persistence: `audio/src/FileInputPersistence.cpp` writes `alwaysOnTop` alongside `windowOpacity`; reads with `false` default (back-compat for sessions saved before this slice)
+- Window apply: ctor reads on construction; menu toggle flips registry + mirrors via `setAlwaysOnTop` on `this`
 
 ---
 
-## ▶ 2. The 4 follow-ons surfaced 2026-05-26 (queued in todo.md)
+## ▶ 2. The 3 follow-ons remaining (queued in todo.md)
 
-Operator played a file → audio works → identified 4 gaps:
+The previous handoff listed 4 follow-ons; (A) Player window polish closed in this slice. Remaining, in recommended order:
 
-### (A) Player window: frameless + semi-transparent + always-on-top — **smallest, recommended next**
-- Remove macOS title bar / traffic-light controls; show as a floating semi-transparent IDA source surface, not a stock OS window.
-- Add an "always on top" toggle (so the player doesn't get lost behind other windows).
-- 4 open design questions (close gesture, drag-to-move, transparency level, cross-platform parity).
-- Likely 2 small commits.
-
-### (B) Transport sync (LMC start/stop/ignore) — medium
+### (B) Transport sync (LMC start/stop/ignore) — medium, recommended next
 - File-input playback can sync to IDA's transport (LMC). Operator said "start/stop/ignore" — 3 modes.
 - Per-file-input `TransportSyncMode` field; persists in FileInputDescriptor.
 - 6 open design questions (mode enum shape, default, pause-vs-rewind on stop, playlist interaction, persistence, UI).
+- Lands well before (C) and (D) because both want transport sync from day one.
 
 ### (C) File-input MIDI source — medium-large
 - Whitepaper §6.6: file inputs are playlists of audio AND MIDI. Current slice ships only audio.
@@ -72,40 +74,30 @@ Operator played a file → audio works → identified 4 gaps:
 
 ### (D) File-input Video source — largest
 - Whitepaper §6.6 (implied): video as a file input. Adds a display surface + frame timing + audio sub-track.
-- New `FileVideoInputSource` + a video display surface (probably a floating window like the audio player).
+- New `FileVideoInputSource` + a video display surface (probably a floating window like the audio player — now with the chrome treatment this slice landed).
 - 5 open design questions (display surface model, audio sub-track path, A/V sync clock, codec support, RT discipline).
 
-Full design notes in `todo.md` (top 4 entries dated 2026-05-26). Each entry lists files, open design questions, and "what's needed to finish" so the brainstorm session starts with full context.
+Full design notes in `todo.md` (top 3 entries dated 2026-05-26). Each entry lists files, open design questions, and "what's needed to finish" so the brainstorm session starts with full context.
 
 ---
 
-## ▶ 3. Architectural deviations from the audio-routing plan (carry forward)
+## ▶ 3. Architectural notes from this slice (carry forward)
 
-### Deviation A — `IFileInputSourceRegistry.h` lives in `engine/`, not `core/`
+### Note A — `getDesktopWindowStyleFlags()` is the JUCE escape hatch, NOT explicit `addToDesktop(flags)`
 
-**Why:** the spec said "create `core/include/ida/IFileInputSourceRegistry.h`" but `Channel.h` (which defines `InputId`, required by the interface) actually lives in `engine/include/ida/`. Placing the new header in `core/` would force `core` to depend on `engine`, inverting the layer order. The interface stays JUCE-free (only includes `Channel.h`); `audio/` PUBLIC-links `Ida::Engine` already, so consuming the engine-located interface is the existing dependency direction. Code reviewer initially flagged this as Critical; verified by inspection that the reviewer's premise (audio doesn't link engine) was wrong — audio's `FileInputRegistry.h` has been including engine's `Channel.h` since the predecessor slice.
+The initial spec prescribed an explicit `addToDesktop(windowIsSemiTransparent | windowHasDropShadow)` call. This violates `TopLevelWindow`'s contract: the base ctor already adds the window with full flags, and an explicit re-call strips taskbar/minimise/close/resizable flags (and fires a jassert in Debug). The correct pattern — used in T4↻ — is to override `getDesktopWindowStyleFlags()` and OR in any custom flags; `TopLevelWindow::recreateDesktopWindow()` (triggered by `setUsingNativeTitleBar(false)`) calls the override automatically. Use this pattern for any future JUCE `TopLevelWindow` subclass that needs custom peer flags.
 
-A future cleanup could move BOTH `Channel.h` and the interface to `core/` (an existing TODO comment on `InputId` already anticipates this). Out of scope for this slice; flagged for a future "promote core types" pass.
+### Note B — `setOpaque(false)` is NOT enough for a semi-transparent JUCE window
 
-### Deviation B — Parallel `channelFilePulls_` map (not embedded callable on channel state struct)
+`ResizableWindow::paint` (parent of `DocumentWindow`) fills the whole window with the bg colour BEFORE any child paint runs. If the bg colour is opaque, the child's per-pixel alpha is invisible inside the content area — only the chrome border reads as translucent. The fix (also from T4↻) is `setBackgroundColour(getBackgroundColour().withAlpha(0.0f))` in the ctor; this makes the parent's fill a transparent no-op, so the child's alpha-fill is the only visible bg.
 
-**Why:** the spec said "add a `FileInputPullCallable` field to the channel-state struct." The implementer chose a parallel `std::unordered_map<ChannelId, FileInputPullCallable> channelFilePulls_` keyed by ChannelId, sibling to the existing `channelSources_` and `channelPreFaderSends_` maps. Stated rationale: matches the existing pattern; keeps the device-input gather loop byte-identical; disjoint maps process disjoint channels.
+### Note C — JUCE mouseDown does NOT bubble to parents
 
-`removeChannel` erases from `channelFilePulls_` alongside the other sibling maps — verified for correctness during spec review.
+If a child overrides `mouseDown` and returns without consuming, the event does NOT propagate up. `Component::mouseDown`'s default is empty, so a child component with NO override sees the same effect: the event is "handled" by the child being dispatched to. Parent `mouseDown` handlers only fire for clicks the OS routes directly to the parent (title bar, chrome). When you need parent-level handling for events that hit a child, the child must forward explicitly. Pattern used in T3↻: child uses `findParentComponentOfClass<ParentType>()` and calls a public method on the parent.
 
-### Deviation C — Separate parallel loop in `renderInputGraph` (not `if/else` branch)
+### Note D — Test files live at `/Users/larryseyer/IDA/tests/`
 
-**Why:** the spec said "branch on `channel.filePull.valid()`" inside the existing per-channel gather loop. The implementer chose two disjoint loops — first the device-input loop over `channelSources_`, then the file-input loop over `channelFilePulls_`. Stated rationale: a channel can be in only one map at a time (the setters are mutually exclusive by call-site contract), so the two loops process disjoint sets — no double-processing risk. Strip + routing + sends tail is byte-for-byte identical between the two loops.
-
-The downside is that any future change to the strip+routing tail must be applied to both loops symmetrically. Documented in the source.
-
-### Deviation D — Persistence not touched
-
-**Why:** `channelFilePulls_` does NOT go through `exportGraphState`/`importGraphState`. The persisted graph carries the channel's InputId; on session load, `MainComponent::rebuildInputStrips()` re-binds the cached callable by calling `inputMixer_->setChannelFileInputSource(channelId, inputId)`. The pull callable is derived state, not authoritative state.
-
-### Deviation E — Test pan-law adjustment
-
-**Why:** the plan's primary test asserted exact values `0.25f` / `-0.75f` at the post-strip pointer. `ChannelStrip<Audio>::process` applies equal-power center-pan (cos(π/4) ≈ 0.70710677), so post-strip values are scaled by that gain. All 7 file-input edge-case tests use a `constexpr float kPanGain = 0.70710677f` constant with `.margin(1e-5f)` on the scaled comparisons. The constant could be hoisted to file scope in a future cleanup (current pattern is per-case).
+`audio/tests/` does not exist in this repo despite what the initial spec said. All Catch2 tests live at the repo root's `tests/` directory. Plan footnoted this; spec corrected in wrap-up commit.
 
 ---
 
@@ -114,32 +106,33 @@ The downside is that any future change to the strip+routing tail must be applied
 | Check | Result |
 |---|---|
 | Branch | `master`, local == origin |
-| HEAD | `ebab565` (verify with `git log -1 --oneline`) |
-| `git status --short` | only the pre-existing `IDA_Naming_Decision.md` rename — unrelated |
-| `ctest --test-dir build -E "(PluginEditor\|MainComponentPlug)" -j` | **773 / 773** (baseline 762 + 11 from this slice; 3 transient flakes pass on `--rerun-failed`) |
-| `./build/tests/IdaTests "[file-input]"` | 35 cases / ~2800 assertions all pass |
-| Operator eyes-on | **Confirmed 2026-05-26: "Tape play works."** Audio reaches speakers. |
+| HEAD | wrap-up commit (verify with `git log -1 --oneline`) |
+| `git status --short` | clean (only the pre-existing `IDA_Naming_Decision.md` rename — unrelated, leave it) |
+| `ctest --test-dir build -E "(PluginEditor\|MainComponentPlug)" -j` | **776 / 776** (baseline 773 + 3 from this slice; transient flakes pass on `--rerun-failed`) |
+| `./build/tests/IdaTests "[file-input]"` | 41 cases / ~3810 assertions, all pass |
+| Operator eyes-on | **Pending.** Operator should verify the chrome treatment (frameless, semi-transparent bg, controls sharp) and the always-on-top pin survives a session reload. |
 
 ---
 
 ## ▶ 5. Resume protocol for next chat
 
 1. Read this file (you're doing it).
-2. Pick one of the 4 follow-ons in §2 to brainstorm/spec/implement. **Recommended order:**
-   - **(A) Player window polish** first — smallest scope, operator already articulated the constraints, lowest risk. Lands a clean UX win quickly.
-   - **(B) Transport sync** second — closes a real functional gap and unlocks (C)/(D) later (since MIDI + video both want transport sync from day one).
-   - **(C) MIDI** third — natural sister to audio; reuses most of the FileInputSource architecture; SignalType::Midi already exists.
+2. Operator-verify the chrome polish if not already done.
+3. Pick one of the 3 remaining follow-ons. **Recommended order:**
+   - **(B) Transport sync** first — closes a real functional gap; unlocks (C) and (D) which both want transport sync from day one.
+   - **(C) MIDI** second — natural sister to audio; reuses most of `FileInputSource` architecture; `SignalType::Midi` already exists.
    - **(D) Video** last — biggest scope; new display surface; new media pipeline.
-3. For whichever follow-on the operator picks: invoke `superpowers:brainstorming` against the relevant `todo.md` entry. The entries list the open design questions and the anticipated file surface — brainstorm starts with full context, not from zero.
-4. After brainstorm → spec → plan → subagent-driven implementation, per the file-input slice precedent.
+4. For whichever follow-on the operator picks: invoke `superpowers:brainstorming` against the relevant `todo.md` entry. The entries list the open design questions and the anticipated file surface — brainstorm starts with full context, not from zero.
+5. After brainstorm → spec → plan → subagent-driven implementation, per the precedent.
 
-Reference docs for any of the 4 follow-ons:
-- Audio file-input architecture: `docs/superpowers/specs/2026-05-25-file-input-design.md` + `docs/superpowers/specs/2026-05-26-file-input-audio-routing-design.md`
-- Operator UI: `app/FileInputPlayerWindow.{h,cpp}` (audio player window — model for MIDI/video variants)
-- Engine seam: `engine/include/ida/IFileInputSourceRegistry.h` (1-method JUCE-free interface — MIDI/video can reuse the same pattern with their own sister interfaces)
+Reference docs:
+- Player window chrome + always-on-top: `docs/superpowers/specs/2026-05-26-file-input-player-window-polish-design.md` + plan `docs/superpowers/plans/2026-05-26-file-input-player-window-polish.md`
+- Audio file-input architecture: `docs/superpowers/specs/2026-05-25-file-input-design.md` + `2026-05-26-file-input-audio-routing-design.md`
+- Operator UI: `app/FileInputPlayerWindow.{h,cpp}` (model for MIDI/video player variants — the chrome treatment is reusable)
+- Engine seam: `engine/include/ida/IFileInputSourceRegistry.h` (MIDI/video can reuse this 1-method pattern with their own sister interfaces)
 - LMC (for transport sync): `engine/include/ida/Lmc.h`
 - Whitepaper: `docs/IDA_Whitepaper_V9.md` §6.6 (file inputs are playlists), §7.2 (the playlist scope semantics)
 
 ---
 
-*End of slice. Audio file-input plays end-to-end. Four follow-ons queued; operator picks order next session.*
+*End of slice. Player window is operator-pleasant. Three follow-ons queued; (B) Transport sync is the natural next pick.*

@@ -37,9 +37,10 @@ Today's `windowOpacity` ∈ [0.5, 1.0] calls `setAlpha()` which dims the **whole
 
 Implementation:
 
-- In the `DocumentWindow` ctor, before `setVisible(true)`, call `setOpaque(false)` and `addToDesktop(juce::ComponentPeer::windowIsSemiTransparent | juce::ComponentPeer::windowHasDropShadow)`. JUCE on macOS honours this by creating the peer with `NSWindow.opaque = NO` so per-pixel alpha works.
+- Override `FileInputPlayerWindow::getDesktopWindowStyleFlags()` to OR `juce::ComponentPeer::windowIsSemiTransparent` into `juce::DocumentWindow::getDesktopWindowStyleFlags()`. `TopLevelWindow::recreateDesktopWindow()` (triggered automatically by `setUsingNativeTitleBar(false)` in the ctor) calls this override and creates the peer with the full DocumentWindow flag set plus our semi-transparent flag. (Initial draft prescribed an explicit `addToDesktop(flags)` call, which violates `TopLevelWindow`'s contract — fires a jassert in Debug, strips taskbar/minimise/close/resizable flags in Release. The override pattern is the documented JUCE escape hatch.)
+- In the ctor, call `setOpaque(false)` followed by `setBackgroundColour(getBackgroundColour().withAlpha(0.0f))`. The second call is load-bearing: `ResizableWindow::paint` (parent) fills the whole window with its bg colour BEFORE `Content::paint` runs. Without forcing that fill transparent, the parent draws an opaque background that drowns out Content's per-pixel alpha — only the chrome border would appear translucent.
 - Override `Content::paint(juce::Graphics&)`: fill `getLocalBounds()` with the look-and-feel's `ResizableWindow::backgroundColourId` at the current `windowOpacity` alpha. (Read the descriptor on each paint — Content already polls the registry at 30 Hz; this is just one more read.)
-- Remove every `setAlpha()` call from the opacity menu / Custom… dialog paths. Replace with `content_->repaint()` so the new alpha lands on the next paint pass.
+- Remove every `setAlpha()` call from the opacity menu / Custom… dialog paths (including the ctor-time apply — the per-paint read covers first-paint at the persisted alpha). Replace with `content_->repaint()` so the new alpha lands on the next paint pass.
 - The opacity slider live-preview in `showCustomOpacityDialog()` keeps working — it writes the descriptor (or a preview alpha) and triggers a Content repaint instead of `setAlpha`.
 
 Migration: existing sessions with a saved 0.92 now render as "background at 92% alpha, controls at 100%" instead of "everything at 92%." Operator-acceptable behavioral change — better visual, no data loss, no schema change.
@@ -77,22 +78,25 @@ No visible × button — the window is intentionally minimal per `feedback_gestu
 ```
 core/include/ida/FileInputDescriptor.h        + bool alwaysOnTop { false };
 
-app/FileInputPlayerWindow.h                   + paint() override on Content (internal), no public API change
+app/FileInputPlayerWindow.h                   + keyPressed override; + getDesktopWindowStyleFlags override;
+                                              + showOpacityMenu moved to public (forwarded from Content on right-click)
 app/FileInputPlayerWindow.cpp
     ctor:                                     setUsingNativeTitleBar(false)
                                               setTitleBarHeight(0)
-                                              setOpaque(false)
-                                              addToDesktop(windowIsSemiTransparent | windowHasDropShadow)
                                               setWantsKeyboardFocus(true)
+                                              setOpaque(false)
+                                              setBackgroundColour(...withAlpha(0.0f))     // parent fill transparent
                                               read d->alwaysOnTop → setAlwaysOnTop(...)
-                                              (existing) read d->windowOpacity, but no setAlpha()
-    Content::paint                            fill bg at windowOpacity alpha
-    Content::mouseDown / mouseDrag            ComponentDragger on parent window for non-popup-menu clicks
+                                              NO setAlpha; NO explicit addToDesktop call
+    getDesktopWindowStyleFlags                DocumentWindow::getDesktopWindowStyleFlags() | windowIsSemiTransparent
+    Content::paint                            fill bg at windowOpacity alpha (controls paint over at 1.0)
+    Content::mouseDown / mouseDrag            ComponentDragger drags parent on left-click background;
+                                              right-click forwards to parent's showOpacityMenu()
+                                              via findParentComponentOfClass; mouseDrag guarded by isPopupMenu
     showOpacityMenu                           replace setAlpha calls with content_->repaint();
-                                              add "Close window" item (top)
-                                              add "Always on top" toggle item
+                                              add "Close window" item (top); add "Always on top" toggle item
     showCustomOpacityDialog                   live-preview writes via descriptor + content_->repaint();
-                                              cancel reverts via repaint, not setAlpha
+                                              cancel reverts via descriptor write + repaint, not setAlpha
     keyPressed                                Cmd-W / Ctrl-W → closeButtonPressed()
 
 audio/include/ida/FileInputRegistry.h         + setFileInputAlwaysOnTop(InputId, bool)
@@ -101,8 +105,8 @@ audio/src/FileInputRegistry.cpp               implement setter (descriptor mutat
 audio/include/ida/FileInputPersistence.h      doc comment: alwaysOnTop in persisted set
 audio/src/FileInputPersistence.cpp            serialize alwaysOnTop; parse with default false
 
-audio/tests/FileInputPersistenceTests.cpp     round-trip alwaysOnTop; missing-key defaults to false
-audio/tests/FileInputRegistryTests.cpp        setFileInputAlwaysOnTop updates descriptor
+tests/FileInputPersistenceTests.cpp           round-trip alwaysOnTop; missing-key defaults to false
+tests/FileInputRegistryTests.cpp              setFileInputAlwaysOnTop updates descriptor
 ```
 
 Chrome / drag / paint / menu / Cmd-W are operator-verified per existing convention (MainComponent / window-class GUI is not unit-tested in IDA). Engine-side persistence + registry setter are unit-tested.
