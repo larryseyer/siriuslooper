@@ -3,6 +3,7 @@
 #include "ida/Bus.h"
 #include "ida/Channel.h"
 #include "ida/ChannelDefaults.h"
+#include "ida/IFileInputSourceRegistry.h"
 #include "ida/InputDescriptor.h"
 #include "ida/ITapeSink.h"
 #include "ida/MixerGraph.h"
@@ -313,6 +314,22 @@ public:
     void setChannelInputSource (ChannelId, int leftDeviceChannel,
                                 int rightDeviceChannel, bool stereo) noexcept;
 
+    /// Message-thread setter. The pointer is stored and used to resolve
+    /// per-channel file-input callables via setChannelFileInputSource.
+    /// Pass nullptr to disable file-input routing entirely (per-channel
+    /// branch then short-circuits on filePull.valid()). Non-owning;
+    /// the registry must outlive the InputMixer (same contract as
+    /// setTapeWriter / setTapeSink).
+    void setFileInputSourceRegistry (IFileInputSourceRegistry*) noexcept;
+
+    /// Message-thread binding. Resolves the file-input pull callable for
+    /// the given InputId via the registry set by setFileInputSourceRegistry
+    /// and caches it on the channel's state. Calling on a channel whose
+    /// id is unknown is a silent no-op (defensive — matches the existing
+    /// setChannelInputSource setter pattern). Calling before
+    /// setFileInputSourceRegistry has been called clears any prior pull.
+    void setChannelFileInputSource (ChannelId, InputId) noexcept;
+
     // Audio-thread interface (real-time safe) ------------------------------
     /// Walks the channel, applies its ProcessingChain (no-op in M3), and
     /// if the channel is tape-bearing, memcpys `bytes[0..byteCount]` into a
@@ -382,6 +399,15 @@ private:
     std::unordered_map<std::int64_t, InputState> inputs_;
     std::unordered_map<std::int64_t, Channel> channels_;
     std::unordered_map<std::int64_t, ChannelInputSource> channelSources_;
+    /// File-input audio-routing slice (Task 4) — per-channel cached pull
+    /// callable. Resolved on the message thread via
+    /// `setChannelFileInputSource` and consumed by `renderInputGraph`
+    /// without any map lookup on the audio thread (the loop iterates the
+    /// map directly, but the audio-thread cost is one cache-resident
+    /// indirect call per file-input channel). An entry is present only
+    /// for channels that have been bound to a file-input source; device-
+    /// input channels never appear here.
+    std::unordered_map<std::int64_t, FileInputPullCallable> channelFilePulls_;
     /// Slice E2: per-channel pre-fader send mode. `char` (1/0) so reads from
     /// the audio thread are POD memory, not a `std::vector<bool>` proxy. An
     /// unset entry (channel never had its flag flipped) reads as
@@ -456,6 +482,13 @@ private:
     ida::persistence::TapeStore* tapeStore_ { nullptr };
     NotificationBus* notificationBus_ { nullptr };
     ITapeSink* tapeSink_ { nullptr };
+    /// File-input audio-routing slice (Task 4) — non-owning, set-once on
+    /// the message thread. Used by `setChannelFileInputSource` to resolve
+    /// the per-channel cached `FileInputPullCallable`. nullptr disables
+    /// file-input routing (per-channel binds become silent clears). The
+    /// audio thread never touches this pointer — it dispatches through
+    /// the cached callable in `channelFilePulls_`.
+    IFileInputSourceRegistry* fileInputRegistry_ { nullptr };
     /// V9 Slice 3 — non-owning, set-once. The OutputMixer the MON button
     /// auto-creates channels on. Lifetime is the caller's responsibility;
     /// the OutputMixer must outlive the InputMixer (see `~InputMixer`

@@ -17,6 +17,7 @@ add_executable(IdaTests
     FileInputPlaylistTests.cpp
     FileInputRegistryTests.cpp
     FileInputSourceTests.cpp
+    InputMixerFileInputTests.cpp
     InputDescriptorTests.cpp
     RepetitionRulesTests.cpp
     PhraseTests.cpp

@@ -172,6 +172,7 @@ void InputMixer::removeChannel (ChannelId id)
     channels_.erase (id.value());
     channelSources_.erase (id.value());
     channelPreFaderSends_.erase (id.value());
+    channelFilePulls_.erase (id.value());
 
     // V9 Slice 2 — free the post-strip storage. Caller is responsible for
     // not removing a channel while OutputMixer is still reading the pointer
@@ -406,6 +407,35 @@ void InputMixer::setChannelInputSource (ChannelId id, int leftDeviceChannel,
 {
     channelSources_.insert_or_assign (
         id.value(), ChannelInputSource { leftDeviceChannel, rightDeviceChannel, stereo });
+}
+
+void InputMixer::setFileInputSourceRegistry (IFileInputSourceRegistry* reg) noexcept
+{
+    fileInputRegistry_ = reg;
+}
+
+void InputMixer::setChannelFileInputSource (ChannelId id, InputId inputId) noexcept
+{
+    // Defensive lookup — match `setChannelInputSource`'s tolerant pattern
+    // (it silently records a source for any id; readers in `renderInputGraph`
+    // filter against `channels_`). Here we only persist a pull when the
+    // channel actually exists, to avoid stranding callables in the map for
+    // ids that will never run.
+    if (channels_.find (id.value()) == channels_.end()) return;
+
+    if (fileInputRegistry_ == nullptr)
+    {
+        channelFilePulls_.erase (id.value());
+        return;
+    }
+
+    auto pull = fileInputRegistry_->resolveFileInputPull (inputId);
+    if (! pull.valid())
+    {
+        channelFilePulls_.erase (id.value());
+        return;
+    }
+    channelFilePulls_.insert_or_assign (id.value(), pull);
 }
 
 BusId InputMixer::addBus (BusConfig config)
@@ -1190,6 +1220,87 @@ void InputMixer::renderInputGraph (const float* const* deviceIn, int numDeviceCh
 
         // Slice E2: per-channel send source — pre-strip when the channel's
         // pre-fader flag is set, post-strip otherwise (today's default).
+        const bool preFader =
+            [this, val = channel.id.value()] {
+                auto it = channelPreFaderSends_.find (val);
+                return it != channelPreFaderSends_.end() && it->second != 0;
+            }();
+        const float* const sendLeft  = preFader ? scratchLeftPre_.data()  : scratchLeft_.data();
+        const float* const sendRight = preFader ? scratchRightPre_.data() : scratchRight_.data();
+
+        for (const auto& e : graph_.sendEdges())
+        {
+            if (e.source != chNode) continue;
+            accumulateIntoBus (e.fxReturn, sendLeft, sendRight, e.level, n);
+        }
+    }
+
+    // ── Steps 1–2 (file-input variant): same gather → strip → route flow
+    // as the device-input loop above, but the source is the channel's cached
+    // FileInputPullCallable instead of `deviceIn[idx]`. File-input channels
+    // do NOT have a `channelSources_` entry (the maps are disjoint by design
+    // — Task 4 of the file-input audio-routing slice), so this is a separate
+    // loop rather than a branch inside the device loop. Preserves device-path
+    // semantics byte-for-byte. RT-safe: noexcept fn pointer, no allocation,
+    // no map mutation. ──
+    for (const auto& [chValue, pull] : channelFilePulls_)
+    {
+        if (! pull.valid()) continue;
+
+        auto chIt = channels_.find (chValue);
+        if (chIt == channels_.end()) continue;
+        const auto& channel = chIt->second;
+        if (channel.signalType != SignalType::Audio || channel.processing == nullptr) continue;
+
+        const auto byteCount = static_cast<std::size_t> (n) * sizeof (float);
+
+        // Pull directly into scratchLeft_/Right_. On failure, fill with
+        // silence — the strip + routing still runs (matches the "source
+        // present but no data this block" contract on FileInputPullCallable).
+        if (! pull.fn (pull.userdata, scratchLeft_.data(), scratchRight_.data(), n))
+        {
+            std::memset (scratchLeft_.data(),  0, byteCount);
+            std::memset (scratchRight_.data(), 0, byteCount);
+        }
+
+        // Mirror the device-path's Slice E2 pre-fader snapshot.
+        std::memcpy (scratchLeftPre_.data(),  scratchLeft_.data(),  byteCount);
+        std::memcpy (scratchRightPre_.data(), scratchRight_.data(), byteCount);
+
+        float* stereo[2] { scratchLeft_.data(), scratchRight_.data() };
+        auto* strip = static_cast<ChannelStrip<SignalType::Audio>*> (channel.processing.get());
+        strip->process (stereo, 2, n);
+
+        if (auto psIt = postStrip_.find (chValue); psIt != postStrip_.end())
+        {
+            std::memcpy (psIt->second[0].data(), scratchLeft_.data(),  byteCount);
+            std::memcpy (psIt->second[1].data(), scratchRight_.data(), byteCount);
+        }
+
+        const MixerNodeId chNode = nodeForChannel (channel.id);
+        const MixerNodeId dest   = graph_.mainOutOf (chNode);
+        const int tapeSlot       = tapeSlotForNode (dest);
+
+        if (tapeSlot >= 0)
+        {
+            if (channel.tapeMode != TapeMode::NoTape)
+                accumulateIntoTape (tapeSlot, scratchLeft_.data(), scratchRight_.data(), 1.0f, n);
+        }
+        else if (dest == hwNode)
+        {
+            for (int c = 0; c < std::min (numDirectOutChannels, 2); ++c)
+            {
+                float* o = directOut[c];
+                if (o == nullptr) continue;
+                const float* src = (c == 0) ? scratchLeft_.data() : scratchRight_.data();
+                for (int s = 0; s < n; ++s) o[s] += src[s];
+            }
+        }
+        else // a bus
+        {
+            accumulateIntoBus (dest, scratchLeft_.data(), scratchRight_.data(), 1.0f, n);
+        }
+
         const bool preFader =
             [this, val = channel.id.value()] {
                 auto it = channelPreFaderSends_.find (val);
