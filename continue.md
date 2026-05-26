@@ -6,6 +6,15 @@
 2. **The 14-task input-bus MON slice that preceded** also has not been operator-verified yet (its recipe is in §1.B). Both slices' recipes ship in this handoff.
 3. **Clean Release build is on disk** at `build/app/IDA_artefacts/Release/IDA.app` (Desktop alias `IDA` points at it). Launch via the alias.
 
+### Source-of-truth docs (jump back here if a regression needs the spec)
+
+| Slice | Design (the why) | Plan (the how) |
+|---|---|---|
+| Bridge — record arm + floor | `docs/superpowers/specs/2026-05-25-record-arm-bridge-design.md` | `docs/superpowers/plans/2026-05-25-record-arm-bridge.md` |
+| Input-bus MON | `docs/superpowers/specs/2026-05-25-input-bus-mon-design.md` | `docs/superpowers/plans/2026-05-25-input-bus-mon.md` |
+
+Whitepaper (always the architectural source of truth): `docs/IDA_Whitepaper_V9.md`.
+
 ---
 
 ## ▶ 1. NEXT STEP — operator eyes-on
@@ -85,6 +94,8 @@ insert-picker EQ+CMP filter at `76fa508`, plus the bridge slice's design
 | Check | Result |
 |---|---|
 | Branch | `master`, local == origin |
+| HEAD | this handoff commit (run `git log -1 --oneline` to read it back) |
+| Last code commit before handoff | `e5340be` (continue.md + todo.md from the bridge slice's T6) — code tip is `900c771` (MainComponent wiring) |
 | Clean Release build (`rm -rf build && cmake -B build … && cmake --build build --target IDA`) | clean (only the standing ld duplicate-libs warning) |
 | `ctest -E "(PluginEditor|MainComponentPlug)"` | **735 / 735 passed** (727 baseline + 1 T1 accessor + 6 T2 floor + 1 T3 corrupt-import contract) |
 | Operator GUI verify | **pending — recipes above** |
