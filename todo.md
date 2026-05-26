@@ -1,5 +1,54 @@
 # IDA — Deferred Items
 
+### 2026-05-26 — File-input MIDI source (NEEDS SPEC; sister of Audio file-input)
+- Files (anticipated): `core/include/ida/FileInputDescriptor.h` (new InputKind::Midi variant or InputKind enum extension), `audio/include/ida/FileMidiInputSource.{h,cpp}` (new — parallel to FileInputSource but reads .mid via juce::MidiFile → drives a MIDI event ring), `audio/include/ida/FileInputRegistry.h` (polymorphic source storage OR a sibling MidiFileInputRegistry), `engine/include/ida/InputMixer.h` (MIDI channel binding — currently file-input setters assume SignalType::Audio), `app/MainComponent.cpp` (file-picker accepts .mid; new strip type for MIDI; MIDI player window variant), `docs/IDA_Whitepaper_V9.md` §6.6/§7.2 (extend the "file input is a playlist" passage to include MIDI as a first-class playlist entry type).
+- What was deferred: Operator surfaced 2026-05-26 — IDA whitepaper §6.6 says file inputs include audio AND MIDI; the audio-routing slice (closed at `ebab565`) ships only the audio path. Operator's quote: "we can import audio, but what about MIDI and Video?" This entry covers MIDI; the Video entry below covers the parallel video-input slice.
+- **Open design questions:**
+  1. Polymorphism vs. parallel hierarchy: does `FileInputRegistry` become polymorphic over `FileAudioInputSource` and `FileMidiInputSource` (one registry, two source kinds), or do we ship a parallel `FileMidiInputRegistry` + parallel interface? Audio + MIDI strips look different at the operator level (MIDI strips don't have a stereo meter, they have a key-velocity activity indicator).
+  2. MIDI routing destination: which engine consumes MIDI events from file-input? The MIDI signal path is currently driven by `SignalType::Midi` channels — does file-input MIDI feed an existing MIDI channel, OR is there a new MIDI-specific "channel" type that mirrors the audio strip but carries MIDI?
+  3. MIDI clock vs. file timestamp: when a .mid file plays, do its event timestamps run against the file's own tempo map, or against IDA's LMC? Probably the file's own tempo by default with an "lock to LMC" option (related to the [[2026-05-26 — File-input transport sync]] entry below).
+  4. Playlist semantics: do MIDI playlists work the same as audio playlists (concatenate, loop scope)? Most likely yes.
+- Why deferred: substantial scope — a new signal-type source kind needs design before implementation. Per [[feedback_defer_big_design_to_own_session]].
+- What's needed to finish: brainstorm (`superpowers:brainstorming`) against whitepaper §6.6/§7.2 + the just-shipped audio file-input architecture (`docs/superpowers/specs/2026-05-25-file-input-design.md` + `2026-05-26-file-input-audio-routing-design.md`) + the existing MIDI signal path; pick polymorphism strategy; write spec; plan + implement.
+
+### 2026-05-26 — File-input Video source (NEEDS SPEC; sister of Audio + MIDI file-input)
+- Files (anticipated): `core/include/ida/FileInputDescriptor.h` (InputKind::Video), `audio/include/ida/FileVideoInputSource.{h,cpp}` (new — wraps juce::VideoComponent or a custom decoder; provides BOTH video frame surface AND an audio sub-track), `app/include/ida/FileInputPlayerWindow.h` (gains a video display surface — likely a new VideoPlayerWindow variant), `engine/include/ida/InputMixer.h` (video's audio sub-track binds the same way as a file-audio source; video frames bypass InputMixer entirely), `ui/` (a `VideoCanvas` component — new), `docs/IDA_Whitepaper_V9.md` (extend §6.6 + add §7.3 video subsection).
+- What was deferred: Operator surfaced 2026-05-26 — "what about MIDI and Video?" Video is the larger of the two — it adds a display surface, frame timing, and a separate audio sub-track that needs to sync to the video.
+- **Open design questions:**
+  1. Display surface: floating window per video file input (like the audio player window), OR a single shared "video monitor" surface, OR full-screen overlay?
+  2. Audio sub-track: does video's audio reuse the existing FileInputSource ring + InputMixer dispatch (treat video as "file-audio with a side-channel video display"), or does it have its own audio path?
+  3. Video sync: video frames must be A/V-synced. If audio drives the clock (typical), use the existing LMC tick + FileInputSource ring playhead to drive frame display. If video drives, we have a new master.
+  4. Codec support: JUCE's `VideoComponent` uses OS-native decoders. Probably enough for first cut.
+  5. Performance / RT: video decoding can't happen on the audio thread. Worker-thread frame decode → ring of decoded frames → display thread paints latest. Standard.
+- Why deferred: large scope — entirely new media-handling pipeline; needs design before implementation. Per [[feedback_defer_big_design_to_own_session]].
+- What's needed to finish: brainstorm against whitepaper §6.6 + cross-platform constraints ([[feedback_mac_first_linux_windows_last]] — macOS first; AVFoundation is the path of least resistance; Windows/Linux land later via JUCE's `VideoComponent` abstractions); pick display-surface model; write spec; plan + implement.
+
+### 2026-05-26 — File-input transport sync to IDA's LMC (NEEDS SPEC)
+- Files (anticipated): `core/include/ida/FileInputDescriptor.h` (new `TransportSyncMode` enum field), `audio/include/ida/FileInputSource.{h,cpp}` (consume transport state; gate play/stop based on sync mode), `audio/include/ida/FileInputRegistry.h` (transport-state subscription seam), `engine/include/ida/Lmc.h` (already publishes transport state — confirm subscription API), `app/FileInputPlayerWindow.{h,cpp}` (UI for sync-mode selection — combobox or three-state toggle), `app/MainComponent.cpp` (wire transport-state delivery to the registry), `docs/IDA_Whitepaper_V9.md` §6.6 (document the sync mode).
+- What was deferred: Operator surfaced 2026-05-26 — "playback needs to be able to sync to IDA's transport for start/stop/ignore." Currently every file input has independent transport; the player window's ▶/⏸/⏹ are local to the source. The operator wants a per-file-input mode that follows the global IDA transport for start AND stop (or follows just one), or ignores transport entirely (current default behavior).
+- **Open design questions:**
+  1. Mode shape: three modes `{Independent, FollowAll, FollowStartOnly}` OR a flag pair `{respondToStart, respondToStop}` (4 combinations including "ignore both" = Independent)? Operator said "start/stop/ignore" which suggests three discrete modes; the flag-pair shape gives 4 but two are equivalent operationally.
+  2. Default: probably `Independent` (current behavior — preserves the "press ▶ on player to hear" surface).
+  3. "Stop" semantics: when transport stops and a synced file input is playing, does it pause (resume on next start) or stop+rewind (start fresh on next start)? Probably pause-by-default with a per-input "rewind-on-stop" sub-flag, OR a separate fourth mode.
+  4. Playlist interaction: if transport-synced and the current entry's LoopScope wraps to the next entry, does that next entry start immediately or wait for the next transport-start? Probably the former (loop-scope is independent of transport).
+  5. Persistence: TransportSyncMode persists per file input (FileInputDescriptor field).
+  6. UI: how prominent is the mode selector? Combobox in the player window's settings menu, OR a dedicated mode pill below the transport buttons? Operator hasn't said.
+- Why deferred: meaningful design with multiple sub-decisions; not a tweak.
+- What's needed to finish: brainstorm; lock the mode enum + default + stop semantics; write spec; plan + implement. Likely 1-2 implementer commits.
+
+### 2026-05-26 — File-input player window: frameless + semi-transparent + always-on-top (NEEDS SPEC)
+- Files (anticipated): `app/include/ida/FileInputPlayerWindow.h` + `app/FileInputPlayerWindow.cpp` (drop native title bar; add custom drag-region; add always-on-top toggle to the existing opacity menu; restyle background as a semi-transparent panel rather than an OS-standard window), `core/include/ida/FileInputDescriptor.h` (new `bool alwaysOnTop { false };` field), `audio/src/FileInputPersistence.cpp` (serialize the new field — backward-compat: missing key = false), `app/MainComponent.cpp` (apply alwaysOnTop at window-construction time).
+- What was deferred: Operator surfaced 2026-05-26 — "Floating window should have option to 'always be on top' so it doesn't get lost in a bunch of windows. We should remove the mac 3-dot border around the floating windows... this should appear to be floating and semi-transparent source for IDA."
+- **Open design questions:**
+  1. Title bar removal mechanism: JUCE's `juce::DocumentWindow::setUsingNativeTitleBar(false)` plus `setTitleBarHeight(0)`, OR drop `DocumentWindow` entirely and use a `juce::TopLevelWindow` with custom chrome? The DocumentWindow path is less invasive.
+  2. Drag-to-move: without a native title bar, the operator needs a way to move the window. Standard pattern: `juce::ComponentDragger` activated by mouseDown anywhere on the window background. Click on a control → control handles; click on background → drag.
+  3. Close gesture: currently the red X close button does it. Without traffic-light controls, the operator needs a new close affordance — small "×" button overlaid on the window? Right-click menu → Close? Spec needs to pick.
+  4. Always-on-top: `juce::Component::setAlwaysOnTop(true)` is one line. Persistence is the work — add the field, serialize, apply on construction.
+  5. Cross-platform parity: iOS doesn't have a "title bar" or "always on top" concept (windows are full-screen). The frameless treatment applies macOS-first; iOS layout is its own thing already.
+  6. Semi-transparent background: separate from the existing per-window opacity slider (which dims the whole window including controls). "Semi-transparent SOURCE" suggests the BACKGROUND is translucent but the controls stay opaque (= no further dimming of controls beyond the opacity slider). Probably means: the window's background fill alpha drops to ~0.8, controls stay at 1.0.
+- Why deferred: pure UX polish but has multiple operator-visible decisions (close gesture, drag behavior, transparency level) that warrant a brief spec.
+- What's needed to finish: small brainstorm to lock the 4 decisions above; write a one-page spec; implement (~2 small commits — one for chrome/drag/close, one for always-on-top + persistence). Likely the smallest of the four 2026-05-26 follow-ons.
+
 ### 2026-05-24 — TAPECOLOR IRs: offline pre-bake instead of runtime resample
 - Files: external/lsfx_tapecolor/dsp/ConvolutionStage.cpp
   (`decodePlaceholderIR` + `loadMachineInternal` — currently decodes
