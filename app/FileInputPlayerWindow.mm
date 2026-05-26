@@ -189,7 +189,13 @@ public:
         transport.removeFromRight (4);
         loopButton_  .setBounds (transport.removeFromRight (72));
         transport.removeFromRight (8);
-        scrubber_    .setBounds (transport);
+        // Scrubber takes 75 % of the remaining transport-row width — the rest
+        // is left bare as a drag region (Content::mouseDown on background
+        // initiates ComponentDragger; with no native title bar this is the
+        // operator's only way to move the window).
+        const int scrubberW = (transport.getWidth() * 3) / 4;
+        scrubber_    .setBounds (transport.removeFromLeft (scrubberW));
+        // transport now holds the leftover bare strip — intentionally empty.
 
         r.removeFromTop (6);
 
