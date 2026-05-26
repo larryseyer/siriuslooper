@@ -27,6 +27,7 @@ public:
 
     void closeButtonPressed() override;
     void mouseDown (const juce::MouseEvent&) override;
+    bool keyPressed (const juce::KeyPress&) override;
 
 private:
     class Content;

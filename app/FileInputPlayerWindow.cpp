@@ -395,6 +395,7 @@ FileInputPlayerWindow::FileInputPlayerWindow (FileInputRegistry& registry, Input
       id_ (id)
 {
     setUsingNativeTitleBar (true);
+    setWantsKeyboardFocus (true);
 
     content_ = std::make_unique<Content> (registry_, id_);
     setContentNonOwned (content_.get(), true);
@@ -433,6 +434,18 @@ void FileInputPlayerWindow::mouseDown (const juce::MouseEvent& e)
         return;
     }
     juce::DocumentWindow::mouseDown (e);
+}
+
+bool FileInputPlayerWindow::keyPressed (const juce::KeyPress& key)
+{
+    // Cmd-W on macOS, Ctrl-W on Win/Linux — JUCE's commandModifier resolves
+    // to the platform-correct modifier so one handler covers both.
+    if (key == juce::KeyPress ('w', juce::ModifierKeys::commandModifier, 0))
+    {
+        closeButtonPressed();
+        return true;
+    }
+    return juce::DocumentWindow::keyPressed (key);
 }
 
 void FileInputPlayerWindow::timerCallback()
