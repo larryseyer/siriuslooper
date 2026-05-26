@@ -523,6 +523,12 @@ public:
     std::function<void (int idx, bool soloed)>      onSolo;
     /// Right-click "Split to two mono channels" / "Collapse to stereo" (RME).
     std::function<void (int idx)>                   onToggleStereoMono;
+    /// Strip context-menu "Record to tape" toggle. `record` is the TARGET
+    /// state (the inverse of what the menu showed). MainComponent translates
+    /// to InputMixer::setChannelTapeMode(chId, record ? CommitToTape : NoTape)
+    /// inside the audio-callback bracket, and shows the CaptureBanner refusal
+    /// message if the engine returns false (looper-floor violation).
+    std::function<void (int idx, bool record)>      onToggleChannelRecording;
     /// A strip was selected — MainComponent reads its pan/width and calls
     /// showDetailFor() to populate + reveal the detail panel.
     std::function<void (int idx)>                   onSelect;
@@ -686,6 +692,7 @@ public:
         inputStripInsButtons_.clear();
         monitorButtons_.clear();
         monitorModes_.clear();
+        stripTapeModes_.clear();
         stripDests_.clear();
         // Channel identities change on a rebuild, so the prior channel
         // selection no longer maps to a strip — drop it. The detail panel
@@ -741,6 +748,10 @@ public:
             addAndMakeVisible (*mon);
             monitorButtons_.push_back (std::move (mon));
             monitorModes_.push_back (ida::MonitorMode::Off);
+            // Bridge slice (2026-05-25) — parallel to strips_, default armed
+            // (matches the strip-creation seed in MainComponent::refreshInput
+            // Destinations: setChannelTapeMode(chId, CommitToTape)).
+            stripTapeModes_.push_back (ida::TapeMode::CommitToTape);
         }
         rebuildChannelPills();
         resized();
@@ -784,6 +795,21 @@ public:
         jassert (static_cast<int> (modes.size()) == stripCount());
         for (int i = 0; i < stripCount() && i < static_cast<int> (modes.size()); ++i)
             setMonitorModeAt (i, modes[static_cast<std::size_t> (i)], /*notify*/ false);
+    }
+
+    /// Refresh strip TapeMode state from the engine. `modes` is parallel to
+    /// `strips_`. Called by MainComponent::refreshInputDestinations after any
+    /// engine-side change (load, gesture relay). Updates the local mirror and
+    /// triggers a repaint — the dim is paint-time, not state-on-strip.
+    void setChannelTapeModes (const std::vector<ida::TapeMode>& modes)
+    {
+        const auto n = std::min (modes.size(), strips_.size());
+        stripTapeModes_.assign (modes.begin(), modes.begin() + static_cast<std::ptrdiff_t> (n));
+        // Pad if fewer modes than strips (defensive; shouldn't happen in
+        // practice — modes.size() should equal strips_.size()).
+        while (stripTapeModes_.size() < strips_.size())
+            stripTapeModes_.push_back (ida::TapeMode::CommitToTape);
+        repaint();
     }
 
     /// Pushes the bus-row destination state. Unlike the channel picker, each bus
@@ -1207,6 +1233,27 @@ public:
 
     void paint (juce::Graphics& g) override { g.fillAll (otto::Colours::bg2); }
 
+    void paintOverChildren (juce::Graphics& g) override
+    {
+        // Bridge slice (2026-05-25) — dim the faceplate of any NoTape strip
+        // so the operator can see at a glance which channels will be silent
+        // on capture. 30 % luminance reduction via translucent dark overlay
+        // — equivalent to withMultipliedBrightness(0.7f) on the underlying
+        // colours. Painted over children so it covers the strip body but
+        // leaves the MON / INS / dest button / fader / mute / solo controls
+        // legible (those are top-aligned in the strip; the dim only covers
+        // the strip's central faceplate band — see strip layout in
+        // CompactFaderStrip::resized).
+        for (std::size_t i = 0; i < strips_.size() && i < stripTapeModes_.size(); ++i)
+        {
+            if (stripTapeModes_[i] != ida::TapeMode::NoTape) continue;
+            // Strip's bounds in pane coordinates.
+            const auto stripBounds = strips_[i]->getBounds();
+            g.setColour (juce::Colours::black.withAlpha (0.30f));
+            g.fillRect (stripBounds);
+        }
+    }
+
     // --- CompactFaderStripListener ---
     void stripGainChanged (int idx, otto::ui::ChannelType type, float gain) override
     {
@@ -1366,9 +1413,30 @@ private:
     {
         if (idx < 0 || idx >= stripCount()) return;
         juce::PopupMenu menu;
+
+        // Bridge slice (2026-05-25) — per-channel "Record to tape" toggle.
+        // Check state mirrors engine TapeMode: CommitToTape (or any
+        // non-NoTape mode) reads as checked. Selecting flips to the inverse
+        // and fires onToggleChannelRecording with the TARGET state.
+        const bool currentlyRecording =
+            (idx < static_cast<int> (stripTapeModes_.size()))
+                ? stripTapeModes_[static_cast<std::size_t> (idx)] != ida::TapeMode::NoTape
+                : true;   // defensive default — strip without TapeMode mirror reads as armed
+        menu.addItem ("Record to tape",
+                      /*enabled*/ true,
+                      /*checked*/ currentlyRecording,
+                      [this, idx, currentlyRecording]
+                      {
+                          if (onToggleChannelRecording)
+                              onToggleChannelRecording (idx, ! currentlyRecording);
+                      });
+
+        menu.addSeparator();
+
         const bool stereo = stripStereo_[static_cast<std::size_t> (idx)];
         menu.addItem (stereo ? "Split to two mono channels" : "Collapse to stereo",
                       [this, idx] { if (onToggleStereoMono) onToggleStereoMono (idx); });
+
         menu.showMenuAsync (juce::PopupMenu::Options{}.withTargetScreenArea (
             juce::Rectangle<int> (screenPos.x, screenPos.y, 1, 1)));
     }
@@ -1560,6 +1628,12 @@ private:
     /// toggles Off ↔ On (whitepaper §7.2 — two-state).
     std::vector<std::unique_ptr<juce::TextButton>>            monitorButtons_;
     std::vector<ida::MonitorMode>                             monitorModes_;
+    /// Parallel to `strips_`. Mirrors engine's TapeMode for each input strip.
+    /// Pushed by MainComponent::refreshInputDestinations via
+    /// `setChannelTapeModes`. Used by `showToggleMenu` (for the check state of
+    /// the "Record to tape" item) and by `paintOverChildren` that dims the
+    /// strip face when the mode is NoTape.
+    std::vector<ida::TapeMode>                                stripTapeModes_;
     std::vector<StripDest>                                    stripDests_;
     std::vector<DestChoice>                                   choices_;   // shared, stored once
     std::vector<bool>                                         stripStereo_;
