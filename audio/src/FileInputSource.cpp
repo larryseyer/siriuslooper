@@ -8,6 +8,9 @@ FileInputSource::FileInputSource (double deviceSampleRate)
 {
     formatManager_.registerBasicFormats();   // WAV + AIFF
     formatManager_.registerFormat (new juce::FlacAudioFormat(), false);
+
+    ringL_.assign ((size_t) kRingFrames, 0.f);
+    ringR_.assign ((size_t) kRingFrames, 0.f);
 }
 
 FileInputSource::~FileInputSource() = default;
@@ -49,6 +52,46 @@ int FileInputSource::currentReaderNumChannels() const noexcept
 {
     return currentReader_ != nullptr
          ? static_cast<int> (currentReader_->numChannels) : 0;
+}
+
+void FileInputSource::pullInto (juce::AudioBuffer<float>& dest, int numFrames) noexcept
+{
+    const int writePos = writePos_.load (std::memory_order_acquire);
+    const int readPos  = readPos_ .load (std::memory_order_relaxed);
+    const int available = (writePos - readPos + kRingFrames) % kRingFrames;
+
+    const int toPull = juce::jmin (numFrames, available);
+    int rp = readPos;
+    for (int i = 0; i < toPull; ++i)
+    {
+        dest.setSample (0, i, ringL_[(size_t) rp]);
+        if (dest.getNumChannels() > 1)
+            dest.setSample (1, i, ringR_[(size_t) rp]);
+        rp = (rp + 1) % kRingFrames;
+    }
+    readPos_.store (rp, std::memory_order_release);
+
+    if (toPull < numFrames)
+    {
+        for (int ch = 0; ch < dest.getNumChannels(); ++ch)
+            for (int i = toPull; i < numFrames; ++i)
+                dest.setSample (ch, i, 0.f);
+        underruns_.fetch_add (1, std::memory_order_relaxed);
+    }
+}
+
+void FileInputSource::testPushRing (const juce::AudioBuffer<float>& src)
+{
+    const int n = src.getNumSamples();
+    int wp = writePos_.load (std::memory_order_relaxed);
+    for (int i = 0; i < n; ++i)
+    {
+        ringL_[(size_t) wp] = src.getSample (0, i);
+        ringR_[(size_t) wp] = src.getNumChannels() > 1
+                              ? src.getSample (1, i) : src.getSample (0, i);
+        wp = (wp + 1) % kRingFrames;
+    }
+    writePos_.store (wp, std::memory_order_release);
 }
 
 } // namespace ida

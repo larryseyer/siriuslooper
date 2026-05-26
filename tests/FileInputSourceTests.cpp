@@ -77,3 +77,43 @@ TEST_CASE ("FileInputSource preserves prior reader when openReader fails",
     CHECK (source.currentReaderSampleRate()     == Catch::Approx (priorSr));
     CHECK (source.currentReaderDurationFrames() == priorFrames);
 }
+
+TEST_CASE ("FileInputSource::pullInto delivers pre-filled ring samples",
+           "[file-input][audio][ring]")
+{
+    ida::FileInputSource source { 48000.0 };
+
+    juce::AudioBuffer<float> pattern (2, 128);
+    for (int ch = 0; ch < 2; ++ch)
+        for (int i = 0; i < 128; ++i)
+            pattern.setSample (ch, i, (float) (ch * 1000 + i));
+
+    source.testPushRing (pattern);
+
+    juce::AudioBuffer<float> out (2, 128);
+    out.clear();
+    source.pullInto (out, 128);
+
+    for (int ch = 0; ch < 2; ++ch)
+        for (int i = 0; i < 128; ++i)
+            CHECK (out.getSample (ch, i) == Catch::Approx ((float) (ch * 1000 + i)));
+}
+
+TEST_CASE ("FileInputSource::pullInto fills silence on ring underrun + ticks counter",
+           "[file-input][audio][ring]")
+{
+    ida::FileInputSource source { 48000.0 };
+
+    juce::AudioBuffer<float> out (2, 64);
+    for (int ch = 0; ch < 2; ++ch)
+        for (int i = 0; i < 64; ++i)
+            out.setSample (ch, i, 9.f);  // garbage
+
+    source.pullInto (out, 64);
+
+    for (int ch = 0; ch < 2; ++ch)
+        for (int i = 0; i < 64; ++i)
+            CHECK (out.getSample (ch, i) == Catch::Approx (0.f));
+
+    CHECK (source.underrunCount() == 1);
+}
