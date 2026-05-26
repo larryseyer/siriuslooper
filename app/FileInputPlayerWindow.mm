@@ -2,8 +2,39 @@
 
 #include <juce_audio_formats/juce_audio_formats.h>
 
+#if JUCE_MAC
+ #import <AppKit/AppKit.h>
+#endif
+
 namespace ida
 {
+
+namespace
+{
+
+// JUCE's Component::setAlwaysOnTop maps to NSWindow level = NSFloatingWindowLevel,
+// which floats above same-app windows but can be displaced by other apps when
+// IDA isn't the active app. NSStatusWindowLevel is the canonical macOS level
+// for tool windows that must persist above other apps' windows — matches the
+// floating-tool convention used by DAWs (Pro Tools, Logic helper windows).
+// No-op on non-macOS platforms.
+void bumpNativeAlwaysOnTopLevel (juce::Component& c, bool onTop)
+{
+   #if JUCE_MAC
+    if (auto* peer = c.getPeer())
+    {
+        if (auto* nsView = static_cast<NSView*> (peer->getNativeHandle()))
+        {
+            if (NSWindow* nsWindow = [nsView window])
+                [nsWindow setLevel: onTop ? NSStatusWindowLevel : NSNormalWindowLevel];
+        }
+    }
+   #else
+    juce::ignoreUnused (c, onTop);
+   #endif
+}
+
+} // namespace
 
 // ============================================================================
 // Content — the actual UI panel hosted by the DocumentWindow. Internal class;
@@ -460,6 +491,11 @@ FileInputPlayerWindow::FileInputPlayerWindow (FileInputRegistry& registry, Input
 
     startTimerHz (30);
     setVisible (true);
+
+    // Bump the native window level AFTER the peer is fully realized
+    // (setVisible orders the window front and finalises the NSWindow).
+    if (const auto* d = registry_.fileInputDescriptor (id_); d != nullptr)
+        bumpNativeAlwaysOnTopLevel (*this, d->alwaysOnTop);
 }
 
 FileInputPlayerWindow::~FileInputPlayerWindow()
@@ -555,6 +591,7 @@ void FileInputPlayerWindow::showOpacityMenu()
                       const bool next = ! currentOnTop;
                       registry_.setFileInputAlwaysOnTop (id_, next);
                       setAlwaysOnTop (next);
+                      bumpNativeAlwaysOnTopLevel (*this, next);
                   });
     root.addSubMenu ("Window opacity", opacity);
     root.showMenuAsync (juce::PopupMenu::Options {}

@@ -44,7 +44,7 @@ juce_add_gui_app(IDA
 </dict></plist>")
 
 target_sources(IDA PRIVATE
-    FileInputPlayerWindow.cpp
+    FileInputPlayerWindow.mm
     Main.cpp
     MainComponent.cpp)
 
