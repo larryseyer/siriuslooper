@@ -117,3 +117,51 @@ TEST_CASE ("FileInputSource::pullInto fills silence on ring underrun + ticks cou
 
     CHECK (source.underrunCount() == 1);
 }
+
+TEST_CASE ("FileInputSource plays an opened WAV: worker fills ring; pullInto delivers samples",
+           "[file-input][audio][transport]")
+{
+    juce::TemporaryFile temp { ".wav" };
+    REQUIRE (writeTestWav (temp.getFile(), 48000.0, 2, 4800));  // 100 ms
+
+    ida::FileInputSource source { 48000.0 };
+    REQUIRE (source.openReader (temp.getFile().getFullPathName().toStdString()));
+
+    source.play();
+    juce::Thread::sleep (60);  // let worker prime the ring
+
+    juce::AudioBuffer<float> out (2, 1024);
+    out.clear();
+    source.pullInto (out, 1024);
+
+    // Pulled samples should be non-zero (sine carries energy).
+    const float rmsL = out.getRMSLevel (0, 0, 1024);
+    CHECK (rmsL > 0.01f);
+
+    source.stop();
+}
+
+TEST_CASE ("FileInputSource pause halts ring growth; play resumes; stop seeks to 0",
+           "[file-input][audio][transport]")
+{
+    juce::TemporaryFile temp { ".wav" };
+    REQUIRE (writeTestWav (temp.getFile(), 48000.0, 2, 48000));  // 1 s
+
+    ida::FileInputSource source { 48000.0 };
+    REQUIRE (source.openReader (temp.getFile().getFullPathName().toStdString()));
+
+    source.play();
+    juce::Thread::sleep (60);
+
+    juce::AudioBuffer<float> out (2, 512);
+    out.clear();
+    source.pullInto (out, 512);
+
+    source.pause();
+    const auto headAfterPause = source.playheadFrames();
+    juce::Thread::sleep (50);
+    CHECK (source.playheadFrames() == headAfterPause);
+
+    source.stop();
+    CHECK (source.playheadFrames() == 0);
+}

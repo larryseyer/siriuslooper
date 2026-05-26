@@ -3,8 +3,10 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_core/juce_core.h>
+#include <juce_events/juce_events.h>
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -15,11 +17,11 @@ namespace ida
 /// Per-file-input engine: owns the disk-reader stack and (later) the
 /// SPSC ring + worker-thread transport loop. White-paper V9 §6.6 / §7.2.
 /// Lives in audio/ (not engine/) because it depends on juce_audio_formats.
-class FileInputSource
+class FileInputSource : public juce::TimeSliceClient
 {
 public:
     explicit FileInputSource (double deviceSampleRate);
-    ~FileInputSource();
+    ~FileInputSource() override;
 
     FileInputSource (const FileInputSource&) = delete;
     FileInputSource& operator= (const FileInputSource&) = delete;
@@ -51,6 +53,18 @@ public:
     /// requested frames.
     int underrunCount() const noexcept { return underruns_.load(); }
 
+    /// Transport commands. Message-thread only. Worker picks up on next tick.
+    void play()  noexcept;
+    void pause() noexcept;
+    void stop()  noexcept;   ///< pause + seek to 0
+    void seek (std::int64_t frame) noexcept;
+
+    bool         isPlaying()      const noexcept { return isPlaying_.load(); }
+    std::int64_t playheadFrames() const noexcept { return playheadFrames_.load(); }
+
+    /// juce::TimeSliceClient
+    int useTimeSlice() override;
+
 private:
     static constexpr int kRingFrames = 12000;  // 250 ms stereo @ 48 kHz
 
@@ -62,6 +76,11 @@ private:
     std::atomic<int>   writePos_  { 0 };
     std::atomic<int>   readPos_   { 0 };
     std::atomic<int>   underruns_ { 0 };
+
+    juce::TimeSliceThread     workerThread_ { "FileInputSource worker" };
+    std::atomic<bool>         isPlaying_      { false };
+    std::atomic<std::int64_t> playheadFrames_ { 0 };
+    std::atomic<std::int64_t> seekRequest_    { -1 };  // -1 = none
 };
 
 } // namespace ida
