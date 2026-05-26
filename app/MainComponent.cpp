@@ -1,5 +1,6 @@
 #include "MainComponent.h"
 
+#include "IdaPreferences.h"
 #include "StripContextOverlay.h"
 #include "components/ChannelDetailPanWidTab.h"
 #include "components/CompactFaderStrip.h"
@@ -4136,9 +4137,12 @@ MainComponent::MainComponent()
         // bridge is a separate deferred slice (see continue.md §6).
         inputMixerPane_->onAddFileInput = [this]
         {
+            auto startDir = ida::prefs::lastFileInputFolder();
+            if (startDir == juce::File {})
+                startDir = juce::File::getSpecialLocation (juce::File::userMusicDirectory);
             fileInputChooser_ = std::make_unique<juce::FileChooser> (
                 "Add file input \xe2\x80\x94 pick one or more audio files",
-                juce::File(), "*.wav;*.aif;*.aiff;*.flac");
+                startDir, "*.wav;*.aif;*.aiff;*.flac");
             fileInputChooser_->launchAsync (
                 juce::FileBrowserComponent::openMode
                   | juce::FileBrowserComponent::canSelectFiles
@@ -4147,6 +4151,10 @@ MainComponent::MainComponent()
                 {
                     const auto results = fc.getResults();
                     if (results.isEmpty()) return;
+
+                    // Remember the folder for next time (player window's "+"
+                    // append picker reads the same key).
+                    ida::prefs::setLastFileInputFolder (results[0].getParentDirectory());
 
                     ida::FileInputDescriptor desc;
                     desc.displayName = results[0].getFileNameWithoutExtension().toStdString();

@@ -1,5 +1,7 @@
 #include "FileInputPlayerWindow.h"
 
+#include "IdaPreferences.h"
+
 #include <juce_audio_formats/juce_audio_formats.h>
 
 #if JUCE_MAC
@@ -411,9 +413,13 @@ private:
 
     void pickAndAppendFile()
     {
+        auto startDir = ida::prefs::lastFileInputFolder();
+        if (startDir == juce::File {})
+            startDir = juce::File::getSpecialLocation (juce::File::userMusicDirectory);
+
         chooser_ = std::make_unique<juce::FileChooser> (
             "Append audio file to playlist",
-            juce::File::getSpecialLocation (juce::File::userMusicDirectory),
+            startDir,
             "*.wav;*.aif;*.aiff;*.flac");
 
         chooser_->launchAsync (
@@ -423,6 +429,7 @@ private:
             {
                 const auto f = fc.getResult();
                 if (f == juce::File()) return;
+                ida::prefs::setLastFileInputFolder (f.getParentDirectory());
                 registry_.addFileInputEntry (id_, f.getFullPathName().toStdString());
                 trackList_.updateContent();
                 trackList_.repaint();
