@@ -231,8 +231,8 @@ public:
     /// `TapeMode != NoTape` below 1. A channel that is already `NoTape`
     /// returns `true` (disarming a non-armed channel is a no-op transition,
     /// not a floor-violating transition). Unknown id returns `false`.
-    /// Constant-time linear scan over the channel registry; message-thread
-    /// caller; no audio-thread reach-through.
+    /// Linear in channel count; message-thread caller; no audio-thread
+    /// reach-through.
     bool canDisarmChannelRecording (ChannelId) const noexcept;
 
     /// Message-thread accessor. Unknown id reads as `TapeMode::NoTape`.
