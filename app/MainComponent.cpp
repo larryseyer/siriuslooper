@@ -466,6 +466,11 @@ public:
         backButton_ = std::make_unique<juce::TextButton> ("Back");
         backButton_->onClick = [this] { deselectAll(); };
         addChildComponent (*backButton_);
+
+        // Reserve the leading slot of the detail panel's tab row so Back
+        // can sit at the top-left without overlapping the leftmost tab.
+        // Matches Back's width + margins used by resized().
+        detailPanel_.setLeadingTabInset (72 + 2 * 6);
     }
 
     /// Clear any current selection + hide the detail panel + restore strip
@@ -1120,16 +1125,16 @@ public:
             area.removeFromBottom (kGap);
             detailPanel_.setBounds (area);
 
-            // Back button overlays the top-right corner of the panel. Same
-            // gesture as Escape; load-bearing on touch devices that have no
-            // keyboard.
+            // Back button sits in the reserved leading slot of the detail
+            // panel's tab row (setLeadingTabInset). Same gesture as Escape;
+            // load-bearing on touch devices that have no keyboard.
             if (backButton_)
             {
                 constexpr int kBackW = 72;
                 constexpr int kBackH = 28;
                 constexpr int kBackMargin = 6;
-                backButton_->setBounds (area.getRight() - kBackW - kBackMargin,
-                                        area.getY()     + kBackMargin,
+                backButton_->setBounds (area.getX() + kBackMargin,
+                                        area.getY() + kBackMargin,
                                         kBackW, kBackH);
                 backButton_->setVisible (true);
                 backButton_->toFront (false);
@@ -1262,6 +1267,11 @@ public:
 
     void paintOverChildren (juce::Graphics& g) override
     {
+        // Full-screen EQ/CMP hides strips via setVisible(false), but the
+        // strip's stored bounds are not reset — without this guard the dim
+        // overlay below would paint over the detail panel.
+        if (isDetailFullScreen()) return;
+
         // Bridge slice (2026-05-25) — dim the faceplate of any NoTape strip
         // so the operator can see at a glance which channels will be silent
         // on capture. Fills the FULL strip bounds with a 30 % black overlay
@@ -1785,6 +1795,11 @@ public:
         backButton_ = std::make_unique<juce::TextButton> ("Back");
         backButton_->onClick = [this] { deselectAll(); };
         addChildComponent (*backButton_);
+
+        // Reserve the leading slot of the detail panel's tab row so Back
+        // can sit at the top-left without overlapping the leftmost tab.
+        // Matches Back's width + margins used by resized().
+        detailPanel_.setLeadingTabInset (72 + 2 * 6);
 
         masterIns_ = std::make_unique<juce::TextButton>();
         masterIns_->setButtonText ("INS");
@@ -2486,6 +2501,9 @@ public:
             for (auto& b : busDestButtons_)      b->setVisible (false);
             for (auto& b : busInsButtons_)       b->setVisible (false);
             for (auto& o : busNameOverlays_)     o->setVisible (false);
+            for (auto& s : monStrips_)           s->setVisible (false);
+            for (auto& b : monDestButtons_)      b->setVisible (false);
+            for (auto& b : monInsButtons_)       b->setVisible (false);
             if (master_)             master_           ->setVisible (false);
             if (masterIns_)          masterIns_        ->setVisible (false);
             if (masterDestButton_)   masterDestButton_ ->setVisible (false);
@@ -2494,15 +2512,16 @@ public:
             area.removeFromBottom (kGap);
             detailPanel_.setBounds (area);
 
-            // Back button overlays the top-right corner of the detail panel.
-            // Same gesture as Escape; load-bearing on touch devices.
+            // Back button sits in the reserved leading slot of the detail
+            // panel's tab row (setLeadingTabInset). Same gesture as Escape;
+            // load-bearing on touch devices.
             if (backButton_)
             {
                 constexpr int kBackW = 72;
                 constexpr int kBackH = 28;
                 constexpr int kBackMargin = 6;
-                backButton_->setBounds (area.getRight() - kBackW - kBackMargin,
-                                        area.getY()     + kBackMargin,
+                backButton_->setBounds (area.getX() + kBackMargin,
+                                        area.getY() + kBackMargin,
                                         kBackW, kBackH);
                 backButton_->setVisible (true);
                 backButton_->toFront (false);
@@ -2547,6 +2566,9 @@ public:
         for (auto& b : busDestButtons_)      b->setVisible (true);
         for (auto& b : busInsButtons_)       b->setVisible (true);
         for (auto& o : busNameOverlays_)     o->setVisible (true);
+        for (auto& s : monStrips_)           s->setVisible (true);
+        for (auto& b : monDestButtons_)      b->setVisible (true);
+        for (auto& b : monInsButtons_)       b->setVisible (true);
         for (auto& p : channelPills_)        if (p) p->setVisible (false);
         if (master_)    master_   ->setVisible (true);
         if (masterIns_) masterIns_->setVisible (true);

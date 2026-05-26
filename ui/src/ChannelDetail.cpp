@@ -339,6 +339,14 @@ void ChannelDetail::setTabsAvailable (TabMask mask)
     setActiveTab (activeTab_);
 }
 
+void ChannelDetail::setLeadingTabInset (int px)
+{
+    const int clamped = juce::jmax (0, px);
+    if (clamped == leadingTabInset_) return;
+    leadingTabInset_ = clamped;
+    resized();
+}
+
 void ChannelDetail::addListener    (ChannelDetailListener* l) { listeners_.add (l); }
 void ChannelDetail::removeListener (ChannelDetailListener* l) { listeners_.remove (l); }
 
@@ -351,8 +359,12 @@ void ChannelDetail::resized()
 {
     auto bounds = getLocalBounds().reduced (kPadding);
 
-    // Tab bar across the top.
+    // Tab bar across the top. A host-pane child (Back button) may live in a
+    // reserved left slot via setLeadingTabInset; carve that out first so tabs
+    // never share pixels with it.
     auto tabRow = bounds.removeFromTop (kTabBarHeight);
+    if (leadingTabInset_ > 0 && leadingTabInset_ < tabRow.getWidth())
+        tabRow.removeFromLeft (leadingTabInset_);
     const int tabCount = tabButtons_.size();
     if (tabCount > 0)
     {

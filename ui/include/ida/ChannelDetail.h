@@ -208,6 +208,11 @@ public:
     void setTabsAvailable (TabMask mask);
     TabMask getTabsAvailable() const noexcept { return tabMask_; }
 
+    /// Reserve px at the LEFT of the tab row so a host-pane child (e.g. a
+    /// Back button) can sit there without overlapping a tab. The tab row
+    /// divides the remaining width across the visible tabs.
+    void setLeadingTabInset (int px);
+
     /// Tab content accessors — host panes wire their own listeners directly
     /// onto the underlying tabs. Returned references stay valid for the lifetime
     /// of the ChannelDetail.
@@ -234,6 +239,7 @@ private:
 
     Tab                          activeTab_ { Tab::PanWid };
     TabMask                      tabMask_   {};   // all visible by default
+    int                          leadingTabInset_ { 0 };
     juce::OwnedArray<TabButton>  tabButtons_;
 
     std::unique_ptr<otto::ui::ChannelDetailPanWidTab> panWidTab_;
