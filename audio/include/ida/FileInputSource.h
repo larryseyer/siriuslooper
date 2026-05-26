@@ -85,9 +85,14 @@ public:
     std::int64_t playheadFrames() const noexcept { return playheadFrames_.load(); }
 
     //=================================================================
-    // Playlist (Task 7). Message-thread only for mutations; the worker
-    // thread takes `listMutex_` only briefly when advancing entries.
-    // The audio thread NEVER touches `listMutex_`.
+    // Playlist (Task 7). Message-thread only for mutations. The worker
+    // holds `listMutex_` for the duration of a reader-open, which does
+    // synchronous disk I/O (file existence check + format decode of the
+    // header — typically <10 ms for WAV/FLAC; longer on slow disks or
+    // during the first-tick bootstrap of a long playlist with many
+    // missing entries, where the worker walks the list trying each in
+    // turn). UI mutations may briefly block on this. The audio thread
+    // NEVER touches `listMutex_`.
     //=================================================================
 
     /// Appends a playlist entry. Returns the new entry's stable id.

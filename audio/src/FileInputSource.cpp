@@ -9,8 +9,7 @@ namespace ida
 FileInputSource::FileInputSource (double deviceSampleRate)
     : deviceSampleRate_ (deviceSampleRate)
 {
-    formatManager_.registerBasicFormats();   // WAV + AIFF
-    formatManager_.registerFormat (new juce::FlacAudioFormat(), false);
+    formatManager_.registerBasicFormats();   // WAV + AIFF + FLAC (JUCE_USE_FLAC=1)
 
     ringL_.assign ((size_t) kRingFrames, 0.f);
     ringR_.assign ((size_t) kRingFrames, 0.f);
@@ -281,12 +280,14 @@ PlaylistEntryId FileInputSource::nextEntryId_locked (PlaylistEntryId current) co
     while (next != entries_.end() && next->missing) ++next;
     if (next != entries_.end()) return next->id;
 
-    // Off + last entry: stop. List + last entry: wrap to first non-missing.
+    // Off + last entry: stop. List + last entry: wrap to first non-missing
+    // (may return `current` for the single-entry case; the worker handles
+    // self-loop by rewinding in place rather than reopening the same reader).
     if (loopScope_.load() == LoopScope::List)
     {
         auto first = std::find_if (entries_.begin(), entries_.end(),
                                    [] (const Entry& e) { return ! e.missing; });
-        if (first != entries_.end() && first->id != current) return first->id;
+        if (first != entries_.end()) return first->id;
     }
     return PlaylistEntryId { -1 };
 }
@@ -379,6 +380,14 @@ int FileInputSource::useTimeSlice()
                 readerSource_.reset();
                 resampler_.reset();
                 currentEntryIdValue_.store (-1);
+            }
+            else if (next == curId)
+            {
+                // Single-entry List self-loop: rewind in place rather than
+                // re-opening the same reader (avoids the disk-I/O round trip
+                // under listMutex_ on every loop).
+                readerSource_->setNextReadPosition (0);
+                playheadFrames_.store (0);
             }
             else
             {

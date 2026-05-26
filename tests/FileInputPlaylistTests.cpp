@@ -179,6 +179,22 @@ TEST_CASE ("Playlist: removeEntry refuses the currently-playing entry",
     CHECK (source.isPlaying());
 }
 
+TEST_CASE ("Playlist: LoopScope=List with a single entry rewinds in place (does not stop)",
+           "[file-input][playlist]")
+{
+    juce::TemporaryFile only { ".wav" };
+    REQUIRE (writeWav (only.getFile(), 48000.0, 2, 4800, 0.3f));   // 100 ms
+
+    ida::FileInputSource source { 48000.0 };
+    auto e = source.addEntry (only.getFile().getFullPathName().toStdString());
+    source.setLoopScope (ida::LoopScope::List);
+    source.play();
+
+    juce::Thread::sleep (250);   // 2.5× the clip — must have wrapped at least once
+    CHECK (source.isPlaying());
+    CHECK (source.currentEntry() == e);
+}
+
 TEST_CASE ("Mono file is dual-mono'd at the reader stage",
            "[file-input][playlist]")
 {
