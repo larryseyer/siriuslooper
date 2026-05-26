@@ -48,6 +48,31 @@ private:
     std::unordered_map<std::int64_t, Pattern> patterns_;
 };
 
+/// Stub that returns a "valid" callable whose pull function writes a sentinel
+/// then returns false. Used to verify the engine silences the scratch buffer
+/// when the pull contract says "no data" — post-strip must still be zero.
+class StubReturnsFalseRegistry : public ida::IFileInputSourceRegistry
+{
+public:
+    ida::FileInputPullCallable resolveFileInputPull (ida::InputId /*id*/) noexcept override
+    {
+        // Userdata is unused; the pull function ignores it. fn != nullptr =>
+        // FileInputPullCallable::valid() == true, so the engine will reach
+        // the call site (where it must honor the false return by silencing).
+        return ida::FileInputPullCallable { &StubReturnsFalseRegistry::pullStatic, nullptr };
+    }
+
+private:
+    static bool pullStatic (void* /*userdata*/, float* L, float* R, int n) noexcept
+    {
+        // Deliberately write a non-zero sentinel and return false — engine
+        // must silence the scratch before strip processing, so post-strip
+        // should still be 0.
+        for (int i = 0; i < n; ++i) { L[i] = 9999.0f; R[i] = 9999.0f; }
+        return false;
+    }
+};
+
 } // namespace
 
 TEST_CASE ("InputMixer renders a file-input channel through its cached pull callable",
@@ -129,5 +154,186 @@ TEST_CASE ("InputMixer renders file-input channels even when deviceIn is null",
     {
         REQUIRE (postL[n] == Catch::Approx ( 0.10f * kPanGain).margin (1e-5f));
         REQUIRE (postR[n] == Catch::Approx (-0.10f * kPanGain).margin (1e-5f));
+    }
+}
+
+TEST_CASE ("InputMixer file-input channel renders silence when no registry is set",
+           "[file-input][input-mixer]")
+{
+    ida::InputMixer mixer;
+    // Deliberately skip setFileInputSourceRegistry.
+
+    const ida::InputId fileId { ida::kFileInputIdBase };
+    ida::InputDescriptor desc {
+        ida::TapeId (1), ida::InputKind::Audio,
+        std::string ("FileInput no-registry"), std::optional<int> {}
+    };
+    mixer.registerInput (fileId, desc);
+    const auto channelId = mixer.addChannel (fileId, ida::SignalType::Audio);
+    mixer.setChannelFileInputSource (channelId, fileId);   // no-op (registry null)
+
+    constexpr int numFrames = 64;
+    std::array<float, numFrames> z {};
+    const float* deviceIn[2] = { z.data(), z.data() };
+    mixer.renderInputGraph (deviceIn, 2, nullptr, 0, numFrames);
+
+    const float* postL = mixer.postStripPointer (channelId, 0);
+    const float* postR = mixer.postStripPointer (channelId, 1);
+    REQUIRE (postL != nullptr);
+    REQUIRE (postR != nullptr);
+    for (int n = 0; n < numFrames; ++n)
+    {
+        REQUIRE (postL[n] == Catch::Approx (0.0f));
+        REQUIRE (postR[n] == Catch::Approx (0.0f));
+    }
+}
+
+TEST_CASE ("InputMixer file-input channel renders silence when registry doesn't know the id",
+           "[file-input][input-mixer]")
+{
+    StubFileInputRegistry stub;
+    // Do NOT seed any patterns.
+
+    // InputId is explicit-construction-only; build via .value() arithmetic.
+    const ida::InputId fileId { ida::kFileInputIdBase.value() + 5 };
+    ida::InputMixer mixer;
+    mixer.setFileInputSourceRegistry (&stub);
+
+    ida::InputDescriptor desc {
+        ida::TapeId (1), ida::InputKind::Audio,
+        std::string ("FileInput unknown"), std::optional<int> {}
+    };
+    mixer.registerInput (fileId, desc);
+    const auto channelId = mixer.addChannel (fileId, ida::SignalType::Audio);
+    mixer.setChannelFileInputSource (channelId, fileId);   // resolves invalid
+
+    constexpr int numFrames = 64;
+    std::array<float, numFrames> z {};
+    const float* deviceIn[2] = { z.data(), z.data() };
+    mixer.renderInputGraph (deviceIn, 2, nullptr, 0, numFrames);
+
+    const float* postL = mixer.postStripPointer (channelId, 0);
+    const float* postR = mixer.postStripPointer (channelId, 1);
+    for (int n = 0; n < numFrames; ++n)
+    {
+        REQUIRE (postL[n] == Catch::Approx (0.0f));
+        REQUIRE (postR[n] == Catch::Approx (0.0f));
+    }
+}
+
+TEST_CASE ("InputMixer renders device and file channels correctly in one render call",
+           "[file-input][input-mixer]")
+{
+    StubFileInputRegistry stub;
+    const ida::InputId fileId { ida::kFileInputIdBase };
+    stub.seed (fileId, { 0.10f, 0.20f });
+
+    ida::InputMixer mixer;
+    mixer.setFileInputSourceRegistry (&stub);
+
+    // Device channel — InputId 0 on device channel index 0.
+    const ida::InputId deviceId { 0 };
+    ida::InputDescriptor devDesc {
+        ida::TapeId (1), ida::InputKind::Audio,
+        std::string ("Device 1"), std::optional<int> {}
+    };
+    mixer.registerInput (deviceId, devDesc);
+    const auto devChannel = mixer.addChannel (deviceId, ida::SignalType::Audio);
+    mixer.setChannelInputSource (devChannel, 0, 0, /*stereo=*/false);
+
+    // File channel — TapeId in descriptor is just back-reference metadata,
+    // not a routing destination, so referencing tape 2 without addTape() is fine.
+    ida::InputDescriptor fileDesc {
+        ida::TapeId (2), ida::InputKind::Audio,
+        std::string ("FileInput mixed"), std::optional<int> {}
+    };
+    mixer.registerInput (fileId, fileDesc);
+    const auto fileChannel = mixer.addChannel (fileId, ida::SignalType::Audio);
+    mixer.setChannelFileInputSource (fileChannel, fileId);
+
+    constexpr int numFrames = 32;
+    std::array<float, numFrames> devL;
+    devL.fill (0.40f);
+    const float* deviceIn[1] = { devL.data() };
+
+    mixer.renderInputGraph (deviceIn, 1, nullptr, 0, numFrames);
+
+    const float* devPostL  = mixer.postStripPointer (devChannel,  0);
+    const float* filePostL = mixer.postStripPointer (fileChannel, 0);
+    const float* filePostR = mixer.postStripPointer (fileChannel, 1);
+
+    constexpr float kPanGain = 0.70710677f;
+    for (int n = 0; n < numFrames; ++n)
+    {
+        REQUIRE (devPostL[n]  == Catch::Approx (0.40f * kPanGain).margin (1e-5f));
+        REQUIRE (filePostL[n] == Catch::Approx (0.10f * kPanGain).margin (1e-5f));
+        REQUIRE (filePostR[n] == Catch::Approx (0.20f * kPanGain).margin (1e-5f));
+    }
+}
+
+TEST_CASE ("InputMixer file-input channel renders consistently across consecutive blocks",
+           "[file-input][input-mixer]")
+{
+    StubFileInputRegistry stub;
+    const ida::InputId fileId { ida::kFileInputIdBase };
+    stub.seed (fileId, { 0.33f, 0.66f });
+
+    ida::InputMixer mixer;
+    mixer.setFileInputSourceRegistry (&stub);
+
+    ida::InputDescriptor desc {
+        ida::TapeId (1), ida::InputKind::Audio,
+        std::string ("FileInput multi-call"), std::optional<int> {}
+    };
+    mixer.registerInput (fileId, desc);
+    const auto channelId = mixer.addChannel (fileId, ida::SignalType::Audio);
+    mixer.setChannelFileInputSource (channelId, fileId);
+
+    constexpr int numFrames = 64;
+    std::array<float, numFrames> z {};
+    const float* deviceIn[2] = { z.data(), z.data() };
+
+    constexpr float kPanGain = 0.70710677f;
+    for (int block = 0; block < 3; ++block)
+    {
+        mixer.renderInputGraph (deviceIn, 2, nullptr, 0, numFrames);
+        const float* postL = mixer.postStripPointer (channelId, 0);
+        const float* postR = mixer.postStripPointer (channelId, 1);
+        for (int n = 0; n < numFrames; ++n)
+        {
+            REQUIRE (postL[n] == Catch::Approx (0.33f * kPanGain).margin (1e-5f));
+            REQUIRE (postR[n] == Catch::Approx (0.66f * kPanGain).margin (1e-5f));
+        }
+    }
+}
+
+TEST_CASE ("InputMixer silences a file-input channel when the pull callable returns false",
+           "[file-input][input-mixer]")
+{
+    StubReturnsFalseRegistry stub;
+    const ida::InputId fileId { ida::kFileInputIdBase };
+
+    ida::InputMixer mixer;
+    mixer.setFileInputSourceRegistry (&stub);
+
+    ida::InputDescriptor desc {
+        ida::TapeId (1), ida::InputKind::Audio,
+        std::string ("FileInput false-return"), std::optional<int> {}
+    };
+    mixer.registerInput (fileId, desc);
+    const auto channelId = mixer.addChannel (fileId, ida::SignalType::Audio);
+    mixer.setChannelFileInputSource (channelId, fileId);
+
+    constexpr int numFrames = 32;
+    std::array<float, numFrames> z {};
+    const float* deviceIn[2] = { z.data(), z.data() };
+    mixer.renderInputGraph (deviceIn, 2, nullptr, 0, numFrames);
+
+    const float* postL = mixer.postStripPointer (channelId, 0);
+    const float* postR = mixer.postStripPointer (channelId, 1);
+    for (int n = 0; n < numFrames; ++n)
+    {
+        REQUIRE (postL[n] == Catch::Approx (0.0f));
+        REQUIRE (postR[n] == Catch::Approx (0.0f));
     }
 }
