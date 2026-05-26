@@ -35,6 +35,13 @@ public:
     /// context menu would be unreachable once Task 4 drops the title bar).
     void showOpacityMenu();
 
+    /// Toggle path shared by the right-click menu and Content's pin button.
+    /// Writes the registry, calls JUCE's Component::setAlwaysOnTop, and bumps
+    /// the native macOS NSWindow level to NSStatusWindowLevel so the pin
+    /// survives cross-app focus changes (NSFloatingWindowLevel can be
+    /// displaced by other apps' active windows on macOS).
+    void setAlwaysOnTopWithNativeBump (bool onTop);
+
 private:
     class Content;
 

@@ -49,6 +49,46 @@ class FileInputPlayerWindow::Content : public juce::Component,
                                        public juce::ListBoxModel
 {
 public:
+    // Reaper-style pin glyph. Filled circle + downward stem when pinned;
+    // hollow circle + stem when not. Click toggles always-on-top via
+    // FileInputPlayerWindow::setAlwaysOnTopWithNativeBump (which also bumps
+    // the NSWindow level — see header).
+    class PinButton : public juce::Button
+    {
+    public:
+        PinButton() : juce::Button ("Always on top")
+        {
+            setTooltip ("Pin window above all others");
+        }
+
+        void setPinned (bool p) { if (pinned_ != p) { pinned_ = p; repaint(); } }
+        bool isPinned() const noexcept { return pinned_; }
+
+    private:
+        void paintButton (juce::Graphics& g, bool isOverMouse, bool /*isDown*/) override
+        {
+            const auto b = getLocalBounds().toFloat().reduced (4.0f);
+            const float cx = b.getCentreX();
+            const float headR = 3.5f;
+            const float headTopY = b.getY();
+            const float shaftTopY = headTopY + headR * 2.0f;
+            const float shaftBotY = b.getBottom();
+
+            const auto colour = pinned_ ? juce::Colours::white
+                                        : juce::Colours::grey.withAlpha (isOverMouse ? 0.9f : 0.65f);
+            g.setColour (colour);
+
+            if (pinned_)
+                g.fillEllipse (cx - headR, headTopY, headR * 2.0f, headR * 2.0f);
+            else
+                g.drawEllipse (cx - headR, headTopY, headR * 2.0f, headR * 2.0f, 1.2f);
+
+            g.drawLine (cx, shaftTopY, cx, shaftBotY, 1.5f);
+        }
+
+        bool pinned_ { false };
+    };
+
     Content (FileInputRegistry& registry, InputId id)
         : registry_ (registry), id_ (id)
     {
@@ -69,6 +109,11 @@ public:
         upButton_.onClick     = [this] { moveSelected (-1); };
         downButton_.onClick   = [this] { moveSelected (+1); };
         removeButton_.onClick = [this] { removeSelected(); };
+        pinButton_.onClick    = [this]
+        {
+            if (auto* win = findParentComponentOfClass<FileInputPlayerWindow>())
+                win->setAlwaysOnTopWithNativeBump (! pinButton_.isPinned());
+        };
 
         scrubber_.setRange (0.0, 1.0, 0.0);
         scrubber_.setSliderStyle (juce::Slider::LinearHorizontal);
@@ -96,6 +141,7 @@ public:
         addAndMakeVisible (stopButton_);
         addAndMakeVisible (scrubber_);
         addAndMakeVisible (loopButton_);
+        addAndMakeVisible (pinButton_);
         addAndMakeVisible (currentTrackLabel_);
         addAndMakeVisible (trackList_);
         addAndMakeVisible (addButton_);
@@ -137,6 +183,10 @@ public:
         transport.removeFromLeft (4);
         stopButton_  .setBounds (transport.removeFromLeft (52));
         transport.removeFromLeft (8);
+        // Pin sits at the very top-right of the transport row (Reaper convention
+        // — small floating-pin glyph in the window's top-right corner).
+        pinButton_   .setBounds (transport.removeFromRight (24));
+        transport.removeFromRight (4);
         loopButton_  .setBounds (transport.removeFromRight (72));
         transport.removeFromRight (8);
         scrubber_    .setBounds (transport);
@@ -243,6 +293,11 @@ public:
             return;
 
         const auto state = registry_.fileInputTransportState (id_);
+
+        // Sync pin glyph from descriptor — covers external toggles (right-click
+        // menu "Always on top" item) as well as the persisted-on-construction
+        // case. PinButton's repaint is no-op when state hasn't changed.
+        pinButton_.setPinned (desc->alwaysOnTop);
 
         // Detect entry-change / list-size-change to repaint the list.
         const bool currentEntryChanged = (state.currentEntry != lastState_.currentEntry);
@@ -437,6 +492,7 @@ private:
     juce::Slider     scrubber_;
     juce::Label      currentTrackLabel_;
     juce::ListBox    trackList_;
+    PinButton        pinButton_;
 
     std::unique_ptr<juce::FileChooser> chooser_;
 
@@ -485,17 +541,26 @@ FileInputPlayerWindow::FileInputPlayerWindow (FileInputRegistry& registry, Input
     centreWithSize (getWidth(), getHeight());
 
     // Apply persisted always-on-top flag once on construction. Subsequent
-    // toggles come through the right-click menu (Task 8 step 2).
+    // toggles come through the pin button or the right-click menu, both of
+    // which call setAlwaysOnTopWithNativeBump.
+    bool persistedOnTop = false;
     if (const auto* d = registry_.fileInputDescriptor (id_); d != nullptr)
-        setAlwaysOnTop (d->alwaysOnTop);
+        persistedOnTop = d->alwaysOnTop;
+    setAlwaysOnTop (persistedOnTop);
 
     startTimerHz (30);
     setVisible (true);
 
     // Bump the native window level AFTER the peer is fully realized
     // (setVisible orders the window front and finalises the NSWindow).
-    if (const auto* d = registry_.fileInputDescriptor (id_); d != nullptr)
-        bumpNativeAlwaysOnTopLevel (*this, d->alwaysOnTop);
+    bumpNativeAlwaysOnTopLevel (*this, persistedOnTop);
+}
+
+void FileInputPlayerWindow::setAlwaysOnTopWithNativeBump (bool onTop)
+{
+    registry_.setFileInputAlwaysOnTop (id_, onTop);
+    setAlwaysOnTop (onTop);
+    bumpNativeAlwaysOnTopLevel (*this, onTop);
 }
 
 FileInputPlayerWindow::~FileInputPlayerWindow()
@@ -586,13 +651,7 @@ void FileInputPlayerWindow::showOpacityMenu()
     root.addItem ("Always on top",
                   true,                     // enabled
                   currentOnTop,             // ticked
-                  [this, currentOnTop]
-                  {
-                      const bool next = ! currentOnTop;
-                      registry_.setFileInputAlwaysOnTop (id_, next);
-                      setAlwaysOnTop (next);
-                      bumpNativeAlwaysOnTopLevel (*this, next);
-                  });
+                  [this, currentOnTop] { setAlwaysOnTopWithNativeBump (! currentOnTop); });
     root.addSubMenu ("Window opacity", opacity);
     root.showMenuAsync (juce::PopupMenu::Options {}
                             .withTargetComponent (this)
