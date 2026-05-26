@@ -1442,18 +1442,120 @@ TEST_CASE ("InputMixer::channelTapeMode reads engine state; unknown id returns N
 {
     ida::InputMixer mixer;
     const auto ch  = mixer.addChannel (ida::InputId (0), ida::SignalType::Audio);
+    // Sibling armed so that ch may legally transition NoTape ↔ CommitToTape
+    // without hitting the ≥1-armed floor (added when setChannelTapeMode
+    // gained bool return + floor enforcement in the bridge slice).
+    const auto sibling = mixer.addChannel (ida::InputId (0), ida::SignalType::Audio);
+    juce::ignoreUnused (mixer.setChannelTapeMode (sibling, ida::TapeMode::CommitToTape));
 
     // addChannel default — Channel ctor seeds NoTape (per
     // ChannelDefaults::defaultTapeMode in core/include/ida/ChannelDefaults.h).
     CHECK (mixer.channelTapeMode (ch) == ida::TapeMode::NoTape);
 
-    mixer.setChannelTapeMode (ch, ida::TapeMode::CommitToTape);
+    juce::ignoreUnused (mixer.setChannelTapeMode (ch, ida::TapeMode::CommitToTape));
     CHECK (mixer.channelTapeMode (ch) == ida::TapeMode::CommitToTape);
 
-    mixer.setChannelTapeMode (ch, ida::TapeMode::NoTape);
+    juce::ignoreUnused (mixer.setChannelTapeMode (ch, ida::TapeMode::NoTape));
     CHECK (mixer.channelTapeMode (ch) == ida::TapeMode::NoTape);
 
     // Unknown id → NoTape (defensive default, same shape as
     // channelMonitorMode unknown-id behaviour).
     CHECK (mixer.channelTapeMode (ida::ChannelId { 9999 }) == ida::TapeMode::NoTape);
+}
+
+TEST_CASE ("InputMixer::canDisarmChannelRecording — true with multiple armed; false at floor; false on unknown",
+           "[input-mixer][tape-mode][floor]")
+{
+    ida::InputMixer mixer;
+
+
+    const auto a = mixer.addChannel (ida::InputId (0), ida::SignalType::Audio);
+    const auto b = mixer.addChannel (ida::InputId (0), ida::SignalType::Audio);
+    REQUIRE (mixer.setChannelTapeMode (a, ida::TapeMode::CommitToTape));
+    REQUIRE (mixer.setChannelTapeMode (b, ida::TapeMode::CommitToTape));
+
+    // Two armed channels → disarming either is safe.
+    CHECK (mixer.canDisarmChannelRecording (a));
+    CHECK (mixer.canDisarmChannelRecording (b));
+
+    // Disarm a; b is now the only armed channel.
+    REQUIRE (mixer.setChannelTapeMode (a, ida::TapeMode::NoTape));
+    CHECK_FALSE (mixer.canDisarmChannelRecording (b));   // last one — floor
+
+    // Unknown id → false (cannot disarm what doesn't exist).
+    CHECK_FALSE (mixer.canDisarmChannelRecording (ida::ChannelId { 9999 }));
+
+    // A channel that is already NoTape — disarming is a no-op transition, so
+    // the predicate returns true (nothing to refuse).
+    CHECK (mixer.canDisarmChannelRecording (a));
+}
+
+TEST_CASE ("InputMixer::setChannelTapeMode refuses the last-armed-channel disarm",
+           "[input-mixer][tape-mode][floor]")
+{
+    ida::InputMixer mixer;
+
+    const auto a   = mixer.addChannel (ida::InputId (0), ida::SignalType::Audio);
+    REQUIRE (mixer.setChannelTapeMode (a, ida::TapeMode::CommitToTape));
+
+    // Only armed channel; floor refuses.
+    CHECK_FALSE (mixer.setChannelTapeMode (a, ida::TapeMode::NoTape));
+    CHECK (mixer.channelTapeMode (a) == ida::TapeMode::CommitToTape);  // unchanged
+}
+
+TEST_CASE ("InputMixer::setChannelTapeMode allows the last-channel disarm when a sibling is armed",
+           "[input-mixer][tape-mode][floor]")
+{
+    ida::InputMixer mixer;
+
+    const auto a = mixer.addChannel (ida::InputId (0), ida::SignalType::Audio);
+    const auto b = mixer.addChannel (ida::InputId (0), ida::SignalType::Audio);
+    REQUIRE (mixer.setChannelTapeMode (a, ida::TapeMode::CommitToTape));
+    REQUIRE (mixer.setChannelTapeMode (b, ida::TapeMode::CommitToTape));
+
+    // Two armed → either may disarm.
+    CHECK (mixer.setChannelTapeMode (a, ida::TapeMode::NoTape));
+    CHECK (mixer.channelTapeMode (a) == ida::TapeMode::NoTape);
+    CHECK (mixer.channelTapeMode (b) == ida::TapeMode::CommitToTape);   // sibling unaffected
+}
+
+TEST_CASE ("InputMixer::setChannelTapeMode is idempotent — same mode to same mode returns true",
+           "[input-mixer][tape-mode]")
+{
+    ida::InputMixer mixer;
+
+    const auto a   = mixer.addChannel (ida::InputId (0), ida::SignalType::Audio);
+    REQUIRE (mixer.setChannelTapeMode (a, ida::TapeMode::CommitToTape));
+
+    // CommitToTape → CommitToTape — true, no state change.
+    CHECK (mixer.setChannelTapeMode (a, ida::TapeMode::CommitToTape));
+    CHECK (mixer.channelTapeMode (a) == ida::TapeMode::CommitToTape);
+
+    // Idempotence also applies on NoTape, even when at the floor (the
+    // predicate is for *transitions*; same-mode-to-same-mode is not a
+    // transition).
+    const auto b = mixer.addChannel (ida::InputId (0), ida::SignalType::Audio);
+    REQUIRE (mixer.setChannelTapeMode (b, ida::TapeMode::NoTape));   // sibling NoTape from the start
+    CHECK (mixer.setChannelTapeMode (b, ida::TapeMode::NoTape));     // no-op stays true
+}
+
+TEST_CASE ("InputMixer::setChannelTapeMode — unknown id returns false (no-op preserved, now visible)",
+           "[input-mixer][tape-mode]")
+{
+    ida::InputMixer mixer;
+    CHECK_FALSE (mixer.setChannelTapeMode (ida::ChannelId { 9999 }, ida::TapeMode::CommitToTape));
+    CHECK_FALSE (mixer.setChannelTapeMode (ida::ChannelId { 9999 }, ida::TapeMode::NoTape));
+}
+
+TEST_CASE ("InputMixer::setChannelTapeMode — re-arming a NoTape channel always succeeds",
+           "[input-mixer][tape-mode]")
+{
+    ida::InputMixer mixer;
+
+    const auto a   = mixer.addChannel (ida::InputId (0), ida::SignalType::Audio);
+
+    // Channel starts NoTape (Channel ctor default). Going NoTape → CommitToTape
+    // is always allowed — re-arming never violates the floor.
+    CHECK (mixer.setChannelTapeMode (a, ida::TapeMode::CommitToTape));
+    CHECK (mixer.channelTapeMode (a) == ida::TapeMode::CommitToTape);
 }

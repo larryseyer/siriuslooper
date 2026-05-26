@@ -351,21 +351,48 @@ void InputMixer::setChannelSendIsPreFader (ChannelId id, bool preFader) noexcept
     channelPreFaderSends_[id.value()] = preFader ? 1 : 0;
 }
 
-void InputMixer::setChannelTapeMode (ChannelId id, TapeMode mode)
+bool InputMixer::setChannelTapeMode (ChannelId id, TapeMode mode)
 {
     auto it = channels_.find (id.value());
-    if (it == channels_.end()) return;
+    if (it == channels_.end()) return false;
+
+    // Floor enforcement: refuse a NoTape transition if this is the only
+    // armed channel. Same-mode → same-mode (NoTape → NoTape on a channel
+    // that's already at the floor) is *not* a transition and is allowed
+    // (idempotent), matching the channel-MON setter pattern.
+    if (mode == TapeMode::NoTape && it->second.tapeMode != TapeMode::NoTape
+        && ! canDisarmChannelRecording (id))
+        return false;
 
     it->second.tapeMode = mode;
 
     // For NonDestructive channels, ensure the params partial file exists as
     // soon as the mode is set. Touching here (message thread, set-once) avoids
     // any RT-safety deviation that would result from doing filesystem I/O on the
-    // audio thread inside processBuffer. M5's real DSP will append events to this
-    // file; for M3 it remains empty (Audio chains are no-op — M3 spec
-    // §"What 'dry' means in M3").
+    // audio thread inside processBuffer.
     if (mode == TapeMode::NonDestructive && tapeWriter_ != nullptr)
         tapeWriter_->touchParamsPartial (id);
+
+    return true;
+}
+
+bool InputMixer::canDisarmChannelRecording (ChannelId id) const noexcept
+{
+    auto it = channels_.find (id.value());
+    if (it == channels_.end()) return false;
+
+    // If this channel is already NoTape, the "disarm" transition is a no-op
+    // and trivially safe — no floor concern.
+    if (it->second.tapeMode == TapeMode::NoTape) return true;
+
+    // Count *other* channels (excluding `id`) with TapeMode != NoTape. If at
+    // least one exists, disarming `id` is safe.
+    for (const auto& kv : channels_)
+    {
+        if (kv.first == id.value()) continue;
+        if (kv.second.tapeMode != TapeMode::NoTape) return true;
+    }
+    return false;
 }
 
 TapeMode InputMixer::channelTapeMode (ChannelId id) const noexcept

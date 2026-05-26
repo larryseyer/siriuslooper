@@ -6422,7 +6422,11 @@ void MainComponent::rebuildInputStrips()
         // later be routed direct-to-output (TapeMode::NoTape) via the slice-4 picker,
         // but enforcement must never let the count of channels-recording-to-tape reach
         // zero (active floor-enforcement lands with that picker — see todo.md).
-        inputMixer_->setChannelTapeMode (chId, TapeMode::CommitToTape);
+        // Re-arming a freshly-added channel — the floor is never violated by
+        // a NoTape → CommitToTape transition, so success is guaranteed; the
+        // bool return is checked only by operator-gesture call sites that can
+        // surface a refusal banner.
+        juce::ignoreUnused (inputMixer_->setChannelTapeMode (chId, TapeMode::CommitToTape));
         inputStripChannelIds_.push_back (chId);
         inputStripPair_.push_back (pairIndex);
         infos.push_back ({ name, stereo });

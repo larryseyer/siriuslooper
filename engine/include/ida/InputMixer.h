@@ -218,7 +218,22 @@ public:
     // Channel registry ------------------------------------------------------
     ChannelId addChannel (InputId source, SignalType type);
     void removeChannel (ChannelId);
-    void setChannelTapeMode (ChannelId, TapeMode);
+    /// Returns `true` on success (including idempotent same-mode → same-mode).
+    /// Returns `false` in exactly two cases:
+    ///   - Floor violation: the call would set this channel to `NoTape` AND
+    ///     `canDisarmChannelRecording(id)` is false. Channel state unchanged.
+    ///   - Unknown `ChannelId`. No-op preserved.
+    /// Mirror of `channelMonitorMode` accessor / `setChannelMonitorMode` pattern.
+    bool setChannelTapeMode (ChannelId, TapeMode);
+
+    /// Returns `false` iff disarming this channel's recording (setting its
+    /// TapeMode to `NoTape`) would drop the count of channels with
+    /// `TapeMode != NoTape` below 1. A channel that is already `NoTape`
+    /// returns `true` (disarming a non-armed channel is a no-op transition,
+    /// not a floor-violating transition). Unknown id returns `false`.
+    /// Constant-time linear scan over the channel registry; message-thread
+    /// caller; no audio-thread reach-through.
+    bool canDisarmChannelRecording (ChannelId) const noexcept;
 
     /// Message-thread accessor. Unknown id reads as `TapeMode::NoTape`.
     /// Mirror of `channelMonitorMode(ChannelId) const`.
