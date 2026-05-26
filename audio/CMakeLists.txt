@@ -15,6 +15,7 @@
 
 add_library(IdaAudio STATIC
     src/AudioCallback.cpp
+    src/FileInputPersistence.cpp
     src/FileInputRegistry.cpp
     src/FileInputSource.cpp
     src/FlacTapeSink.cpp)
