@@ -10,6 +10,7 @@
 #include "ida/ChannelStrip.h"
 #include "ida/EngineConfig.h"
 #include "ida/InputDescriptor.h"
+#include "ida/FileInputPersistence.h"
 #include "ida/FileInputRegistry.h"
 #include "ida/FlacTapeSink.h"
 #include "ida/TapeColoringSink.h"

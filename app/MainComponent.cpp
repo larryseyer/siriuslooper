@@ -7433,6 +7433,12 @@ void MainComponent::chooseFileAndSave()
                                              inputMixer_->exportGraphState());
             const auto outputMixerJson = persistence::serializeMixerGraphState (
                                              outputMixer_->exportGraphState());
+            // File-input registry — displayName, playlist entries, opacity,
+            // alwaysOnTop. Stored as a JSON string in the envelope; the load
+            // side clears the registry and re-deserialize after importGraphState
+            // restores the rest of the mixer.
+            const auto fileInputsJson  = juce::JSON::toString (
+                                             ida::serializeFileInputs (fileInputRegistry_));
             std::vector<std::pair<std::int64_t, std::int64_t>> phraseMapEntries;
             phraseMapEntries.reserve (phraseChannelByConstituent_.size());
             for (const auto& kv : phraseChannelByConstituent_)
@@ -7450,6 +7456,7 @@ void MainComponent::chooseFileAndSave()
             envelope->setProperty ("input_mixer",         inputMixerJson);
             envelope->setProperty ("output_mixer",        outputMixerJson);
             envelope->setProperty ("phrase_channel_map",  phraseMapJson);
+            envelope->setProperty ("file_inputs",         fileInputsJson);
             const auto fileText = juce::JSON::toString (juce::var (envelope.get()));
             if (target.replaceWithText (fileText))
                 preparationPane_->setStatus ("Saved to " + target.getFullPathName());
@@ -7493,6 +7500,10 @@ void MainComponent::chooseFileAndLoad()
                 std::optional<ida::InputMixerGraphState>  loadedInputMixer;
                 std::optional<ida::OutputMixerGraphState> loadedOutputMixer;
                 std::vector<std::pair<std::int64_t, std::int64_t>> loadedPhraseMap;
+                // File-input registry payload — void when the envelope lacks
+                // the key (pre-2026-05-26 sessions). isObject() means it
+                // contains the {"fileInputs": [...]} root that deserializeFileInputs expects.
+                juce::var loadedFileInputs;
 
                 juce::var envelope;
                 if (juce::JSON::parse (fileText, envelope).wasOk()
@@ -7518,6 +7529,13 @@ void MainComponent::chooseFileAndLoad()
                     const auto mapStr = envelope.getProperty ("phrase_channel_map", {}).toString();
                     if (mapStr.isNotEmpty())
                         loadedPhraseMap = persistence::deserializePhraseChannelMap (mapStr);
+                    const auto fiStr = envelope.getProperty ("file_inputs", {}).toString();
+                    if (fiStr.isNotEmpty())
+                    {
+                        juce::var parsed;
+                        if (juce::JSON::parse (fiStr, parsed).wasOk())
+                            loadedFileInputs = std::move (parsed);
+                    }
                 }
                 else
                 {
@@ -7728,6 +7746,34 @@ void MainComponent::chooseFileAndLoad()
                     }
                     audioDeviceManager_.addAudioCallback (audioCallback_.get());
                 }
+
+                // File-input registry restoration. The persisted "file_inputs"
+                // section (when present) replaces the registry and rebuilds
+                // the input strips. importGraphState restored the file-input
+                // Channel records but did NOT re-call setChannelFileInputSource
+                // (the binding lives outside the graph state) — so without
+                // this step file-input audio would be silent on load.
+                // Hardware-channel state IS preserved (importGraphState already
+                // populated it); rebuildInputStrips wipes + re-adds, so any
+                // hardware fader/mute/route state is regenerated to defaults.
+                // That trade-off is acceptable for closing the alwaysOnTop +
+                // playlist + opacity round-trip; a per-channel state-preserving
+                // rebuild is a future refinement.
+                if (loadedFileInputs.isObject())
+                {
+                    filePlayerWindows_.clear();
+
+                    std::vector<ida::InputId> existingIds;
+                    for (const auto& kv : fileInputRegistry_.allFileInputDescriptors())
+                        existingIds.push_back (ida::InputId (kv.first));
+                    for (auto id : existingIds)
+                        fileInputRegistry_.unregisterFileInput (id);
+
+                    ida::deserializeFileInputs (fileInputRegistry_, loadedFileInputs);
+
+                    rebuildInputStrips();
+                }
+
                 refreshTapesPane();
 
                 // Slice P (2026-05-24): restore the phrase-channel binding
