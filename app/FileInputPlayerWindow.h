@@ -29,11 +29,15 @@ public:
     void mouseDown (const juce::MouseEvent&) override;
     bool keyPressed (const juce::KeyPress&) override;
 
+    /// Public so the inner Content can forward right-clicks here (JUCE's
+    /// mouseDown does NOT bubble to parents; without this forwarding the
+    /// context menu would be unreachable once Task 4 drops the title bar).
+    void showOpacityMenu();
+
 private:
     class Content;
 
     void timerCallback() override;          ///< 30 Hz UI refresh
-    void showOpacityMenu();                 ///< right-click handler
     void showCustomOpacityDialog();         ///< invoked by the Custom… menu item
 
     FileInputRegistry& registry_;

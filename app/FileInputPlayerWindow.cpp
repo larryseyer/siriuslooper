@@ -163,20 +163,30 @@ public:
     }
 
     // ------------------------------------------------------------------
-    // Drag-to-move — clicking on Content background drags the parent
-    // window. Child controls (buttons/scrubber/list) consume their own
-    // mouseDown first, so only background clicks reach here.
+    // Drag-to-move + right-click forwarding. JUCE does NOT bubble
+    // mouseDown to parents, so right-clicks on Content background must
+    // be forwarded explicitly to the parent window's context menu —
+    // otherwise the menu becomes unreachable once the native title bar
+    // goes away in Task 4. Child controls (buttons/scrubber/list)
+    // consume their own mouseDown first, so only background clicks
+    // reach here.
     // ------------------------------------------------------------------
     void mouseDown (const juce::MouseEvent& e) override
     {
         if (e.mods.isPopupMenu())
-            return;   // right-click is handled by the parent window's mouseDown
+        {
+            if (auto* win = findParentComponentOfClass<FileInputPlayerWindow>())
+                win->showOpacityMenu();
+            return;
+        }
         if (auto* top = getTopLevelComponent())
             dragger_.startDraggingComponent (top, e);
     }
 
     void mouseDrag (const juce::MouseEvent& e) override
     {
+        if (e.mods.isPopupMenu())
+            return;   // no drag-start happened on a right-click mouseDown
         if (auto* top = getTopLevelComponent())
             dragger_.dragComponent (top, e, nullptr);
     }
