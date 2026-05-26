@@ -163,6 +163,25 @@ public:
     }
 
     // ------------------------------------------------------------------
+    // Drag-to-move — clicking on Content background drags the parent
+    // window. Child controls (buttons/scrubber/list) consume their own
+    // mouseDown first, so only background clicks reach here.
+    // ------------------------------------------------------------------
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        if (e.mods.isPopupMenu())
+            return;   // right-click is handled by the parent window's mouseDown
+        if (auto* top = getTopLevelComponent())
+            dragger_.startDraggingComponent (top, e);
+    }
+
+    void mouseDrag (const juce::MouseEvent& e) override
+    {
+        if (auto* top = getTopLevelComponent())
+            dragger_.dragComponent (top, e, nullptr);
+    }
+
+    // ------------------------------------------------------------------
     // Driven by the window's 30 Hz timer
     // ------------------------------------------------------------------
     void refresh()
@@ -371,6 +390,8 @@ private:
 
     FileInputRegistry::FileInputTransportState lastState_ {};
     int lastListSize_ { -1 };
+
+    juce::ComponentDragger dragger_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Content)
 };
