@@ -64,6 +64,19 @@ public:
     /// noexcept, no allocation, no locks, no I/O.
     void pullInto (juce::AudioBuffer<float>& dest, int numFrames) noexcept;
 
+    /// Raw-pointer overload of `pullInto`. Same SPSC-ring consumer contract
+    /// as the AudioBuffer overload (noexcept, no alloc, no locks, no I/O);
+    /// silences the tail on underrun and bumps `underruns_`. Returns true
+    /// always (matches IFileInputSourceRegistry's contract — the `false`
+    /// return path is reserved for future "source destroyed" scenarios
+    /// which cannot occur given the audio-callback-bracket discipline).
+    bool pullInto (float* L, float* R, int numFrames) noexcept;
+
+    /// Static thunk matching `FileInputPullCallable::Fn`. Casts `userdata`
+    /// back to `FileInputSource*` and forwards to `pullInto`. The registry
+    /// returns `{&pullIntoStatic, sourcePtr}` from `resolveFileInputPull`.
+    static bool pullIntoStatic (void* userdata, float* L, float* R, int numFrames) noexcept;
+
     /// Test-only helper. Pushes the contents of `src` into the ring as
     /// if the worker had produced them. NOT for production use.
     void testPushRing (const juce::AudioBuffer<float>& src);

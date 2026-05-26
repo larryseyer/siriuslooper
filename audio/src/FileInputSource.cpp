@@ -110,32 +110,44 @@ int FileInputSource::currentReaderNumChannels() const noexcept
 // Audio-thread (Task 5 — unchanged).
 //=================================================================
 
-void FileInputSource::pullInto (juce::AudioBuffer<float>& dest, int numFrames) noexcept
+bool FileInputSource::pullInto (float* L, float* R, int numFrames) noexcept
 {
-    jassert (dest.getNumChannels() == 2);   // stereo-only invariant (whitepaper §6.1)
-
-    const int writePos = writePos_.load (std::memory_order_acquire);
-    const int readPos  = readPos_ .load (std::memory_order_relaxed);
+    const int writePos  = writePos_.load (std::memory_order_acquire);
+    const int readPos   = readPos_ .load (std::memory_order_relaxed);
     const int available = (writePos - readPos + kRingFrames) % kRingFrames;
 
     const int toPull = juce::jmin (numFrames, available);
     int rp = readPos;
     for (int i = 0; i < toPull; ++i)
     {
-        dest.setSample (0, i, ringL_[(size_t) rp]);
-        if (dest.getNumChannels() > 1)
-            dest.setSample (1, i, ringR_[(size_t) rp]);
+        L[(size_t) i] = ringL_[(size_t) rp];
+        R[(size_t) i] = ringR_[(size_t) rp];
         rp = (rp + 1) % kRingFrames;
     }
     readPos_.store (rp, std::memory_order_release);
 
     if (toPull < numFrames)
     {
-        for (int ch = 0; ch < dest.getNumChannels(); ++ch)
-            for (int i = toPull; i < numFrames; ++i)
-                dest.setSample (ch, i, 0.f);
+        for (int i = toPull; i < numFrames; ++i)
+        {
+            L[(size_t) i] = 0.f;
+            R[(size_t) i] = 0.f;
+        }
         underruns_.fetch_add (1, std::memory_order_relaxed);
     }
+
+    return true;
+}
+
+bool FileInputSource::pullIntoStatic (void* userdata, float* L, float* R, int numFrames) noexcept
+{
+    return static_cast<FileInputSource*> (userdata)->pullInto (L, R, numFrames);
+}
+
+void FileInputSource::pullInto (juce::AudioBuffer<float>& dest, int numFrames) noexcept
+{
+    jassert (dest.getNumChannels() == 2);   // stereo-only invariant (whitepaper §6.1)
+    pullInto (dest.getWritePointer (0), dest.getWritePointer (1), numFrames);
 }
 
 void FileInputSource::testPushRing (const juce::AudioBuffer<float>& src)

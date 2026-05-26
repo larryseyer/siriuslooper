@@ -8,6 +8,7 @@
 
 #include <cmath>
 #include <memory>
+#include <vector>
 
 namespace
 {
@@ -164,4 +165,90 @@ TEST_CASE ("FileInputSource pause halts ring growth; play resumes; stop seeks to
 
     source.stop();
     CHECK (source.playheadFrames() == 0);
+}
+
+TEST_CASE ("FileInputSource raw-pointer pullInto consumes the ring exactly like the AudioBuffer overload",
+           "[file-input][pull]")
+{
+    ida::FileInputSource src (48000.0);
+
+    constexpr int frames = 256;
+    juce::AudioBuffer<float> seed (2, frames);
+    for (int n = 0; n < frames; ++n)
+    {
+        seed.getWritePointer (0)[n] = 0.10f + 0.001f * static_cast<float> (n);
+        seed.getWritePointer (1)[n] = 0.50f - 0.001f * static_cast<float> (n);
+    }
+    src.testPushRing (seed);
+
+    std::vector<float> L (frames, 0.0f);
+    std::vector<float> R (frames, 0.0f);
+    const bool ok = src.pullInto (L.data(), R.data(), frames);
+
+    REQUIRE (ok);
+    for (int n = 0; n < frames; ++n)
+    {
+        REQUIRE (L[n] == Catch::Approx (seed.getReadPointer (0)[n]));
+        REQUIRE (R[n] == Catch::Approx (seed.getReadPointer (1)[n]));
+    }
+    REQUIRE (src.underrunCount() == 0);
+}
+
+TEST_CASE ("FileInputSource raw-pointer pullInto silences the tail and bumps underrun on short ring",
+           "[file-input][pull]")
+{
+    ida::FileInputSource src (48000.0);
+
+    constexpr int seeded    = 100;
+    constexpr int requested = 200;
+    juce::AudioBuffer<float> seed (2, seeded);
+    for (int n = 0; n < seeded; ++n)
+    {
+        seed.getWritePointer (0)[n] = 0.25f;
+        seed.getWritePointer (1)[n] = 0.75f;
+    }
+    src.testPushRing (seed);
+
+    std::vector<float> L (requested, -1.0f);
+    std::vector<float> R (requested, -1.0f);
+    const bool ok = src.pullInto (L.data(), R.data(), requested);
+
+    REQUIRE (ok);
+    for (int n = 0; n < seeded; ++n)
+    {
+        REQUIRE (L[n] == Catch::Approx (0.25f));
+        REQUIRE (R[n] == Catch::Approx (0.75f));
+    }
+    for (int n = seeded; n < requested; ++n)
+    {
+        REQUIRE (L[n] == Catch::Approx (0.0f));
+        REQUIRE (R[n] == Catch::Approx (0.0f));
+    }
+    REQUIRE (src.underrunCount() == 1);
+}
+
+TEST_CASE ("FileInputSource pullIntoStatic thunk forwards to pullInto",
+           "[file-input][pull][thunk]")
+{
+    ida::FileInputSource src (48000.0);
+
+    constexpr int frames = 64;
+    juce::AudioBuffer<float> seed (2, frames);
+    for (int n = 0; n < frames; ++n)
+    {
+        seed.getWritePointer (0)[n] = 0.05f * static_cast<float> (n);
+        seed.getWritePointer (1)[n] = -0.05f * static_cast<float> (n);
+    }
+    src.testPushRing (seed);
+
+    std::vector<float> L (frames, 0.0f);
+    std::vector<float> R (frames, 0.0f);
+    const bool ok = ida::FileInputSource::pullIntoStatic (&src, L.data(), R.data(), frames);
+
+    REQUIRE (ok);
+    for (int n = 0; n < frames; ++n)
+    {
+        REQUIRE (L[n] == Catch::Approx (seed.getReadPointer (0)[n]));
+        REQUIRE (R[n] == Catch::Approx (seed.getReadPointer (1)[n]));
+    }
 }
