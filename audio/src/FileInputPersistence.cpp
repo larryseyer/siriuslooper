@@ -43,6 +43,7 @@ juce::var serializeFileInputs (const FileInputRegistry& registry)
         o->setProperty ("displayName",   juce::String (d.displayName));
         o->setProperty ("loopScope",     loopScopeToString (d.loopScope));
         o->setProperty ("windowOpacity", d.windowOpacity);
+        o->setProperty ("alwaysOnTop",   d.alwaysOnTop);
 
         juce::Array<juce::var> entries;
         for (const auto& e : d.entries)
@@ -77,6 +78,7 @@ bool deserializeFileInputs (FileInputRegistry& registry, const juce::var& root)
 
         const float opacity = (float) (double) f.getProperty ("windowOpacity", 0.92);
         desc.windowOpacity = std::clamp (opacity, 0.5f, 1.0f);
+        desc.alwaysOnTop = (bool) f.getProperty ("alwaysOnTop", false);
 
         // Drop persisted entryIds — the registry's FileInputSource allocates
         // fresh handles via addFileInputEntry.

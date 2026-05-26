@@ -8,7 +8,8 @@ class FileInputRegistry;
 
 /// Writes the registry's full state to a JSON object containing a single
 /// "fileInputs" array. Schema documented in spec §4.7. Lossless for the
-/// persisted subset (displayName, loopScope, windowOpacity, entry paths);
+/// persisted subset (displayName, loopScope, windowOpacity, alwaysOnTop,
+/// entry paths);
 /// transient state (transport, missing flags, lazy durations) is dropped.
 /// Returns a `juce::var` (not a serialized string like `serializeTapePool`)
 /// so the caller can compose this directly into a parent Input Mixer JSON
