@@ -580,6 +580,10 @@ public:
     /// `stripIdx` indexes the pane's strip row (same index space as `onSelect`).
     /// Only emitted for strips flagged as file inputs via setStripIsFileInput.
     std::function<void (int stripIdx)>                 onShowFilePlayerRequested;
+    /// Strip-context-menu "Remove file input" — MainComponent unregisters the
+    /// file input from the registry, closes any open player window, and
+    /// rebuilds the strips. Only emitted for strips flagged as file inputs.
+    std::function<void (int stripIdx)>                 onRemoveFileInputRequested;
 
     /// A bus/FX-return strip's fader/mute/solo changed (busIdx = index into the
     /// pane's bus-strip row, parallel to MainComponent::busStripIds_).
@@ -1491,6 +1495,12 @@ private:
                           {
                               if (onShowFilePlayerRequested)
                                   onShowFilePlayerRequested (idx);
+                          });
+            menu.addItem ("Remove file input",
+                          [this, idx]
+                          {
+                              if (onRemoveFileInputRequested)
+                                  onRemoveFileInputRequested (idx);
                           });
         }
 
@@ -4162,6 +4172,19 @@ MainComponent::MainComponent()
         {
             if (idx < 0 || idx >= static_cast<int> (inputStripInputIds_.size())) return;
             openFilePlayerWindow (inputStripInputIds_[static_cast<std::size_t> (idx)]);
+        };
+        // Strip "Remove file input" relay. Closes the player window if open,
+        // drops the registry entry (which stops its worker thread cleanly via
+        // FileInputSource's dtor), and rebuilds strips — the rebuild iterates
+        // the registry so the strip naturally disappears. rebuildInputStrips
+        // already brackets the audio callback around inputMixer mutations.
+        inputMixerPane_->onRemoveFileInputRequested = [this] (int idx)
+        {
+            if (idx < 0 || idx >= static_cast<int> (inputStripInputIds_.size())) return;
+            const auto inputId = inputStripInputIds_[static_cast<std::size_t> (idx)];
+            filePlayerWindows_.erase (inputId.value());
+            fileInputRegistry_.unregisterFileInput (inputId);
+            rebuildInputStrips();
         };
         // P7 T5 slice 5 — INS button → InsertChainPopup. The helpers translate
         // each popup callback into a detach/setEffectChain/re-attach cycle on
