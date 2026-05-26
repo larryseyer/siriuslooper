@@ -379,7 +379,6 @@ Session JSON gains an additive `fileInputs` array on each Input Mixer:
 "inputMixer": {
   "fileInputs": [
     {
-      "inputId": 1003,
       "displayName": "Setlist A",
       "loopScope": "list",
       "windowOpacity": 0.92,
@@ -392,10 +391,14 @@ Session JSON gains an additive `fileInputs` array on each Input Mixer:
 }
 ```
 
+(`inputId` is NOT persisted — it's allocated fresh by the registry on
+load, so embedding it in the JSON would just be misleading noise.)
+
 Persisted: `displayName`, `loopScope`, `windowOpacity` (clamped to
-[0.5, 1.0] on read), ordered `entries` (entryId within-session-stable;
-on reload, entryIds may be re-derived from array order — they're
-handles, not session identifiers).
+[0.5, 1.0] on read), ordered `entries` (entryId is informational only
+and discarded on load — the registry's underlying source allocates
+fresh handles via `addEntry`; entries are handles, not session
+identifiers).
 
 Not persisted: `isPlaying`, `currentEntryId`, `playheadFrames`, the
 `missing` flag, the cached `durationFrames`.
