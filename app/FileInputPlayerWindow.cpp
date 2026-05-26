@@ -481,6 +481,8 @@ void FileInputPlayerWindow::showOpacityMenu()
     opacity.addItem ("Custom…", true, false, [this] { showCustomOpacityDialog(); });
 
     juce::PopupMenu root;
+    root.addItem ("Close window", [this] { closeButtonPressed(); });
+    root.addSeparator();
     root.addSubMenu ("Window opacity", opacity);
     root.showMenuAsync (juce::PopupMenu::Options {}
                             .withTargetComponent (this)
