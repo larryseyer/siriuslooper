@@ -4076,6 +4076,32 @@ MainComponent::MainComponent()
             // The Output Mixer pane gains / loses a MON-band strip in lockstep.
             refreshOutputMixerMonChannels();
         };
+        inputMixerPane_->onToggleChannelRecording = [this] (int idx, bool record)
+        {
+            if (idx < 0 || idx >= static_cast<int> (inputStripChannelIds_.size())) return;
+            const auto chId = inputStripChannelIds_[static_cast<std::size_t> (idx)];
+            const auto target = record ? ida::TapeMode::CommitToTape : ida::TapeMode::NoTape;
+
+            // Bridge slice (2026-05-25) — bracket the audio callback. The
+            // setter is metadata-only (no graph topology change), so the
+            // bracket is defensive; matches the pattern every other input-
+            // side config mutator on this pane uses.
+            audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+            const bool ok = inputMixer_->setChannelTapeMode (chId, target);
+            audioDeviceManager_.addAudioCallback (audioCallback_.get());
+
+            if (! ok)
+            {
+                // Engine refused — looper-floor violation (this was the last
+                // armed channel). Surface via the existing CaptureBanner.
+                captureBanner_->show ("At least one channel must record to a tape.");
+                return;
+            }
+
+            // Refresh the destination row so the menu's check state + dim
+            // overlay update on next gesture.
+            refreshInputDestinations();
+        };
         inputMixerPane_->onBusRename = [this] (int busIdx, juce::String newName)
         {
             if (busIdx < 0 || busIdx >= static_cast<int> (busStripIds_.size())) return;
@@ -6395,6 +6421,18 @@ void MainComponent::refreshInputDestinations()
     for (const auto& chId : inputStripChannelIds_)
         monitorModes.push_back (inputMixer_->channelMonitorMode (chId));
     inputMixerPane_->setMonitorModes (monitorModes);
+
+    // Bridge slice (2026-05-25) — push engine TapeMode into the pane so the
+    // strip context menu's "Record to tape" check state stays in sync with
+    // engine state (loaded projects, programmatic edits) and the dim overlay
+    // tracks NoTape strips.
+    {
+        std::vector<ida::TapeMode> tapeModes;
+        tapeModes.reserve (inputStripChannelIds_.size());
+        for (const auto& chId : inputStripChannelIds_)
+            tapeModes.push_back (inputMixer_->channelTapeMode (chId));
+        inputMixerPane_->setChannelTapeModes (tapeModes);
+    }
 
     // V9 §7.2 (2026-05-25) — bus-row MON button states. Mirror of the
     // channel-row push above; keeps the bus strip's MON button in sync
