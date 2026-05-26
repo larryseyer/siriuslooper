@@ -171,6 +171,13 @@ FileInputRegistry::FileInputTransportState
     return state;
 }
 
+FileInputPullCallable FileInputRegistry::resolveFileInputPull (InputId id) noexcept
+{
+    if (auto* src = source_ (id))
+        return FileInputPullCallable { &FileInputSource::pullIntoStatic, src };
+    return FileInputPullCallable {};
+}
+
 FileInputSource* FileInputRegistry::source_ (InputId id)
 {
     const auto it = sources_.find (id.value());

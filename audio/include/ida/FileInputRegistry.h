@@ -1,8 +1,9 @@
 #pragma once
 
-#include "ida/Channel.h"              // ida::InputId
-#include "ida/FileInputDescriptor.h"  // ida::FileInputDescriptor
-#include "ida/FileInputSource.h"      // ida::FileInputSource
+#include "ida/Channel.h"                    // ida::InputId, ida::kFileInputIdBase
+#include "ida/FileInputDescriptor.h"        // ida::FileInputDescriptor
+#include "ida/FileInputSource.h"            // ida::FileInputSource
+#include "ida/IFileInputSourceRegistry.h"   // ida::IFileInputSourceRegistry, FileInputPullCallable
 #include "ida/LoopScope.h"
 #include "ida/PlaylistEntryId.h"
 
@@ -21,11 +22,11 @@ namespace ida
 /// "InputMixer surface" — the registry is the single source of truth the app
 /// layer queries / mutates from the UI thread; Task 11 wires its sources into
 /// the audio callback alongside the InputMixer.
-class FileInputRegistry
+class FileInputRegistry : public ida::IFileInputSourceRegistry
 {
 public:
     explicit FileInputRegistry (double deviceSampleRate);
-    ~FileInputRegistry();
+    ~FileInputRegistry() override;
 
     FileInputRegistry (const FileInputRegistry&) = delete;
     FileInputRegistry& operator= (const FileInputRegistry&) = delete;
@@ -88,6 +89,13 @@ public:
     };
     FileInputTransportState fileInputTransportState (InputId id) const;
 
+    /// IFileInputSourceRegistry — returns a callable that forwards to
+    /// the registered FileInputSource's raw-pointer pullInto. The
+    /// callable's userdata is the FileInputSource pointer; lifetime is
+    /// the source's lifetime (unregister must bracket the audio
+    /// callback). Returns an invalid callable for unknown ids.
+    FileInputPullCallable resolveFileInputPull (InputId id) noexcept override;
+
 private:
     FileInputSource*       source_ (InputId id);
     const FileInputSource* source_ (InputId id) const;
@@ -98,7 +106,7 @@ private:
 
     /// Separate range from device-input ids so the app layer can tell them
     /// apart at a glance during debugging (per spec).
-    std::int64_t nextFileInputId_ { 100000 };
+    std::int64_t nextFileInputId_ { ida::kFileInputIdBase.value() };
 };
 
 } // namespace ida

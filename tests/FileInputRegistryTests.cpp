@@ -48,3 +48,26 @@ TEST_CASE ("FileInputRegistry::setFileInputWindowOpacity clamps to [0.5, 1.0]",
     registry.setFileInputWindowOpacity (id, 0.8f);
     CHECK (registry.fileInputDescriptor (id)->windowOpacity == Catch::Approx (0.8f));
 }
+
+TEST_CASE ("FileInputRegistry::resolveFileInputPull returns a valid callable that consumes the source's ring",
+           "[file-input][registry][resolve]")
+{
+    ida::FileInputRegistry registry (48000.0);
+
+    // Register a file input (no entries needed — the resolve path doesn't
+    // depend on playlist state). Use a synthetic descriptor.
+    ida::FileInputDescriptor desc {};
+    desc.displayName = "TestFile";
+    const auto id = registry.registerFileInput (desc);
+
+    // Resolve the callable; it must be valid.
+    const auto callable = registry.resolveFileInputPull (id);
+    REQUIRE (callable.valid());
+    REQUIRE (callable.fn != nullptr);
+    REQUIRE (callable.userdata != nullptr);
+
+    // Unknown ids resolve to an invalid callable.
+    const auto bogus = registry.resolveFileInputPull (ida::InputId { 999999999 });
+    REQUIRE_FALSE (bogus.valid());
+    REQUIRE (bogus.fn == nullptr);
+}
