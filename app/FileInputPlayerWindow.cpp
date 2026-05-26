@@ -453,6 +453,11 @@ FileInputPlayerWindow::FileInputPlayerWindow (FileInputRegistry& registry, Input
     setResizeLimits (380, 220, 1200, 900);
     centreWithSize (getWidth(), getHeight());
 
+    // Apply persisted always-on-top flag once on construction. Subsequent
+    // toggles come through the right-click menu (Task 8 step 2).
+    if (const auto* d = registry_.fileInputDescriptor (id_); d != nullptr)
+        setAlwaysOnTop (d->alwaysOnTop);
+
     startTimerHz (30);
     setVisible (true);
 }
@@ -535,9 +540,22 @@ void FileInputPlayerWindow::showOpacityMenu()
     opacity.addSeparator();
     opacity.addItem ("Custom…", true, false, [this] { showCustomOpacityDialog(); });
 
+    bool currentOnTop = false;
+    if (const auto* d = registry_.fileInputDescriptor (id_); d != nullptr)
+        currentOnTop = d->alwaysOnTop;
+
     juce::PopupMenu root;
     root.addItem ("Close window", [this] { closeButtonPressed(); });
     root.addSeparator();
+    root.addItem ("Always on top",
+                  true,                     // enabled
+                  currentOnTop,             // ticked
+                  [this, currentOnTop]
+                  {
+                      const bool next = ! currentOnTop;
+                      registry_.setFileInputAlwaysOnTop (id_, next);
+                      setAlwaysOnTop (next);
+                  });
     root.addSubMenu ("Window opacity", opacity);
     root.showMenuAsync (juce::PopupMenu::Options {}
                             .withTargetComponent (this)
