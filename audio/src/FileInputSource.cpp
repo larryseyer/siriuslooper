@@ -56,6 +56,8 @@ int FileInputSource::currentReaderNumChannels() const noexcept
 
 void FileInputSource::pullInto (juce::AudioBuffer<float>& dest, int numFrames) noexcept
 {
+    jassert (dest.getNumChannels() == 2);   // stereo-only invariant (whitepaper §6.1)
+
     const int writePos = writePos_.load (std::memory_order_acquire);
     const int readPos  = readPos_ .load (std::memory_order_relaxed);
     const int available = (writePos - readPos + kRingFrames) % kRingFrames;
@@ -83,6 +85,8 @@ void FileInputSource::pullInto (juce::AudioBuffer<float>& dest, int numFrames) n
 void FileInputSource::testPushRing (const juce::AudioBuffer<float>& src)
 {
     const int n = src.getNumSamples();
+    jassert (n <= kRingFrames);   // helper has no overrun guard — keep test pushes bounded
+
     int wp = writePos_.load (std::memory_order_relaxed);
     for (int i = 0; i < n; ++i)
     {
