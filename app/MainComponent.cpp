@@ -1237,13 +1237,17 @@ public:
     {
         // Bridge slice (2026-05-25) — dim the faceplate of any NoTape strip
         // so the operator can see at a glance which channels will be silent
-        // on capture. 30 % luminance reduction via translucent dark overlay
-        // — equivalent to withMultipliedBrightness(0.7f) on the underlying
-        // colours. Painted over children so it covers the strip body but
-        // leaves the MON / INS / dest button / fader / mute / solo controls
-        // legible (those are top-aligned in the strip; the dim only covers
-        // the strip's central faceplate band — see strip layout in
-        // CompactFaderStrip::resized).
+        // on capture. Fills the FULL strip bounds with a 30 % black overlay
+        // (α=0.30; equivalent visual weight to a withMultipliedBrightness
+        // (0.7f) on the underlying colours, but as a paint-time overlay so
+        // we don't have to mutate OTTO's vendored CompactFaderStrip).
+        // Adjacent strip-row siblings — the MON / INS / dest button live as
+        // direct children of the pane, NOT of the strip — are painted by
+        // JUCE AFTER paintOverChildren, so they remain full-brightness and
+        // pop visually over the dimmed strip body. The fader, mute, solo,
+        // and FaderMeter readouts INSIDE the strip stay readable at α=0.30
+        // (the contrasted text + brightly-coloured fader handles still pass
+        // the eye-test against the darkened background).
         for (std::size_t i = 0; i < strips_.size() && i < stripTapeModes_.size(); ++i)
         {
             if (stripTapeModes_[i] != ida::TapeMode::NoTape) continue;
