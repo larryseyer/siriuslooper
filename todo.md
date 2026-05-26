@@ -1910,3 +1910,9 @@ assets before public launch:
 - Decomposition: **E1** (FX-return on OutputMixer engine) → **E2** (pre-fader send toggle) || **E3** (channelMainOut + send-zero bypass) → **U** (tabbed ChannelDetail UI: PanWid + EQ + CMP + Sends on both mixers, mirroring OTTO) → **P** (persistence).
 - Why deferred from the original session: substantial multi-touchpoint slice; operator-approved as its own design pass (per `feedback_defer_big_design_to_own_session`).
 - Next step: start E1 in a fresh session; one focused commit per sub-slice; each engine sub-slice is TDD'd before UI begins.
+
+### [2026-05-26] — File-input window: macOS Window > File Players submenu
+- Files: app/MainComponent.cpp (or wherever a new MenuBarModel subclass would live)
+- What was deferred: Step 5 of file-input Task 11 — a macOS `Window > File Players` submenu listing every registered file input, with click-to-open
+- Why deferred: The IDA app currently has no `juce::MenuBarModel` at all. Adding one is meaningfully larger than a one-line submenu — it requires designing the full app menubar surface (File, Edit, View, Help, etc.), which the project hasn't sequenced yet. The Add file input… gesture + strip recall menu give operator access to the player window without it.
+- What's needed to finish: A separate slice that designs the macOS menubar across the app, then adds the File Players submenu as one entry. Until then, file-input strips' right-click "Show player…" item is the only re-open path.

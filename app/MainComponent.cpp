@@ -566,6 +566,15 @@ public:
     /// creates the engine node (bracketed) and rebuilds the bus-strip row.
     std::function<void()>                              onAddBus;
     std::function<void()>                              onAddFxReturn;
+    /// File-input slice Task 11 — "Add file input…" blank-area gesture (right-
+    /// click / long-press on empty pane). MainComponent launches a FileChooser,
+    /// registers the picked files with FileInputRegistry, rebuilds strips, and
+    /// opens the player window.
+    std::function<void()>                              onAddFileInput;
+    /// File-input slice Task 11 — "Show player…" strip-context-menu gesture.
+    /// `stripIdx` indexes the pane's strip row (same index space as `onSelect`).
+    /// Only emitted for strips flagged as file inputs via setStripIsFileInput.
+    std::function<void (int stripIdx)>                 onShowFilePlayerRequested;
 
     /// A bus/FX-return strip's fader/mute/solo changed (busIdx = index into the
     /// pane's bus-strip row, parallel to MainComponent::busStripIds_).
@@ -693,6 +702,7 @@ public:
         monitorButtons_.clear();
         monitorModes_.clear();
         stripTapeModes_.clear();
+        stripIsFileInput_.clear();
         stripDests_.clear();
         // Channel identities change on a rebuild, so the prior channel
         // selection no longer maps to a strip — drop it. The detail panel
@@ -752,6 +762,10 @@ public:
             // (matches the strip-creation seed in MainComponent::refreshInput
             // Destinations: setChannelTapeMode(chId, CommitToTape)).
             stripTapeModes_.push_back (ida::TapeMode::CommitToTape);
+            // File-input slice Task 11 — default false; MainComponent overrides
+            // via setStripIsFileInput after rebuildInputStrips classifies each
+            // strip's source kind.
+            stripIsFileInput_.push_back (false);
         }
         rebuildChannelPills();
         resized();
@@ -810,6 +824,19 @@ public:
         while (stripTapeModes_.size() < strips_.size())
             stripTapeModes_.push_back (ida::TapeMode::CommitToTape);
         repaint();
+    }
+
+    /// File-input slice Task 11 — flag per strip. true → the strip's source is
+    /// a file input (FileInputRegistry-registered); false → hardware input or
+    /// not-yet-classified. Drives the conditional "Show player…" item in
+    /// showToggleMenu. Pushed by MainComponent::rebuildInputStrips after
+    /// setStrips so the mirror is parallel to `strips_`.
+    void setStripIsFileInput (const std::vector<bool>& flags)
+    {
+        const auto n = std::min (flags.size(), strips_.size());
+        stripIsFileInput_.assign (flags.begin(), flags.begin() + static_cast<std::ptrdiff_t> (n));
+        while (stripIsFileInput_.size() < strips_.size())
+            stripIsFileInput_.push_back (false);
     }
 
     /// Pushes the bus-row destination state. Unlike the channel picker, each bus
@@ -1441,6 +1468,22 @@ private:
         menu.addItem (stereo ? "Split to two mono channels" : "Collapse to stereo",
                       [this, idx] { if (onToggleStereoMono) onToggleStereoMono (idx); });
 
+        // File-input slice Task 11 — re-open the player window for a file-input
+        // strip. Conditional on the strip being a registered file input (the
+        // pane itself doesn't know which kind a strip is; MainComponent pushes
+        // the flag via setStripIsFileInput after every rebuildInputStrips).
+        if (idx < static_cast<int> (stripIsFileInput_.size())
+            && stripIsFileInput_[static_cast<std::size_t> (idx)])
+        {
+            menu.addSeparator();
+            menu.addItem ("Show player\xe2\x80\xa6",
+                          [this, idx]
+                          {
+                              if (onShowFilePlayerRequested)
+                                  onShowFilePlayerRequested (idx);
+                          });
+        }
+
         menu.showMenuAsync (juce::PopupMenu::Options{}.withTargetScreenArea (
             juce::Rectangle<int> (screenPos.x, screenPos.y, 1, 1)));
     }
@@ -1452,9 +1495,11 @@ private:
     void showBlankAreaMenu (juce::Point<int> screenPos)
     {
         juce::PopupMenu menu;
-        menu.addItem ("Add bus",       [this] { if (onAddBus)       onAddBus(); });
-        menu.addItem ("Add FX return", [this] { if (onAddFxReturn) onAddFxReturn(); });
-        menu.addItem ("Add tape",      [this] { if (onAddTape)      onAddTape(); });
+        menu.addItem ("Add bus",         [this] { if (onAddBus)        onAddBus(); });
+        menu.addItem ("Add FX return",   [this] { if (onAddFxReturn)   onAddFxReturn(); });
+        menu.addItem ("Add tape",        [this] { if (onAddTape)       onAddTape(); });
+        menu.addItem ("Add file input\xe2\x80\xa6",
+                                         [this] { if (onAddFileInput)  onAddFileInput(); });
         menu.showMenuAsync (juce::PopupMenu::Options{}.withTargetScreenArea (
             juce::Rectangle<int> (screenPos.x, screenPos.y, 1, 1)));
     }
@@ -1638,6 +1683,10 @@ private:
     /// the "Record to tape" item) and by `paintOverChildren` that dims the
     /// strip face when the mode is NoTape.
     std::vector<ida::TapeMode>                                stripTapeModes_;
+    /// File-input slice Task 11 — parallel to `strips_`. true → strip's source
+    /// is a registered file input; drives the conditional "Show player…" item
+    /// in showToggleMenu. Pushed by MainComponent::rebuildInputStrips.
+    std::vector<bool>                                         stripIsFileInput_;
     std::vector<StripDest>                                    stripDests_;
     std::vector<DestChoice>                                   choices_;   // shared, stored once
     std::vector<bool>                                         stripStereo_;
@@ -4033,6 +4082,45 @@ MainComponent::MainComponent()
             audioDeviceManager_.addAudioCallback (audioCallback_.get());
             rebuildBusStrips();
             refreshInputDestinations();
+        };
+        // File-input slice Task 11 — "Add file input…" gesture. Picks one or
+        // more WAV/AIFF/FLAC files via FileChooser, registers them as a single
+        // descriptor (display name comes from the first file's basename), then
+        // rebuilds strips and opens the player window. Audio does NOT yet
+        // reach the speakers — the InputMixer::renderInputGraph → FileInputSource
+        // bridge is a separate deferred slice (see continue.md §6).
+        inputMixerPane_->onAddFileInput = [this]
+        {
+            fileInputChooser_ = std::make_unique<juce::FileChooser> (
+                "Add file input \xe2\x80\x94 pick one or more audio files",
+                juce::File(), "*.wav;*.aif;*.aiff;*.flac");
+            fileInputChooser_->launchAsync (
+                juce::FileBrowserComponent::openMode
+                  | juce::FileBrowserComponent::canSelectFiles
+                  | juce::FileBrowserComponent::canSelectMultipleItems,
+                [this] (const juce::FileChooser& fc)
+                {
+                    const auto results = fc.getResults();
+                    if (results.isEmpty()) return;
+
+                    ida::FileInputDescriptor desc;
+                    desc.displayName = results[0].getFileNameWithoutExtension().toStdString();
+                    const auto id = fileInputRegistry_.registerFileInput (desc);
+                    for (const auto& f : results)
+                        fileInputRegistry_.addFileInputEntry (
+                            id, f.getFullPathName().toStdString());
+
+                    rebuildInputStrips();
+                    openFilePlayerWindow (id);
+                });
+        };
+        // File-input slice Task 11 — strip "Show player…" item relay. Resolves
+        // the strip's InputId from the parallel inputStripInputIds_ vector and
+        // raises (or creates) the matching player window.
+        inputMixerPane_->onShowFilePlayerRequested = [this] (int idx)
+        {
+            if (idx < 0 || idx >= static_cast<int> (inputStripInputIds_.size())) return;
+            openFilePlayerWindow (inputStripInputIds_[static_cast<std::size_t> (idx)]);
         };
         // P7 T5 slice 5 — INS button → InsertChainPopup. The helpers translate
         // each popup callback into a detach/setEffectChain/re-attach cycle on
@@ -6512,6 +6600,22 @@ void MainComponent::refreshInputDestinations()
     inputMixerPane_->setBusDestinations (busChoices, busDests);
 }
 
+void MainComponent::openFilePlayerWindow (ida::InputId id)
+{
+    // Find-or-create. Map key is the InputId value (int64) because InputId is
+    // not hashable. The unique_ptr owns the window; closing the red X destroys
+    // the window via DocumentWindow's standard close-button path (the registry
+    // entry is intentionally NOT erased — operator can re-open via the strip's
+    // "Show player…" item). Bringing-to-front uses DocumentWindow::toFront.
+    auto& slot = filePlayerWindows_[id.value()];
+    if (slot != nullptr)
+    {
+        slot->toFront (true);
+        return;
+    }
+    slot = std::make_unique<ida::FileInputPlayerWindow> (fileInputRegistry_, id);
+}
+
 void MainComponent::rebuildInputStrips()
 {
     // Mutating the InputMixer channel registry races the audio thread (it reads
@@ -6524,12 +6628,14 @@ void MainComponent::rebuildInputStrips()
         inputMixer_->removeChannel (id);
     inputStripChannelIds_.clear();
     inputStripPair_.clear();
+    inputStripInputIds_.clear();
 
     std::vector<InputMixerPane::StripInfo> infos;
     const auto registerStrip = [&] (int pairIndex, int leftCh, int rightCh,
                                     bool stereo, const juce::String& name)
     {
-        const auto chId = inputMixer_->addChannel (InputId (leftCh), SignalType::Audio);
+        const auto inputId = InputId (leftCh);
+        const auto chId = inputMixer_->addChannel (inputId, SignalType::Audio);
         inputMixer_->setChannelInputSource (chId, leftCh, rightCh, stereo);
         // Looper invariant — ≥1 channel must feed ≥1 tape at all times, or this is a
         // mixer, not a looper. Input strips therefore default to capturing their
@@ -6545,6 +6651,7 @@ void MainComponent::rebuildInputStrips()
         juce::ignoreUnused (inputMixer_->setChannelTapeMode (chId, TapeMode::CommitToTape));
         inputStripChannelIds_.push_back (chId);
         inputStripPair_.push_back (pairIndex);
+        inputStripInputIds_.push_back (inputId);
         infos.push_back ({ name, stereo });
     };
 
@@ -6582,11 +6689,42 @@ void MainComponent::rebuildInputStrips()
         }
     }
 
+    // File-input slice Task 11 — append a strip per registered file input
+    // AFTER the hardware-pair loop so file-input strips sit to the right of
+    // hardware strips. inputStripPair_ gets -1 (sentinel: no hardware pair);
+    // the InputId comes from the registry (>= 100000 by construction). File-
+    // input strips are always stereo (FileInputSource is stereo-only — see
+    // its pullInto assert). NoTape until the audio-routing slice lands —
+    // attempting CommitToTape with no audio path through the strip would be
+    // a no-op that confuses the looper-floor invariant.
+    for (const auto& [idValue, desc] : fileInputRegistry_.allFileInputDescriptors())
+    {
+        const auto inputId = ida::InputId (idValue);
+        const auto chId    = inputMixer_->addChannel (inputId, SignalType::Audio);
+        juce::ignoreUnused (inputMixer_->setChannelTapeMode (chId, TapeMode::NoTape));
+        inputStripChannelIds_.push_back (chId);
+        inputStripInputIds_.push_back  (inputId);
+        inputStripPair_.push_back      (-1);
+        infos.push_back ({ juce::String (desc.displayName), /*stereo*/ true });
+    }
+
     // A rebuild changes channel identities, so mute/solo do not carry over.
     inputStripMuted_.assign (inputStripChannelIds_.size(), false);
     inputStripSoloed_.assign (inputStripChannelIds_.size(), false);
 
     if (inputMixerPane_ != nullptr) inputMixerPane_->setStrips (infos);
+
+    // File-input slice Task 11 — push per-strip file-input flags so the strip
+    // context menu's "Show player…" item appears only for file-input strips.
+    if (inputMixerPane_ != nullptr)
+    {
+        std::vector<bool> isFileFlags;
+        isFileFlags.reserve (inputStripInputIds_.size());
+        for (const auto& iid : inputStripInputIds_)
+            isFileFlags.push_back (fileInputRegistry_.fileInputDescriptor (iid) != nullptr);
+        inputMixerPane_->setStripIsFileInput (isFileFlags);
+    }
+
     recomputeInputStripMutes();
     refreshInputDestinations();   // populate the picker labels for the new strips
 

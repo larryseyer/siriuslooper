@@ -10,6 +10,7 @@
 #include "ida/ChannelStrip.h"
 #include "ida/EngineConfig.h"
 #include "ida/InputDescriptor.h"
+#include "ida/FileInputRegistry.h"
 #include "ida/FlacTapeSink.h"
 #include "ida/TapeColoringSink.h"
 #include "ida/InputMixer.h"
@@ -28,6 +29,8 @@
 #include "ida/TapeId.h"
 #include "ida/TapePool.h"
 #include "ida/UndoStack.h"
+
+#include "FileInputPlayerWindow.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -303,6 +306,21 @@ private:
     // inputMixer_ so it outlives the mixer on destruction.
     ida::TapePool                      tapePool_;
     std::unique_ptr<InputMixer>           inputMixer_;
+    // File-input slice Task 11 — UI-side registry that owns FileInputSource
+    // instances behind each registered file input. Declared on the message-
+    // thread side because the player-window lifetime and the Add-file-input
+    // gesture both run on the message thread. Constructed at 48 kHz (the
+    // FileInputSource resampler handles file-SR mismatches; device-SR
+    // mismatch is a known v1 limitation — see continue.md §1).
+    ida::FileInputRegistry                fileInputRegistry_ { 48000.0 };
+    std::unique_ptr<juce::FileChooser>    fileInputChooser_;
+    std::unordered_map<std::int64_t, std::unique_ptr<ida::FileInputPlayerWindow>>
+                                          filePlayerWindows_;
+    /// Opens (or brings to front) the player window for the given file-input
+    /// `id`. Message-thread only. The window holds a reference to
+    /// `fileInputRegistry_` so the registry must outlive every entry in
+    /// `filePlayerWindows_` (true today: registry is declared above this map).
+    void openFilePlayerWindow (ida::InputId id);
     std::unique_ptr<OutputMixer>          outputMixer_;
     // Tape slice 3 — declared before audioCallback_ so the sink outlives the
     // callback: the callback's last audio delivery (via InputMixer→ITapeSink)
@@ -402,7 +420,13 @@ private:
     std::vector<InputPair>          inputPairs_;
     // Flat per-strip state, parallel arrays rebuilt by rebuildInputStrips().
     std::vector<ChannelId>          inputStripChannelIds_;
-    std::vector<int>                inputStripPair_;     // strip → index into inputPairs_
+    std::vector<int>                inputStripPair_;     // strip → index into inputPairs_ (-1 for file-input strips)
+    /// Strip → source InputId, parallel to inputStripChannelIds_. For hardware
+    /// strips this is InputId(leftCh); for file-input strips it is the
+    /// registry-allocated InputId (>= 100000). Used by the "Show player…"
+    /// strip-context-menu callback to find which descriptor each strip belongs
+    /// to. Maintained by rebuildInputStrips().
+    std::vector<ida::InputId>       inputStripInputIds_;
     std::vector<bool>               inputStripMuted_;
     std::vector<bool>               inputStripSoloed_;
     // Bus/FX-return strip IDs, parallel to InputMixerPane bus strips.
