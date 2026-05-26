@@ -4106,9 +4106,19 @@ MainComponent::MainComponent()
                     ida::FileInputDescriptor desc;
                     desc.displayName = results[0].getFileNameWithoutExtension().toStdString();
                     const auto id = fileInputRegistry_.registerFileInput (desc);
+                    int failed = 0;
                     for (const auto& f : results)
-                        fileInputRegistry_.addFileInputEntry (
+                    {
+                        const auto entry = fileInputRegistry_.addFileInputEntry (
                             id, f.getFullPathName().toStdString());
+                        if (entry.value() < 0) ++failed;
+                    }
+                    if (failed > 0 && captureBanner_ != nullptr)
+                    {
+                        captureBanner_->show ("File input: " + juce::String (failed)
+                                              + " of " + juce::String (results.size())
+                                              + " file(s) could not be added.");
+                    }
 
                     rebuildInputStrips();
                     openFilePlayerWindow (id);
@@ -6602,14 +6612,16 @@ void MainComponent::refreshInputDestinations()
 
 void MainComponent::openFilePlayerWindow (ida::InputId id)
 {
-    // Find-or-create. Map key is the InputId value (int64) because InputId is
-    // not hashable. The unique_ptr owns the window; closing the red X destroys
-    // the window via DocumentWindow's standard close-button path (the registry
-    // entry is intentionally NOT erased — operator can re-open via the strip's
-    // "Show player…" item). Bringing-to-front uses DocumentWindow::toFront.
+    // Find-or-create the floating player window for `id`. FileInputPlayerWindow's
+    // closeButtonPressed hides the window rather than destroying it, so the find
+    // branch must explicitly restore visibility — toFront alone is a no-op on a
+    // hidden window. Slots are owned by filePlayerWindows_; destruction happens
+    // when MainComponent tears down (which precedes fileInputRegistry_ teardown
+    // per member-declaration order in MainComponent.h).
     auto& slot = filePlayerWindows_[id.value()];
     if (slot != nullptr)
     {
+        slot->setVisible (true);
         slot->toFront (true);
         return;
     }
@@ -6692,9 +6704,9 @@ void MainComponent::rebuildInputStrips()
     // File-input slice Task 11 — append a strip per registered file input
     // AFTER the hardware-pair loop so file-input strips sit to the right of
     // hardware strips. inputStripPair_ gets -1 (sentinel: no hardware pair);
-    // the InputId comes from the registry (>= 100000 by construction). File-
-    // input strips are always stereo (FileInputSource is stereo-only — see
-    // its pullInto assert). NoTape until the audio-routing slice lands —
+    // the InputId is the file-input id allocated by the registry. File-input
+    // strips are always stereo (FileInputSource is stereo-only — see its
+    // pullInto assert). NoTape until the audio-routing slice lands —
     // attempting CommitToTape with no audio path through the strip would be
     // a no-op that confuses the looper-floor invariant.
     for (const auto& [idValue, desc] : fileInputRegistry_.allFileInputDescriptors())
