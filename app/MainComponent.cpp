@@ -791,6 +791,62 @@ public:
         }
     }
 
+    /// Appends ONE strip without disturbing the existing ones. Used when adding
+    /// a new file input: a full setStrips() rebuild would wipe MON / mute / fader /
+    /// route state on every other channel (operator-reported bug). Mirrors one
+    /// iteration of the loop inside setStrips, then refreshes pills + layout.
+    /// `isFileInput=true` seeds the per-strip flag inline so the strip-context
+    /// menu can offer "Show player…" / "Remove file input" immediately.
+    void appendStrip (const StripInfo& info, bool isFileInput)
+    {
+        const int i = static_cast<int> (strips_.size());
+
+        auto strip = std::make_unique<otto::ui::CompactFaderStrip> (
+            i, otto::ui::ChannelType::Instrument);
+        strip->setChannelName (info.name);
+        strip->setOutputComboVisible (false);
+        strip->addListener (this);
+        strip->addMouseListener (this, /*wantsNestedEvents*/ true);
+        addAndMakeVisible (*strip);
+        strips_.push_back (std::move (strip));
+        stripStereo_.push_back (info.stereo);
+
+        auto button = std::make_unique<juce::TextButton>();
+        button->setButtonText ("\xe2\x80\x94");
+        const int idx = i;
+        button->onClick = [this, idx] { showDestinationMenu (idx); };
+        addAndMakeVisible (*button);
+        destButtons_.push_back (std::move (button));
+        stripDests_.push_back ({});
+
+        auto ins = std::make_unique<juce::TextButton>();
+        ins->setButtonText ("INS");
+        ins->onClick = [this, idx]
+        {
+            if (onInputInsertChainClicked) onInputInsertChainClicked (idx);
+        };
+        addAndMakeVisible (*ins);
+        inputStripInsButtons_.push_back (std::move (ins));
+
+        auto mon = std::make_unique<juce::TextButton>();
+        mon->setButtonText ("Off");
+        mon->setTooltip ("MON off — you do not hear this input through IDA. "
+                         "Click to enable monitoring.");
+        mon->onClick = [this, idx] { toggleMonitorModeAt (idx); };
+        addAndMakeVisible (*mon);
+        monitorButtons_.push_back (std::move (mon));
+        monitorModes_.push_back (ida::MonitorMode::Off);
+        // File-input strips default NoTape (playback, not capture); hardware
+        // defaults CommitToTape. MainComponent's onAddFileInput knows which is
+        // which and passes isFileInput accordingly.
+        stripTapeModes_.push_back (isFileInput ? ida::TapeMode::NoTape
+                                               : ida::TapeMode::CommitToTape);
+        stripIsFileInput_.push_back (isFileInput);
+
+        rebuildChannelPills();
+        resized();
+    }
+
     /// Pushes the destination state: the shared `choices` list (stored once for
     /// the popup; tapes then buses then direct-out) plus a per-strip `perStrip`
     /// entry parallel to the strips set by setStrips. `perStrip` length should
@@ -4173,7 +4229,26 @@ MainComponent::MainComponent()
                                               + " file(s) could not be added.");
                     }
 
-                    rebuildInputStrips();
+                    // Surgical add — append ONE channel + ONE strip without
+                    // touching existing channels. rebuildInputStrips would wipe
+                    // every other channel's MON / mute / fader / route / arm
+                    // state (operator-reported bug 2026-05-26).
+                    audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+                    const auto chId = inputMixer_->addChannel (id, ida::SignalType::Audio);
+                    inputMixer_->setChannelFileInputSource (chId, id);
+                    juce::ignoreUnused (inputMixer_->setChannelTapeMode (chId, ida::TapeMode::NoTape));
+                    audioDeviceManager_.addAudioCallback (audioCallback_.get());
+
+                    inputStripChannelIds_.push_back (chId);
+                    inputStripInputIds_.push_back  (id);
+                    inputStripPair_.push_back      (-1);
+                    inputStripMuted_.push_back     (false);
+                    inputStripSoloed_.push_back    (false);
+
+                    inputMixerPane_->appendStrip ({ juce::String (desc.displayName),
+                                                    /*stereo*/ true },
+                                                  /*isFileInput*/ true);
+
                     openFilePlayerWindow (id);
                 });
         };
