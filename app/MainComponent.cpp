@@ -7366,7 +7366,8 @@ void MainComponent::chooseFileAndLoad()
                                     inputMixer_->setChannelTapeMode (firstId,
                                                                      ida::TapeMode::CommitToTape));
                                 captureBanner_->show (
-                                    "Session contained no record-armed channels; armed channel 1.");
+                                    "Session contained no record-armed channels; armed channel "
+                                    + juce::String (firstId.value()) + ".");
                             }
                         }
                         // V9 follow-up: realign inputStripChannelIds_ to the
