@@ -33,6 +33,7 @@ private:
 
     void timerCallback() override;          ///< 30 Hz UI refresh
     void showOpacityMenu();                 ///< right-click handler
+    void showCustomOpacityDialog();         ///< invoked by the Custom… menu item
 
     FileInputRegistry& registry_;
     InputId            id_;

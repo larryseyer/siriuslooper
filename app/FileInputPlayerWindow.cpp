@@ -50,6 +50,12 @@ public:
             registry_.seekFileInput (id_, frames);
         };
 
+        // Spec §4.6 CurrentTrackLabel — always shows the playing entry's
+        // filename, independent of whether the list is scrolled out of view.
+        currentTrackLabel_.setText ("Now: —", juce::dontSendNotification);
+        currentTrackLabel_.setJustificationType (juce::Justification::centredLeft);
+        currentTrackLabel_.setMinimumHorizontalScale (1.0f);
+
         trackList_.setModel (this);
         trackList_.setRowHeight (22);
         trackList_.setMultipleSelectionEnabled (false);
@@ -59,6 +65,7 @@ public:
         addAndMakeVisible (stopButton_);
         addAndMakeVisible (scrubber_);
         addAndMakeVisible (loopButton_);
+        addAndMakeVisible (currentTrackLabel_);
         addAndMakeVisible (trackList_);
         addAndMakeVisible (addButton_);
         addAndMakeVisible (upButton_);
@@ -93,6 +100,10 @@ public:
         scrubber_    .setBounds (transport);
 
         r.removeFromTop (6);
+
+        // CurrentTrackLabel — between scrubber and track list.
+        currentTrackLabel_.setBounds (r.removeFromTop (20));
+        r.removeFromTop (4);
 
         // List toolbar (bottom).
         auto toolbar = r.removeFromBottom (26);
@@ -178,6 +189,24 @@ public:
         if (loopScopeChanged)
             loopButton_.setButtonText (loopGlyph (state.loopScope));
 
+        // CurrentTrackLabel — reflect the playing entry's filename.
+        if (currentEntryChanged || listSizeChanged)
+        {
+            juce::String label = "Now: —";
+            if (state.currentEntry != PlaylistEntryId (-1))
+            {
+                for (const auto& e : desc->entries)
+                {
+                    if (e.entryId == state.currentEntry)
+                    {
+                        label = "Now: " + juce::File (e.path).getFileName();
+                        break;
+                    }
+                }
+            }
+            currentTrackLabel_.setText (label, juce::dontSendNotification);
+        }
+
         // Scrubber. Range derives from the current entry's cached duration
         // (when known); otherwise we fall back to a stable [0,1] range so
         // the playhead-as-fraction still moves.
@@ -253,7 +282,7 @@ private:
         chooser_ = std::make_unique<juce::FileChooser> (
             "Append audio file to playlist",
             juce::File::getSpecialLocation (juce::File::userMusicDirectory),
-            "*.wav;*.aif;*.aiff;*.flac;*.mp3;*.ogg");
+            "*.wav;*.aif;*.aiff;*.flac");
 
         chooser_->launchAsync (
             juce::FileBrowserComponent::openMode
@@ -335,6 +364,7 @@ private:
     juce::TextButton loopButton_;
     juce::TextButton addButton_, upButton_, downButton_, removeButton_;
     juce::Slider     scrubber_;
+    juce::Label      currentTrackLabel_;
     juce::ListBox    trackList_;
 
     std::unique_ptr<juce::FileChooser> chooser_;
@@ -433,11 +463,71 @@ void FileInputPlayerWindow::showOpacityMenu()
                          });
     }
 
+    // Spec §3 / §4.6 — sixth `Custom…` entry opens a slider in [0.5, 1.0].
+    opacity.addSeparator();
+    opacity.addItem ("Custom…", true, false, [this] { showCustomOpacityDialog(); });
+
     juce::PopupMenu root;
     root.addSubMenu ("Window opacity", opacity);
     root.showMenuAsync (juce::PopupMenu::Options {}
                             .withTargetComponent (this)
                             .withMousePosition());
+}
+
+void FileInputPlayerWindow::showCustomOpacityDialog()
+{
+    float current = 0.92f;
+    if (const auto* d = registry_.fileInputDescriptor (id_); d != nullptr)
+        current = juce::jlimit (0.5f, 1.0f, d->windowOpacity);
+
+    // Modal AlertWindow with an inline slider — simpler and more
+    // operator-obvious than wedging a CustomComponent into the popup,
+    // and the slider stays put while dragging.
+    auto* aw = new juce::AlertWindow ("Window opacity",
+                                      "Drag to set window opacity (50–100%).",
+                                      juce::MessageBoxIconType::NoIcon, this);
+
+    auto slider = std::make_unique<juce::Slider> (juce::Slider::LinearHorizontal,
+                                                  juce::Slider::TextBoxRight);
+    slider->setRange (0.50, 1.00, 0.01);
+    slider->setValue (current, juce::dontSendNotification);
+    slider->setSize (320, 28);
+    slider->setNumDecimalPlacesToDisplay (2);
+
+    // Live preview as the operator drags — the registry write happens on
+    // OK so cancelling reverts cleanly.
+    auto* sliderPtr = slider.get();
+    slider->onValueChange = [this, sliderPtr]
+    {
+        setAlpha (static_cast<float> (sliderPtr->getValue()));
+    };
+
+    aw->addCustomComponent (slider.get());
+    aw->addButton ("OK",     1, juce::KeyPress (juce::KeyPress::returnKey));
+    aw->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    const float originalOpacity = current;
+    auto sliderOwned = std::shared_ptr<juce::Slider> (slider.release());
+
+    aw->enterModalState (true,
+        juce::ModalCallbackFunction::create (
+            [this, aw, sliderOwned, originalOpacity] (int result)
+            {
+                if (result == 1)
+                {
+                    const float a = juce::jlimit (0.5f, 1.0f,
+                                                  static_cast<float> (sliderOwned->getValue()));
+                    registry_.setFileInputWindowOpacity (id_, a);
+                    setAlpha (a);
+                }
+                else
+                {
+                    // Revert the live-preview alpha on cancel.
+                    setAlpha (originalOpacity);
+                }
+                delete aw;
+            }),
+        false);
 }
 
 } // namespace ida
