@@ -19,7 +19,8 @@ enum class InputKind
     Control,
     ParameterAutomation,
     Transport,
-    System
+    System,
+    FileInput   ///< Playlist of 1+ audio files; whitepaper V9 §6.6.
 };
 
 /// Project the seven `InputKind` cases onto the four-case `SignalType`
@@ -37,6 +38,7 @@ constexpr SignalType signalTypeOf (InputKind kind) noexcept
         case InputKind::Audio: return SignalType::Audio;
         case InputKind::Midi:  return SignalType::Midi;
         case InputKind::Video: return SignalType::Video;
+        case InputKind::FileInput: return SignalType::Audio;
         case InputKind::Control:
         case InputKind::ParameterAutomation:
         case InputKind::Transport:
