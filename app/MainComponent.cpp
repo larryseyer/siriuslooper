@@ -7340,6 +7340,35 @@ void MainComponent::chooseFileAndLoad()
                                     inputMixer_->setBusMonitorMode (
                                         ida::BusId (b.busId),
                                         ida::MonitorMode::On);
+                        // Bridge slice (2026-05-25) — looper invariant floor.
+                        // A session file may arrive with zero CommitToTape
+                        // channels (externally edited, or a bug in a prior
+                        // export). The engine's setChannelTapeMode prevents
+                        // this state from being REACHED via gestures, but
+                        // importGraphState is a faithful state replacement —
+                        // it accepts whatever it's given. Restore the floor
+                        // by arming the first channel if no other channel is
+                        // armed after import.
+                        if (loadedInputMixer.has_value())
+                        {
+                            bool anyArmed = false;
+                            for (const auto& c : loadedInputMixer->channels)
+                                if (c.tapeMode != ida::TapeMode::NoTape)
+                                {
+                                    anyArmed = true;
+                                    break;
+                                }
+                            if (! anyArmed && ! loadedInputMixer->channels.empty())
+                            {
+                                const auto firstId = ida::ChannelId (
+                                    loadedInputMixer->channels.front().channelId);
+                                juce::ignoreUnused (
+                                    inputMixer_->setChannelTapeMode (firstId,
+                                                                     ida::TapeMode::CommitToTape));
+                                captureBanner_->show (
+                                    "Session contained no record-armed channels; armed channel 1.");
+                            }
+                        }
                         // V9 follow-up: realign inputStripChannelIds_ to the
                         // loaded channel ids so refreshOutputMixerMonChannels()
                         // resolves the freshly-imported MON state. The strip

@@ -1,4 +1,5 @@
 #include "ida/MixerGraphState.h"
+#include "ida/InputMixer.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -94,4 +95,42 @@ TEST_CASE ("MixerBusState carries monitorMode with Off default and round-trips e
     CHECK (a != b);                           // a differs on the new field
     b.monitorMode = ida::MonitorMode::On;
     CHECK (a == b);                           // both On → equal again
+}
+
+TEST_CASE ("InputMixerGraphState all-NoTape import: engine accepts the snapshot as-is "
+           "(load-handler is responsible for floor restoration, not importGraphState)",
+           "[mixer-graph-state][tape-mode][floor]")
+{
+    // The engine's importGraphState is a faithful state replacement — it does
+    // NOT enforce the floor invariant (that's the load-handler's job, per the
+    // bridge-slice design §6.2). This test pins the contract so the load-
+    // handler test (next test) can rely on the engine accepting whatever it's
+    // given.
+    ida::InputMixer mixer;
+    ida::InputMixerGraphState state;
+    state.channels.push_back ({});
+    state.channels.back().channelId    = 1;
+    state.channels.back().signalType   = ida::SignalType::Audio;
+    state.channels.back().inputSourceId = 1;
+    state.channels.back().tapeMode     = ida::TapeMode::NoTape;     // intentional corruption
+
+    state.channels.push_back ({});
+    state.channels.back().channelId    = 2;
+    state.channels.back().signalType   = ida::SignalType::Audio;
+    state.channels.back().inputSourceId = 1;
+    state.channels.back().tapeMode     = ida::TapeMode::NoTape;
+
+    // engine accepts the all-NoTape import without complaint
+    CHECK_NOTHROW (mixer.importGraphState (state));
+
+    // No armed channels exist — predicate says "no channel id is disarmable"
+    // (every channel is already NoTape, so disarming each is a no-op and
+    // therefore allowed; the floor is conceptually violated but the engine
+    // doesn't enforce on the snapshot itself).
+    CHECK (mixer.channelTapeMode (ida::ChannelId { 1 }) == ida::TapeMode::NoTape);
+    CHECK (mixer.channelTapeMode (ida::ChannelId { 2 }) == ida::TapeMode::NoTape);
+
+    // Floor restoration is the LOAD HANDLER's job (Task 3 step 4 in the
+    // bridge-slice plan). MainComponent::chooseFileAndLoad does it after
+    // importGraphState returns.
 }
