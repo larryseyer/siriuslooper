@@ -82,7 +82,7 @@ public:
     struct FileInputTransportState
     {
         bool            isPlaying     { false };
-        PlaylistEntryId currentEntry  { -1 };
+        PlaylistEntryId currentEntry  { -1 };  ///< sentinel: -1 = no active entry
         std::int64_t    playheadFrames { 0 };
         LoopScope       loopScope     { LoopScope::Off };
     };
