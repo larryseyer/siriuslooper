@@ -184,21 +184,6 @@
   OutputMixer equivalent. The serialize/deserialize functions + export/import members are already
   built and unit-tested; only the MainComponent call sites are missing.
 
-### 2026-05-22 — input→output bridge slice: ≥1-channel→≥1-tape enforcement + per-channel direct-out opt-out (MOVED here from "slice 4")
-- Files: app/MainComponent.cpp (the destination picker), engine/src/InputMixer.cpp (route mutators).
-- What was deferred: (a) letting a channel opt OUT of tape (TapeMode::NoTape → the direct layer to
-  an output-mixer channel — see project_io_ownership_direct_layer); (b) the ACTIVE enforcement that
-  refuses to let the count of channels-recording-to-a-tape reach zero (≥1 channel → ≥1 tape ALWAYS,
-  else it's a mixer not a looper — memory project_looper_at_least_one_tape_invariant).
-- Why MOVED (2026-05-22): the tape-UI slice's per-channel picker offers TAPE destinations only —
-  there is NO no-tape destination until the input→output direct-layer bridge slice exists, so
-  nothing can drop below the floor before then. Enforcement belongs with the feature that can
-  violate it. The bridge slice is paired with the Output Mixer UI (P8), which provides the
-  addressable output channels the opt-out routes to.
-- What's needed to finish: in the bridge slice, when a route change would drop the last
-  channel→tape path, refuse / keep ≥1 (surface why). NonDestructive's dry+param-tape split is a
-  separate (wet-capture) concern, not this path.
-
 ### 2026-05-21 — Tape subsystem slice 3 (capture-to-disk / FLAC) deferrals
 - Files: audio/src/FlacTapeSink.cpp, audio/include/ida/FlacTapeSink.h, app/MainComponent.cpp.
 - What was deferred (all intentional — slice-3 scope was "make routing record"):
