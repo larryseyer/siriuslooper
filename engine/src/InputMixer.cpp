@@ -1136,7 +1136,7 @@ void InputMixer::renderInputGraph (const float* const* deviceIn, int numDeviceCh
                                    float* const* directOut, int numDirectOutChannels,
                                    int numSamples) noexcept
 {
-    if (deviceIn == nullptr || numDeviceChannels <= 0 || numSamples <= 0) return;
+    if (numSamples <= 0) return;
     jassert (directOut != nullptr || numDirectOutChannels == 0); // null ptr with non-zero count would deref
     const int n = std::min (numSamples, static_cast<int> (kMaxScratchSamples));
 
@@ -1152,6 +1152,12 @@ void InputMixer::renderInputGraph (const float* const* deviceIn, int numDeviceCh
     }
 
     // ── Steps 1–2: per channel, gather → strip → route main-out + sends ──
+    // Guarded: device-input channels require live `deviceIn` buffers. This
+    // block is skipped entirely when no input device is attached (e.g. iOS
+    // headless, host-disables-inputs). File-input channels below are
+    // unconditional and continue to render in that scenario.
+    if (deviceIn != nullptr && numDeviceChannels > 0)
+    {
     for (const auto& [chValue, source] : channelSources_)
     {
         auto chIt = channels_.find (chValue);
@@ -1234,6 +1240,7 @@ void InputMixer::renderInputGraph (const float* const* deviceIn, int numDeviceCh
             accumulateIntoBus (e.fxReturn, sendLeft, sendRight, e.level, n);
         }
     }
+    } // end device-input guard
 
     // ── Steps 1–2 (file-input variant): same gather → strip → route flow
     // as the device-input loop above, but the source is the channel's cached
@@ -1241,8 +1248,13 @@ void InputMixer::renderInputGraph (const float* const* deviceIn, int numDeviceCh
     // do NOT have a `channelSources_` entry (the maps are disjoint by design
     // — Task 4 of the file-input audio-routing slice), so this is a separate
     // loop rather than a branch inside the device loop. Preserves device-path
-    // semantics byte-for-byte. RT-safe: noexcept fn pointer, no allocation,
-    // no map mutation. ──
+    // semantics byte-for-byte.
+    // RT-safe: noexcept fn pointer, no allocation, no locks.
+    // Map mutation is excluded at the call site: setChannelFileInputSource
+    // and removeChannel (the only writers) require the audio callback to be
+    // detached (removeAudioCallback / addAudioCallback bracket — Task 6
+    // wires this in MainComponent). Iterating a stable unordered_map is
+    // wait-free — no relocation, no rehash. ──
     for (const auto& [chValue, pull] : channelFilePulls_)
     {
         if (! pull.valid()) continue;

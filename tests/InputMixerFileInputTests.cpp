@@ -95,3 +95,39 @@ TEST_CASE ("InputMixer renders a file-input channel through its cached pull call
         REQUIRE (postR[n] == Catch::Approx (-0.75f * kPanGain).margin (1e-5f));
     }
 }
+
+TEST_CASE ("InputMixer renders file-input channels even when deviceIn is null",
+           "[file-input][input-mixer]")
+{
+    StubFileInputRegistry stub;
+    const ida::InputId fileId { ida::kFileInputIdBase };
+    stub.seed (fileId, { 0.10f, -0.10f });
+
+    ida::InputMixer mixer;
+    mixer.setFileInputSourceRegistry (&stub);
+
+    ida::InputDescriptor desc {
+        ida::TapeId (1), ida::InputKind::Audio,
+        std::string ("FileInput null-device"), std::optional<int> {}
+    };
+    mixer.registerInput (fileId, desc);
+    const auto channelId = mixer.addChannel (fileId, ida::SignalType::Audio);
+    mixer.setChannelFileInputSource (channelId, fileId);
+
+    constexpr int numFrames = 64;
+    mixer.renderInputGraph (nullptr, 0, nullptr, 0, numFrames);
+
+    const float* postL = mixer.postStripPointer (channelId, 0);
+    const float* postR = mixer.postStripPointer (channelId, 1);
+    REQUIRE (postL != nullptr);
+    REQUIRE (postR != nullptr);
+
+    // Same pan-law adjustment as the primary test — proves the file-input
+    // callable supplied the data even with no device buffers.
+    constexpr float kPanGain = 0.70710677f;
+    for (int n = 0; n < numFrames; ++n)
+    {
+        REQUIRE (postL[n] == Catch::Approx ( 0.10f * kPanGain).margin (1e-5f));
+        REQUIRE (postR[n] == Catch::Approx (-0.10f * kPanGain).margin (1e-5f));
+    }
+}
