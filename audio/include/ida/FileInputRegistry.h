@@ -76,6 +76,11 @@ public:
     /// about opacity — descriptor-only state.)
     void setFileInputWindowOpacity (InputId id, float opacity);
 
+    /// Pins the player window above other windows. Pure descriptor mutation
+    /// (windowing is message-thread; FileInputSource is unaware of this
+    /// flag). No-op if `id` is unknown.
+    void setFileInputAlwaysOnTop (InputId id, bool onTop);
+
     /// Snapshot of live transport state for the UI poll path (30 Hz).
     /// Returns a default-constructed state (isPlaying=false, sentinel
     /// PlaylistEntryId(-1), playheadFrames=0, loopScope=Off) if `id` is

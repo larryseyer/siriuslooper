@@ -49,6 +49,26 @@ TEST_CASE ("FileInputRegistry::setFileInputWindowOpacity clamps to [0.5, 1.0]",
     CHECK (registry.fileInputDescriptor (id)->windowOpacity == Catch::Approx (0.8f));
 }
 
+TEST_CASE ("FileInputRegistry::setFileInputAlwaysOnTop flips the descriptor field",
+           "[file-input][registry]")
+{
+    ida::FileInputRegistry registry { 48000.0 };
+    const auto id = registry.registerFileInput ({});
+
+    REQUIRE (registry.fileInputDescriptor (id) != nullptr);
+    CHECK (registry.fileInputDescriptor (id)->alwaysOnTop == false);
+
+    registry.setFileInputAlwaysOnTop (id, true);
+    CHECK (registry.fileInputDescriptor (id)->alwaysOnTop == true);
+
+    registry.setFileInputAlwaysOnTop (id, false);
+    CHECK (registry.fileInputDescriptor (id)->alwaysOnTop == false);
+
+    // Unknown id is a no-op (does not crash, does not mutate other entries).
+    registry.setFileInputAlwaysOnTop (ida::InputId (999999), true);
+    CHECK (registry.fileInputDescriptor (id)->alwaysOnTop == false);
+}
+
 TEST_CASE ("FileInputRegistry::resolveFileInputPull returns a valid callable that consumes the source's ring",
            "[file-input][registry][resolve]")
 {

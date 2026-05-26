@@ -156,6 +156,12 @@ void FileInputRegistry::setFileInputWindowOpacity (InputId id, float opacity)
     it->second.windowOpacity = std::clamp (opacity, 0.5f, 1.0f);
 }
 
+void FileInputRegistry::setFileInputAlwaysOnTop (InputId id, bool onTop)
+{
+    if (auto it = descriptors_.find (id.value()); it != descriptors_.end())
+        it->second.alwaysOnTop = onTop;
+}
+
 FileInputRegistry::FileInputTransportState
     FileInputRegistry::fileInputTransportState (InputId id) const
 {
