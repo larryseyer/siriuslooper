@@ -440,6 +440,11 @@ FileInputPlayerWindow::FileInputPlayerWindow (FileInputRegistry& registry, Input
     setTitleBarHeight (0);
     setWantsKeyboardFocus (true);
     setOpaque (false);
+    // ResizableWindow::paint fills the whole window with the bg colour BEFORE
+    // Content::paint runs. Without this, that fill is opaque and Content's
+    // alpha is invisible inside the content area. Force the parent fill
+    // transparent so Content's per-paint alpha-fill is the only visible bg.
+    setBackgroundColour (getBackgroundColour().withAlpha (0.0f));
 
     content_ = std::make_unique<Content> (registry_, id_);
     setContentNonOwned (content_.get(), true);
@@ -447,12 +452,6 @@ FileInputPlayerWindow::FileInputPlayerWindow (FileInputRegistry& registry, Input
     setResizable (true, true);
     setResizeLimits (380, 220, 1200, 900);
     centreWithSize (getWidth(), getHeight());
-
-    // Semi-transparent peer so Content::paint's alpha-fill renders correctly;
-    // drop shadow keeps the floating window visually anchored. Must be set
-    // before setVisible(true) so the peer is created with the right flags.
-    addToDesktop (juce::ComponentPeer::windowHasDropShadow
-                  | juce::ComponentPeer::windowIsSemiTransparent);
 
     startTimerHz (30);
     setVisible (true);
@@ -492,6 +491,16 @@ bool FileInputPlayerWindow::keyPressed (const juce::KeyPress& key)
         return true;
     }
     return juce::DocumentWindow::keyPressed (key);
+}
+
+int FileInputPlayerWindow::getDesktopWindowStyleFlags() const
+{
+    // Add `windowIsSemiTransparent` so Content::paint's alpha-fill renders
+    // through the OS compositor. TopLevelWindow's recreateDesktopWindow()
+    // (triggered by setUsingNativeTitleBar(false) in the ctor) calls this
+    // and creates the peer with the full flag set automatically.
+    return juce::DocumentWindow::getDesktopWindowStyleFlags()
+         | juce::ComponentPeer::windowIsSemiTransparent;
 }
 
 void FileInputPlayerWindow::timerCallback()

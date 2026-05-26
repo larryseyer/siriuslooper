@@ -28,6 +28,7 @@ public:
     void closeButtonPressed() override;
     void mouseDown (const juce::MouseEvent&) override;
     bool keyPressed (const juce::KeyPress&) override;
+    int  getDesktopWindowStyleFlags() const override;
 
     /// Public so the inner Content can forward right-clicks here (JUCE's
     /// mouseDown does NOT bubble to parents; without this forwarding the
