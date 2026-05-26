@@ -1292,6 +1292,10 @@ public:
         for (std::size_t i = 0; i < strips_.size() && i < stripTapeModes_.size(); ++i)
         {
             if (stripTapeModes_[i] != ida::TapeMode::NoTape) continue;
+            // File-input strips are intentionally NoTape (playback sources, not
+            // capture sources). The dim overlay's "won't capture" warning
+            // doesn't apply to them — exempt.
+            if (i < stripIsFileInput_.size() && stripIsFileInput_[i]) continue;
             // Strip's bounds in pane coordinates.
             const auto stripBounds = strips_[i]->getBounds();
             g.setColour (juce::Colours::black.withAlpha (0.30f));
