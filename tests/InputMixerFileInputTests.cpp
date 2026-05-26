@@ -48,29 +48,37 @@ private:
     std::unordered_map<std::int64_t, Pattern> patterns_;
 };
 
-/// Stub that returns a "valid" callable whose pull function writes a sentinel
-/// then returns false. Used to verify the engine silences the scratch buffer
-/// when the pull contract says "no data" — post-strip must still be zero.
+/// Togglable stub. When `returnFalse_` is true, the pull function writes
+/// a sentinel pattern AND returns false (engine must silence the scratch).
+/// When false, writes a known pattern and returns true (engine renders it).
+/// Lets the test verify both the silencing path AND that the engine
+/// doesn't latch into silence after one false return.
 class StubReturnsFalseRegistry : public ida::IFileInputSourceRegistry
 {
 public:
+    void setReturnFalse (bool b) noexcept { returnFalse_ = b; }
+
     ida::FileInputPullCallable resolveFileInputPull (ida::InputId /*id*/) noexcept override
     {
-        // Userdata is unused; the pull function ignores it. fn != nullptr =>
-        // FileInputPullCallable::valid() == true, so the engine will reach
-        // the call site (where it must honor the false return by silencing).
-        return ida::FileInputPullCallable { &StubReturnsFalseRegistry::pullStatic, nullptr };
+        return ida::FileInputPullCallable { &pullStatic, this };
     }
 
 private:
-    static bool pullStatic (void* /*userdata*/, float* L, float* R, int n) noexcept
+    static bool pullStatic (void* userdata, float* L, float* R, int n) noexcept
     {
-        // Deliberately write a non-zero sentinel and return false — engine
-        // must silence the scratch before strip processing, so post-strip
-        // should still be 0.
-        for (int i = 0; i < n; ++i) { L[i] = 9999.0f; R[i] = 9999.0f; }
-        return false;
+        auto* self = static_cast<StubReturnsFalseRegistry*> (userdata);
+        if (self->returnFalse_)
+        {
+            // Sentinel: write 9999 and return false. Engine must silence.
+            for (int i = 0; i < n; ++i) { L[i] = 9999.0f; R[i] = 9999.0f; }
+            return false;
+        }
+        // Recovery: write known signal and return true.
+        for (int i = 0; i < n; ++i) { L[i] = 0.11f; R[i] = -0.22f; }
+        return true;
     }
+
+    bool returnFalse_ { true };   // start in the false-return mode
 };
 
 } // namespace
@@ -307,10 +315,11 @@ TEST_CASE ("InputMixer file-input channel renders consistently across consecutiv
     }
 }
 
-TEST_CASE ("InputMixer silences a file-input channel when the pull callable returns false",
+TEST_CASE ("InputMixer silences a file-input channel when the pull callable returns false, "
+           "then recovers when it returns true on the next block",
            "[file-input][input-mixer]")
 {
-    StubReturnsFalseRegistry stub;
+    StubReturnsFalseRegistry stub;   // starts with returnFalse_ = true
     const ida::InputId fileId { ida::kFileInputIdBase };
 
     ida::InputMixer mixer;
@@ -327,13 +336,32 @@ TEST_CASE ("InputMixer silences a file-input channel when the pull callable retu
     constexpr int numFrames = 32;
     std::array<float, numFrames> z {};
     const float* deviceIn[2] = { z.data(), z.data() };
-    mixer.renderInputGraph (deviceIn, 2, nullptr, 0, numFrames);
 
-    const float* postL = mixer.postStripPointer (channelId, 0);
-    const float* postR = mixer.postStripPointer (channelId, 1);
-    for (int n = 0; n < numFrames; ++n)
+    // Block 1: stub returns false → engine silences the 9999 sentinel.
+    mixer.renderInputGraph (deviceIn, 2, nullptr, 0, numFrames);
     {
-        REQUIRE (postL[n] == Catch::Approx (0.0f));
-        REQUIRE (postR[n] == Catch::Approx (0.0f));
+        const float* postL = mixer.postStripPointer (channelId, 0);
+        const float* postR = mixer.postStripPointer (channelId, 1);
+        for (int n = 0; n < numFrames; ++n)
+        {
+            REQUIRE (postL[n] == Catch::Approx (0.0f));
+            REQUIRE (postR[n] == Catch::Approx (0.0f));
+        }
+    }
+
+    // Block 2: flip the toggle. Engine must NOT have latched into silence;
+    // the second block should reflect the stub's pattern (scaled by the
+    // strip's equal-power center-pan gain).
+    stub.setReturnFalse (false);
+    mixer.renderInputGraph (deviceIn, 2, nullptr, 0, numFrames);
+    {
+        const float* postL = mixer.postStripPointer (channelId, 0);
+        const float* postR = mixer.postStripPointer (channelId, 1);
+        constexpr float kPanGain = 0.70710677f;
+        for (int n = 0; n < numFrames; ++n)
+        {
+            REQUIRE (postL[n] == Catch::Approx ( 0.11f * kPanGain).margin (1e-5f));
+            REQUIRE (postR[n] == Catch::Approx (-0.22f * kPanGain).margin (1e-5f));
+        }
     }
 }
