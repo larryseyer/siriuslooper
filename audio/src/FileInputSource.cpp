@@ -140,6 +140,10 @@ int FileInputSource::useTimeSlice()
     const int chunk = juce::jmin (free, 2048);
     juce::AudioBuffer<float> scratch (juce::jmax (2, (int) currentReader_->numChannels), chunk);
 
+    // If a seek lands between this load and the fetch_add below, the next
+    // tick will reapply seekReq and overwrite the head, making this chunk
+    // briefly stale. Accept the audible-blip: seek is operator-initiated
+    // and a CAS-loop here buys no real correctness.
     const auto head = playheadFrames_.load();
     const bool readOk = currentReader_->read (&scratch, 0, chunk, head, true, true);
     juce::ignoreUnused (readOk);
