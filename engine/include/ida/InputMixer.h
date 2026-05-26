@@ -220,6 +220,10 @@ public:
     void removeChannel (ChannelId);
     void setChannelTapeMode (ChannelId, TapeMode);
 
+    /// Message-thread accessor. Unknown id reads as `TapeMode::NoTape`.
+    /// Mirror of `channelMonitorMode(ChannelId) const`.
+    TapeMode channelTapeMode (ChannelId) const noexcept;
+
     // V9 dry-tap FX migration (§6.3.2): when a phrase is captured from a
     // channel whose TapeMode == NonDestructive (= "dry tap"), the
     // capture-path code (M6+) must call

@@ -368,6 +368,12 @@ void InputMixer::setChannelTapeMode (ChannelId id, TapeMode mode)
         tapeWriter_->touchParamsPartial (id);
 }
 
+TapeMode InputMixer::channelTapeMode (ChannelId id) const noexcept
+{
+    auto it = channels_.find (id.value());
+    return (it != channels_.end()) ? it->second.tapeMode : TapeMode::NoTape;
+}
+
 void InputMixer::setChannelInputSource (ChannelId id, int leftDeviceChannel,
                                         int rightDeviceChannel, bool stereo) noexcept
 {

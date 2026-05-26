@@ -1436,3 +1436,24 @@ TEST_CASE ("InputMixer::importGraphState replays bus monitorMode and re-mints th
     REQUIRE (dst.busMonitorOutputChannel (busId).has_value());
     CHECK (dstOut.channelCount() == srcOut.channelCount());
 }
+
+TEST_CASE ("InputMixer::channelTapeMode reads engine state; unknown id returns NoTape",
+           "[input-mixer][tape-mode]")
+{
+    ida::InputMixer mixer;
+    const auto ch  = mixer.addChannel (ida::InputId (0), ida::SignalType::Audio);
+
+    // addChannel default — Channel ctor seeds NoTape (per
+    // ChannelDefaults::defaultTapeMode in core/include/ida/ChannelDefaults.h).
+    CHECK (mixer.channelTapeMode (ch) == ida::TapeMode::NoTape);
+
+    mixer.setChannelTapeMode (ch, ida::TapeMode::CommitToTape);
+    CHECK (mixer.channelTapeMode (ch) == ida::TapeMode::CommitToTape);
+
+    mixer.setChannelTapeMode (ch, ida::TapeMode::NoTape);
+    CHECK (mixer.channelTapeMode (ch) == ida::TapeMode::NoTape);
+
+    // Unknown id → NoTape (defensive default, same shape as
+    // channelMonitorMode unknown-id behaviour).
+    CHECK (mixer.channelTapeMode (ida::ChannelId { 9999 }) == ida::TapeMode::NoTape);
+}
