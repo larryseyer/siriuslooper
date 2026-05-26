@@ -1928,9 +1928,9 @@ The hope is that other developers — those building loopers as commercial produ
 
 **Phrase** — A complete musical utterance with its own identity, internal time domain, role, intent, entrance/exit characters, and relationship to other phrases. The unit of musical thought. May contain loops, non-looped tape slices, sub-phrases, silence.
 
-**Plug-in host process** — The dedicated operating-system process that hosts a single plug-in instance. Loads the plug-in binary, pumps audio/MIDI buffers through it, forwards parameter changes, and surfaces failures to the engine's supervisor without ever sharing an address space with the engine. See §15.6.
-
 **Playlist scope** — The advance policy governing a file input's playlist when the currently-active entry reaches end-of-file. Three values: **Off** (advance to next entry, or stop at end of list), **Track** (rewind same entry to 0), **List** (advance to next entry, wrapping last → first).
+
+**Plug-in host process** — The dedicated operating-system process that hosts a single plug-in instance. Loads the plug-in binary, pumps audio/MIDI buffers through it, forwards parameter changes, and surfaces failures to the engine's supervisor without ever sharing an address space with the engine. See §15.6.
 
 **Polymetric** — Multiple meters coexisting in the same parent Constituent (e.g., 4/4 and 7/8 in the same phrase).
 
