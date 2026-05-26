@@ -31,6 +31,13 @@ private:
     std::int64_t value_;
 };
 
+/// File-input InputIds start at this value. Below = device-input ids.
+/// FileInputRegistry initializes its allocator from this constant, and
+/// engine code can use it for debug assertions on file-input bindings.
+/// (Actual dispatch goes through the cached FileInputPullCallable —
+/// engine does NOT branch on this constant in the hot path.)
+static constexpr InputId kFileInputIdBase { 100000 };
+
 /// Identifies a single channel within an InputMixer or OutputMixer.
 /// Strong-typed for the same reasons as `InputId`; the mixer surface
 /// hands out fresh ChannelIds from `add_channel`.
