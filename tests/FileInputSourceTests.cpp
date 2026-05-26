@@ -60,3 +60,20 @@ TEST_CASE ("FileInputSource openReader returns false for missing file",
     ida::FileInputSource source { 48000.0 };
     CHECK_FALSE (source.openReader ("/definitely/not/a/file.wav"));
 }
+
+TEST_CASE ("FileInputSource preserves prior reader when openReader fails",
+           "[file-input][audio]")
+{
+    juce::TemporaryFile good { ".wav" };
+    REQUIRE (writeTestWav (good.getFile(), 48000.0, 2, 24000));
+
+    ida::FileInputSource source { 48000.0 };
+    REQUIRE (source.openReader (good.getFile().getFullPathName().toStdString()));
+    const auto priorSr     = source.currentReaderSampleRate();
+    const auto priorFrames = source.currentReaderDurationFrames();
+
+    CHECK_FALSE (source.openReader ("/definitely/not/a/file.wav"));
+
+    CHECK (source.currentReaderSampleRate()     == Catch::Approx (priorSr));
+    CHECK (source.currentReaderDurationFrames() == priorFrames);
+}

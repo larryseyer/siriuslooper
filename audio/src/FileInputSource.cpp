@@ -23,6 +23,8 @@ bool FileInputSource::openReader (const std::string& path)
     if (reader == nullptr)
         return false;
 
+    // Failure paths above leave currentReader_ intact; success path is
+    // the only mutator. Guarded by the "preserves prior reader" test.
     currentReader_ = std::move (reader);
     return true;
 }
