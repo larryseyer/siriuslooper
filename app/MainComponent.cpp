@@ -3684,6 +3684,15 @@ MainComponent::MainComponent()
 
     inputMixer_->setTapeSink (tapeColoringSink_.get());
 
+    // File-input audio-routing slice — wire the FileInputRegistry into the
+    // InputMixer so per-channel file-input pulls (cached via
+    // setChannelFileInputSource in rebuildInputStrips) can resolve. The
+    // dtor's explicit removeAudioCallback (see MainComponent.h above the
+    // tapePool_ declaration) guarantees the audio thread is quiescent before
+    // any of these wired-together members tear down, so member-order does
+    // not matter for safety here. Same non-owning contract as setTapeSink.
+    inputMixer_->setFileInputSourceRegistry (&fileInputRegistry_);
+
     // Tape-UI slice — TapePool is the single source of truth for which tapes exist.
     // Mirror it into the input mixer's routing terminals at startup.
     ida::mirrorTapePool (tapePool_, *inputMixer_);
@@ -6735,6 +6744,15 @@ void MainComponent::rebuildInputStrips()
     {
         const auto inputId = ida::InputId (idValue);
         const auto chId    = inputMixer_->addChannel (inputId, SignalType::Audio);
+        // File-input audio-routing slice — bind the channel's audio source to
+        // the registry-resolved FileInputSource pull callable. This is the
+        // file-input counterpart to setChannelInputSource above (hardware
+        // path); the spec marks calling setChannelInputSource on a file-input
+        // channel as a programming error, so the two paths are mutually
+        // exclusive. The audio callback is detached around this whole method
+        // (see the bracket at the top of rebuildInputStrips), so caching
+        // the callable on the channel's state is RT-safe.
+        inputMixer_->setChannelFileInputSource (chId, inputId);
         juce::ignoreUnused (inputMixer_->setChannelTapeMode (chId, TapeMode::NoTape));
         inputStripChannelIds_.push_back (chId);
         inputStripInputIds_.push_back  (inputId);
