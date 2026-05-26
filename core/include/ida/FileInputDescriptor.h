@@ -36,6 +36,8 @@ struct FileInputEntry
 /// ambiguous given that TapeId(0)/(1) are real tape ids elsewhere.
 /// `windowOpacity` is the persisted translucency of the floating player
 /// window (clamped to [0.5, 1.0] on read; default 0.92).
+/// `alwaysOnTop` pins the player window above other windows (operator
+/// preference; persisted; default false).
 struct FileInputDescriptor
 {
     std::optional<TapeId> tapeId;
@@ -43,6 +45,7 @@ struct FileInputDescriptor
     std::vector<FileInputEntry> entries;
     LoopScope loopScope { LoopScope::Off };
     float windowOpacity { 0.92f };
+    bool alwaysOnTop { false };
     ChannelDefaults defaults {};
 };
 
