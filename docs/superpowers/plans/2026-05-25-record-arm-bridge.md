@@ -41,8 +41,8 @@ TEST_CASE ("InputMixer::channelTapeMode reads engine state; unknown id returns N
            "[input-mixer][tape-mode]")
 {
     ida::InputMixer mixer;
-    const auto src = mixer.addInput (ida::SignalType::Audio);
-    const auto ch  = mixer.addChannel (src, ida::SignalType::Audio);
+
+    const auto ch  = mixer.addChannel (ida::InputId (0), ida::SignalType::Audio);
 
     // addChannel default — Channel ctor seeds NoTape (per
     // ChannelDefaults::defaultTapeMode in core/include/ida/ChannelDefaults.h).
@@ -126,10 +126,10 @@ TEST_CASE ("InputMixer::canDisarmChannelRecording — true with multiple armed; 
            "[input-mixer][tape-mode][floor]")
 {
     ida::InputMixer mixer;
-    const auto src = mixer.addInput (ida::SignalType::Audio);
 
-    const auto a = mixer.addChannel (src, ida::SignalType::Audio);
-    const auto b = mixer.addChannel (src, ida::SignalType::Audio);
+
+    const auto a = mixer.addChannel (ida::InputId (0), ida::SignalType::Audio);
+    const auto b = mixer.addChannel (ida::InputId (0), ida::SignalType::Audio);
     REQUIRE (mixer.setChannelTapeMode (a, ida::TapeMode::CommitToTape));
     REQUIRE (mixer.setChannelTapeMode (b, ida::TapeMode::CommitToTape));
 
@@ -153,8 +153,8 @@ TEST_CASE ("InputMixer::setChannelTapeMode refuses the last-armed-channel disarm
            "[input-mixer][tape-mode][floor]")
 {
     ida::InputMixer mixer;
-    const auto src = mixer.addInput (ida::SignalType::Audio);
-    const auto a   = mixer.addChannel (src, ida::SignalType::Audio);
+
+    const auto a   = mixer.addChannel (ida::InputId (0), ida::SignalType::Audio);
     REQUIRE (mixer.setChannelTapeMode (a, ida::TapeMode::CommitToTape));
 
     // Only armed channel; floor refuses.
@@ -166,9 +166,9 @@ TEST_CASE ("InputMixer::setChannelTapeMode allows the last-channel disarm when a
            "[input-mixer][tape-mode][floor]")
 {
     ida::InputMixer mixer;
-    const auto src = mixer.addInput (ida::SignalType::Audio);
-    const auto a = mixer.addChannel (src, ida::SignalType::Audio);
-    const auto b = mixer.addChannel (src, ida::SignalType::Audio);
+
+    const auto a = mixer.addChannel (ida::InputId (0), ida::SignalType::Audio);
+    const auto b = mixer.addChannel (ida::InputId (0), ida::SignalType::Audio);
     REQUIRE (mixer.setChannelTapeMode (a, ida::TapeMode::CommitToTape));
     REQUIRE (mixer.setChannelTapeMode (b, ida::TapeMode::CommitToTape));
 
@@ -182,8 +182,8 @@ TEST_CASE ("InputMixer::setChannelTapeMode is idempotent — same mode to same m
            "[input-mixer][tape-mode]")
 {
     ida::InputMixer mixer;
-    const auto src = mixer.addInput (ida::SignalType::Audio);
-    const auto a   = mixer.addChannel (src, ida::SignalType::Audio);
+
+    const auto a   = mixer.addChannel (ida::InputId (0), ida::SignalType::Audio);
     REQUIRE (mixer.setChannelTapeMode (a, ida::TapeMode::CommitToTape));
 
     // CommitToTape → CommitToTape — true, no state change.
@@ -193,7 +193,7 @@ TEST_CASE ("InputMixer::setChannelTapeMode is idempotent — same mode to same m
     // Idempotence also applies on NoTape, even when at the floor (the
     // predicate is for *transitions*; same-mode-to-same-mode is not a
     // transition).
-    const auto b = mixer.addChannel (src, ida::SignalType::Audio);
+    const auto b = mixer.addChannel (ida::InputId (0), ida::SignalType::Audio);
     REQUIRE (mixer.setChannelTapeMode (b, ida::TapeMode::NoTape));   // sibling NoTape from the start
     CHECK (mixer.setChannelTapeMode (b, ida::TapeMode::NoTape));     // no-op stays true
 }
@@ -210,8 +210,8 @@ TEST_CASE ("InputMixer::setChannelTapeMode — re-arming a NoTape channel always
            "[input-mixer][tape-mode]")
 {
     ida::InputMixer mixer;
-    const auto src = mixer.addInput (ida::SignalType::Audio);
-    const auto a   = mixer.addChannel (src, ida::SignalType::Audio);
+
+    const auto a   = mixer.addChannel (ida::InputId (0), ida::SignalType::Audio);
 
     // Channel starts NoTape (Channel ctor default). Going NoTape → CommitToTape
     // is always allowed — re-arming never violates the floor.
