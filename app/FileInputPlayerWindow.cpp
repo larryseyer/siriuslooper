@@ -83,6 +83,17 @@ public:
     // ------------------------------------------------------------------
     // Layout
     // ------------------------------------------------------------------
+    void paint (juce::Graphics& g) override
+    {
+        const auto* d = registry_.fileInputDescriptor (id_);
+        const float alpha = (d != nullptr)
+            ? juce::jlimit (0.5f, 1.0f, d->windowOpacity)
+            : 0.92f;
+        const auto bg = getLookAndFeel().findColour (
+            juce::ResizableWindow::backgroundColourId);
+        g.fillAll (bg.withAlpha (alpha));
+    }
+
     void resized() override
     {
         auto r = getLocalBounds().reduced (8);
@@ -425,8 +436,10 @@ FileInputPlayerWindow::FileInputPlayerWindow (FileInputRegistry& registry, Input
       registry_ (registry),
       id_ (id)
 {
-    setUsingNativeTitleBar (true);
+    setUsingNativeTitleBar (false);
+    setTitleBarHeight (0);
     setWantsKeyboardFocus (true);
+    setOpaque (false);
 
     content_ = std::make_unique<Content> (registry_, id_);
     setContentNonOwned (content_.get(), true);
@@ -435,9 +448,11 @@ FileInputPlayerWindow::FileInputPlayerWindow (FileInputRegistry& registry, Input
     setResizeLimits (380, 220, 1200, 900);
     centreWithSize (getWidth(), getHeight());
 
-    // Apply persisted opacity once on construction.
-    if (const auto* d = registry_.fileInputDescriptor (id_); d != nullptr)
-        setAlpha (juce::jlimit (0.5f, 1.0f, d->windowOpacity));
+    // Semi-transparent peer so Content::paint's alpha-fill renders correctly;
+    // drop shadow keeps the floating window visually anchored. Must be set
+    // before setVisible(true) so the peer is created with the right flags.
+    addToDesktop (juce::ComponentPeer::windowHasDropShadow
+                  | juce::ComponentPeer::windowIsSemiTransparent);
 
     startTimerHz (30);
     setVisible (true);
@@ -503,7 +518,7 @@ void FileInputPlayerWindow::showOpacityMenu()
                          {
                              const float a = pct / 100.0f;
                              registry_.setFileInputWindowOpacity (id_, a);
-                             setAlpha (a);
+                             if (content_ != nullptr) content_->repaint();
                          });
     }
 
@@ -545,7 +560,10 @@ void FileInputPlayerWindow::showCustomOpacityDialog()
     auto* sliderPtr = slider.get();
     slider->onValueChange = [this, sliderPtr]
     {
-        setAlpha (static_cast<float> (sliderPtr->getValue()));
+        const float a = juce::jlimit (0.5f, 1.0f,
+                                      static_cast<float> (sliderPtr->getValue()));
+        registry_.setFileInputWindowOpacity (id_, a);
+        if (content_ != nullptr) content_->repaint();
     };
 
     aw->addCustomComponent (slider.get());
@@ -564,13 +582,15 @@ void FileInputPlayerWindow::showCustomOpacityDialog()
                     const float a = juce::jlimit (0.5f, 1.0f,
                                                   static_cast<float> (sliderOwned->getValue()));
                     registry_.setFileInputWindowOpacity (id_, a);
-                    setAlpha (a);
+                    // No setAlpha — Content::paint already reads the descriptor.
                 }
                 else
                 {
-                    // Revert the live-preview alpha on cancel.
-                    setAlpha (originalOpacity);
+                    // Cancel: restore the pre-dialog value through the registry
+                    // so Content::paint reverts on the next repaint.
+                    registry_.setFileInputWindowOpacity (id_, originalOpacity);
                 }
+                if (content_ != nullptr) content_->repaint();
                 delete aw;
             }),
         false);
