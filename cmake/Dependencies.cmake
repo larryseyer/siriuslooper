@@ -117,3 +117,118 @@ endif()
 
 add_subdirectory("${LSFX_TAPECOLOR_PATH}" "${CMAKE_BINARY_DIR}/lsfx_tapecolor")
 message(STATUS "lsfx_tapecolor configured from: ${LSFX_TAPECOLOR_PATH}")
+
+# -----------------------------------------------------------------------------
+# sfizz — SFZ sample-playback library. Required transitively by otto-core
+# (its SfizzWrapper.cpp links sfizz::sfizz). Consumed as a recursive
+# submodule at external/sfizz/. The 64-channel patch (sfizz defaults to
+# maxChannels=32, must be 64 to match OTTO's 32 stereo-pair output
+# topology — see external/OTTO/CLAUDE.md) is applied here at configure
+# time so the patched Config.h.in is in place before sfizz's add_subdirectory
+# generates Config.h.
+# -----------------------------------------------------------------------------
+set(SFIZZ_PATH "${CMAKE_SOURCE_DIR}/external/sfizz")
+
+if(NOT EXISTS "${SFIZZ_PATH}/CMakeLists.txt")
+    message(FATAL_ERROR
+        "sfizz not found at ${SFIZZ_PATH}. "
+        "Run: git submodule update --init --recursive")
+endif()
+
+set(SFIZZ_CONFIG_TEMPLATE "${SFIZZ_PATH}/src/Config.h.in")
+file(READ "${SFIZZ_CONFIG_TEMPLATE}" _sfizz_cfg)
+if(_sfizz_cfg MATCHES "maxChannels { 64 }")
+    message(STATUS "sfizz: 64-channel patch already applied")
+elseif(_sfizz_cfg MATCHES "maxChannels { 32 }")
+    message(STATUS "sfizz: applying 64-channel patch")
+    execute_process(
+        COMMAND patch -p1 -i "${CMAKE_SOURCE_DIR}/patches/sfizz-max-channels.patch"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        RESULT_VARIABLE _sfizz_patch_rc
+        OUTPUT_VARIABLE _sfizz_patch_out
+        ERROR_VARIABLE  _sfizz_patch_err)
+    if(NOT _sfizz_patch_rc EQUAL 0)
+        message(FATAL_ERROR
+            "sfizz 64-channel patch failed (rc=${_sfizz_patch_rc}):\n"
+            "${_sfizz_patch_out}\n${_sfizz_patch_err}")
+    endif()
+    # Drop the .orig backup BSD patch leaves behind so sfizz's working tree
+    # stays as clean as it can be (the modified Config.h.in itself is the
+    # expected, durable diff).
+    file(REMOVE "${SFIZZ_CONFIG_TEMPLATE}.orig")
+else()
+    message(FATAL_ERROR
+        "sfizz Config.h.in is in an unexpected state — neither the "
+        "stock 'maxChannels { 32 }' nor the patched 'maxChannels { 64 }' "
+        "line was found. Check the external/sfizz checkout integrity.")
+endif()
+unset(_sfizz_cfg)
+
+# sfizz build-option discipline (mirrors OTTO's Dependencies.cmake).
+set(SFIZZ_JACK        OFF CACHE BOOL "" FORCE)
+set(SFIZZ_RENDER      OFF CACHE BOOL "" FORCE)
+set(SFIZZ_BENCHMARKS  OFF CACHE BOOL "" FORCE)
+set(SFIZZ_TESTS       OFF CACHE BOOL "" FORCE)
+set(SFIZZ_DEMOS       OFF CACHE BOOL "" FORCE)
+set(SFIZZ_DEVTOOLS    OFF CACHE BOOL "" FORCE)
+set(SFIZZ_SHARED      OFF CACHE BOOL "" FORCE)
+
+# Apple Clang 16+ promotes -Wmissing-template-arg-list-after-template-kw to
+# error; sfizz's atomic_queue.h uses the older form. Quiet it for sfizz's
+# subtree without affecting IDA's strict warnings elsewhere.
+if(CMAKE_CXX_COMPILER_ID MATCHES "AppleClang|Clang"
+       AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 16)
+    add_compile_options(
+        -Wno-error=missing-template-arg-list-after-template-kw
+        -Wno-missing-template-arg-list-after-template-kw)
+endif()
+
+add_subdirectory("${SFIZZ_PATH}" "${CMAKE_BINARY_DIR}/sfizz")
+message(STATUS "sfizz configured from: ${SFIZZ_PATH}")
+
+# -----------------------------------------------------------------------------
+# Ableton Link — tempo / phase synchronization. Required transitively by
+# otto-core's LinkSession.cpp. FetchContent pattern mirrors OTTO; same
+# Feb-2026 pinned ref. Network is required at configure time the FIRST
+# time only; the populated tree is cached under build/_deps/link-src.
+# -----------------------------------------------------------------------------
+include(FetchContent)
+
+FetchContent_Declare(
+    link
+    GIT_REPOSITORY https://github.com/Ableton/link.git
+    GIT_TAG        addb7da)
+
+set(LINK_BUILD_JAM      OFF CACHE BOOL "" FORCE)
+set(LINK_BUILD_HUT      OFF CACHE BOOL "" FORCE)
+set(LINK_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
+set(LINK_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+
+FetchContent_GetProperties(link)
+if(NOT link_POPULATED)
+    FetchContent_Populate(link)
+    include(${link_SOURCE_DIR}/AbletonLinkConfig.cmake)
+endif()
+
+message(STATUS "Ableton Link configured via FetchContent from: ${link_SOURCE_DIR}")
+
+# -----------------------------------------------------------------------------
+# otto-core — OTTO's shared C++ runtime (PlayerManager, GlobalMixer,
+# TransportTracker — header-only; SfizzWrapper, LinkSession, EventBus,
+# EnergyDefaults, FillBag, VoiceFamilyResolver, SongSnapshotBridge — .cpp).
+# Gated TF Lite generation module is OFF in IDA: the generation pipeline is
+# OTTO-only product surface, not IDA's. M-OTTO-1 wires the LINK; no IDA
+# code references otto-core symbols yet — that lands in M-OTTO-2.
+# -----------------------------------------------------------------------------
+set(OTTO_CORE_PATH "${CMAKE_SOURCE_DIR}/external/OTTO/src/otto-core")
+
+if(NOT EXISTS "${OTTO_CORE_PATH}/CMakeLists.txt")
+    message(FATAL_ERROR
+        "otto-core not found at ${OTTO_CORE_PATH}. "
+        "Run: git submodule update --init --recursive")
+endif()
+
+set(OTTO_ENABLE_GENERATION OFF CACHE BOOL "Build OTTO's in-app content generation module (TF Lite, OTTO-only)" FORCE)
+
+add_subdirectory("${OTTO_CORE_PATH}" "${CMAKE_BINARY_DIR}/otto-core")
+message(STATUS "otto-core configured from: ${OTTO_CORE_PATH}")

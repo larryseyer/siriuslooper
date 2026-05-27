@@ -70,6 +70,7 @@ target_link_libraries(IDA PRIVATE
     Ida::Video
     Ida::Persistence
     lsfx::lsfx_tapecolor
+    otto::core
     juce::juce_audio_utils
     juce::juce_gui_extra
     juce::juce_recommended_config_flags
