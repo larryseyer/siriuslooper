@@ -153,7 +153,12 @@ add_executable(IdaTests
     # API surface for the whitepaper V9 §6.3.2 dry-tap FX-migration rule.
     # Pins value semantics (deep copy, empty source clears the chain).
     # Capture-path call site lands in M6+.
-    ConstituentEffectChainCloneTests.cpp)
+    ConstituentEffectChainCloneTests.cpp
+    # M-OTTO-3a — OttoHost transport-listener fan-out. Constructs an
+    # OttoHost, publishes directly to OTTO's EventBus singleton, and
+    # asserts the audio→message-thread marshal lands at the listener
+    # with the IDA-flavoured TransportSnapshot fields populated.
+    OttoHostTransportTests.cpp)
 
 # T3a: EqAdapterTests includes "fx/EqAdapter.h" (engine-private header) and
 # EqAdapter.h transitively includes <otto/effects/PlayerEQ.h>. Both paths
@@ -176,6 +181,12 @@ target_link_libraries(IdaTests PRIVATE
     Ida::Ui
     Ida::Net
     Ida::Video
+    # M-OTTO-3a — OttoHostTransportTests constructs an ida::OttoHost and
+    # publishes to OTTO's EventBus singleton directly. The bridge target
+    # provides the OttoHost symbols; otto::core provides the EventBus
+    # singleton + TransportEvent type.
+    Ida::OttoBridge
+    otto::core
     # T3a: EqAdapterTests transitively includes <otto/effects/PlayerEQ.h>
     # through "fx/EqAdapter.h", which pulls juce_dsp + juce_audio_basics.
     # Engine links them PRIVATE so they don't propagate; the test target

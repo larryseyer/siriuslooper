@@ -25,9 +25,17 @@ target_compile_features(IdaOttoBridge PUBLIC cxx_std_20)
 # otto-core's PUBLIC link surface). juce_audio_basics is needed at compile
 # time because OTTO's PlayerManager.h transitively includes MasterBus.h
 # which uses juce::AudioBuffer.
+# M-OTTO-3 — Ida::Engine adds the `LockFreeSpscQueue<T>` public template header
+# the OttoHost pimpl needs to marshal OTTO transport events from the audio
+# thread to the message-thread drainer. Engine's PUBLIC headers are JUCE-free
+# (juce_core is engine-PRIVATE per CLAUDE.md), so this link does not pollute
+# OttoBridge's public surface. juce_events supplies juce::Timer for the
+# drainer itself.
 target_link_libraries(IdaOttoBridge
     PRIVATE otto::core
             juce::juce_audio_basics
-            lsfx::lsfx_tapecolor)
+            juce::juce_events
+            lsfx::lsfx_tapecolor
+            Ida::Engine)
 
 add_library(Ida::OttoBridge ALIAS IdaOttoBridge)
