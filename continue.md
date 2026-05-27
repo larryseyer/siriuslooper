@@ -250,7 +250,7 @@ Reference docs:
 - **OTTO integration sequencing:** `docs/superpowers/specs/2026-05-26-otto-integration-scope-and-sequencing.md`
 - **OTTO integration design (4 foundational decisions):** `docs/superpowers/specs/2026-05-22-otto-integration-design.md`
 - **Cross-project inbox protocol:** `external/OTTO/CROSS_PROJECT_INBOX.md` + matching `CLAUDE.md` sections
-- Whitepaper: `docs/IDA_Whitepaper_V9.md`
+- Whitepaper: `docs/IDA_Whitepaper_V10.md`
 
 Memory:
 - `project_otto_as_output_mixer_source` — 32 stereo outputs into Output Mixer (slice 4 target)

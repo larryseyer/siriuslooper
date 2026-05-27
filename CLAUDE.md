@@ -96,7 +96,7 @@ every IDA-originated OTTO commit forever, even after inbox entries are pruned.
 
 ## Architecture (non-negotiable)
 
-- Canonical design doc: **`docs/IDA_Whitepaper_V9.md`** (the "why").
+- Canonical design doc: **`docs/IDA_Whitepaper_V10.md`** (the "why").
   `docs/design/` + `docs/superpowers/specs/` hold feature designs.
 - Signal path: **input mixer → tape → output mixer**, with a direct layer for
   sub-ms monitoring. The tape is the always-running source of truth.

@@ -4,7 +4,7 @@
 
 ---
 
-**Version:** V9 (2026-05-24) — replaces V8. Part VII is rewritten: the raw-vs-processed direct-monitoring split is removed in favour of a single per-channel **MON** toggle (post-strip, auto-creates an output-mixer channel). §6.3 gains an explicit **MON × Tape** orthogonality truth table (with the amp-in-the-room scenario) and aligns operator-vocabulary `wet tap` / `dry tap` with the engine-vocabulary `commit-to-tape` / `non-destructive`. Dry tap additionally copies the Input strip's FX chain to the resulting phrase's local effects so the operator can keep editing post-capture. See §6.3.1, §6.3.2, §7.2.
+**Version:** V10 (2026-05-27) — replaces V9. Three additions clarifying OTTO's place in the architecture: a §4.2 note that OTTO is not a discipline source for the LMC, a §5.4 paragraph that the session-level tempo map is sourced from OTTO when OTTO is playing (and absent otherwise), and a new §5.7 introducing OTTO as the bundled rhythm engine + tempo-map source — covering OTTO's dual role (cross-modality rendering instrument + tempo-map provider), the boundary-conversion rule that preserves Rational tempo math across OTTO's float-precision transport state, and the architectural commitment that OTTO is part of IDA rather than a hosted plugin. The §6.x mixer architecture, §11.x polymetric/polytemporal commitments, and §3-§4 conceptual-time / LMC commitments are unchanged.
 **Status:** Implementation reference
 **License:** The IDA software is licensed under AGPLv3 with an Apple App Store distribution exception. The bundled Larry Seyer Acoustic Drum Library selection is proprietary and separately licensed. See `../LICENSE`, `LICENSE-THIRD-PARTY.md`, and `SAMPLE-LICENSE.md`. This document — the white paper — is offered for permissive public release.
 
@@ -283,6 +283,8 @@ At session start, the LMC selects its discipline source from the best available 
 
 When nothing external is reachable, local CPU monotonic *is* the LMC — self-consistent within a session, which is sufficient for solo work.
 
+**OTTO is not a discipline source.** The bundled rhythm engine (§5.7), when active, supplies tempo-map data — BPM, time signature, beat and bar structure — to IDA's session-level tempo map. That role is the subject of §5.4. It is a different concern from disciplining the LMC against the physical clocks above. OTTO does not appear in the tier list and never can: OTTO's transport state is a *musical-time fact*, not a clock-discipline source. The LMC's accuracy against UTC remains the discipline hierarchy's responsibility, regardless of whether OTTO is playing.
+
 ### 4.3 Calibration tables
 
 Every hardware clock at the membrane carries a calibration record against the LMC:
@@ -365,6 +367,8 @@ Tempo maps are stored as sequences of breakpoints expressed in their own concept
 
 For piecewise-constant tempo, the transformation is linear in each segment. For tempo ramps, it is piecewise quadratic. The implementation is straightforward; what matters architecturally is that **the tempo map is conceptual, not numerical**, and is only numerically evaluated at the membrane.
 
+**The session-level tempo map is sourced from the bundled rhythm engine when it is playing.** When OTTO (§5.7) is active, OTTO's BPM and time signature — converted from OTTO's float-precision transport state to Rational at the OttoHost listener boundary — become the session-level tempo map's content. When OTTO is not playing, no session-level tempo map applies: Constituents at the session level have no shared metric grid, and loops meet only at other loops' boundaries — the free-running looper mode that predates OTTO's involvement and remains first-class. Session-level tempo-map breakpoints accumulate as OTTO publishes BPM-change and time-signature-change events; positions are derived from the LMC sample count via Rational math, never from OTTO's float-precision `positionInBeats` (which is treated as a hint for cross-checks, not a source of truth). Lower-level tempo maps — phrase-level, loop-level — are unaffected by OTTO's state and continue to express their own conceptual time domains as the §3.4 hierarchy describes.
+
 ### 5.5 Latency compensation as architectural
 
 When the input mixer receives a sample buffer from a device, the samples were not captured *now*. The sample at index N in a buffer of size B was captured at:
@@ -398,6 +402,22 @@ The architecture makes claims about latency budgets (see §16.8) that are achiev
 - **The graph is shallow at audio-thread depth.** The Constituent hierarchy can be deep (set → song → section → phrase → loop → cycle), but the audio thread sees a flattened, pre-computed schedule of active tape reads for the current buffer. Tree traversal happens on the non-realtime thread.
 
 Implementations that violate any of the above violate the architecture, regardless of how clever the workaround. The audio-thread budget is the architecture's hardest constraint and the source of the rest of the latency story.
+
+### 5.7 OTTO as bundled rhythm engine and tempo-map source
+
+IDA ships with OTTO — a bundled rhythm engine that is **part of IDA**, not a plugin hosted by IDA nor a separate application bridged to it. OTTO is always present in the installer and on disk; the operator chooses whether to *use* it. Using it means hitting OTTO's Play; not using it means leaving Play unpressed, in which case OTTO contributes nothing to the audio signal path and the session-level tempo map is absent (§5.4). The architectural commitment is that **IDA functions completely without OTTO** — the free-running looper mode of §1.4 and §5.4 is first-class — and OTTO enriches IDA when active, never the other way around.
+
+**Two roles, one engine.** OTTO occupies two architecturally distinct positions in IDA simultaneously:
+
+1. **Cross-modality rendering instrument.** OTTO produces thirty-two stereo audio outputs (twenty-four per-instrument channels — Kick, Snare, SideStick, Hats, four toms, two crashes, four ride elements, splash, china, four percs, two shakers, two hands; plus four shared FX returns; plus four per-player sub-bus outputs). These are surfaced in IDA's output mixer as additional channel strips alongside per-phrase channels and MON strips, per §6.1's commitment to modality-agnostic mixers and §6.6's output-mixer ownership of physical-output routing. OTTO additionally offers an aggregated stereo mix — the sum of the four per-player sub-buses — as a thirty-third source for operators who want a single stereo strip representing OTTO instead of routing per-instrument.
+
+2. **Session-level tempo-map source.** When OTTO is playing, OTTO's BPM and time signature populate the session-level tempo map (§5.4). When OTTO is not playing, no session-level tempo map applies, and Constituents at session level have no shared metric grid — the loops-only mode of the original looper. Lower-level tempo maps (phrase-level, loop-level) are unaffected by OTTO's state; they continue to express their own conceptual time domains as the §3.4 hierarchy describes.
+
+**The boundary-conversion rule.** OTTO's internal representation of transport state is double-precision floating-point — `bpm`, `positionInBeats`, `positionInSeconds`. At the OttoHost listener boundary (the message-thread receiver for OTTO's transport events), these doubles are converted to the Rational forms IDA's tempo math requires. BPM becomes a Rational at receipt — `120.5` becomes `Rational{1205, 10}`, exact thereafter. Time signature is already Rational-compatible: an integer numerator/denominator pair. `positionInBeats` is treated as a hint for cross-checks, not a source of truth: IDA derives positions from the LMC sample count advanced by the audio thread, combined with the Rational tempo map. The discipline of §3.5 ("conceptual time is more exact than numerical time") is preserved across the OTTO boundary by this single conversion. OTTO's internal float math does not leak into IDA's Rational layer.
+
+**OTTO is not a plugin and does not host plugins.** OTTO's audio engine and operator UI are integrated into IDA's process and IDA's main window — OTTO's user-facing surface appears as a top-level tab alongside Tapes, the Input Mixer, and the Output Mixer. The shared visual language (both products derive from the same look-and-feel substrate) keeps the integration visually coherent. OTTO does not host third-party plugins inside IDA; plugin hosting is IDA's responsibility — any third-party processing applied to OTTO's audio is configured on the IDA-side output-mixer strips that carry OTTO's outputs, never inside OTTO itself. OTTO's internal effects — its own EQ, compressor, reverb, delay, and TAPECOLOR processing — remain inside OTTO; they operate on OTTO's audio before it crosses the output-mixer boundary into IDA's strips. OTTO's presets — patterns, kits, songs — are unified into IDA's preset manager as first-class categories; the operator browses OTTO presets in the same browser that lists IDA's own presets.
+
+**The discipline hierarchy is unchanged.** OTTO is not a discipline source for the LMC (see §4.2 note). OTTO supplies musical-time data above the membrane; LMC discipline against physical clocks remains the responsibility of the tier list. The two roles never compete: OTTO does not know what time it is in the universe, and the discipline hierarchy does not know what bar the music is on.
 
 ---
 
