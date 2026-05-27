@@ -3991,6 +3991,15 @@ MainComponent::MainComponent()
         ottoHost_->prepare (sr, bs);
     }
 
+    // M-OTTO-3b — FileInputRegistry is the first IDA-side subscriber to
+    // OttoHost's transport feed. Engine half of the transport-sync wiring
+    // (snapshot recording only — behavioural policy ships in a later UX
+    // slice). No explicit dtor unregister: ottoHost_ is declared after
+    // fileInputRegistry_ in MainComponent.h, so the OttoHost dtor (which
+    // stops the drainer timer and unsubscribes from OTTO's bus) runs
+    // before fileInputRegistry_ goes out of scope.
+    ottoHost_->addTransportListener (&fileInputRegistry_);
+
     // --- Performance tab ---
     tabs_.addTab ("Performance", juce::Colours::black, &performanceView_, false);
 

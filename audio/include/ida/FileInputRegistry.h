@@ -4,11 +4,13 @@
 #include "ida/FileInputDescriptor.h"        // ida::FileInputDescriptor
 #include "ida/FileInputSource.h"            // ida::FileInputSource
 #include "ida/IFileInputSourceRegistry.h"   // ida::IFileInputSourceRegistry, FileInputPullCallable
+#include "ida/IOttoTransportListener.h"     // ida::IOttoTransportListener, ida::TransportSnapshot
 #include "ida/LoopScope.h"
 #include "ida/PlaylistEntryId.h"
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 
@@ -22,7 +24,8 @@ namespace ida
 /// "InputMixer surface" — the registry is the single source of truth the app
 /// layer queries / mutates from the UI thread; Task 11 wires its sources into
 /// the audio callback alongside the InputMixer.
-class FileInputRegistry : public ida::IFileInputSourceRegistry
+class FileInputRegistry : public ida::IFileInputSourceRegistry,
+                          public ida::IOttoTransportListener
 {
 public:
     explicit FileInputRegistry (double deviceSampleRate);
@@ -101,6 +104,21 @@ public:
     /// callback). Returns an invalid callable for unknown ids.
     FileInputPullCallable resolveFileInputPull (InputId id) noexcept override;
 
+    /// IOttoTransportListener — M-OTTO-3b first subscriber wiring. The
+    /// snapshot is recorded so the engine half of transport-sync is in
+    /// place; behavioural policy (which inputs play/stop with the
+    /// transport) is intentionally deferred until the operator's
+    /// mixer-first roadmap reaches transport UX. Message-thread only —
+    /// the OttoHost drainer fans out from its 30 Hz Timer.
+    void onOttoTransport (const TransportSnapshot& snapshot) override;
+
+    /// Most-recent transport snapshot received from OttoHost, or empty
+    /// before the first event. Read-only accessor for UI / tests.
+    const std::optional<TransportSnapshot>& lastOttoTransport() const noexcept
+    {
+        return lastOttoTransport_;
+    }
+
 private:
     FileInputSource*       source_ (InputId id);
     const FileInputSource* source_ (InputId id) const;
@@ -112,6 +130,10 @@ private:
     /// Separate range from device-input ids so the app layer can tell them
     /// apart at a glance during debugging (per spec).
     std::int64_t nextFileInputId_ { ida::kFileInputIdBase.value() };
+
+    /// M-OTTO-3b — last transport snapshot from OttoHost. Empty until the
+    /// first event arrives. Message-thread state.
+    std::optional<TransportSnapshot> lastOttoTransport_ {};
 };
 
 } // namespace ida

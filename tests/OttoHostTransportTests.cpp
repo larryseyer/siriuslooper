@@ -13,6 +13,7 @@
 
 #include "ida/OttoHost.h"
 #include "ida/IOttoTransportListener.h"
+#include "ida/FileInputRegistry.h"
 
 #include <otto/common/EventBus.h>
 
@@ -166,4 +167,35 @@ TEST_CASE ("OttoHost is robust to publishes with no listeners attached",
     ::otto::EventBus::instance().publish (
         makeEvent (::otto::TransportEvent::Type::Play, true, 100.0));
     host.drainForTesting();  // SUCCESS: no listener invoked, no crash.
+}
+
+TEST_CASE ("FileInputRegistry implements IOttoTransportListener and records last snapshot",
+           "[otto-host-transport][file-input]")
+{
+    juce::ScopedJuceInitialiser_GUI juceInit;
+
+    OttoHost host;
+    ida::FileInputRegistry registry { 48000.0 };
+    host.addTransportListener (&registry);
+
+    CHECK_FALSE (registry.lastOttoTransport().has_value());
+
+    ::otto::EventBus::instance().publish (
+        makeEvent (::otto::TransportEvent::Type::Play, true, 132.0, 3, 4));
+    host.drainForTesting();
+
+    REQUIRE (registry.lastOttoTransport().has_value());
+    CHECK (registry.lastOttoTransport()->kind       == TransportSnapshot::Kind::Started);
+    CHECK (registry.lastOttoTransport()->isPlaying  == true);
+    CHECK (registry.lastOttoTransport()->bpm        == Catch::Approx (132.0));
+    CHECK (registry.lastOttoTransport()->timeSigNum == 3);
+    CHECK (registry.lastOttoTransport()->timeSigDen == 4);
+
+    // Subsequent event overwrites: registry stores only the most recent.
+    ::otto::EventBus::instance().publish (
+        makeEvent (::otto::TransportEvent::Type::Stop, false, 132.0, 3, 4));
+    host.drainForTesting();
+    REQUIRE (registry.lastOttoTransport().has_value());
+    CHECK (registry.lastOttoTransport()->kind      == TransportSnapshot::Kind::Stopped);
+    CHECK (registry.lastOttoTransport()->isPlaying == false);
 }

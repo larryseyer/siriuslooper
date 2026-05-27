@@ -184,6 +184,16 @@ FileInputPullCallable FileInputRegistry::resolveFileInputPull (InputId id) noexc
     return FileInputPullCallable {};
 }
 
+void FileInputRegistry::onOttoTransport (const TransportSnapshot& snapshot)
+{
+    // M-OTTO-3b — first OttoHost subscriber. Stub policy: record only.
+    // Per-input "follow transport" semantics (auto-play armed inputs on
+    // Started, etc.) are downstream UX work; the operator's mixer-first
+    // roadmap parks transport behaviour until after the mixers ship.
+    // Wiring the receiver now keeps that later slice purely behavioural.
+    lastOttoTransport_ = snapshot;
+}
+
 FileInputSource* FileInputRegistry::source_ (InputId id)
 {
     const auto it = sources_.find (id.value());
