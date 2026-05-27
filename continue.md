@@ -1,161 +1,172 @@
-# Session Continuation — file-input UX polish round 2 closed; 3 follow-ons still queued
+# Session Continuation — Output Mixer pane surgical-append parity landed; OTTO-is-transport insight captured
 
 ## ▶ 0. Read these first (60 seconds)
 
-1. **The file-input player is now operator-pleasant.** Frameless, semi-transparent
-   bg (controls stay sharp), Reaper-style pin in the top-right of the transport
-   row, drag-handle space in the transport row, right-click menu with Close /
-   Always-on-top toggle / Opacity submenu, Cmd-W / Ctrl-W close, NSStatusWindowLevel
-   so the pin survives cross-app focus changes. **`alwaysOnTop`, opacity,
-   displayName, and playlist entries persist through session save/load.** The
-   last picker folder persists across **app launches** via
-   `~/Library/Application Support/IDA/IDA.settings`.
-2. **Baseline.** `master` at `d01bd00`, local == origin (confirm with
-   `git log -1 --oneline` and `git status --short`).
-3. **Test surface.** `ctest --test-dir build -E "(PluginEditor|MainComponentPlug)" -j`
-   → **776 / 776** (baseline 773 + 3 from the file-input-player-polish slice: 1
-   in `FileInputRegistryTests` for the setter, 2 in `FileInputPersistenceTests`
-   for round-trip + missing-key default). Allow up to 3 transient flakes
-   (identity varies — `--rerun-failed` clears them).
-4. **3 follow-ons still queued in todo.md** (dated 2026-05-26):
-   - (B) Transport sync (LMC start/stop/ignore) — recommended next
-   - (C) File-input MIDI source — medium-large
-   - (D) File-input Video source — largest
+1. **`OutputMixerPane` now matches `InputMixerPane`'s d01bd00 surgical-append
+   pattern.** Two new methods (`appendPhraseStrip`, `appendMonStrip`) plus
+   pure-append fast paths in `refreshOutputMixerPhraseChannels` and
+   `refreshOutputMixerMonChannels`. When the timeline delta is "N new pills
+   added at the end" (no removes, no reorder), the per-tick refresh appends
+   strips surgically instead of rebuilding the whole row. Existing strips'
+   fader / mute / sends / MON state survives intact. Other deltas (remove,
+   reorder, mixed) still hit the full `setPhraseStrips` / `setMonStrips`
+   rebuild path — that's symmetric with the Input side, which also rebuilds
+   on file-input removal (`onRemoveFileInputRequested` →
+   `rebuildInputStrips`).
+2. **OTTO is the transport source for IDA.** Operator clarified this mid-
+   session. The earlier "(B) Transport sync" follow-on assumed IDA's LMC
+   published transport state — it does not. `engine/include/ida/Lmc.h` is
+   pure time (`nowSeconds`, `advanceBySamples`); no `isPlaying` / start /
+   stop / `EngineTransport` class exists anywhere in `engine/`, `audio/`,
+   `core/`, or `app/`. **All three previously-queued follow-ons (B Transport,
+   C MIDI, D Video) are now blocked on OTTO import.** New memory captures
+   this: `project_otto_is_the_transport_source`.
+3. **Baseline.** `master` at `<HEAD after this session's commits>`. Confirm
+   with `git log -1 --oneline` and `git status --short`.
+4. **Test surface.** `ctest --test-dir build -E "(PluginEditor|MainComponentPlug)" -j`
+   → **776 / 776** on clean rebuild. Allow up to 4 transient flakes
+   (identity varies — `--rerun-failed` clears them; observed both before
+   and after this slice).
+5. **Operator eyes-on still pending for this slice.** Pass criterion: open
+   the Output Mixer tab, adjust the fader / mute / sends on a phrase strip,
+   then add another phrase in the Songwriter tab (which triggers
+   `refreshOutputMixerPhraseChannels` → pure-append path). The first
+   phrase strip's values must survive. Pre-fix they would be reset to
+   defaults; post-fix they survive. Same test for MON strips: flip MON on
+   for one more input strip while a different MON strip's fader is mid-
+   adjust.
 
 ---
 
-## ▶ 1. What landed THIS chat (post-8-task-slice polish + bug fixes)
+## ▶ 1. What landed THIS chat
 
-Eight commits past the slice-close at `c7dabdc`. Chronological:
-
-| Commit | Subject |
+| File | Change |
 |---|---|
-| `00989d4` | fix — player uses NSStatusWindowLevel for true cross-app always-on-top (rename .cpp → .mm) |
-| `0c3e74c` | feat — file-input strip right-click gains 'Remove file input' (unregisters + closes player + rebuilds) |
-| `a0be911` | feat — Reaper-style pin button on player (visible always-on-top toggle in top-right of transport row) |
-| `cf4f085` | fix — file-input strips no longer get the NoTape dim overlay (playback sources are intentionally not captured) |
-| `3209fff` | feat — player scrubber shrinks to 75 % width, leaving a drag handle in the transport row |
-| `e19027a` | feat — file-input registry round-trips through session envelope (alwaysOnTop, opacity, displayName, playlist entries survive save/load) |
-| `9482a40` | feat — last audio-file-picker folder persisted across launches via juce::PropertiesFile |
-| `d01bd00` | fix — adding a file input no longer wipes MON/mute/fader/arm on existing channels (surgical appendStrip + addChannel instead of rebuildInputStrips) |
+| `app/MainComponent.cpp` | `OutputMixerPane::appendPhraseStrip(info)` + `OutputMixerPane::appendMonStrip(info)` added; `refreshOutputMixerPhraseChannels` + `refreshOutputMixerMonChannels` detect pure-append deltas and use the surgical methods |
+| `todo.md` | B/C/D reclassified — transport sync hard-blocked on OTTO; MIDI + Video softly deferred until OTTO is in (so their transport-sync sub-features can be designed once). Stale player-polish entry pruned (already shipped). |
+| `continue.md` | This file. |
+| memory `project_otto_is_the_transport_source` | Captures the OTTO-is-transport architectural fact + the empirical confirmation that LMC has no transport state. |
 
-Each commit was operator-verified or unit-test-covered. No deferred items
-landed in `todo.md` from this session.
+No deferred items landed in `todo.md` from this session's surgical-append
+work itself — the slice closes cleanly.
 
 ---
 
 ## ▶ 2. Architecture notes worth carrying forward
 
-### Note A — `app/FileInputPlayerWindow.cpp` is now `.mm` (Objective-C++)
+### Note A — Engine-side surgical add/remove was already present
 
-The native macOS NSWindow level bump for true always-on-top (NSStatusWindowLevel
-rather than JUCE's default NSFloatingWindowLevel) needs Cocoa headers. Whole
-file compiles as Obj-C++; the JUCE/C++ inside is unchanged. `app/CMakeLists.txt`
-line 47 references the `.mm`. Helper `bumpNativeAlwaysOnTopLevel(comp, onTop)`
-is `JUCE_MAC`-guarded — no-op elsewhere. The single entry point
-`FileInputPlayerWindow::setAlwaysOnTopWithNativeBump(bool)` is called from
-both the right-click menu and the pin-button click; the ctor applies the
-persisted state through the same path.
+`refreshOutputMixerPhraseChannels` already does delta detection at the
+engine layer (lines around `MainComponent.cpp:6261-6295`): it computes
+`toRemove` and `toAdd` against `phraseChannelByConstituent_` and calls
+`outputMixer_->addChannel` / `removeChannel` surgically. **Only the
+UI rebuild was the wipe-everything step.** This session brings the UI
+into alignment with what the engine already did.
 
-### Note B — `getDesktopWindowStyleFlags()` is the pattern for custom JUCE peer flags
+### Note B — Pure-append detection shape
 
-Don't call `addToDesktop(flags)` explicitly on a `TopLevelWindow` — it
-violates JUCE's contract, fires a jassert in Debug, and silently strips
-taskbar/minimise/close/resizable flags in Release. Instead, override
-`getDesktopWindowStyleFlags()` and OR in your custom flag. JUCE's
-`recreateDesktopWindow()` (auto-triggered by `setUsingNativeTitleBar(false)`)
-calls the override and creates the peer correctly. See
-`FileInputPlayerWindow.mm` ctor + override pair (commit `4a15f47`).
+```cpp
+const bool pureAppend
+    = newOrder.size() > oldSize
+   && std::equal (old.begin(), old.end(), newOrder.begin());
+```
 
-### Note C — `setOpaque(false)` is necessary but not sufficient for semi-transparent JUCE windows
+Reusable shape for any "is this delta a pure end-append?" check — works
+on any vector whose element type has `operator==`. Used twice in this
+slice (phrase row + MON row).
 
-`ResizableWindow::paint` (parent of `DocumentWindow`) fills the whole window
-with the bg colour BEFORE any child paint runs. To let `Content::paint`'s
-alpha reach the screen, the ctor calls
-`setBackgroundColour(getBackgroundColour().withAlpha(0.0f))` — making the
-parent fill a transparent no-op. Pattern reusable for any future semi-
-transparent JUCE window.
+### Note C — The lambda-capture-by-index constraint
 
-### Note D — JUCE mouseDown does NOT bubble to parents
+`appendPhraseStrip` / `appendMonStrip` set up `onClick` lambdas capturing
+`idx = phraseStrips_.size()` at append time. Those lambdas remain valid
+as long as the strip stays at that row index. **That's why we only do
+surgical append at the end**, not surgical remove or reorder — removing a
+middle strip would invalidate every subsequent strip's captured `idx`,
+which would silently misroute clicks. The Input side has the same
+constraint (see `InputMixerPane::appendStrip` at line ~800); removes go
+through full `rebuildInputStrips`.
 
-Child components that override `mouseDown` consume the event; parent
-`mouseDown` only fires for clicks on the parent's own unclaimed area
-(title bar, chrome). When the title bar is gone (Task 4), parent-level
-handling on background clicks requires explicit forwarding via
-`findParentComponentOfClass<ParentType>()`. See `Content::mouseDown` in
-`FileInputPlayerWindow.mm` for the canonical forwarding pattern.
+### Note D — OTTO is a three-way dependency
 
-### Note E — Session-load known trade-off
+OTTO (when imported) supplies IDA with:
+- **Transport** (this session's insight, `project_otto_is_the_transport_source`)
+- **32 stereo audio outputs as Output Mixer channel strips**
+  (`project_otto_as_output_mixer_source`)
+- **Internal FX (EQ/CMP/RVB/DLY) consumable from the submodule**
+  (`project_internal_fx_first_class`)
 
-The file-input session round-trip (commit `e19027a`) currently calls
-`rebuildInputStrips()` after deserializing file inputs, which **wipes
-hardware channel state** (gain, mute, sends, routing, MON, inserts) back
-to defaults. The hardware-channel state was restored by `importGraphState`
-just moments earlier, then immediately discarded.
+All three depend on "OTTO importable into IDA" as a single milestone. The
+surgical-append pattern landed in this slice happens to be exactly the
+UI seam OTTO's 32 outputs will use — those strips will arrive via
+`appendPhraseStrip`-style calls without nuking the rest of the row.
 
-This is acceptable for closing the file-input alwaysOnTop persistence gap
-that the operator asked for, but it's a real regression for hardware
-sessions that depend on saved fader/route state.
+### Note E — Phrase + MON right-click was considered, dropped
 
-**The right long-term fix** is to refactor the load path so file-input
-restoration uses the surgical `appendStrip` mechanism (already in place
-for `onAddFileInput` post `d01bd00`) instead of full `rebuildInputStrips`.
-That preserves the importGraphState-restored hardware state AND restores
-file-input descriptors cleanly.
+The exploration suggested mirroring the aux-bus `StripContextOverlay`
+("Rename…") onto phrase + MON strips. Dropped because:
+- **Phrase names come from the constituent tree** — renaming a phrase is
+  an undo-stack mutation on the model, not a mixer rename like buses are.
+  Substantial design work; out of scope for a parity slice.
+- **MON strips have auto-generated names** ("MON 1", "MON 2") derived
+  from the input row order. Not operator-meaningful to rename.
 
-Operator was informed and accepted the trade-off for now.
-
-### Note F — Surgical append is the right pattern for adding things to mixer panes
-
-Commit `d01bd00` fixed a real bug: `onAddFileInput` was calling
-`rebuildInputStrips()` which destroyed every other channel's state. The
-fix introduced `InputMixerPane::appendStrip(info, isFileInput)` — appends
-one UI strip without touching existing ones — plus a focused mixer-side
-add (`addChannel` + `setChannelFileInputSource` + `setChannelTapeMode`)
-in `onAddFileInput`. **Same pattern should be used for any future
-"add one thing to a mixer pane" operation** to avoid the wipe-everything
-hammer. See `d01bd00`'s diff for the canonical template.
-
-`onRemoveFileInputRequested` still uses `rebuildInputStrips` — same
-removal regression as the load path. Acceptable today; same long-term
-fix as Note E.
-
-### Note G — Last-folder persistence lives in `app/IdaPreferences.h`
-
-Tiny inline header — two free functions (`lastFileInputFolder()` /
-`setLastFileInputFolder(folder)`) over a `juce::PropertiesFile` shared
-singleton. Reusable for other "remember last X" needs. The settings
-file is XML at `~/Library/Application Support/IDA/IDA.settings` (macOS)
-or JUCE-canonical equivalents on other platforms.
+If the operator later wants right-click affordances on these strips, the
+useful entries are different — e.g. "Turn MON off on source channel" for
+MON strips, "Show in Songwriter" for phrases. Separate design slice.
 
 ---
 
-## ▶ 3. The 3 follow-ons still queued (in todo.md)
+## ▶ 3. What's next
 
-### (B) Transport sync (LMC start/stop/ignore) — medium, recommended next
-- File-input playback can sync to IDA's transport (LMC). Operator said
-  "start/stop/ignore" — 3 modes.
-- Per-file-input `TransportSyncMode` field; persists in
-  `FileInputDescriptor` (now that session persistence is wired,
-  adding a field is straightforward — extend serialize/deserialize).
-- 6 open design questions (mode enum shape, default, pause-vs-rewind
-  on stop, playlist interaction, persistence, UI).
-- Closes a real functional gap and unlocks (C) and (D) which both
-  want transport sync from day one.
+The three follow-ons (B/C/D) are now blocked on OTTO import. So the
+question shifts to **what unblocks OTTO import**. From the existing
+memories:
 
-### (C) File-input MIDI source — medium-large
-- Whitepaper §6.6: file inputs are playlists of audio AND MIDI.
-- New `FileMidiInputSource` parallel to `FileInputSource`; reads .mid;
-  drives a MIDI event ring; binds to a `SignalType::Midi` channel.
-- 4 open design questions in `todo.md`.
+1. **OTTO consumed as submodule** ✓ (`project_otto_is_a_submodule_now`).
+2. **OTTO assets path** ✓ (`project_otto_assets_out_of_git` — `OTTO_ASSETS_DIR`
+   wired).
+3. **OTTO's 32 stereo outputs presented as Output Mixer channel strips**
+   — `project_otto_as_output_mixer_source`. The surgical-append seam
+   from this slice is the UI side of this. Engine side is the work that
+   bridges OTTO's output buses into IDA's `OutputMixer::addChannel`
+   per-OTTO-output.
+4. **Internal FX consumed from OTTO submodule** —
+   `project_internal_fx_first_class`. EQ/CMP/RVB/DLY adapters bound to
+   OTTO's header-only DSP.
+5. **OTTO's transport API surfaced to IDA** — the seam this session's
+   memory captures. Likely a listener / callback subscription on the
+   bundled OTTO instance.
 
-### (D) File-input Video source — largest
-- Whitepaper §6.6 (implied): video as a file input.
-- New `FileVideoInputSource` + display surface + frame timing + audio
-  sub-track.
-- 5 open design questions in `todo.md`.
+Suggested next slice options (operator picks):
 
-Full design notes in `todo.md` (top 3 entries dated 2026-05-26).
+### (A) OTTO integration scope doc — design first
+Step back and write `docs/superpowers/specs/<date>-otto-integration-scope.md`:
+enumerate what "OTTO importable into IDA" means as a milestone, in what
+order the pieces land, what each piece blocks/unblocks. Produces a
+roadmap doc; no code lands. Then pick the first OTTO sub-slice from
+that doc next session.
+
+### (B) Output Mixer engine seam for OTTO 32-output ingestion
+Pure engine work: add a method (`outputMixer_->addOttoOutput(idx)` or
+similar) that adds a stereo-pair channel sourced from an external audio
+pointer (the OTTO bundle's output bus index). No UI yet — UI surgical-
+append is already done.
+
+### (C) Investigate OTTO's transport surface
+Read OTTO's source in `external/OTTO/` and identify the API IDA will
+subscribe to. May surface a request via the cross-project inbox
+(`external/OTTO/CROSS_PROJECT_INBOX.md`) if OTTO doesn't publish a
+clean transport-state listener yet.
+
+### (D) A different IDA-side gap entirely
+If the operator wants more IDA-only polish before turning to OTTO, the
+candidates are: Note E from the previous session (session-load
+hardware-state regression — small focused refactor), or another
+operator-named gap.
+
+Default recommendation: **(A) OTTO integration scope doc.** It sets the
+roadmap for the next few slices and gives the operator one place to
+direct the sequencing rather than picking subslices ad-hoc.
 
 ---
 
@@ -163,61 +174,50 @@ Full design notes in `todo.md` (top 3 entries dated 2026-05-26).
 
 | Check | Result |
 |---|---|
-| Branch | `master`, local == origin |
-| HEAD | `d01bd00` (verify with `git log -1 --oneline`) |
-| `git status --short` | only the pre-existing `IDA_Naming_Decision.md` rename — unrelated, leave it |
-| `ctest --test-dir build -E "(PluginEditor\|MainComponentPlug)" -j` | **776 / 776** (3 from this polish round; transient flakes pass on `--rerun-failed`) |
-| `./build/tests/IdaTests "[file-input]"` | 41 cases / ~3810 assertions, all pass |
-| Operator eyes-on | **Confirmed working:** frameless chrome, drag handle in transport row, pin survives cross-app focus, Remove file input gesture works, adding a tape no longer wipes others. |
-| Operator eyes-on (pending verification) | **Did NOT explicitly verify yet:** alwaysOnTop survival across session save/load (commit `e19027a`); last-folder survival across app launches (commit `9482a40`). Test path: pick file from `~/Desktop/X` → quit → relaunch → "Add file input" should open at `~/Desktop/X`. Save session with pin on → quit → load → pin should still be on. |
+| Branch | `master`, local == origin (after this session's push) |
+| HEAD | (verify with `git log -1 --oneline` — should be the continue.md commit) |
+| `git status --short` | clean (after commits) |
+| `ctest --test-dir build -E "(PluginEditor\|MainComponentPlug)" -j` | **776 / 776** on clean rebuild; up to 4 transient flakes pass on `--rerun-failed` |
+| `./build/tests/IdaTests "[file-input]"` | (not retouched this slice — should still pass) |
+| Operator eyes-on (pending) | (1) phrase-strip fader / mute survives a refresh tick that adds another phrase. (2) MON-strip fader survives flipping MON on for one more source. Both were the regression class d01bd00 fixed on the input side; this slice closes the equivalent on the output side. |
 
 ---
 
 ## ▶ 5. Resume protocol for next chat
 
 1. Read this file (you're doing it).
-2. If the operator hasn't yet verified the session-persistence pair
-   (commits `e19027a` + `9482a40`), spot-test those quickly.
-3. Pick one of the 3 remaining follow-ons. **Recommended order:**
-   - **(B) Transport sync** first — closes a real functional gap; unlocks
-     (C) and (D) which both want transport sync from day one. Session
-     persistence is now wired so adding a `TransportSyncMode` field is
-     a one-liner extension to `FileInputDescriptor` +
-     serialize/deserialize.
-   - **(C) MIDI** second — natural sister to audio; reuses most of
-     `FileInputSource` architecture; `SignalType::Midi` already exists.
-   - **(D) Video** last — biggest scope; new display surface; new
-     media pipeline.
-4. For whichever follow-on the operator picks: invoke
-   `superpowers:brainstorming` against the relevant `todo.md` entry.
-   Each entry lists files, open design questions, and "what's needed
-   to finish" so the brainstorm starts with full context.
+2. If the operator hasn't yet eyes-on'd the surgical-append change, spot-
+   test that — add a phrase, mute another phrase, confirm the muted
+   phrase survives. Same for MON.
+3. Pick a "what's next" from §3 above. Default is (A) OTTO integration
+   scope doc, but the operator's standing answer is "most professional
+   and elegant" — for a multi-piece integration, that's a roadmap doc
+   before code.
+4. Update memory if anything new surfaces about OTTO's API or the
+   integration sequence.
 
-If the operator wants to close Note E's session-load regression first
-(hardware channel state reset to defaults on file-input restore), that's
-a focused refactor — replace `rebuildInputStrips()` inside the
-`if (loadedFileInputs.isObject())` block at
-`app/MainComponent.cpp:~7745` with a loop that calls `appendStrip` per
-loaded file input (mirroring the pattern from commit `d01bd00`'s
-`onAddFileInput`). Single commit, no spec needed.
+If the operator wants to fix Note E from the *previous* session
+(session-load hardware-state regression at `app/MainComponent.cpp:~7745`),
+that's a small focused refactor independent of OTTO — replace
+`rebuildInputStrips()` inside the file-input load block with a loop that
+calls `appendStrip` per loaded file input (mirror of the
+`onAddFileInput` pattern from d01bd00). Single commit, no spec needed.
 
 Reference docs:
-- Player chrome + always-on-top + persistence:
-  `docs/superpowers/specs/2026-05-26-file-input-player-window-polish-design.md`
-  + plan
-  `docs/superpowers/plans/2026-05-26-file-input-player-window-polish.md`
-- Audio file-input architecture:
-  `docs/superpowers/specs/2026-05-25-file-input-design.md` +
-  `2026-05-26-file-input-audio-routing-design.md`
-- Operator UI (model for MIDI / video player variants — chrome treatment
-  is reusable): `app/FileInputPlayerWindow.{h,mm}`
-- Engine seam: `engine/include/ida/IFileInputSourceRegistry.h`
-- LMC (for transport sync): `engine/include/ida/Lmc.h`
-- Whitepaper: `docs/IDA_Whitepaper_V9.md` §6.6 (file inputs are
-  playlists), §7.2 (the playlist scope semantics)
+- `project_otto_is_the_transport_source` (this session's new memory)
+- `project_otto_as_output_mixer_source` + `project_otto_is_a_submodule_now`
+  + `project_internal_fx_first_class` — the OTTO-integration triad
+- `project_input_output_mixers_identical` — the parity rule this slice
+  served
+- d01bd00 commit — the canonical surgical-append template
+- Whitepaper: `docs/IDA_Whitepaper_V9.md`
+- OTTO submodule: `external/OTTO/`; cross-project inbox at
+  `external/OTTO/CROSS_PROJECT_INBOX.md`
 
 ---
 
-*End of session. Player is operator-pleasant; persistence wired; surgical
-add path closes the add-tape-wipes-others bug. Three follow-ons queued;
-(B) Transport sync is the natural next pick.*
+*End of session. Output Mixer pane gains surgical-append parity with the
+Input side; the OTTO-is-transport architectural truth is captured in
+memory and reflected in todo.md. Three follow-ons (B/C/D) are now
+correctly blocked on OTTO import rather than masquerading as queued-and-
+ready.*
