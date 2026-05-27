@@ -2,7 +2,7 @@
 
 #include <memory>
 
-namespace ida::otto
+namespace ida
 {
 
 /// Owns one OTTO runtime instance (PlayerManager + TransportTracker) for
@@ -38,4 +38,4 @@ private:
     std::unique_ptr<Impl> impl_;
 };
 
-} // namespace ida::otto
+} // namespace ida

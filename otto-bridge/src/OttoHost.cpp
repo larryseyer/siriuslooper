@@ -1,9 +1,9 @@
-#include "ida/otto/OttoHost.h"
+#include "ida/OttoHost.h"
 
 #include <otto/manager/PlayerManager.h>
 #include <otto/transport/TransportTracker.h>
 
-namespace ida::otto
+namespace ida
 {
 
 struct OttoHost::Impl
@@ -29,4 +29,4 @@ bool OttoHost::isPrepared() const noexcept
     return impl_->playerManager.isPrepared();
 }
 
-} // namespace ida::otto
+} // namespace ida

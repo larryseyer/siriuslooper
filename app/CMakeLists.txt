@@ -69,6 +69,7 @@ target_link_libraries(IDA PRIVATE
     Ida::Host
     Ida::Video
     Ida::Persistence
+    Ida::OttoBridge
     lsfx::lsfx_tapecolor
     otto::core
     juce::juce_audio_utils

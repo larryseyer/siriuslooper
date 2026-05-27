@@ -31,6 +31,8 @@
 #include "ida/TapePool.h"
 #include "ida/UndoStack.h"
 
+#include "ida/OttoHost.h"
+
 #include "FileInputPlayerWindow.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
@@ -336,6 +338,13 @@ private:
     std::unique_ptr<ida::TapeColoringSink> tapeColoringSink_;
     std::unique_ptr<AudioCallback>        audioCallback_;
     juce::String                          audioDeviceLastError_;
+
+    // M-OTTO-2 — one OttoHost instance whose lifetime matches the session.
+    // Owns OTTO's PlayerManager + TransportTracker behind a pimpl. Not yet
+    // wired to the audio thread (M-OTTO-4) and not yet publishing transport
+    // (M-OTTO-3). Construction allocates the four Player sampler engines;
+    // prepare() forwards the device sample rate / block size into OTTO.
+    std::unique_ptr<ida::OttoHost>        ottoHost_;
 
     // M1 Session 3 — engine pieces wired alongside the audio thread.
     // ASRCs are held by the callback (one per input/output channel) but

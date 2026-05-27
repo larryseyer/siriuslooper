@@ -3975,6 +3975,22 @@ MainComponent::MainComponent()
             effectChainHost_.prepareInternalFx (setup.sampleRate, setup.bufferSize);
     }
 
+    // M-OTTO-2 — instantiate the OttoHost. Construction allocates OTTO's
+    // PlayerManager (four Player sampler engines) + TransportTracker on the
+    // message thread, here, while the audio callback is already running but
+    // does not touch OTTO. prepare() forwards the OS-reported sample rate /
+    // block size into OTTO's prepareToPlay equivalent so the synths are ready
+    // when M-OTTO-4 routes them through the audio thread. Falls back to a
+    // sane 48 kHz / 512 default when the device manager reports zero (rare
+    // path on machines without an audio device).
+    ottoHost_ = std::make_unique<ida::OttoHost>();
+    {
+        const auto setup = audioDeviceManager_.getAudioDeviceSetup();
+        const double sr  = setup.sampleRate > 0.0 ? setup.sampleRate : 48000.0;
+        const int    bs  = setup.bufferSize  > 0  ? setup.bufferSize  : 512;
+        ottoHost_->prepare (sr, bs);
+    }
+
     // --- Performance tab ---
     tabs_.addTab ("Performance", juce::Colours::black, &performanceView_, false);
 
