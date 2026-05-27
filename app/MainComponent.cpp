@@ -3952,6 +3952,27 @@ MainComponent::MainComponent()
         /*numOutputChannelsNeeded*/ kDefaultStereoChannels);
     if (deviceInitError.isNotEmpty())
         audioDeviceLastError_ = deviceInitError;
+
+    // M-OTTO-2 + M-OTTO-4 slice 2 — instantiate + prepare the OttoHost BEFORE
+    // `addAudioCallback`. Construction allocates OTTO's PlayerManager (four
+    // Player sampler engines) + TransportTracker on the message thread. The
+    // audio callback owns the renderBlock-per-buffer drive (slice 2 wired
+    // `setOttoRenderSource` into Step 2b of `audioDeviceIOCallbackWithContext`),
+    // so OttoHost MUST exist + be prepared before the device starts firing
+    // callbacks — the configure-before-audio-starts contract on
+    // `AudioCallback::setOttoRenderSource` says all collaborator setters
+    // happen on the message thread before `audioDeviceAboutToStart`. Falls
+    // back to a sane 48 kHz / 512 default when the device manager reports
+    // zero (rare path on machines without an audio device).
+    ottoHost_ = std::make_unique<ida::OttoHost>();
+    {
+        const auto setup = audioDeviceManager_.getAudioDeviceSetup();
+        const double sr  = setup.sampleRate > 0.0 ? setup.sampleRate : 48000.0;
+        const int    bs  = setup.bufferSize  > 0  ? setup.bufferSize  : 512;
+        ottoHost_->prepare (sr, bs);
+    }
+    audioCallback_->setOttoRenderSource (ottoHost_.get());
+
     audioDeviceManager_.addAudioCallback (audioCallback_.get());
 
     // Tape slice 3 — update the sink with the device's actual sample rate now
@@ -3973,22 +3994,6 @@ MainComponent::MainComponent()
         const auto setup = audioDeviceManager_.getAudioDeviceSetup();
         if (setup.sampleRate > 0.0 && setup.bufferSize > 0)
             effectChainHost_.prepareInternalFx (setup.sampleRate, setup.bufferSize);
-    }
-
-    // M-OTTO-2 — instantiate the OttoHost. Construction allocates OTTO's
-    // PlayerManager (four Player sampler engines) + TransportTracker on the
-    // message thread, here, while the audio callback is already running but
-    // does not touch OTTO. prepare() forwards the OS-reported sample rate /
-    // block size into OTTO's prepareToPlay equivalent so the synths are ready
-    // when M-OTTO-4 routes them through the audio thread. Falls back to a
-    // sane 48 kHz / 512 default when the device manager reports zero (rare
-    // path on machines without an audio device).
-    ottoHost_ = std::make_unique<ida::OttoHost>();
-    {
-        const auto setup = audioDeviceManager_.getAudioDeviceSetup();
-        const double sr  = setup.sampleRate > 0.0 ? setup.sampleRate : 48000.0;
-        const int    bs  = setup.bufferSize  > 0  ? setup.bufferSize  : 512;
-        ottoHost_->prepare (sr, bs);
     }
 
     // M-OTTO-3b — FileInputRegistry is the first IDA-side subscriber to

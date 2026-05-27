@@ -32,6 +32,14 @@ target_compile_features(IdaOttoBridge PUBLIC cxx_std_20)
 # OttoBridge's public surface. juce_events supplies juce::Timer for the
 # drainer itself.
 target_link_libraries(IdaOttoBridge
+    # M-OTTO-4 slice 2: OttoHost now inherits from `ida::IOttoRenderSource`
+    # (the audio-thread port the AudioCallback drives). The interface lives
+    # in `core/` so AudioCallback can name it without depending on
+    # OttoBridge. Inheritance forces the full type definition into
+    # OttoHost.h, so Ida::Core moves from transitive-PRIVATE (via
+    # Ida::Engine) to PUBLIC on IdaOttoBridge — consumers of OttoHost.h
+    # need the IOttoRenderSource header on their include path.
+    PUBLIC  Ida::Core
     PRIVATE otto::core
             juce::juce_audio_basics
             juce::juce_events

@@ -1,6 +1,7 @@
 #include "ida/AudioCallback.h"
 
 #include "ida/InputMixer.h"
+#include "ida/IOttoRenderSource.h"
 #include "ida/Lmc.h"
 #include "ida/NotificationBus.h"
 #include "ida/OutputMixer.h"
@@ -76,6 +77,14 @@ void AudioCallback::audioDeviceIOCallbackWithContext (
     if (inputMixer_ != nullptr)
         inputMixer_->renderInputGraph (inputChannelData, numInputChannels,
                                        nullptr, 0, numSamples);
+
+    // Step 2b: M-OTTO-4 — pump OTTO's mixer pipeline so its 32 per-output
+    // stereo pair buffers are fresh before any OutputMixer channel sourced
+    // from OTTO audio reads them in Step 3. RT-safe per OTTO's CLAUDE.md
+    // (wraps `processGlobalMixer`, which is alloc/lock/log-free). No-op when
+    // no source is attached (default for sessions / tests without OTTO).
+    if (ottoRenderSource_ != nullptr)
+        ottoRenderSource_->renderBlock (numSamples);
 
     // Step 3: OutputMixer render. Writes additively into the output buffers.
     // V9 Slice 3 auto-created MON channels read the InputMixer's post-strip

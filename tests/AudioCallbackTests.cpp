@@ -18,6 +18,7 @@
 #include "ida/AudioCallback.h"
 #include "ida/EngineConfig.h"
 #include "ida/InputMixer.h"
+#include "ida/IOttoRenderSource.h"
 #include "ida/ITapeSink.h"
 #include "ida/OutputMixer.h"
 #include "ida/SignalType.h"
@@ -217,6 +218,79 @@ TEST_CASE ("AudioCallback elapsed-seconds resets to zero on device stop", "[audi
 // tape-routed channel registered in InputMixer reaches its ITapeSink in an
 // actual audioDeviceIOCallbackWithContext cycle.
 // =============================================================================
+
+// =============================================================================
+// M-OTTO-4 slice 2 — IOttoRenderSource drive
+//
+// The audio callback owns the "pump OTTO's mixer once per buffer" call so
+// downstream OutputMixer channels that source OTTO audio can read fresh
+// per-output buffers. Verified by attaching a counting stub source.
+// =============================================================================
+
+TEST_CASE ("AudioCallback invokes IOttoRenderSource::renderBlock once per buffer with the buffer's numSamples",
+           "[audio-callback][otto-render]")
+{
+    struct CountingSource : ida::IOttoRenderSource
+    {
+        int  calls               = 0;
+        int  lastNumSamples      = -1;
+        void renderBlock (int numSamples) noexcept override
+        {
+            ++calls;
+            lastNumSamples = numSamples;
+        }
+    } source;
+
+    AudioCallback cb { EngineConfig {} };
+    cb.setOttoRenderSource (&source);
+
+    constexpr int channels = 2;
+    constexpr int samples  = 128;
+    Buffers in  (channels, samples);
+    Buffers out (channels, samples);
+
+    auto ctx = emptyContext();
+    cb.audioDeviceIOCallbackWithContext (in.readable(), channels,
+                                         out.writable(), channels,
+                                         samples, ctx);
+
+    CHECK (source.calls          == 1);
+    CHECK (source.lastNumSamples == samples);
+
+    // A second callback with a different block size lands too — slice 2's
+    // wiring is per-buffer, not one-shot.
+    constexpr int samples2 = 64;
+    Buffers in2  (channels, samples2);
+    Buffers out2 (channels, samples2);
+    cb.audioDeviceIOCallbackWithContext (in2.readable(), channels,
+                                         out2.writable(), channels,
+                                         samples2, ctx);
+
+    CHECK (source.calls          == 2);
+    CHECK (source.lastNumSamples == samples2);
+}
+
+TEST_CASE ("AudioCallback skips IOttoRenderSource drive when no source is attached",
+           "[audio-callback][otto-render]")
+{
+    // No setOttoRenderSource call. The callback must not crash and must
+    // not allocate a source on the fly — the nullptr branch is the
+    // configure-before-audio-starts default for sessions without OTTO.
+    AudioCallback cb { EngineConfig {} };
+
+    constexpr int channels = 2;
+    constexpr int samples  = 64;
+    Buffers in  (channels, samples);
+    Buffers out (channels, samples);
+
+    auto ctx = emptyContext();
+    cb.audioDeviceIOCallbackWithContext (in.readable(), channels,
+                                         out.writable(), channels,
+                                         samples, ctx);
+
+    // SUCCESS: no crash, no UB. The silence-by-default contract above
+    // already pins the output behaviour; this case pins the OTTO opt-out.
+}
 
 TEST_CASE ("AudioCallback drives renderInputGraph: a tape-routed channel reaches the sink",
            "[audio-callback][render]")

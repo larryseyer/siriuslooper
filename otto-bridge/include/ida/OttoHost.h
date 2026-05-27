@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ida/IOttoRenderSource.h"
+
 #include <memory>
 
 namespace ida
@@ -15,13 +17,14 @@ class IOttoTransportListener;
 ///
 /// M-OTTO-2 scope: ctor + dtor + prepare (the lifecycle skeleton).
 /// M-OTTO-3 scope: transport listener fan-out (this header).
-/// M-OTTO-4 scope: audio rendering through the audio thread.
+/// M-OTTO-4 scope: audio rendering through the audio thread (renderBlock +
+/// the IOttoRenderSource port the AudioCallback drives once per buffer).
 /// (`docs/superpowers/specs/2026-05-26-otto-integration-scope-and-sequencing.md`)
-class OttoHost
+class OttoHost : public IOttoRenderSource
 {
 public:
     OttoHost();
-    ~OttoHost();
+    ~OttoHost() override;
 
     OttoHost (const OttoHost&)            = delete;
     OttoHost& operator= (const OttoHost&) = delete;
@@ -93,8 +96,9 @@ public:
     /// RT-safe: wraps OTTO's `PlayerManager::processGlobalMixer`, which
     /// OTTO's CLAUDE.md guarantees as alloc/lock/log-free. Must be called
     /// BEFORE any same-block read via the accessors below. A call before
-    /// `prepare()` is a no-op.
-    void renderBlock (int numSamples) noexcept;
+    /// `prepare()` is a no-op. Satisfies the `IOttoRenderSource` port the
+    /// AudioCallback drives once per buffer.
+    void renderBlock (int numSamples) noexcept override;
 
     /// Pointer into OTTO's per-output left-channel buffer for the most
     /// recent `renderBlock`. Valid until the next `renderBlock` (or

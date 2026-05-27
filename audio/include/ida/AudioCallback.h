@@ -16,6 +16,7 @@ class AudioDeviceCalibration;
 class InputMixer;
 class OutputMixer;
 class NotificationBus;
+class IOttoRenderSource;
 
 /// The single audio-thread entry point for the standalone app — V7 white paper
 /// Part V plus Part 5.6's realtime-safety contract, lowered to JUCE's
@@ -109,6 +110,16 @@ public:
     void setInputMixer  (InputMixer*  mixer) noexcept   { inputMixer_  = mixer;  }
     void setOutputMixer (const OutputMixer* mixer) noexcept { outputMixer_ = mixer; }
 
+    /// M-OTTO-4 slice 2 — attach the audio-thread OTTO render source.
+    /// `audioDeviceIOCallbackWithContext` calls `renderBlock(numSamples)`
+    /// once per buffer, BEFORE OutputMixer dispatch, so any OutputMixer
+    /// channel sourced from OTTO's per-output buffers reads fresh
+    /// audio. Set-once on the message thread before
+    /// `audioDeviceAboutToStart`; non-owning (MainComponent owns the
+    /// OttoHost and destroys the AudioCallback first). Pass `nullptr`
+    /// to detach (default for sessions / tests without OTTO).
+    void setOttoRenderSource (IOttoRenderSource* source) noexcept { ottoRenderSource_ = source; }
+
     /// M6 Session 2 — attach the engine→UI truthfulness channel (V5 §8.6).
     /// The audio thread posts `DeviceEvent` notifications from
     /// `audioDeviceAboutToStart` and `audioDeviceStopped` (both of which run
@@ -178,9 +189,10 @@ private:
 
     // Collaborator pointers — set-once on the message thread before
     // `audioDeviceAboutToStart` and read by the audio thread without locks.
-    InputMixer*        inputMixer_  { nullptr };
-    const OutputMixer* outputMixer_ { nullptr };
-    NotificationBus*   notificationBus_ { nullptr };
+    InputMixer*         inputMixer_       { nullptr };
+    const OutputMixer*  outputMixer_      { nullptr };
+    NotificationBus*    notificationBus_  { nullptr };
+    IOttoRenderSource*  ottoRenderSource_ { nullptr };
 
     std::atomic<double> currentSampleRate_       { 0.0 };
     std::atomic<int>    currentBufferSize_       { 0 };
