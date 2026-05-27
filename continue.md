@@ -1,219 +1,193 @@
-# Session Continuation — OTTO integration scope doc + cross-project inbox housekeeping closed
+# Session Continuation — M-OTTO-1 landed (otto-core linked into IDA's build)
 
 ## ▶ 0. Read these first (60 seconds)
 
-1. **OTTO integration scope+sequencing roadmap doc landed** at
-   `docs/superpowers/specs/2026-05-26-otto-integration-scope-and-sequencing.md`
-   (commit `2c7d688`). 6 milestones (M-OTTO-1 … M-OTTO-6), dependency
-   graph, suggested execution order, what each milestone unblocks. Reads
-   as a companion to the existing 2026-05-22 OTTO integration design.
-2. **lsfx_tapecolor submodule bumped** `d8b06b1 → a7ba9c3` (Phase 8).
-   This is intentionally **not** the latest available SHA — there's a
-   real regression in the post-Phase-8 history that blocks bumping
-   further (details in §2 below). Phase 6/7/8 needs-acks closed; Phase
-   9, Chow J-A, Thiran, Alignment, Bypass-click, Phase A, Phase B+C
-   remain **needs-ack from OTTO** until the regression is resolved.
-3. **OTTO submodule bumped** `d43c540 → c01460a` — captures only the
-   cross-project inbox edits (ack + prune Phase 6/7/8, file an IDA→OTTO
-   regression entry). No OTTO code changes; OTTO's main has a lot of
-   intermediate work between the prior pin and this one that IDA isn't
-   consuming yet — the inbox bump is the minimum-viable bump per
-   protocol (it propagates the inbox state to OTTO's remote).
-4. **The just-landed mixer-pane surgical-append slice** (previous session,
-   commit `d1fe0b1`) is **awaiting operator eyes-on**. Pass criterion:
-   adjust phrase / MON strip fader, then add another phrase or flip MON
-   on for another input — the first strip's value survives. Pre-fix it
-   was reset on every refresh tick.
-5. **Baseline.** `master` at `d742533` (verify with `git log -1 --oneline`).
-   Local == origin (the push went through).
-6. **Test surface.** `ctest --test-dir build -E "(PluginEditor|MainComponentPlug)" -j`
-   → **776 / 776** on clean rebuild against the bumped submodules.
-   `./build/tests/IdaTests "[tapecolor-adapter]"` passes all 5 cases.
+1. **M-OTTO-1 complete.** Two commits this session pushed to `origin/master`:
+   - `22a1c5a` — M-OTTO-1a: vendor sfizz as submodule (`f5c6e29f`, matches
+     OTTO) + 7 sub-submodules recursive (abseil-cpp, filesystem, invoke.hpp,
+     simde, dr_libs, libaiff, wavpack) + 64-channel patch copied from OTTO.
+   - `674ac96` — M-OTTO-1b: FetchContent Ableton::Link + add_subdirectory
+     sfizz (configure-time 64-channel patch) + add_subdirectory otto-core
+     (OTTO_ENABLE_GENERATION=OFF) + `otto::core` linked into IDA app target.
+2. **Scope estimate was wrong.** The 2026-05-26 scope doc said "Size: small.
+   1 commit." Reality: 2 commits, +100MB+ submodule tree, ~13 sec CMake
+   configure time added. The scope's flagged risk ("otto-core may have
+   build dependencies IDA doesn't already have — sfizz, Ableton Link")
+   materialized — both. **Update the scope doc when revising.**
+3. **No IDA code uses otto-core symbols yet.** Static-archive linker will
+   dead-strip them on the final IDA binary. The link is wired
+   (`otto-core/libotto-core.a` is in IDA's link line — verified via
+   `build/build.ninja` grep). First real consumer lands in M-OTTO-2
+   (`OttoHost` skeleton).
+4. **Baseline.** `master` at `674ac96` (verify with `git log -1 --oneline`).
+   Local == origin (push went through).
+5. **Test surface.** `ctest --test-dir build -E "(PluginEditor|MainComponentPlug)" -j`
+   → **776 / 776** on clean rebuild against `master`. Two transient
+   flakes hit this session (test #295 + #470, both `ida_plugin_host`
+   supervisor) but pass on retry — within the documented 4-flake tolerance.
+6. **OTTO inbox.** No new `[FROM OTTO → IDA]` entries this session. The
+   2026-05-26 IDA → OTTO regression entry (TAPECOLOR OFF-passthrough
+   leak after Phase A) is still `needs-ack` from OTTO's side. The Phase
+   9 / Chow J-A / Thiran / Alignment / Bypass-click / Phase A / Phase B+C
+   needs-acks from OTTO remain pinned in-place per the prior session's
+   decision (don't bump lsfx_tapecolor past `a7ba9c3` until OTTO fixes
+   the regression).
 
 ---
 
-## ▶ 1. What landed THIS chat (continuation of the previous session)
+## ▶ 1. What landed THIS chat
 
 | Commit | Subject |
 |---|---|
-| `9167bad` | (previous session) docs: continue.md — Output Mixer pane surgical-append parity |
-| `2c7d688` | docs: OTTO integration scope+sequencing roadmap (6 milestones) |
-| `d742533` | chore: bump submodules — lsfx_tapecolor → a7ba9c3, OTTO → c01460a2 (inbox housekeeping) |
+| `22a1c5a` | chore: vendor sfizz as submodule (M-OTTO-1a) — pinned f5c6e29f, 7 sub-submodules recursive, 64-channel patch copied from OTTO |
+| `674ac96` | feat: link otto-core into IDA app target (M-OTTO-1b) — FetchContent Ableton::Link + add_subdirectory sfizz/otto-core, OTTO_ENABLE_GENERATION=OFF, ctest 776/776 |
 
-OTTO-side (pushed to OTTO's `origin/main`):
-- `c01460a2` (OTTO) — inbox: ack+prune Phase 6/7/8 + file regression entry
-
-The IDA-side `d742533` commit's `OTTO-Origin: c01460a2` trailer points
-back; `git log --grep='OTTO-Origin\|Ida-Origin' --all` in either repo
-surfaces the full cross-project trail.
+OTTO-side: none. The cross-project inbox was not touched this session.
 
 ---
 
-## ▶ 2. The lsfx_tapecolor regression — do not bump past a7ba9c3 yet
+## ▶ 2. CMake / build notes worth carrying forward
 
-IDA's `tests/TapeColorAdapterTests.cpp` pins three invariants:
+### Note A — sfizz's working tree is permanently "dirty"
 
-- Test 405 — `TapeColoringSink BeforeWrite with a default-OFF processor is still passthrough`
-- Test 524 — `TapeColorAdapter::process supports in-place invocation`
-- Test 738 — `TapeColorAdapter::process after prepare is a dry passthrough by default (TAPECOLOR default OFF)`
+`external/sfizz/src/Config.h.in` is modified in-place by the configure-time
+patch (the 64-channel fix from `patches/sfizz-max-channels.patch`). CMake
+generates `src/sfizz/Config.h` from the patched template each configure.
+Both files show as modified under `git -C external/sfizz status`. This
+matches OTTO's pattern (their sfizz submodule is dirty for the same
+reason). Do NOT try to "fix" this by reverting the patch — it's the
+required state for the 32-stereo-pair (64-mono) output topology IDA
+inherits from OTTO. The CMake step in `cmake/Dependencies.cmake` is
+idempotent: it greps Config.h.in for `maxChannels { 64 }` first and
+skips re-patching if already done.
 
-All three assert that `lsfx::TapeColorProcessor` with `cfg.enabled == false`
-yields a **bit-identical** in→out passthrough. At a7ba9c3 (Phase 8) they
-pass. At 14b4920e (Phase B+C, latest in the inbox) they fail —
-post-Phase-A scaling leaks through the OFF path: input `0.065263` becomes
-output `0.000255`, a ~250× attenuation, exactly the symptom of
-`kDigitalToFluxScale = 0.14f` being applied with the matched
-post-J-A inverse skipped on the OFF branch.
+### Note B — sfizz's CMake emits warnings during configure
 
-I filed a `[FROM IDA → OTTO]` entry in the cross-project inbox at
-`external/OTTO/CROSS_PROJECT_INBOX.md` describing this. OTTO's next
-session will see it at session start and address it (per protocol,
-operator is not in the loop). Once OTTO posts a fix, IDA can bump.
+Non-fatal: missing-but-optional Qt5 (UI tools, OFF), missing-but-optional
+samplerate (we use sfizz's internal resampler, also OFF), a stray `elseif`
+with no args in sfizz's SfizzDeps.cmake. These are sfizz upstream warts,
+not IDA bugs. Don't try to silence them by editing sfizz.
 
-I did **not** bisect to identify which exact post-Phase-8 commit
-introduced the leak — Phase A's `kDigitalToFluxScale` constant is
-consistent with the magnitude, but earlier phases (Chow J-A port,
-Thiran allpass, Alignment standards) may also contribute. OTTO's
-Claude should bisect on its side.
+### Note C — Ableton::Link is FetchContent, not vendored
 
-**Architectural side note (also in the IDA→OTTO entry):** lsfx_tapecolor's
-`origin/main` has evolved from "shared DSP module" into a full plugin
-UI system (TapeColorEditor, TransportCluster, PresetBar, PresetManager,
-GearSurfaceView, CharacterTabView, CalEqTabView, DynamicsTabView,
-MotionTabView, ~10 factory presets). The module's scope has expanded
-beyond what the original IDA+OTTO sharing arrangement assumed. This
-likely warrants a standalone discussion about whether IDA continues
-consuming the full lsfx_tapecolor or shifts to a narrower DSP-only
-target. Out of scope right now; flagged.
+Pinned to `addb7da` (Feb 2026, same SHA OTTO uses). First configure-time
+checkout pulls from `github.com/Ableton/link.git` and caches under
+`build/_deps/link-src`. A clean rebuild (`rm -rf build`) re-downloads.
+If long-term network reliability becomes a problem, switching to a
+vendored submodule is a 10-line change to `cmake/Dependencies.cmake`.
 
----
+### Note D — OTTO_ENABLE_GENERATION is forced OFF in IDA
 
-## ▶ 3. Architecture notes worth carrying forward
+OTTO's top-level CMake defaults this ON (TF Lite-driven in-app pattern
+generation — OTTO product surface). IDA forces it OFF because (a) IDA
+isn't shipping that feature, (b) TF Lite drags a ~200MB tensorflow
+submodule + a non-trivial cmake/TFLite.cmake bootstrap, (c) otto-core's
+generation/*.cpp sources are wholly gated on the flag. If a future IDA
+feature wants OTTO's MIDI generation pipeline, flip the flag and pull
+in the tensorflow submodule. Today the IDA build is leaner without it.
 
-### Note A — Cross-project inbox handshake is now established
+### Note E — Link order: otto-core appears in IDA app's LINK_LIBRARIES
 
-The protocol described in both `CLAUDE.md` files (full-edit-autonomy,
-mandatory session-start inbox read, `OTTO-Origin:` / `Ida-Origin:`
-trailers, ack-then-prune on entries-with-resolution) actually works
-in practice — verified by closing 3 of OTTO's 10+ needs-ack entries
-this session.
-
-The pruning rule (codified at OTTO commit `d43c540f` 2026-05-24, IDA
-side rule in `~/.claude/CLAUDE.md`-equivalent) means the inbox stays
-tractable. Long-term audit lives in `git log --grep='Ida-Origin\|OTTO-Origin'`.
-
-### Note B — When OTTO and IDA disagree, IDA pins to what works
-
-The reflexive instinct is "bump to the latest the inbox asks for."
-This session demonstrates the more general rule: **IDA pins to the
-SHA that satisfies IDA's own invariants**, even if that's older than
-OTTO's latest request. The inbox is the negotiation channel for
-resolving such disagreements; OTTO addresses the regression, then
-IDA bumps again. Don't bump and then immediately rip out the bump.
-
-### Note C — OTTO integration milestones are now sequenced
-
-The 2026-05-22 OTTO integration design described 4 decisions (32-stereo
-source, inbox protocol, internal-FX adapter, asset policy) but left
-sequencing implicit. The 2026-05-26 scope doc fills that gap with 6
-concrete milestones in dependency order:
-
-- M-OTTO-1: Link `otto-core` (mechanical, derisks downstream)
-- M-OTTO-2: `OttoHost` skeleton + instantiation
-- M-OTTO-3: Transport subscription + IDA listener API (unblocks
-  todo entry B Transport sync, and the transport-sync sub-features of
-  C MIDI and D Video)
-- M-OTTO-4: 32 OTTO outputs as Output Mixer channels (uses the
-  surgical-append seam landed last session)
-- M-OTTO-5: OTTO state + preset serialization
-- M-OTTO-6: OTTO operator UI (largest, own design)
-
-M-OTTO-1 is the natural next slice — mechanical, derisks the
-downstream work, surfaces any surprise build deps in `otto-core`.
+Verified by `grep "libotto-core" build/build.ninja`. The line includes
+`otto-core/libotto-core.a` plus its transitive sfizz + abseil + Link
+dependencies. The static-archive linker dead-strips otto-core symbols
+in this slice because nothing in IDA references them yet — that's
+expected per M-OTTO-1's "no code uses otto-core" criterion. M-OTTO-2's
+`OttoHost` will be the first real consumer.
 
 ---
 
-## ▶ 4. What's next
+## ▶ 3. What's next
 
-### (A) Begin M-OTTO-1 — link `otto-core` into IDA's build (recommended)
+### (A) Begin M-OTTO-2 — `OttoHost` skeleton + instantiation (recommended)
 
-Mechanical slice. Read `external/OTTO/src/otto-core/CMakeLists.txt` to
-understand what target it exports + what dependencies it needs. Add
-`add_subdirectory(external/OTTO/src/otto-core)` (or equivalent) to
-IDA's CMake. Wire `otto-core` into a target IDA already links (likely
-`engine/` or a new `otto-bridge/` per the scope doc's recommendation).
-Verify clean rebuild, ctest stays at baseline. **No new IDA code uses
-`otto-core` symbols yet** — this slice just proves the link works.
+Per the 2026-05-26 scope doc (`docs/superpowers/specs/2026-05-26-otto-integration-scope-and-sequencing.md`):
 
-Risks: OTTO's `otto-core` may need sfizz, Ableton Link, or other
-transitive deps. Read OTTO's CMake before scoping.
+- New module: small `otto-bridge/` library between `engine/` and `app/`.
+  JUCE-free public header (`OttoHost.h` with opaque type + an
+  `IOttoTransportListener` interface); JUCE-coupled `.cpp` that holds
+  the OTTO instance.
+- `MainComponent` constructs an `OttoHost` in its ctor; dtor tears down.
+- `prepareToPlay(sampleRate, blockSize)` propagates into OTTO.
+- No audio output, no transport, no UI surfacing yet — that's M-OTTO-3
+  + M-OTTO-4.
 
-Size: small. 1 commit. Operator-verifiable by build success.
+Size: medium. Per the scope doc, 2-3 commits (CMake skeleton, ctor/dtor,
+MainComponent wiring). Operator-verifiable by `OttoHost` constructing
++ destructing across the IDA app lifecycle without crashes.
 
-Unblocks: M-OTTO-2 through M-OTTO-6.
+**Layer placement decision** (scope doc M-OTTO-2 risk note): new
+`otto-bridge/` module is cleaner than putting it in `engine/`, because
+engine's RT-safety contract would otherwise need an "OTTO is exempt"
+carve-out everywhere. The new-module path localises the JUCE coupling
+to one place.
 
 ### (B) Wait for OTTO to address the lsfx_tapecolor OFF-passthrough regression
 
-The IDA→OTTO inbox entry is the negotiation. Next session can check
-whether OTTO has posted a fix (look for a new `[FROM OTTO → IDA]`
-entry in the inbox at session start). If yes, bump submodules to the
-newer pin. If no, this is on OTTO; do unrelated work.
+Same status as last session. Next-session check: look for a new
+`[FROM OTTO → IDA]` entry in `CROSS_PROJECT_INBOX.md` addressing the
+regression. If yes, bump submodules to the newer pin. If no, this is
+on OTTO; do unrelated work (M-OTTO-2 is the natural choice).
 
-### (C) Operator eyes-on the previous session's surgical-append slice
+### (C) Operator eyes-on the surgical-append slice (from 2 sessions ago)
 
-Pre/post-fix behavioral test on phrase + MON strips. Quick and
-operator-only.
+Still pending. Pre/post-fix behavioral test: adjust phrase / MON strip
+fader, then add another phrase or flip MON on for another input — the
+first strip's fader value survives. Pre-fix it was reset on every
+refresh tick. Commit `d1fe0b1`. Quick, operator-only.
 
-Default recommendation: **(A) M-OTTO-1**. Mechanical, well-scoped, derisks
-all OTTO-import work, doesn't depend on OTTO's response on the
-TAPECOLOR regression.
+Default recommendation: **(A) M-OTTO-2**. M-OTTO-1 unblocked it; the
+otto-bridge module is the next concrete piece and doesn't depend on
+OTTO's regression response.
 
 ---
 
-## ▶ 5. Baseline as of this handoff
+## ▶ 4. Baseline as of this handoff
 
 | Check | Result |
 |---|---|
 | Branch | `master`, local == origin |
-| HEAD | `d742533` (`git log -1 --oneline`) |
-| `git status --short` | clean (the pre-existing `IDA_Naming_Decision.md` rename is unchanged from prior sessions) |
+| HEAD | `674ac96` (`git log -1 --oneline`) |
+| `git status --short` | clean (sfizz submodule shows as `m` — expected, see Note A) |
 | lsfx_tapecolor pin | `a7ba9c3` (Phase 8) — intentionally not bleeding edge |
-| OTTO submodule pin | `c01460a2` (inbox ack, no code changes vs prior pin's intermediate history) |
-| ctest baseline | 776/776 on clean rebuild; tolerate up to 4 transient flakes |
-| Operator eyes-on (still pending) | Phrase + MON strip fader survives a refresh tick that previously wiped it (from `d1fe0b1` slice) |
+| OTTO submodule pin | `c01460a2` — unchanged from last session |
+| sfizz submodule pin | `f5c6e29f` (NEW — matches OTTO's pin) |
+| ctest baseline | 776/776 on clean rebuild; 2 transient flakes pass on retry |
+| IDA app builds + links otto-core | yes — `build/build.ninja` shows `otto-core/libotto-core.a` in IDA's LINK_LIBRARIES |
+| Operator eyes-on (still pending) | Phrase + MON strip fader survives a refresh tick that previously wiped it (from `d1fe0b1`) |
 
 ---
 
-## ▶ 6. Resume protocol for next chat
+## ▶ 5. Resume protocol for next chat
 
 1. Read this file (you're doing it).
 2. **At session start: read `external/OTTO/CROSS_PROJECT_INBOX.md`** per
-   the cross-project protocol. Look for any new `[FROM OTTO → IDA]` entry
-   addressing the OFF-passthrough regression. Ack any new entries
-   addressed to IDA. The IDA→OTTO regression entry I filed should still
-   be needs-ack (no resolution from OTTO yet).
-3. Pick from §4. Default (A) M-OTTO-1.
-4. If picking (A), start by reading `external/OTTO/CMakeLists.txt` and
-   `external/OTTO/src/otto-core/CMakeLists.txt` to understand the link
-   surface.
+   the cross-project protocol. Look for any new `[FROM OTTO → IDA]`
+   entry — especially one addressing the OFF-passthrough regression.
+   Ack any new entries addressed to IDA. The 2026-05-26 IDA → OTTO
+   regression entry should still be `needs-ack` until OTTO fixes it.
+3. Pick from §3. Default (A) M-OTTO-2.
+4. If picking (A), the scope doc + 2026-05-22 design doc are the
+   reference. Start by sketching `otto-bridge/CMakeLists.txt` (small
+   static library) + `otto-bridge/include/ida/otto/OttoHost.h` (the
+   JUCE-free public header).
 
 Reference docs:
-- **OTTO integration sequencing:** `docs/superpowers/specs/2026-05-26-otto-integration-scope-and-sequencing.md` (this session)
-- **OTTO integration design:** `docs/superpowers/specs/2026-05-22-otto-integration-design.md` (4 foundational decisions)
+- **OTTO integration sequencing:** `docs/superpowers/specs/2026-05-26-otto-integration-scope-and-sequencing.md`
+- **OTTO integration design (4 foundational decisions):** `docs/superpowers/specs/2026-05-22-otto-integration-design.md`
 - **Cross-project inbox protocol:** `external/OTTO/CROSS_PROJECT_INBOX.md` + the matching sections in both `CLAUDE.md` files
-- **Surgical-append pattern:** commit `d1fe0b1` (output side) + `d01bd00` (input side, canonical template)
 - Whitepaper: `docs/IDA_Whitepaper_V9.md`
 
 Memory:
-- `project_otto_is_the_transport_source` — captured 2026-05-26
-- `project_otto_as_output_mixer_source` — 32 stereo outputs into Output Mixer
-- `project_internal_fx_first_class` — EQ/CMP/RVB/DLY from OTTO submodule
 - `project_otto_is_a_submodule_now` — submodule consumption model
+- `project_otto_is_the_transport_source` — IDA has no engine-side transport state; OTTO supplies play/stop
+- `project_otto_as_output_mixer_source` — 32 stereo outputs into Output Mixer (M-OTTO-4 target)
 - `project_cross_project_inbox_protocol` — AI-to-AI handoff mechanics
 
 ---
 
-*End of session. OTTO integration roadmap is in place; submodule pins
-are at the latest IDA-validated state; cross-project inbox reflects the
-real handoff state. Next session opens with M-OTTO-1 (mechanical otto-core
-link) or with whatever OTTO has posted in response to the regression.*
+*End of session. M-OTTO-1 landed cleanly across 2 commits; sfizz +
+Ableton::Link + otto-core all link cleanly into IDA's app target;
+ctest baseline holds. M-OTTO-2 is the next mechanical slice — small
+otto-bridge module containing one `OttoHost` instance with no
+audio, no transport, no UI yet.*
