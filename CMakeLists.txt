@@ -47,6 +47,11 @@ add_subdirectory(persistence)
 # Plugin host — VST3/AU scanning, generic parameter view (JUCE runtime).
 add_subdirectory(host)
 
+# OTTO bridge — pimpl wrapper around OTTO's runtime (PlayerManager,
+# TransportTracker). M-OTTO-2 instantiates this from MainComponent; render
+# + transport listener fan-out land in M-OTTO-3 + M-OTTO-4.
+add_subdirectory(otto-bridge)
+
 # The performer's instrument — undo, latency budget, performance/preparation views.
 add_subdirectory(ui)
 
