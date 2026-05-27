@@ -1912,6 +1912,17 @@ public:
     /// comment above — so the enum tag is free for MON's use).
     struct MonStripInfo { ida::ChannelId inputChannelId { 0 }; juce::String name; };
 
+    /// One OTTO-output strip's display state (M-OTTO-4 slice 4b). The strip
+    /// presents one of OTTO's 32 stereo outputs as a CompactFaderStrip — fader
+    /// + mute drive the OutputMixer channel that was set up by
+    /// `MainComponent::addOttoOutputStrip`. `ottoOutputIndex` is the canonical
+    /// OTTO output id (0..23 instrument channels, 24..27 FX returns, 28..31
+    /// player buses) and doubles as the strip's CompactFaderStrip `id`, so the
+    /// shared listener callbacks discriminate this band from the real master
+    /// (which uses `kMasterStripId == -1` on `ChannelType::Bus`) purely by tag
+    /// `ChannelType::Master` + non-negative id.
+    struct OttoStripInfo { int ottoOutputIndex { 0 }; juce::String name; };
+
     /// A bus destination kind. Output buses have no Tape option (the Output
     /// Mixer is the mixdown side; tape is the Input Mixer's terminal).
     enum class DestKind { Bus, HardwareOutput };
@@ -2027,6 +2038,17 @@ public:
     std::function<void (int monIdx)>                     onMonEqSlotAddRequested;
     std::function<void (int monIdx, ida::CmpConfig cfg)> onMonCmpConfigChanged;
     std::function<void (int monIdx)>                     onMonCmpSlotAddRequested;
+
+    // --- OTTO output strip gesture relays (M-OTTO-4 slice 4b). One strip per
+    // operator-picked OTTO output (0..31). The CompactFaderStrip's `id` is
+    // the ottoOutputIndex itself (positive int distinct from kMasterStripId
+    // = -1), so listener callbacks receive ottoOutputIndex directly — no
+    // row↔index translation needed. Discriminated from real master by
+    // (idx != kMasterStripId) on ChannelType::Master.
+    std::function<void (int ottoOutputIndex)>              onAddOttoOutputStrip;
+    std::function<void (int ottoOutputIndex)>              onRemoveOttoOutputStrip;
+    std::function<void (int ottoOutputIndex, float gainLinear)> onOttoGain;
+    std::function<void (int ottoOutputIndex, bool muted)>  onOttoMute;
 
     void setMasterLevelDb (float dbL, float dbR)
     {
@@ -2530,6 +2552,108 @@ public:
         return static_cast<int> (monStrips_.size());
     }
 
+    /// Human-readable label for OTTO output index `idx` (0..31). Returns the
+    /// canonical name that OTTO's GlobalMixer uses for that output role:
+    /// 0..15 = "OTTO Drum 1..16", 16..19 = "OTTO Perc 1..4", 20..21 = "OTTO
+    /// Shaker 1..2", 22..23 = "OTTO Hand 1..2", 24..27 = "OTTO FxRet 1..4",
+    /// 28..31 = "OTTO {Drums,Percs,Shakers,Hands} Bus". Returns empty if the
+    /// index is out of range.
+    static juce::String ottoFriendlyName (int idx)
+    {
+        using OH = ida::OttoHost;
+        if (idx < 0 || idx >= OH::kNumOttoOutputs) return {};
+        if (idx < OH::kOttoFxReturnRangeBegin)
+        {
+            // 0..15 drums, 16..19 percs, 20..21 shakers, 22..23 hands.
+            if (idx < 16) return "OTTO Drum "   + juce::String (idx + 1);
+            if (idx < 20) return "OTTO Perc "   + juce::String (idx - 15);
+            if (idx < 22) return "OTTO Shaker " + juce::String (idx - 19);
+            return                "OTTO Hand "   + juce::String (idx - 21);
+        }
+        if (idx < OH::kOttoPlayerBusRangeBegin)
+            return "OTTO FxRet " + juce::String (idx - OH::kOttoFxReturnRangeBegin + 1);
+        switch (idx - OH::kOttoPlayerBusRangeBegin)
+        {
+            case 0:  return "OTTO Drums Bus";
+            case 1:  return "OTTO Percs Bus";
+            case 2:  return "OTTO Shakers Bus";
+            default: return "OTTO Hands Bus";    // case 3
+        }
+    }
+
+    /// Full-rebuild path for the OTTO band (M-OTTO-4 slice 4b). Mirrors
+    /// `setMonStrips`. The CompactFaderStrip's `id` is the ottoOutputIndex
+    /// itself, so listener callbacks need no row→index translation. Strips
+    /// carry `ChannelType::Master` for listener discrimination (the real
+    /// master uses `ChannelType::Bus` with sentinel id -1).
+    void setOttoStrips (const std::vector<OttoStripInfo>& infos)
+    {
+        ottoStrips_.clear();
+        ottoOverlays_.clear();
+        for (std::size_t i = 0; i < infos.size(); ++i)
+            appendOttoStripImpl (infos[i]);
+        rebuildChannelPills();
+        resized();
+    }
+
+    /// Append ONE OTTO strip without disturbing existing ones — the picker
+    /// flow (one strip per operator click). Avoids the full-rebuild that
+    /// would nuke fader/mute state on every other OTTO strip.
+    void appendOttoStrip (const OttoStripInfo& info)
+    {
+        appendOttoStripImpl (info);
+        rebuildChannelPills();
+        resized();
+    }
+
+    /// Drop the OTTO strip bound to `ottoOutputIndex`. No-op if not present.
+    /// Mirrors removeChannel: shrinks the band by one; the remaining strips'
+    /// CompactFaderStrip ids (= ottoOutputIndex) are unchanged.
+    void removeOttoStripByIndex (int ottoOutputIndex)
+    {
+        for (std::size_t i = 0; i < ottoStrips_.size(); ++i)
+        {
+            if (ottoStrips_[i] == nullptr) continue;
+            if (ottoStrips_[i]->getChannelIndex() != ottoOutputIndex) continue;
+            ottoStrips_.erase (ottoStrips_.begin() + static_cast<std::ptrdiff_t> (i));
+            ottoOverlays_.erase (ottoOverlays_.begin() + static_cast<std::ptrdiff_t> (i));
+            rebuildChannelPills();
+            resized();
+            return;
+        }
+    }
+
+    [[nodiscard]] int ottoStripCount() const noexcept
+    {
+        return static_cast<int> (ottoStrips_.size());
+    }
+
+    /// Set of OTTO output indices currently occupying a strip. Used by the
+    /// blank-area "Add OTTO source" submenu to filter the picker so an
+    /// already-added output isn't offered twice.
+    [[nodiscard]] std::vector<int> ottoStripIndices() const
+    {
+        std::vector<int> out;
+        out.reserve (ottoStrips_.size());
+        for (const auto& s : ottoStrips_)
+            if (s != nullptr) out.push_back (s->getChannelIndex());
+        return out;
+    }
+
+    void setOttoStripLevelDb (int ottoOutputIndex, float dbL, float dbR)
+    {
+        for (auto& s : ottoStrips_)
+            if (s != nullptr && s->getChannelIndex() == ottoOutputIndex)
+            { s->setLevel (dbL, dbR); return; }
+    }
+
+    void setOttoStripLufs (int ottoOutputIndex, float lufs)
+    {
+        for (auto& s : ottoStrips_)
+            if (s != nullptr && s->getChannelIndex() == ottoOutputIndex)
+            { s->setLUFSLevel (lufs); return; }
+    }
+
     /// Screen bounds of MON strip `monIdx`'s INS button, mirror of
     /// `phraseInsButtonScreenArea`.
     juce::Rectangle<int> monInsButtonScreenArea (int monIdx) const
@@ -2652,6 +2776,8 @@ public:
             for (auto& s : monStrips_)           s->setVisible (false);
             for (auto& b : monDestButtons_)      b->setVisible (false);
             for (auto& b : monInsButtons_)       b->setVisible (false);
+            for (auto& s : ottoStrips_)          s->setVisible (false);
+            for (auto& o : ottoOverlays_)        o->setVisible (false);
             if (master_)             master_           ->setVisible (false);
             if (masterIns_)          masterIns_        ->setVisible (false);
             if (masterDestButton_)   masterDestButton_ ->setVisible (false);
@@ -2717,6 +2843,8 @@ public:
         for (auto& s : monStrips_)           s->setVisible (true);
         for (auto& b : monDestButtons_)      b->setVisible (true);
         for (auto& b : monInsButtons_)       b->setVisible (true);
+        for (auto& s : ottoStrips_)          s->setVisible (true);
+        for (auto& o : ottoOverlays_)        o->setVisible (true);
         for (auto& p : channelPills_)        if (p) p->setVisible (false);
         if (master_)    master_   ->setVisible (true);
         if (masterIns_) masterIns_->setVisible (true);
@@ -2818,6 +2946,41 @@ public:
                 pickerRow.removeFromLeft (kGap);
             }
         }
+
+        // OTTO output strips (M-OTTO-4 slice 4b). Sit between the phrase
+        // band (left, sources) and the aux-bus group (right, summing). One
+        // gap separates the phrase band from the OTTO band when phrases
+        // exist. Inter-strip gap between OTTO strips. The bus group's own
+        // left-side divider already provides the visual break to the bus
+        // group at the right edge. INS / dest rows are intentionally NOT
+        // populated for OTTO strips in this slice — leaves the bottom band
+        // empty under each OTTO strip until 4c lands routing+persistence.
+        if (ottoStripCount() > 0 && phraseStripCount() > 0)
+        {
+            area.removeFromLeft (kGap);
+            insRow.removeFromLeft (kGap);
+            pickerRow.removeFromLeft (kGap);
+        }
+        for (int i = 0; i < ottoStripCount(); ++i)
+        {
+            auto stripBounds = area.removeFromLeft (kStripW);
+            ottoStrips_[static_cast<std::size_t> (i)]->setBounds (stripBounds);
+            if (i < static_cast<int> (ottoOverlays_.size())
+                && ottoOverlays_[static_cast<std::size_t> (i)] != nullptr)
+            {
+                ottoOverlays_[static_cast<std::size_t> (i)]->setBounds (
+                    stripBounds.withHeight (kNameOverlayHeight));
+                ottoOverlays_[static_cast<std::size_t> (i)]->toFront (false);
+            }
+            insRow.removeFromLeft (kStripW);     // reserve slot (empty in 4b)
+            pickerRow.removeFromLeft (kStripW);  // reserve slot (empty in 4b)
+            if (i + 1 < ottoStripCount())
+            {
+                area.removeFromLeft (kGap);
+                insRow.removeFromLeft (kGap);
+                pickerRow.removeFromLeft (kGap);
+            }
+        }
     }
 
     void paint (juce::Graphics& g) override { g.fillAll (otto::Colours::bg2); }
@@ -2835,6 +2998,9 @@ public:
             phraseStrips_[static_cast<std::size_t> (i)]->setSelected (false);
         for (int i = 0; i < busStripCount(); ++i)
             busStrips_[static_cast<std::size_t> (i)]->setSelected (false);
+        for (int i = 0; i < ottoStripCount(); ++i)
+            if (ottoStrips_[static_cast<std::size_t> (i)] != nullptr)
+                ottoStrips_[static_cast<std::size_t> (i)]->setSelected (false);
         if (master_) master_->setSelected (false);
         selectedPhrase_ = -1;
         selectedBus_    = -1;
@@ -2855,12 +3021,17 @@ public:
     }
 
     // --- CompactFaderStripListener — master (idx == kMasterStripId) vs aux vs
-    // phrase. Phrase strips are distinguished from aux buses by their
-    // ChannelType::Instrument tag (aux buses use ChannelType::Bus); the row
-    // index alone can collide because both rows are 0-based.
+    // phrase vs MON vs OTTO. Phrase strips are distinguished from aux buses
+    // by their ChannelType::Instrument tag (aux buses use ChannelType::Bus);
+    // MON strips by ChannelType::FXReturn; OTTO strips by ChannelType::Master
+    // with non-negative id (the id IS the ottoOutputIndex 0..31). The real
+    // master uses ChannelType::Bus + kMasterStripId(-1) so it is caught by
+    // the leading idx-check.
     void stripGainChanged (int idx, otto::ui::ChannelType type, float gain) override
     {
         if (idx == kMasterStripId) { if (onMasterGain) onMasterGain (gain); }
+        else if (type == otto::ui::ChannelType::Master)
+        { if (onOttoGain) onOttoGain (idx, gain); }
         else if (type == otto::ui::ChannelType::FXReturn)
         { if (onMonGain) onMonGain (idx, gain); }
         else if (type == otto::ui::ChannelType::Instrument)
@@ -2870,6 +3041,8 @@ public:
     void stripMuteChanged (int idx, otto::ui::ChannelType type, bool muted) override
     {
         if (idx == kMasterStripId) { if (onMasterMute) onMasterMute (muted); }
+        else if (type == otto::ui::ChannelType::Master)
+        { if (onOttoMute) onOttoMute (idx, muted); }
         else if (type == otto::ui::ChannelType::FXReturn)
         { if (onMonMute) onMonMute (idx, muted); }
         else if (type == otto::ui::ChannelType::Instrument)
@@ -2880,13 +3053,15 @@ public:
     void stripChannelSelected (int idx, otto::ui::ChannelType type) override
     {
         const bool isMaster = (idx == kMasterStripId);
-        const bool isMon    = (! isMaster) && (type == otto::ui::ChannelType::FXReturn);
-        const bool isPhrase = (! isMaster) && (! isMon)
+        const bool isOtto   = (! isMaster) && (type == otto::ui::ChannelType::Master);
+        const bool isMon    = (! isMaster) && (! isOtto) && (type == otto::ui::ChannelType::FXReturn);
+        const bool isPhrase = (! isMaster) && (! isOtto) && (! isMon)
                               && (type == otto::ui::ChannelType::Instrument);
-        const bool isAux    = (! isMaster) && (! isMon) && (! isPhrase);
+        const bool isAux    = (! isMaster) && (! isOtto) && (! isMon) && (! isPhrase);
 
-        // MON, phrase, aux-bus, and master are mutually exclusive selections.
-        // Clear the OTHER rows' highlights so the affordance stays honest.
+        // MON, phrase, aux-bus, OTTO, and master are mutually exclusive
+        // selections. Clear the OTHER rows' highlights so the affordance
+        // stays honest.
         auto clearAll = [this]
         {
             for (int i = 0; i < monStripCount(); ++i)
@@ -2895,10 +3070,30 @@ public:
                 phraseStrips_[static_cast<std::size_t> (i)]->setSelected (false);
             for (int i = 0; i < busStripCount(); ++i)
                 busStrips_[static_cast<std::size_t> (i)]->setSelected (false);
+            for (int i = 0; i < ottoStripCount(); ++i)
+                if (ottoStrips_[static_cast<std::size_t> (i)] != nullptr)
+                    ottoStrips_[static_cast<std::size_t> (i)]->setSelected (false);
             if (master_) master_->setSelected (false);
         };
 
-        if (isMon)
+        if (isOtto)
+        {
+            clearAll();
+            for (auto& s : ottoStrips_)
+                if (s != nullptr && s->getChannelIndex() == idx)
+                { s->setSelected (true); break; }
+            selectedPhrase_ = -1;
+            selectedBus_    = -1;
+            selectedMon_    = -1;
+            selectedMaster_ = false;
+            // No detail-panel binding for OTTO strips in 4b (EQ/CMP/Pan/Width
+            // arrive in a later slice). Hide the panel so the operator gets
+            // a clean visual signal that an OTTO strip is selected without
+            // leftover detail UI from a prior selection.
+            detailPanel_.setVisible (false);
+            resized();
+        }
+        else if (isMon)
         {
             clearAll();
             if (idx >= 0 && idx < monStripCount())
@@ -3058,6 +3253,35 @@ private:
         juce::PopupMenu menu;
         menu.addItem ("Add bus",       [this] { if (onAddBus)       onAddBus(); });
         menu.addItem ("Add FX return", [this] { if (onAddFxReturn) onAddFxReturn(); });
+
+        // "Add OTTO source ▶" submenu (M-OTTO-4 slice 4b). Enumerates the
+        // 32 OTTO outputs by friendly name, filters out indices that already
+        // have a strip in this pane so the operator can't double-add. Each
+        // selected entry triggers onAddOttoOutputStrip with the canonical
+        // ottoOutputIndex — MainComponent's lambda wires the engine seam
+        // (MainComponent::addOttoOutputStrip) and pushes a strip back into
+        // this pane via appendOttoStrip.
+        juce::PopupMenu ottoSub;
+        std::vector<bool> taken (static_cast<std::size_t> (ida::OttoHost::kNumOttoOutputs), false);
+        for (int already : ottoStripIndices())
+            if (already >= 0 && already < ida::OttoHost::kNumOttoOutputs)
+                taken[static_cast<std::size_t> (already)] = true;
+        int offerable = 0;
+        for (int idx = 0; idx < ida::OttoHost::kNumOttoOutputs; ++idx)
+        {
+            if (taken[static_cast<std::size_t> (idx)]) continue;
+            ++offerable;
+            const int who = idx;
+            ottoSub.addItem (ottoFriendlyName (idx), /*enabled*/ true, /*ticked*/ false,
+                             [this, who] { if (onAddOttoOutputStrip) onAddOttoOutputStrip (who); });
+        }
+        // When every OTTO output already has a strip, surface a disabled
+        // entry instead of an empty submenu so the operator gets feedback
+        // ("all 32 already added") rather than a silent dead-end.
+        if (offerable == 0)
+            ottoSub.addItem ("(all 32 added)", /*enabled*/ false, /*ticked*/ false, [] {});
+        menu.addSubMenu ("Add OTTO source", ottoSub);
+
         menu.showMenuAsync (juce::PopupMenu::Options{}.withTargetScreenArea (
             juce::Rectangle<int> (screenPos.x, screenPos.y, 1, 1)));
     }
@@ -3163,6 +3387,57 @@ private:
             busNameOverlays_[static_cast<std::size_t> (idx)].get()));
     }
 
+    /// Per-OTTO-strip context menu — currently just "Remove" (M-OTTO-4
+    /// slice 4b). The overlay's right-click + long-press gestures both
+    /// route here; `ottoOutputIndex` is the strip's CompactFaderStrip id.
+    void showOttoContextMenu (int ottoOutputIndex)
+    {
+        juce::Component* anchor = nullptr;
+        for (std::size_t i = 0; i < ottoOverlays_.size(); ++i)
+        {
+            if (i >= ottoStrips_.size() || ottoStrips_[i] == nullptr) continue;
+            if (ottoStrips_[i]->getChannelIndex() == ottoOutputIndex)
+            { anchor = ottoOverlays_[i].get(); break; }
+        }
+        if (anchor == nullptr) return;
+        juce::PopupMenu menu;
+        const int who = ottoOutputIndex;
+        menu.addItem ("Remove", [this, who]
+        {
+            if (onRemoveOttoOutputStrip) onRemoveOttoOutputStrip (who);
+        });
+        menu.showMenuAsync (juce::PopupMenu::Options{}.withTargetComponent (anchor));
+    }
+
+    /// Shared body for `setOttoStrips` and `appendOttoStrip`. Constructs the
+    /// CompactFaderStrip with `id == ottoOutputIndex` so listener callbacks
+    /// receive the OTTO output index directly (no row→index translation).
+    /// `ChannelType::Master` tags the band for listener discrimination from
+    /// real master, MON, phrase, and aux-bus strips. A small invisible
+    /// overlay sits over the strip's name band to catch right-click +
+    /// long-press for the "Remove" affordance — same pattern aux buses use
+    /// for rename, with `onCommitName` left as a no-op stub (OTTO strips
+    /// are named by output role, no rename gesture in 4b).
+    void appendOttoStripImpl (const OttoStripInfo& info)
+    {
+        auto strip = std::make_unique<otto::ui::CompactFaderStrip> (
+            info.ottoOutputIndex, otto::ui::ChannelType::Master);
+        strip->setChannelName (info.name);
+        strip->setOutputComboVisible (false);   // pane owns destination routing
+        strip->addListener (this);
+        addAndMakeVisible (*strip);
+        ottoStrips_.push_back (std::move (strip));
+
+        const int who = info.ottoOutputIndex;
+        auto overlay = std::make_unique<ida::app::StripContextOverlay> (
+            who,
+            [this] (int idx) { showOttoContextMenu (idx); },
+            [] (int, juce::String) {});   // no rename
+        addAndMakeVisible (*overlay);
+        overlay->toFront (false);
+        ottoOverlays_.push_back (std::move (overlay));
+    }
+
     // Master strip (always present)
     std::unique_ptr<otto::ui::CompactFaderStrip> master_;
     std::unique_ptr<juce::TextButton>            masterIns_;
@@ -3194,6 +3469,15 @@ private:
     std::vector<std::unique_ptr<juce::TextButton>>             monInsButtons_;
     std::vector<StripDest>                                     monStripDests_;
     std::vector<std::vector<DestChoice>>                       monChoices_;
+
+    // OTTO-output row (M-OTTO-4 slice 4b) — operator-on-demand band sitting
+    // between phrase strips (left) and the aux-bus group (right). Strip ids
+    // are the OTTO output index itself (0..31), distinct from kMasterStripId
+    // (-1) and from MON / phrase / aux-bus rows by the ChannelType::Master
+    // tag. No INS / dest / detail-panel binding in 4b — gain + mute +
+    // remove only.
+    std::vector<std::unique_ptr<otto::ui::CompactFaderStrip>>  ottoStrips_;
+    std::vector<std::unique_ptr<ida::app::StripContextOverlay>> ottoOverlays_;
 
     // Tabbed detail panel (slice U + slice EC + slice EC-Polish). One of
     // selectedPhrase_ / selectedBus_ / selectedMaster_ is "active" at a time;
@@ -4666,6 +4950,45 @@ MainComponent::MainComponent()
             audioDeviceManager_.addAudioCallback (audioCallback_.get());
             rebuildOutputBusStrips();
             refreshOutputDestinations();
+        };
+        // M-OTTO-4 slice 4b — "Add OTTO source ▶" picker. Mints an OutputMixer
+        // channel via the slice-4a engine seam and pushes a matching strip
+        // into the OTTO band. The engine seam itself brackets the audio
+        // callback, so this lambda only orchestrates engine + GUI.
+        outputMixerPane_->onAddOttoOutputStrip = [this] (int ottoOutputIndex)
+        {
+            if (outputMixerPane_ == nullptr) return;
+            const auto chId = addOttoOutputStrip (ottoOutputIndex);
+            if (chId.value() == 0) return;   // out-of-range / not-prepared / cap-reached
+            outputMixerPane_->appendOttoStrip ({ ottoOutputIndex,
+                OutputMixerPane::ottoFriendlyName (ottoOutputIndex) });
+        };
+        // Slice 4b — strip "Remove" gesture. Undo the engine seam, then
+        // drop the matching strip from the OTTO band.
+        outputMixerPane_->onRemoveOttoOutputStrip = [this] (int ottoOutputIndex)
+        {
+            removeOttoOutputStrip (ottoOutputIndex);
+            if (outputMixerPane_ != nullptr)
+                outputMixerPane_->removeOttoStripByIndex (ottoOutputIndex);
+        };
+        // Slice 4b — fader and mute on OTTO strips drive the OutputMixer
+        // channel that the slice-4a engine seam bound. `ottoOutputIndex`
+        // comes straight from CompactFaderStrip's id (no row→index map).
+        outputMixerPane_->onOttoGain = [this] (int ottoOutputIndex, float gainLinear)
+        {
+            if (outputMixer_ == nullptr) return;
+            const auto it = ottoChannelByOutputIndex_.find (ottoOutputIndex);
+            if (it == ottoChannelByOutputIndex_.end()) return;
+            if (auto* strip = outputMixer_->audioStripForChannel (it->second))
+                strip->setGain (gainLinear);
+        };
+        outputMixerPane_->onOttoMute = [this] (int ottoOutputIndex, bool muted)
+        {
+            if (outputMixer_ == nullptr) return;
+            const auto it = ottoChannelByOutputIndex_.find (ottoOutputIndex);
+            if (it == ottoChannelByOutputIndex_.end()) return;
+            if (auto* strip = outputMixer_->audioStripForChannel (it->second))
+                strip->setMuted (muted);
         };
         outputMixerPane_->onBusGain = [this] (int busIdx, float gain)
         {
