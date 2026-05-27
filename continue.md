@@ -1,37 +1,61 @@
-# Session Continuation — M-OTTO-2 landed (OttoHost wired into MainComponent)
+# Session Continuation — M-OTTO-3 landed (OttoHost transport listener API + FileInputRegistry first subscriber) + lsfx OFF-passthrough fix pulled in
 
 ## ▶ 0. Read these first (60 seconds)
 
-1. **M-OTTO-2 complete.** Four commits this session pushed to `origin/master`:
-   - `cb87887` — bump lsfx_tapecolor `a7ba9c3 → 09eda39` (Alignment, Phase 9
-     fields present) + bump external/OTTO `c01460a2 → bed38211` (inbox
-     housekeeping + bisection finding).
-   - `8d8584a` — M-OTTO-2a: new `otto-bridge/` module with pimpl `ida::OttoHost`
-     wrapping one `PlayerManager` + `TransportTracker` per session.
-   - `60e159d` — M-OTTO-2b: `MainComponent` constructs one `ottoHost_` and
-     calls `prepare(device_sr, device_bs)` after the audio callback is up.
-2. **Regression bisection done.** The yesterday-2026-05-26 hypothesis was
-   wrong: the OFF-passthrough regression entered at `6f51fa1` (Bypass-click),
-   NOT Phase A. Phase A is downstream of the actual break. Root cause: the
-   Bypass-click commit removed the `if (!cfg.enabled) return;` early-exit
-   from `TapeColorProcessor::process()` and replaced it with a wet/dry mix
-   gate, so the chain ALWAYS runs (DC blockers, J-A solver, oversampler,
-   etc.). When `cfg.enabled == false`, the output is no longer bit-identical
-   to the input. Inbox entry filed at 2026-05-27 in
-   `external/OTTO/CROSS_PROJECT_INBOX.md` under `[FROM IDA → OTTO]`.
-3. **Clean rebuild on a fresh `build/`** at HEAD shows **776 / 776 ctest,
-   zero transient flakes** (the strongest signal seen this week).
-4. **Baseline.** `master` at `60e159d` (verify with `git log -1 --oneline`).
-   Local == origin (push went through).
-5. **The IDA-app boots cleanly + an OttoHost ctor + dtor cycle through the
-   session.** Verified by clean-rebuild ctest pass + IDA app link. Operator
-   eyes-on of "actually launch IDA, confirm no crash on boot" is still
-   pending (recommended verification step for the M-OTTO-2c criterion).
-6. **OTTO inbox state.** The 4 ack'd entries (Phase 9, Chow J-A, Thiran,
-   Alignment) are pruned. 3 entries remain `needs-ack` from OTTO: Phase B+C
-   (14b4920), Phase A (f510e6e), Bypass-click (6f51fa1). All three are now
-   correctly identified as blocked on the SAME root cause (Bypass-click's
-   removed early-exit) — OTTO's next session needs to fix that one issue.
+1. **M-OTTO-3 complete.** Three IDA commits this session pushed to
+   `origin/master`:
+   - `0454efb` — M-OTTO-3a: new `IOttoTransportListener` interface +
+     `TransportSnapshot` POD; OttoHost subscribes to
+     `otto::EventBus<TransportEvent>` and marshals snapshots from the
+     audio thread to the message thread via `ida::LockFreeSpscQueue`
+     + `juce::Timer` drainer at 30 Hz; `addTransportListener` /
+     `removeTransportListener` message-thread API; 5 new tests under
+     `tests/OttoHostTransportTests.cpp`.
+   - `0c0c691` — M-OTTO-3b: relocated `IOttoTransportListener.h` from
+     `otto-bridge/` to `core/` (pure dependency-inversion port,
+     matches `INotificationSink` precedent). `FileInputRegistry`
+     inherits the listener interface; `onOttoTransport` stub records
+     the most-recent snapshot via `lastOttoTransport()`. MainComponent
+     registers `fileInputRegistry_` with `ottoHost_` right after
+     `prepare()`. 6th test case proves the wiring.
+   - `d50e813` — submodule bumps: `lsfx_tapecolor` `09eda39 → a812670`
+     (OTTO's OFF-passthrough fix for the Bypass-click regression I
+     identified yesterday; all 5 `[tapecolor-adapter]` tests pass at
+     the new pin) + `external/OTTO` `bed38211 → d4321510` (inbox: ack
+     of OFF-passthrough fix, new IDA→OTTO entry flagging EventBus
+     audio-thread alloc/lock, OTTO upstream T25 EditorHost lsfx bump
+     rolled in via rebase).
+
+2. **OTTO upstream activity this session:** OTTO's Claude landed two
+   commits between my read at session start and my final push: (a) the
+   OFF-passthrough fix at lsfx `a812670` consolidating the three
+   needs-ack entries (Bypass-click + Phase A + Phase B+C) into one
+   resolution, (b) T25 EditorHost/ParamSurface scaffolding bump. Both
+   integrated cleanly.
+
+3. **One IDA→OTTO inbox entry remains `needs-ack` from OTTO:** the
+   2026-05-27 EventBus::publish audio-thread alloc/lock report I filed
+   in `d4321510`. OTTO's next session needs to convert `publish` to a
+   lock-free + alloc-free path (COW snapshot of subscribers suggested).
+   **IDA is NOT blocked on this** — the SPSC marshal in OttoHost
+   absorbs the cost. But the longer it sits, the more callers OTTO
+   accumulates.
+
+4. **Baseline.** `master` at `d50e813` (verify with
+   `git log -1 --oneline`). Local == origin (all three pushes went
+   through). lsfx_tapecolor pin = `a812670`; OTTO submodule pin =
+   `d4321510`; sfizz pin unchanged at `f5c6e29f`.
+
+5. **ctest: 782 / 783** (the 1 not-run is the separately-built
+   `MainComponentPluginEditorTests_NOT_BUILT-b12d07c` as before — same
+   number as the previous session's baseline). Six new tests added,
+   30 new assertions, all green. `[tapecolor-adapter]` 5/5 green at
+   the new lsfx pin. `[file-input]` 42/42 green (3820 assertions).
+
+6. **IDA app + tests build clean** on the merged submodule pins.
+   Operator eyes-on of "launch IDA, confirm boot is unchanged" is
+   still pending (recommended verification step — the new timer +
+   subscription shouldn't perceptibly affect boot).
 
 ---
 
@@ -39,120 +63,144 @@
 
 | Commit | Subject |
 |---|---|
-| `cb87887` | chore: bump submodules — lsfx_tapecolor `a7ba9c3→09eda39` (Alignment) + external/OTTO `c01460a2→bed38211` (inbox housekeeping + bisection finding) |
-| `8d8584a` | feat: otto-bridge skeleton (M-OTTO-2a) — JUCE-coupled module, pimpl `ida::OttoHost` |
-| `60e159d` | feat: MainComponent owns one OttoHost per session (M-OTTO-2b) — ctor allocates, dtor tears down via unique_ptr |
+| `0454efb` | feat: OttoHost transport listener API (M-OTTO-3a) — IOttoTransportListener interface + TransportSnapshot POD, OttoHost subscribes to EventBus<TransportEvent>, SPSC marshal + Timer drainer |
+| `0c0c691` | feat: FileInputRegistry subscribes to OttoHost transport (M-OTTO-3b) — relocate listener to core/, FileInputRegistry implements interface, MainComponent wires the registration |
+| `d50e813` | chore: bump submodules — lsfx_tapecolor a812670 (OFF-passthrough fix) + external/OTTO d4321510 (inbox housekeeping + EventBus flag) |
 
-OTTO-side: `bed38211` — inbox: ack Phase 9 / Chow J-A / Thiran / Alignment +
-bisection finding (Ida-Origin: 511ab23). Pushed to OTTO's `origin/main`.
+OTTO-side commits today (visible in `git -C external/OTTO log`):
+- `d4321510` — inbox: ack OFF-passthrough fix; flag EventBus::publish audio-thread alloc/lock (Ida-Origin: 0c0c691)
+- `19bd8b20` — T25 EditorHost/ParamSurface lsfx bump (OTTO-originated; rolled in via rebase)
+- `563b76d0` — fix: TAPECOLOR OFF-path bit-identical passthrough; bump lsfx to a812670 (OTTO-originated, acks IDA's 2026-05-27 bisection)
+- `3e47fe35` — docs: continue.md TAPECOLOR T25 brainstorm (OTTO-originated)
 
 ---
 
 ## ▶ 2. Notes worth carrying forward
 
-### Note A — Namespace `ida::otto` collides with top-level `::otto`
+### Note A — IOttoTransportListener lives in `core/`, not `otto-bridge/`
 
-The first M-OTTO-2 cut put `OttoHost` in `namespace ida::otto`. Inside
-`MainComponent.cpp` (which lives in `namespace ida`) every unqualified
-`otto::` reference (e.g. `otto::ui::CompactFaderStripListener`,
-`otto::OTTOLookAndFeel`, `otto::Colours::...`) suddenly resolved to
-`ida::otto`, not `::otto`. Hundreds of compile errors in seconds.
+First cut put the interface in `otto-bridge/include/ida/`. That forced
+any IDA-side listener (FileInputRegistry, future consumers) to either
+link otto-bridge or live in otto-bridge — neither acceptable.
+FileInputRegistry lives in `audio/`, which deliberately stays
+OTTO-free.
 
-Lesson: keep IDA-side OTTO-wrapping types in the **top-level `ida::`
-namespace**, matching sibling types like `ida::FlacTapeSink`,
-`ida::TapeColoringSink`, `ida::TapePool`. Even though the filesystem path
-`ida/otto/OttoHost.h` would be tempting for hierarchy, the namespace
-must stay flat to avoid the collision. The current state: header is at
-`otto-bridge/include/ida/OttoHost.h`, class is `ida::OttoHost`.
+The fix: move the listener interface (which is pure IDA — no `otto::`
+types in either header or body) to `core/include/ida/`. This matches
+the `INotificationSink` precedent exactly: pure dependency-inversion
+port, lives in the JUCE-free + OTTO-free `core/`, every layer that
+needs to name the interface gets it transitively via `Ida::Core` →
+`Ida::Engine` → consumer.
 
-### Note B — Bisection found a smaller fix than yesterday's hypothesis
+### Note B — `juce::Timer` inside OttoHost::Impl needs `juce::ScopedJuceInitialiser_GUI` in tests
 
-Yesterday's IDA→OTTO inbox entry blamed Phase A's
-`kDigitalToFluxScale = 0.14f`. Today's bisection (5 SHAs between Phase
-8 and Phase B+C) showed `09eda39` Alignment passes all five
-`[tapecolor-adapter]` tests, and `6f51fa1` Bypass-click fails 2 of 5.
-So the actual fix is much narrower than yesterday assumed — OTTO needs
-to restore an OFF-path early-exit ahead of stateful DSP while keeping
-the click-free transition that motivated `6f51fa1`. Inbox entry now
-points OTTO at the right code site.
+The drainer is a `juce::Timer` subclass; constructing it touches the
+MessageManager. Tests therefore need a `juce::ScopedJuceInitialiser_GUI`
+in every TEST_CASE (same shape as `InsertChainPopupTests.cpp`). And
+because IdaTests compiles without `JUCE_MODAL_LOOPS_PERMITTED`, the
+test can't call `MessageManager::runDispatchLoopUntil` to spin the
+timer — instead OttoHost exposes `drainForTesting()` which calls the
+same drain path the Timer's callback uses. That keeps the test
+synchronous and deterministic.
 
-### Note C — Phase 9 `tape` + `level` fields are now load-bearing for IDA
+### Note C — OTTO's `EventBus::publish` is not RT-safe; IDA's SPSC marshal absorbs it
 
-Before today, OTTO's `MasterBus.h` referenced Phase 9 lsfx fields that
-IDA hadn't touched (since IDA didn't `#include` it). M-OTTO-2's
-`OttoHost.cpp` includes `<otto/manager/PlayerManager.h>` which
-transitively pulls in MixerBus + MasterBus. Now: the IDA pin MUST be
-Phase 9+ to compile. The `09eda39` pin satisfies that and stays below
-the Bypass-click regression. Don't ever drop below Phase 9.
+`otto::EventBus::publish()` takes a `std::mutex` and allocates a
+`std::vector<EventHandler>` per call. `TransportTracker::update()`
+calls it from `processBlock()`. Until M-OTTO-3 this was silent (zero
+subscribers); now IDA is the first subscriber. The OttoHost handler
+does the bare minimum required to be honest with the SPSC contract:
+build a stack-local `TransportSnapshot`, push into the ring, return.
+The audio-thread alloc/lock still happens inside OTTO's bus itself,
+but IDA's listeners never see it. Filed for OTTO via the inbox; not
+blocking for IDA.
 
-### Note D — `lsfx::lsfx_tapecolor` link is required for otto-bridge
+### Note D — Member-declaration order in MainComponent makes dtor-unregister unnecessary
 
-OTTO's MixerBus.h includes `<lsfx_tapecolor/dsp/TapeColorProcessor.h>`.
-The otto-bridge module must link `lsfx::lsfx_tapecolor` PRIVATE to get
-that include path resolved. Already wired in
-`otto-bridge/CMakeLists.txt`.
+`MainComponent.h:318` declares `fileInputRegistry_` before
+`MainComponent.h:347` declares `ottoHost_`. C++ destructor order is
+reverse-declaration, so `ottoHost_` is destroyed first — its dtor
+stops the drainer Timer and unsubscribes from OTTO's bus before
+`fileInputRegistry_` falls out of scope. No explicit
+`removeTransportListener` in MainComponent's dtor needed. Worth
+checking if anyone ever reorders those members.
 
-### Note E — OttoHost construction is non-trivial (allocates 4 Players)
+### Note E — lsfx_tapecolor at a812670 introduces big public-API growth (UI scaffolding)
 
-`PlayerManager()`'s ctor builds 4 `Player` objects, each holding sampler
-+ synth engines. The allocation happens on IDA's message thread inside
-MainComponent's ctor body. `prepare(sr, bs)` allocates per-block
-buffers via OTTO's `prepare` chain. Both operations are message-thread
-only and currently complete in well under 1 ms; no perceptible boot
-delay. If that ever changes, the OttoHost ctor + prepare are obvious
-candidates for a deferred init.
+The jump from 09eda39 → a812670 spans 16+ lsfx commits. New public
+fields on `TapeColorConfig`: `inputLowShelf{Hz,Q}`,
+`inputHighShelf{Hz,Q}`, `outputLowShelf{Hz,Q}`, `outputHighShelf{Hz,Q}`,
+`xfmr{...}` (9 fields), `tube{...}` (4 fields). Public API additions
+are additive — no IDA code change required, the new fields default
+to per-machine baselines. Also: the lsfx repo now ships a full editor
+Component tree under `ui/` (TapeColorEditor + tab views + factory
+presets + L&F). IDA does NOT consume the UI symbols today; OTTO's
+inbox offered an opt-in DSP-only target if we ever want to drop the
+UI surface — declined for now, the unused symbols are free.
 
 ---
 
 ## ▶ 3. What's next
 
-### (A) Begin M-OTTO-3 — transport subscription + IDA-side listener API (recommended)
+### (A) Begin M-OTTO-4 — 32 OTTO outputs as Output Mixer channels (recommended)
 
-Per scope doc (`docs/superpowers/specs/2026-05-26-otto-integration-scope-and-sequencing.md`):
+Per scope doc
+(`docs/superpowers/specs/2026-05-26-otto-integration-scope-and-sequencing.md`):
 
-- `OttoHost` exposes `addTransportListener(IOttoTransportListener*)` +
-  `removeTransportListener(...)` message-thread API.
-- Internally, `OttoHost` subscribes to `EventBus<TransportEvent>` and
-  fans events out to IDA-side listeners. Translate `TransportEvent` to
-  an IDA-flavoured `TransportSnapshot { enum Kind; double bpm; bool isPlaying; }`
-  struct — don't leak OTTO types into the listener interface.
-- A `FileInputRegistry` (or sibling controller) becomes the first
-  subscriber. This is the engine half of todo entry B (Transport sync).
+- The "32 OTTO outputs into Output Mixer" slice. Per
+  `project_otto_as_output_mixer_source` memory: bundled OTTO presents
+  32 stereo outputs as additional Output Mixer channel strips. IDA's
+  Output Mixer ALONE owns physical-output routing. Tape EXCLUDES OTTO;
+  render/export INCLUDES it.
+- OttoHost gains a `renderBlock(juce::AudioBuffer<float>& out, int
+  numSamples)` (or similar) called from IDA's audio callback. The
+  function reads 32 stereo pairs out of OTTO's MasterBus and writes
+  them into per-channel buffers OutputMixer can read.
+- OutputMixer needs to gain `setOttoChannelSource(...)` analogous to
+  the existing `setChannelAudioSource` used by the MON path.
 
-Risks: EventBus subscription threading. Need to read TransportTracker's
-event-publishing code first — does it fire on audio thread, worker, or
-message thread? If audio-thread, IDA's fan-out itself must be RT-safe.
+Risks: OTTO's PlayerManager produces audio per-Player; collapsing into
+the 32 MasterBus outputs is OTTO-internal. Need to read OTTO's
+PlayerManager::processBlock + MasterBus mixing logic first. Audio-thread
+safety: OTTO's processBlock is itself audio-thread-safe per OTTO's
+CLAUDE.md, so calling it from IDA's callback is fine — but the
+boundary buffer layout must be sized at `prepare(sr, bs)` time, not
+allocated in the callback.
 
-Size: medium. 2-3 commits.
+Size: medium-large. ~4-5 commits per scope doc.
 
-Unblocks: todo entry B; transport-sync sub-features in C (MIDI) + D
-(Video).
+Unblocks: render/export of OTTO output; operator-visible OTTO audio
+through IDA's Output Mixer.
 
-### (B) Begin M-OTTO-4 — 32 OTTO outputs as Output Mixer channels
+### (B) Operator verification of M-OTTO-3 boot
 
-Independent of M-OTTO-3 (could parallelize in a different session, but
-serial is fine within one session). The "32 OTTO outputs into Output
-Mixer" slice — this is where audio actually flows from OTTO through
-IDA's Output Mixer. Larger than M-OTTO-3 (~4-5 commits per scope doc).
+The headless ctest pass is automated proof, but operator eyes-on
+(launch IDA from the Desktop `IDA` alias, confirm boot, confirm no
+audible artifacts or perceptible delay from the new timer +
+subscription) is still pending. Quick: launch, observe, quit. The
+listener path is dormant until OTTO publishes transport events
+(M-OTTO-4 wires actual audio through), so no audible change is
+expected on this baseline.
 
-Per `project_otto_as_output_mixer_source` memory.
+### (C) Wait for OTTO to fix EventBus::publish
 
-### (C) Operator verification of M-OTTO-2 boot
+OTTO's next session sees the new IDA→OTTO inbox entry. Once OTTO posts
+the lock-free + alloc-free rewrite of `publish`, IDA bumps OTTO
+submodule once more (no IDA-side code change required — OttoHost's
+SPSC marshal is the same shape whether OTTO's bus is RT-clean or not).
 
-The clean-rebuild ctest pass is automated proof, but the operator
-eyes-on verification (launch the .app, confirm boot, confirm no crash
-during session lifecycle) is still pending. Quick: launch from the
-Desktop `IDA` alias, observe; if it boots normally and quits cleanly,
-M-OTTO-2 is verified.
+### (D) Per-input "follow transport" UX
 
-### (D) Wait for OTTO to fix Bypass-click + bump further
+The engine half of transport-sync is now in place (FileInputRegistry
+records snapshots). The UX half — per-file-input "follow transport"
+toggle, behaviour on Started (auto-play armed inputs?), behaviour on
+Stopped, interaction with arm/disarm gestures — is downstream of the
+operator's mixer-first roadmap (`project_mixer_then_transport_roadmap`).
+Park for a dedicated session.
 
-OTTO's next session sees the 2026-05-27 IDA→OTTO inbox entry with the
-narrower diagnosis. Once OTTO posts a fix, IDA can bump past `09eda39`
-to whatever OTTO recommends.
-
-Default recommendation: **(A) M-OTTO-3**. Small, well-scoped, unblocks
-the file-input transport-sync work plus M-OTTO-4 routing.
+Default recommendation: **(A) M-OTTO-4**. Largest remaining piece of
+the OTTO integration sequencing; transport plumbing now in place
+unlocks it.
 
 ---
 
@@ -161,14 +209,17 @@ the file-input transport-sync work plus M-OTTO-4 routing.
 | Check | Result |
 |---|---|
 | Branch | `master`, local == origin |
-| HEAD | `60e159d` (`git log -1 --oneline`) |
-| `git status --short` | clean (sfizz submodule shows as `m` — expected, see prior session's Note A about the Config.h.in patch) |
-| lsfx_tapecolor pin | `09eda39` (Alignment) — NEW; gives Phase 9 fields, stays below Bypass-click regression |
-| OTTO submodule pin | `bed38211` (inbox ack + bisection finding) — NEW |
+| HEAD | `d50e813` (`git log -1 --oneline`) |
+| `git status --short` | clean (sfizz submodule shows as `m` — expected) |
+| lsfx_tapecolor pin | `a812670` (OFF-passthrough fix) — NEW; supersedes the Bypass-click regression that blocked us at 09eda39 |
+| OTTO submodule pin | `d4321510` (inbox housekeeping + EventBus flag) — NEW |
 | sfizz submodule pin | `f5c6e29f` — unchanged from M-OTTO-1 |
-| ctest baseline | **776/776 on clean rebuild, ZERO flakes** |
-| IDA app links + boots an OttoHost | yes (clean build link succeeds; ctor + dtor exercise verified via app target build) |
-| Operator eyes-on (still pending) | (1) phrase + MON strip fader survives a refresh tick (from `d1fe0b1`); (2) launch IDA, confirm OttoHost-instantiation doesn't break boot |
+| ctest baseline | **782/783** (1 not-run is the separately-built MainComponentPluginEditorTests, same as before; +6 net new test cases from M-OTTO-3a/b) |
+| `[tapecolor-adapter]` | 5/5 green at lsfx a812670 (regression fixed) |
+| `[file-input]` | 42 cases / 3820 assertions green (FileInputRegistry's new listener inheritance is non-disruptive) |
+| `[otto-host-transport]` | 6 cases / 30 assertions green |
+| IDA app builds + links | yes (clean Release build) |
+| Operator eyes-on (still pending) | (1) launch IDA, confirm OttoHost-instantiation + new Timer doesn't perceptibly affect boot; (2) carryover from prior session — phrase + MON strip fader survives a refresh tick |
 
 ---
 
@@ -176,14 +227,16 @@ the file-input transport-sync work plus M-OTTO-4 routing.
 
 1. Read this file (you're doing it).
 2. **At session start: read `external/OTTO/CROSS_PROJECT_INBOX.md`** per
-   the cross-project protocol. Look for any new `[FROM OTTO → IDA]` entry
-   addressing the Bypass-click regression. Ack any new entries
-   addressed to IDA. The 2026-05-27 IDA → OTTO bisection-finding entry
-   should still be `needs-ack` until OTTO fixes it.
-3. Pick from §3. Default (A) M-OTTO-3.
+   the cross-project protocol. Look for any new `[FROM OTTO → IDA]`
+   entry addressing the EventBus::publish audio-thread issue. If OTTO
+   has posted a fix-and-bump entry, bump OTTO submodule + ack the
+   entry per protocol. The 2026-05-27 IDA→OTTO EventBus entry should
+   still be `needs-ack` until OTTO fixes it.
+3. Pick from §3. Default (A) M-OTTO-4.
 4. If picking (A), start by reading
-   `external/OTTO/src/otto-core/include/otto/transport/TransportTracker.h`
-   + the `EventBus` publication code to understand the threading model.
+   `external/OTTO/src/otto-core/include/otto/manager/PlayerManager.h`
+   + `external/OTTO/src/otto-core/include/otto/mixer/MasterBus.h` to
+   understand the 32-output layout and the processBlock entrypoint.
 
 Reference docs:
 - **OTTO integration sequencing:** `docs/superpowers/specs/2026-05-26-otto-integration-scope-and-sequencing.md`
@@ -192,16 +245,17 @@ Reference docs:
 - Whitepaper: `docs/IDA_Whitepaper_V9.md`
 
 Memory:
-- `project_otto_is_the_transport_source` — IDA has no engine-side transport state; OTTO supplies play/stop (M-OTTO-3 is the wiring)
 - `project_otto_as_output_mixer_source` — 32 stereo outputs into Output Mixer (M-OTTO-4 target)
+- `project_otto_is_the_transport_source` — IDA has no engine-side transport state; OTTO supplies play/stop (M-OTTO-3 just landed the wiring)
 - `project_otto_is_a_submodule_now` — submodule consumption model
 - `project_cross_project_inbox_protocol` — AI-to-AI handoff mechanics
 
 ---
 
-*End of session. M-OTTO-2 landed in 3 IDA commits + 1 OTTO commit;
-OttoHost is alive in MainComponent; clean rebuild posts 776/776 with
-zero transient flakes; bisection found a narrower fix for the
-lsfx_tapecolor regression than yesterday's hypothesis. Next session:
-M-OTTO-3 (transport subscription) by default, or any of the alternatives
-in §3.*
+*End of session. M-OTTO-3 landed in 2 feature commits + 1 submodule
+bump on IDA; 4 OTTO-side commits (one IDA-originated EventBus inbox
+entry + three OTTO-originated: OFF-passthrough fix, T25, continue.md);
+lsfx_tapecolor regression from 5 days of pinned-at-Phase-8 cleared
+by OTTO's surgical fix at a812670; ctest 782/783, zero flakes. Next
+session: M-OTTO-4 (32 OTTO outputs into Output Mixer) by default, or
+any of the alternatives in §3.*
