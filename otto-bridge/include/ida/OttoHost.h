@@ -59,6 +59,52 @@ public:
     /// this to verify wiring end-to-end after publishing events.
     void drainForTesting();
 
+    // -------------------------------------------------------------------------
+    // M-OTTO-4 — 32 per-output stereo pairs
+    //
+    // OTTO's GlobalMixer exposes 32 stereo output pairs as the canonical
+    // multi-out surface (24 instrument channels + 4 FX returns + 4 player
+    // buses). The constant + range layout below mirror OTTO's compile-time
+    // invariant (`GlobalMixer.h`'s static_assert that the canonical category
+    // counts sum to 32 SFZ outputs). Public surface stays OTTO-type-free:
+    // index in, raw `const float*` out.
+    // -------------------------------------------------------------------------
+
+    /// Total stereo output pairs OTTO exposes.
+    static constexpr int kNumOttoOutputs = 32;
+
+    /// `[kOttoChannelRangeBegin, kOttoFxReturnRangeBegin)` → 24 instrument
+    /// channels (post-channel-EQ/CMP, pre-send, pre-bus). Indices 0..15 are
+    /// Drum slots; 16..19 Percs; 20..21 Shakers; 22..23 Hands.
+    static constexpr int kOttoChannelRangeBegin   = 0;
+
+    /// `[kOttoFxReturnRangeBegin, kOttoPlayerBusRangeBegin)` → 4 shared FX
+    /// returns (3 reverbs + 1 delay), post-FX, pre-pair-assignment.
+    static constexpr int kOttoFxReturnRangeBegin  = 24;
+
+    /// `[kOttoPlayerBusRangeBegin, kNumOttoOutputs)` → 4 per-mode sub-buses
+    /// (Drums=28, Percs=29, Shakers=30, Hands=31), post-bus-EQ/CMP /
+    /// post-bus-fader/pan, pre-master-bus. Most natural per-player taps.
+    static constexpr int kOttoPlayerBusRangeBegin = 28;
+
+    /// Run one audio block of OTTO's mixer pipeline: pump all 4 players
+    /// through GlobalMixer and populate the 32 per-output stereo pair
+    /// buffers behind `getOttoOutputLeft/Right`. Audio-thread only.
+    /// RT-safe: wraps OTTO's `PlayerManager::processGlobalMixer`, which
+    /// OTTO's CLAUDE.md guarantees as alloc/lock/log-free. Must be called
+    /// BEFORE any same-block read via the accessors below. A call before
+    /// `prepare()` is a no-op.
+    void renderBlock (int numSamples) noexcept;
+
+    /// Pointer into OTTO's per-output left-channel buffer for the most
+    /// recent `renderBlock`. Valid until the next `renderBlock` (or
+    /// `prepare()`) — the underlying buffer is owned by OTTO's
+    /// GlobalMixer and overwritten each block. Returns `nullptr` if
+    /// `ottoOutputIndex` is out of `[0, kNumOttoOutputs)` or OTTO isn't
+    /// prepared. Audio-thread only.
+    const float* getOttoOutputLeft  (int ottoOutputIndex) const noexcept;
+    const float* getOttoOutputRight (int ottoOutputIndex) const noexcept;
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

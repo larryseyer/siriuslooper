@@ -5,6 +5,7 @@
 
 #include <otto/common/EventBus.h>
 #include <otto/manager/PlayerManager.h>
+#include <otto/mixer/GlobalMixer.h>
 #include <otto/transport/TransportTracker.h>
 
 #include <juce_events/juce_events.h>
@@ -168,6 +169,48 @@ void OttoHost::removeTransportListener (IOttoTransportListener* listener)
 void OttoHost::drainForTesting()
 {
     impl_->drain();
+}
+
+void OttoHost::renderBlock (int numSamples) noexcept
+{
+    if (! impl_->playerManager.isPrepared() || numSamples <= 0)
+        return;
+
+    // OTTO's processGlobalMixer runs channels + sends + buses + meter taps in
+    // sequence and is RT-safe per OTTO's CLAUDE.md. After it returns, the
+    // per-channel / per-FX-return / per-player-bus accessors on GlobalMixer
+    // return live pointers into OTTO's pre-master mixer buffers.
+    impl_->playerManager.processGlobalMixer (numSamples);
+}
+
+const float* OttoHost::getOttoOutputLeft (int ottoOutputIndex) const noexcept
+{
+    if (ottoOutputIndex < 0 || ottoOutputIndex >= kNumOttoOutputs)
+        return nullptr;
+    if (! impl_->playerManager.isPrepared())
+        return nullptr;
+
+    const auto& mixer = impl_->playerManager.getGlobalMixer();
+    if (ottoOutputIndex < kOttoFxReturnRangeBegin)
+        return mixer.getChannelOutputLeft (ottoOutputIndex - kOttoChannelRangeBegin);
+    if (ottoOutputIndex < kOttoPlayerBusRangeBegin)
+        return mixer.getFxReturnOutputLeft (ottoOutputIndex - kOttoFxReturnRangeBegin);
+    return mixer.getPlayerOutputLeft (ottoOutputIndex - kOttoPlayerBusRangeBegin);
+}
+
+const float* OttoHost::getOttoOutputRight (int ottoOutputIndex) const noexcept
+{
+    if (ottoOutputIndex < 0 || ottoOutputIndex >= kNumOttoOutputs)
+        return nullptr;
+    if (! impl_->playerManager.isPrepared())
+        return nullptr;
+
+    const auto& mixer = impl_->playerManager.getGlobalMixer();
+    if (ottoOutputIndex < kOttoFxReturnRangeBegin)
+        return mixer.getChannelOutputRight (ottoOutputIndex - kOttoChannelRangeBegin);
+    if (ottoOutputIndex < kOttoPlayerBusRangeBegin)
+        return mixer.getFxReturnOutputRight (ottoOutputIndex - kOttoFxReturnRangeBegin);
+    return mixer.getPlayerOutputRight (ottoOutputIndex - kOttoPlayerBusRangeBegin);
 }
 
 } // namespace ida

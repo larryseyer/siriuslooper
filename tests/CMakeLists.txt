@@ -158,7 +158,13 @@ add_executable(IdaTests
     # OttoHost, publishes directly to OTTO's EventBus singleton, and
     # asserts the audio→message-thread marshal lands at the listener
     # with the IDA-flavoured TransportSnapshot fields populated.
-    OttoHostTransportTests.cpp)
+    OttoHostTransportTests.cpp
+    # M-OTTO-4 slice 1 — OttoHost::renderBlock + per-output pointer
+    # accessors. Pins the wiring of OTTO's 32 stereo-pair output surface
+    # (24 instrument channels + 4 FX returns + 4 player buses) through
+    # the IDA-flavoured `int → const float*` API, without depending on
+    # OTTO transport actually rolling.
+    OttoHostRenderTests.cpp)
 
 # T3a: EqAdapterTests includes "fx/EqAdapter.h" (engine-private header) and
 # EqAdapter.h transitively includes <otto/effects/PlayerEQ.h>. Both paths
