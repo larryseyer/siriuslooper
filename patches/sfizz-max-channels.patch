@@ -1,0 +1,26 @@
+# sfizz Max Channels Configuration
+#
+# OTTO uses 32 stereo output pairs (64 mono channels) for drum kit output routing.
+# sfizz defaults to maxChannels=32, which causes buffer overflow crashes when
+# rendering to all 64 channels.
+#
+# File: external/sfizz/src/Config.h.in (CMake template that generates Config.h)
+# Setting: sfz::config::maxChannels
+#
+# This patch modifies the TEMPLATE file, not the generated Config.h
+# CMake generates Config.h from Config.h.in on each clean build
+#
+# Apply with: patch -p1 < patches/sfizz-max-channels.patch
+#
+--- a/external/sfizz/src/Config.h.in
++++ b/external/sfizz/src/Config.h.in
+@@ -31,7 +31,7 @@ namespace config {
+     constexpr bool loadInRam { false };
+     constexpr int loggerQueueSize { 256 };
+     constexpr int voiceLoggerQueueSize { 256 };
+     constexpr bool loggingEnabled { false };
+-    constexpr size_t maxChannels { 32 };
++    constexpr size_t maxChannels { 64 };
+     constexpr int numBackgroundThreads { 4 };
+     constexpr unsigned fileClearingPeriod { 5 }; // in seconds
+     constexpr int numVoices { 64 };

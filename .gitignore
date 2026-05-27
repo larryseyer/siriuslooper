@@ -83,6 +83,10 @@ external/*
 # Exception: lsfx_tapecolor is the shared tape-emulation FX module owned
 # by OTTO; IDA consumes the same submodule. SHA tracked via .gitmodules.
 !external/lsfx_tapecolor
+# Exception: sfizz is a required dep of OTTO's otto-core library (M-OTTO-1).
+# Pinned via .gitmodules; init recursive to pull its own submodule tree
+# (abseil-cpp, dr_libs, libaiff, gulrak/filesystem, simde, wavpack, invoke.hpp).
+!external/sfizz
 
 # === Superpowers brainstorming sessions (visual companion mockups) ===
 .superpowers/

@@ -4,3 +4,6 @@
 [submodule "external/lsfx_tapecolor"]
 	path = external/lsfx_tapecolor
 	url = https://github.com/larryseyer/lsfx_tapecolor.git
+[submodule "external/sfizz"]
+	path = external/sfizz
+	url = https://github.com/sfztools/sfizz.git
