@@ -2552,32 +2552,55 @@ public:
         return static_cast<int> (monStrips_.size());
     }
 
-    /// Human-readable label for OTTO output index `idx` (0..31). Returns the
-    /// canonical name that OTTO's GlobalMixer uses for that output role:
-    /// 0..15 = "OTTO Drum 1..16", 16..19 = "OTTO Perc 1..4", 20..21 = "OTTO
-    /// Shaker 1..2", 22..23 = "OTTO Hand 1..2", 24..27 = "OTTO FxRet 1..4",
-    /// 28..31 = "OTTO {Drums,Percs,Shakers,Hands} Bus". Returns empty if the
-    /// index is out of range.
+    /// Human-readable label for OTTO output index `idx` (0..31). The
+    /// element-level names are OTTO's canonical instrument labels, supplied
+    /// by the operator 2026-05-27: 0..15 = Kick / Snare / SideStick / Hats /
+    /// Tom1..4 / Crash1..2 / Ride1 / Ride1Bell / Ride2 / Ride2Bell / Splash /
+    /// China; 16..19 = Tambourine / Cowbell / Bongos / Congas (Percs
+    /// category); 20..21 = Shaker / Cabasa (Shakers category); 22..23 =
+    /// Claps / Snaps (Hands category — renamed from "Claps & Snaps"; the
+    /// category keeps the "Hands" name, the two elements inside it are still
+    /// Claps + Snaps); 24..27 = RevDelay1..4 (FX-return category); 28..31 =
+    /// PlayerOut1..4 (the four per-player sub-bus stereo outputs). Returns
+    /// empty if the index is out of range.
     static juce::String ottoFriendlyName (int idx)
     {
         using OH = ida::OttoHost;
         if (idx < 0 || idx >= OH::kNumOttoOutputs) return {};
-        if (idx < OH::kOttoFxReturnRangeBegin)
+        switch (idx)
         {
-            // 0..15 drums, 16..19 percs, 20..21 shakers, 22..23 hands.
-            if (idx < 16) return "OTTO Drum "   + juce::String (idx + 1);
-            if (idx < 20) return "OTTO Perc "   + juce::String (idx - 15);
-            if (idx < 22) return "OTTO Shaker " + juce::String (idx - 19);
-            return                "OTTO Hand "   + juce::String (idx - 21);
-        }
-        if (idx < OH::kOttoPlayerBusRangeBegin)
-            return "OTTO FxRet " + juce::String (idx - OH::kOttoFxReturnRangeBegin + 1);
-        switch (idx - OH::kOttoPlayerBusRangeBegin)
-        {
-            case 0:  return "OTTO Drums Bus";
-            case 1:  return "OTTO Percs Bus";
-            case 2:  return "OTTO Shakers Bus";
-            default: return "OTTO Hands Bus";    // case 3
+            case  0: return "Kick";
+            case  1: return "Snare";
+            case  2: return "SideStick";
+            case  3: return "Hats";
+            case  4: return "Tom1";
+            case  5: return "Tom2";
+            case  6: return "Tom3";
+            case  7: return "Tom4";
+            case  8: return "Crash1";
+            case  9: return "Crash2";
+            case 10: return "Ride1";
+            case 11: return "Ride1Bell";
+            case 12: return "Ride2";
+            case 13: return "Ride2Bell";
+            case 14: return "Splash";
+            case 15: return "China";
+            case 16: return "Tambourine";
+            case 17: return "Cowbell";
+            case 18: return "Bongos";
+            case 19: return "Congas";
+            case 20: return "Shaker";
+            case 21: return "Cabasa";
+            case 22: return "Claps";
+            case 23: return "Snaps";
+            case 24: return "RevDelay1";
+            case 25: return "RevDelay2";
+            case 26: return "RevDelay3";
+            case 27: return "RevDelay4";
+            case 28: return "PlayerOut1";
+            case 29: return "PlayerOut2";
+            case 30: return "PlayerOut3";
+            default: return "PlayerOut4";   // case 31
         }
     }
 
