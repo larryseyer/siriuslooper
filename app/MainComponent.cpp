@@ -6451,6 +6451,69 @@ void MainComponent::refreshOutputMixerPhraseChannels()
     refreshOutputDestinations();
 }
 
+ida::OutputChannelId MainComponent::addOttoOutputStrip (int ottoOutputIndex)
+{
+    using ida::OttoHost;
+
+    if (outputMixer_ == nullptr || ottoHost_ == nullptr)
+        return ida::OutputChannelId { 0 };
+    if (ottoOutputIndex < 0 || ottoOutputIndex >= OttoHost::kNumOttoOutputs)
+        return ida::OutputChannelId { 0 };
+
+    // Idempotent: return the existing channel ID if already bound. The
+    // slice 4b picker filters added entries out of the menu, but a
+    // double-call from a script / test path must not double-allocate.
+    const auto existing = ottoChannelByOutputIndex_.find (ottoOutputIndex);
+    if (existing != ottoChannelByOutputIndex_.end())
+        return existing->second;
+
+    // OTTO's per-output pointers are stable for the OttoHost's lifetime
+    // (GlobalMixer allocates per-channel buffers once in `prepare()`), so
+    // a missing prepare here means the bind would store nulls and the
+    // channel would render silence forever. Fail loud instead.
+    const float* const leftSrc  = ottoHost_->getOttoOutputLeft  (ottoOutputIndex);
+    const float* const rightSrc = ottoHost_->getOttoOutputRight (ottoOutputIndex);
+    if (leftSrc == nullptr || rightSrc == nullptr)
+        return ida::OutputChannelId { 0 };
+
+    // Engine mutations (addChannel + the free-list swap-erase) are
+    // message-thread only and cannot race a live renderBuffer; bracket the
+    // audio callback exactly as refreshOutputMixerPhraseChannels does.
+    audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+    const auto chId = outputMixer_->addChannel (ida::SignalType::Audio);
+    if (chId.value() == 0)
+    {
+        audioDeviceManager_.addAudioCallback (audioCallback_.get());
+        return ida::OutputChannelId { 0 };  // OutputMixer at kMaxOutputChannels cap.
+    }
+    outputMixer_->setChannelStrip (chId,
+        std::make_unique<ChannelStrip<SignalType::Audio>>());
+    outputMixer_->setChannelAudioSource (chId, leftSrc, rightSrc);
+    audioDeviceManager_.addAudioCallback (audioCallback_.get());
+
+    ottoChannelByOutputIndex_.emplace (ottoOutputIndex, chId);
+    return chId;
+}
+
+void MainComponent::removeOttoOutputStrip (int ottoOutputIndex)
+{
+    if (outputMixer_ == nullptr) return;
+
+    const auto it = ottoChannelByOutputIndex_.find (ottoOutputIndex);
+    if (it == ottoChannelByOutputIndex_.end()) return;
+
+    audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+    outputMixer_->removeChannel (it->second);
+    audioDeviceManager_.addAudioCallback (audioCallback_.get());
+
+    ottoChannelByOutputIndex_.erase (it);
+}
+
+bool MainComponent::hasOttoOutputStrip (int ottoOutputIndex) const
+{
+    return ottoChannelByOutputIndex_.find (ottoOutputIndex) != ottoChannelByOutputIndex_.end();
+}
+
 void MainComponent::refreshOutputMixerMonChannels()
 {
     if (outputMixerPane_ == nullptr) return;

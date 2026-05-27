@@ -125,6 +125,31 @@ private:
     /// channels have no cycle filter (they're leaves in the routing graph).
     /// Message-thread only.
     void refreshOutputDestinations();
+    /// M-OTTO-4 slice 4a — engine-side bind of one OTTO per-output stereo
+    /// pair as a new OutputMixer channel. Brackets the audio callback
+    /// (addChannel + the free-list mutate are message-thread-only), installs
+    /// a default `ChannelStrip<Audio>`, and binds the channel's audio source
+    /// to OttoHost's `getOttoOutputLeft/Right(ottoOutputIndex)` — pointers
+    /// are stable for the OttoHost's lifetime (OTTO's GlobalMixer allocates
+    /// the per-channel buffers once in `prepare()`), so the bind is
+    /// set-once. Idempotent: a second call for an already-added index is a
+    /// no-op that returns the existing channel ID. Returns the bound
+    /// `OutputChannelId` (`.value() == 0` on failure — invalid index, OTTO
+    /// not prepared, or OutputMixer at its channel cap). The slice 4b
+    /// picker UI is the operator-facing trigger; this method is the engine
+    /// seam underneath.
+    ida::OutputChannelId addOttoOutputStrip (int ottoOutputIndex);
+
+    /// Undo `addOttoOutputStrip`. Brackets the audio callback, removes the
+    /// channel from OutputMixer, and forgets the binding. No-op if the
+    /// index was never added. Message-thread only.
+    void removeOttoOutputStrip (int ottoOutputIndex);
+
+    /// True when `ottoOutputIndex` has a bound OutputMixer channel from a
+    /// prior `addOttoOutputStrip` call. Lookup-only; the slice 4b picker
+    /// uses this to filter the "Add OTTO source" menu.
+    bool hasOttoOutputStrip (int ottoOutputIndex) const;
+
     /// Walks the current pill list (PillState DFS order via selectTimelineView),
     /// adds/removes OutputMixer channels to match, and pushes the resulting
     /// PhraseStripInfo array to the pane. Skips the pane rebuild when the
@@ -464,6 +489,16 @@ private:
     /// others at 0; hardware-output choice zeroes every send).
     std::unordered_map<std::int64_t, ida::OutputChannelId>
                                  phraseChannelByConstituent_;
+
+    /// M-OTTO-4 slice 4a — ottoOutputIndex (0..31) → OutputChannelId for
+    /// each OTTO output the operator has surfaced as a strip on the Output
+    /// Mixer. Empty on startup (operator-on-demand creation per the
+    /// project_otto_as_output_mixer_source / project_minimal_default_mixers
+    /// reconciliation). Mirrored on the engine side by an OutputMixer
+    /// channel whose `setChannelAudioSource` is bound to
+    /// `ottoHost_->getOttoOutputLeft/Right(ottoOutputIndex)`.
+    std::unordered_map<int, ida::OutputChannelId>
+                                 ottoChannelByOutputIndex_;
 
     /// V9 MON strip binding. Indexed by mon-strip row, holds the *input*
     /// ChannelId whose MON-on minted that strip's auto-created OutputMixer
