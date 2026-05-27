@@ -2360,6 +2360,45 @@ public:
         resized();
     }
 
+    /// Appends ONE phrase strip without disturbing the existing ones. Mirrors
+    /// InputMixerPane::appendStrip — used by refreshOutputMixerPhraseChannels
+    /// when the timeline delta is a pure append (no removes / no reorder).
+    /// Avoids the setPhraseStrips full-rebuild that would nuke in-progress
+    /// fader / mute / sends state on every other phrase strip. (OTTO's 32
+    /// stereo outputs will lean on this path when bundled OTTO comes in.)
+    void appendPhraseStrip (const PhraseStripInfo& info)
+    {
+        const int i = static_cast<int> (phraseStrips_.size());
+
+        auto strip = std::make_unique<otto::ui::CompactFaderStrip> (
+            i, otto::ui::ChannelType::Instrument);
+        strip->setChannelName (info.name);
+        strip->setOutputComboVisible (false);
+        strip->addListener (this);
+        addAndMakeVisible (*strip);
+        phraseStrips_.push_back (std::move (strip));
+
+        auto destBtn = std::make_unique<juce::TextButton>();
+        destBtn->setButtonText ("\xe2\x80\x94");
+        const int idx = i;
+        destBtn->onClick = [this, idx] { showPhraseDestinationMenu (idx); };
+        addAndMakeVisible (*destBtn);
+        phraseDestButtons_.push_back (std::move (destBtn));
+        phraseStripDests_.push_back ({});
+
+        auto ins = std::make_unique<juce::TextButton>();
+        ins->setButtonText ("INS");
+        ins->onClick = [this, idx]
+        {
+            if (onPhraseInsertChainClicked) onPhraseInsertChainClicked (idx);
+        };
+        addAndMakeVisible (*ins);
+        phraseInsButtons_.push_back (std::move (ins));
+
+        rebuildChannelPills();
+        resized();
+    }
+
     /// Mirrors setBusDestinations for phrase strips. `perPhraseChoices[i]` is
     /// phrase `i`'s picker contents; `perPhrase[i]` is its current destination
     /// (drives button label + ticked item in the popup). Phrase→bus routing
@@ -2430,6 +2469,44 @@ public:
             addAndMakeVisible (*ins);
             monInsButtons_.push_back (std::move (ins));
         }
+        rebuildChannelPills();
+        resized();
+    }
+
+    /// Appends ONE MON strip without disturbing the existing ones. Mirrors
+    /// appendPhraseStrip — used by refreshOutputMixerMonChannels when the
+    /// delta is a pure append (operator turned MON on for one more channel
+    /// or bus, no removes). Preserves fader / mute / sends state on every
+    /// other MON strip.
+    void appendMonStrip (const MonStripInfo& info)
+    {
+        const int i = static_cast<int> (monStrips_.size());
+
+        auto strip = std::make_unique<otto::ui::CompactFaderStrip> (
+            i, otto::ui::ChannelType::FXReturn);
+        strip->setChannelName (info.name);
+        strip->setOutputComboVisible (false);
+        strip->addListener (this);
+        addAndMakeVisible (*strip);
+        monStrips_.push_back (std::move (strip));
+
+        auto destBtn = std::make_unique<juce::TextButton>();
+        destBtn->setButtonText ("\xe2\x80\x94");
+        const int idx = i;
+        destBtn->onClick = [this, idx] { showMonDestinationMenu (idx); };
+        addAndMakeVisible (*destBtn);
+        monDestButtons_.push_back (std::move (destBtn));
+        monStripDests_.push_back ({});
+
+        auto ins = std::make_unique<juce::TextButton>();
+        ins->setButtonText ("INS");
+        ins->onClick = [this, idx]
+        {
+            if (onMonInsertChainClicked) onMonInsertChainClicked (idx);
+        };
+        addAndMakeVisible (*ins);
+        monInsButtons_.push_back (std::move (ins));
+
         rebuildChannelPills();
         resized();
     }
@@ -6308,6 +6385,31 @@ void MainComponent::refreshOutputMixerPhraseChannels()
         return;
     }
 
+    // Pure-append fast path (2026-05-26): when the delta is just "N new pills
+    // arrived at the end" (no removes, no reorder), surgically append one
+    // strip per new pill instead of rebuilding the whole phrase row. The full
+    // setPhraseStrips path destroys + recreates every CompactFaderStrip,
+    // which on the input side caused the d01bd00 "adding one channel wipes
+    // every other channel's MON / mute / fader" regression — the output
+    // pane is now immune to the same class of bug. (OTTO's 32 stereo outputs
+    // will arrive via this path when bundled OTTO comes in.)
+    const auto oldSize = phraseStripConstituentIds_.size();
+    const bool pureAppend
+        = newOrder.size() > oldSize
+       && std::equal (phraseStripConstituentIds_.begin(),
+                      phraseStripConstituentIds_.end(),
+                      newOrder.begin());
+
+    if (pureAppend)
+    {
+        phraseStripConstituentIds_ = newOrder;
+        for (std::size_t i = oldSize; i < timeline.pills.size(); ++i)
+            outputMixerPane_->appendPhraseStrip ({ timeline.pills[i].id,
+                                                   juce::String (timeline.pills[i].name) });
+        refreshOutputDestinations();
+        return;
+    }
+
     phraseStripConstituentIds_ = newOrder;
 
     std::vector<OutputMixerPane::PhraseStripInfo> infos;
@@ -6362,6 +6464,33 @@ void MainComponent::refreshOutputMixerMonChannels()
     if (newChanIds == monStripInputChannelIds_ && newBusIds == monStripInputBusIds_)
     {
         refreshOutputDestinations();   // dest labels may still need a refresh
+        return;
+    }
+
+    // Pure-append fast path (2026-05-26) — same shape as the phrase row
+    // refresh. When the delta is just "N more MON-on sources at the end"
+    // (operator flipped MON on for one more strip / bus), append one MON
+    // strip per new entry instead of rebuilding every MON strip. Anything
+    // else (MON-off in the middle, reorder, mixed) falls through to the
+    // full setMonStrips rebuild.
+    const auto oldChanSize = monStripInputChannelIds_.size();
+    const bool pureAppendMon
+        = newChanIds.size() > oldChanSize
+       && newBusIds.size()  == newChanIds.size()
+       && std::equal (monStripInputChannelIds_.begin(),
+                      monStripInputChannelIds_.end(),
+                      newChanIds.begin())
+       && std::equal (monStripInputBusIds_.begin(),
+                      monStripInputBusIds_.end(),
+                      newBusIds.begin());
+
+    if (pureAppendMon)
+    {
+        monStripInputChannelIds_ = std::move (newChanIds);
+        monStripInputBusIds_     = std::move (newBusIds);
+        for (std::size_t i = oldChanSize; i < infos.size(); ++i)
+            outputMixerPane_->appendMonStrip (infos[i]);
+        refreshOutputDestinations();
         return;
     }
 
