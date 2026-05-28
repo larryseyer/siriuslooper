@@ -19,7 +19,7 @@ The IDA-side code that DID land is good shape and doesn't need to be undone by t
 
 | Thing | SHA | Note |
 |---|---|---|
-| IDA HEAD (origin/master) | **(filled at commit time)** | S2 partial — see §4 |
+| IDA HEAD (origin/master) | **af2d947** | S2 partial — see §4 |
 | OTTO HEAD (origin/main, IDA's pin) | **f2b6f6db** | Was `b7654144` pre-session; +2 OTTO commits this session |
 | OTTO commit 1 (pushed earlier) | **fb5ff039** | `feat: OTTOProcessor::setEmbeddedInHost() + PreferencesDialog gate` — the §2.2 setup work |
 | OTTO commit 2 (pushed earlier) | **f2b6f6db** | `fix: revert isPluginMode_ OR — embedded host must keep TransportBar visible` — the revert based on a wrong understanding of the design; see §2 |
@@ -114,7 +114,7 @@ If you launch `build/app/IDA_artefacts/Release/IDA.app` against the freshly-comm
 
 | Check | Result |
 |---|---|
-| `git rev-parse HEAD` (IDA) | (filled at commit time) — pushed to origin/master |
+| `git rev-parse HEAD` (IDA) | **af2d947** — pushed to origin/master |
 | `git ls-tree HEAD external/OTTO` | f2b6f6db (post-bump) |
 | `git ls-tree HEAD external/lsfx_tapecolor` | 7219f05 (unchanged) |
 | `git status --short` | clean except pre-existing `m external/sfizz` |
@@ -168,4 +168,4 @@ The 2 OTTO commits this session (`fb5ff039`, `f2b6f6db`) have `Ida-Origin: <pend
 
 ---
 
-*End of session. S2 partial. Transport bar design + asset path resolution queued for brainstorm next chat. ctest 796/797. IDA `(filled at commit time)` / OTTO `f2b6f6db` / lsfx_tapecolor `7219f05`.*
+*End of session. S2 partial. Transport bar design + asset path resolution queued for brainstorm next chat. ctest 796/797. IDA `af2d947` / OTTO `f2b6f6db` / lsfx_tapecolor `7219f05`.*
