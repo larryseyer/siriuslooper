@@ -1,12 +1,10 @@
-# Session Continuation — Brainstorm + Spec + Plan landed; T1 + T2 of 14 tasks executed via subagent-driven flow
+# Session Continuation — T3 + T4 of 14 plan tasks landed via subagent-driven flow
 
 ## ▶ 0. TL;DR (60 seconds)
 
-Three docs landed: BS-5 spec, BS-7 plan, and 2 of 14 implementation tasks. Plus a separate inbox housekeeping ack of OTTO's 2026-05-28 ack-bundle.
+Four IDA commits landed this session (T3, T4 + T4 follow-on) on top of the prior session's T1+T2. S3a is now 4 of 10 tasks done. All commits pushed to origin/master. Next chat resumes at T5 (OttoHost extensions) via the same `superpowers:subagent-driven-development` skill against the same plan.
 
-Resume by reading this file → dispatching subagents for T3 onward per the plan. The brainstorm is over; the execution loop is rolling.
-
-**Next chat:** continue subagent-driven-development from T3 (Wire MasterMeter into master mix point). Skill: `superpowers:subagent-driven-development`.
+**Next chat:** dispatch T5 implementer per the plan. Plan path unchanged.
 
 ---
 
@@ -14,51 +12,44 @@ Resume by reading this file → dispatching subagents for T3 onward per the plan
 
 | Thing | SHA | Note |
 |---|---|---|
-| IDA HEAD (origin/master) | **f854478** | T2 follow-on fix (static_assert + RT contract row + JUCE header isolation) |
-| OTTO HEAD (origin/main, IDA's pin) | **871ed4d2** | Re-applied isPluginMode_ OR — T1 of S3a plan |
-| lsfx_tapecolor (IDA's pin) | **3dda009** | Click-mask envelope DSP fix, bumped via OTTO ack-roundtrip |
+| IDA HEAD (origin/master) | **4877c66** | T4 follow-on fix (all-or-nothing prepare + named kTwoPi + 2-call warm-up) |
+| OTTO HEAD (origin/main, IDA's pin) | **d756bf15** | TAPECOLOR ack-roundtrip bump from prior session; no OTTO churn this session |
+| lsfx_tapecolor (IDA's pin) | **0a7189c** | Click-mask envelope DSP fix; unchanged this session |
 
-Working tree: `m external/OTTO` (operator/linter restored 5 IDA→OTTO inbox entries inside the submodule — system reminder said "intentional, don't revert"; leave alone) + `m external/sfizz` (pre-existing).
+Working tree at end of session: `m external/sfizz` only (pre-existing drift, leave alone).
 
 ---
 
 ## ▶ 2. What landed this session, in order
 
-### Brainstorm → Spec → Plan
-
-1. **Brainstorm** (`superpowers:brainstorming` + browser companion at .superpowers/brainstorm/83769-1779945843/). Locked: option B for transport bar (IDA owns its own `otto::ui::TransportBar` instance, OTTO's editor-internal bar hides via re-applied `isPluginMode_` OR). Asset path: §3 recipe locked (otto::paths::AssetsRoot singleton + IDA setOverride call from `IDA_OTTO_ASSETS_DIR` compile-def sourced from existing `OTTO_ASSETS_DIR` CMake cache var).
-2. **Spec at `4cf7436`** — `docs/superpowers/specs/2026-05-28-otto-transport-bar-and-asset-path-design.md` (647 lines, 11 sections). Supersedes §2.3 of the 2026-05-27 integration spec.
-3. **OTTO ack roundtrip at `04978dc`** — ack'd OTTO's 2026-05-28 ack-bundle. IDA pinned OTTO at 18de2ff9 (post-prune of the now-resolved OTTO→IDA entry) + lsfx_tapecolor at 3dda009. Verification: `[tapecolor-adapter]` 5/1802 + `[otto-host-transport]` 6/30 + S1+S2 baselines 12/236.
-4. **Plan at `9e64c77`** — `docs/superpowers/plans/2026-05-28-otto-transport-bar-and-asset-path.md` (1655 lines, 14 tasks). S3a tasks 1-10 (transport bar + master publishers + cross-project re-revert + MainComponent integration + operator verification). S3b tasks 11-14 (AssetsRoot singleton + 3 OTTO call-site refactors + IDA setOverride + operator verification).
-
 ### Implementation tasks executed via subagent-driven-development
 
-- **T1 — OTTO re-revert isPluginMode_ OR.** OTTO commit `871ed4d2` (re-applies `|| proc.isEmbeddedInHost()` in OTTOEditor's `isPluginMode_` initializer). Inbox entry posted. Spec + code-quality reviews passed (2 cosmetic nits, non-blocking: indentation alignment + IDA-commit-SHA placeholder backfill scheduled for T9).
-- **T2 — IDA MasterMeter publisher.** IDA commits `96d0106` (initial) + `f854478` (fix follow-on). Spec compliant. Code-quality review found 2 Critical + 2 Important issues; all fixed in `f854478`:
-  - Added `static_assert(std::atomic<MasterMeter::Snapshot>::is_always_lock_free)` at file scope in MasterMeter.cpp.
-  - Added `MasterMeter::publish` row to `docs/RT_SAFETY_CONTRACT.md` per the contract's own policy.
-  - Refactored `publish()` signature from `(juce::AudioBuffer<float>&)` to `(const float* L, const float* R, int N)` so `juce_audio_basics` no longer leaks into engine's PUBLIC header (matches Bus/ChannelStrip policy).
-  - Documented `sampleRate_` as `// reserved for R128 LUFS integrator` scaffolding.
-  - Tests preserved: `[ida-master-meter]` 2/2 (4 assertions); ctest 798/799 baseline.
-  - Remaining nit (non-blocking, kept for future): `publish()` lacks a debug-only null-pointer assertion. Caller-precondition contract is documented; acceptable.
+- **T3 — Wire MasterMeter into the master mix point.** IDA commit `51349ad`. AudioCallback gained value-typed `masterMeter_`, `getMasterMeter()` accessor, `prepare()` in `audioDeviceAboutToStart`, and `publish(outputChannelData[0], outputChannelData[1], numSamples)` after `dispatchOutputMixer` under a shared stereo guard. Spec ✅. Code-quality review approved with 3 Minor stylistic notes (judged not worth churning the diff for). Files touched: `audio/include/ida/AudioCallback.h`, `audio/src/AudioCallback.cpp`.
 
-**Note on T2's commit scope:** `96d0106` accidentally swept in T1's staged `external/OTTO` submodule bump (which was meant to be held for T9's atomic push). Functionally harmless: IDA's OTTO pin is now at 871ed4d2 on master HEAD, just landed earlier than planned. Nothing has been pushed yet, so T9's "atomic push" intent is still preserved — just the OTTO bump is folded into T2 instead of T9.
+- **T4 — IDA MasterSpectrum publisher + master-mix wiring.** IDA commits `258ad6c` (initial) + `4877c66` (follow-on fix). Spec ✅. Code-quality review found 3 Important + 4 Minor; all 3 Important fixed in the follow-on:
+  - `prepare()` refactored to all-or-nothing — validate `numBins` + power-of-two `fftSize` BEFORE storing any member, so a bad-input prepare leaves the object exactly as it was (fixes a `binDb` OOB hazard for "any-thread" callers).
+  - Alloc-counting test warm-up bumped from one publish to two, so the first FFT trigger (and any one-shot JUCE FFT init) lands BEFORE the counted region. WHY-comment added.
+  - `kTwoPi` named constant added to anonymous namespace next to `kDbFloor`; Hann window references it instead of the `2.0f * 3.14159265…` literal (CLAUDE.md "no magic numbers" rule).
+  - The 4 Minor items (binDb OOB behavior, sampleRate_ scaffolding, Hann endpoint convention, hardcoded `256` at the wire site) were judged acceptable per established T2 precedent. Files touched across both commits: `engine/include/ida/MasterSpectrum.h` (new), `engine/src/MasterSpectrum.cpp` (new), `engine/CMakeLists.txt`, `tests/IdaMasterSpectrumTests.cpp` (new — owns the shared op-new override TU), `tests/IdaMasterMeterTests.cpp` (op-new → extern), `tests/CMakeLists.txt`, `audio/include/ida/AudioCallback.h`, `audio/src/AudioCallback.cpp`, `docs/RT_SAFETY_CONTRACT.md`.
+
+### Important design notes carried forward
+
+- **T2's RT-safety precedent stuck.** The plan was written with `publish(juce::AudioBuffer<float>&)` everywhere. Every implementer for T3 and T4 was given the corrected raw-pointer signature `publish(const float* L, const float* R, int N)` because engine PUBLIC headers must stay JUCE-free (juce_audio_basics + juce_dsp are PRIVATE link deps of IdaEngine per `engine/CMakeLists.txt:81-88`). The MasterSpectrum FFT type is held as `std::unique_ptr<juce::dsp::FFT>` with a `namespace juce::dsp { class FFT; }` forward declaration in the header and an out-of-line defaulted dtor in the cpp.
+- **Op-new ODR refactor**: `tests/IdaMasterSpectrumTests.cpp` now owns the shared operator-new/delete + `g_allocCount`/`g_counting` definitions for both `[ida-master-meter]` and `[ida-master-spectrum]` RT-safety tests. `tests/IdaMasterMeterTests.cpp` declares them `extern thread_local`. Any future RT-safety test that needs alloc counting should follow the same `extern` pattern.
 
 ---
 
-## ▶ 3. What's left — 12 tasks across 2 slices
+## ▶ 3. What's left — 10 tasks across 2 slices
 
-### S3a remaining (T3–T10)
+### S3a remaining (T5–T10)
 
 | Task | Status | Notes |
 |---|---|---|
-| T3 — Wire MasterMeter into master mix point | next up | Locate master-mix point (`audio/src/AudioCallback.cpp` likely); add member + prepare + publish + getter accessor. Need to also expose `getMasterMeter()` accessor for MainComponent → OttoHost wiring in T8. |
-| T4 — IDA MasterSpectrum publisher | pending | Mirror T2's shape with FFT + per-bin atomic. Move the operator-new override to a shared TU (the test files for `[ida-master-meter]` and `[ida-master-spectrum]` will share it). Wire into master mix point same as T3. |
-| T5 — OttoHost extensions | pending | Add `play/stop/setTempo/tapTempo/snapshotMaster/spectrumBin{Count,Db}/setMasterPublishers`. Forward transport methods to OTTOProcessor's existing onPlayPauseClicked path. |
+| T5 — OttoHost extensions | next up | Add `play/stop/setTempo/tapTempo/snapshotMaster/spectrumBin{Count,Db}/setMasterPublishers`. Forward transport methods to OTTOProcessor's existing onPlayPauseClicked path. T3+T4 already expose `getMasterMeter()`/`getMasterSpectrum()` on AudioCallback — T5's `setMasterPublishers` takes those references (or const-pointers) and stashes them; T8 calls `ottoHost_->setMasterPublishers(audioCallback_.getMasterMeter(), audioCallback_.getMasterSpectrum())` to wire it. |
 | T6 — `ida::TransportBarHost` wrapper Component | pending | Owns one `otto::ui::TransportBar` instance, implements TransportBarListener + IOttoTransportListener, runs 30Hz Timer. Tests: `[transport-bar-host]` 2 cases. |
 | T7 — `[otto-pane-no-internal-transport]` regression pin | pending | Walks OTTOEditor children for visible TransportBar — must be hidden when `isEmbeddedInHost(true)`. |
-| T8 — MainComponent integration | pending | Owns `std::unique_ptr<TransportBarHost> transportBarHost_`, declared AFTER `ottoHost_` + `ottoPane_`. `resized()` carves top 88px. Also calls `ottoHost_->setMasterPublishers(getMasterMeterRef(), getMasterSpectrumRef())`. |
-| T9 — S3a atomic push | pending | ctest green check + push origin/master. Optional OTTO inbox SHA backfill (the T1 `Ida-Origin: pending` trailer). |
+| T8 — MainComponent integration | pending | Owns `std::unique_ptr<TransportBarHost> transportBarHost_`, declared AFTER `ottoHost_` + `ottoPane_`. `resized()` carves top 88px. Calls `ottoHost_->setMasterPublishers(audioCallback_->getMasterMeter(), audioCallback_->getMasterSpectrum())`. |
+| T9 — S3a atomic push | mostly OBE | T1's OTTO bump + T3 + T4 + T4-followon already pushed at end-of-session 2026-05-28. T9 keeps its OTTO inbox SHA-backfill bullet (the `Ida-Origin: pending` trailer added by T1) and acts as the "final ctest green + push T5-T8" gate for the remaining S3a commits. |
 | T10 — S3a operator GUI verification | OPERATOR | 7-step checklist (spec §5.2). Bar visible everywhere, OTTO tab has no internal bar, audio audible, tap-tempo round-trips. |
 
 ### S3b remaining (T11–T14)
@@ -82,17 +73,15 @@ Working tree: `m external/OTTO` (operator/linter restored 5 IDA→OTTO inbox ent
 cat /Users/larryseyer/IDA/external/OTTO/CROSS_PROJECT_INBOX.md
 ```
 
-The system reminder this session said the inbox was modified intentionally (the 5 IDA→OTTO `needs-ack` entries were restored — leave them; OTTO's Claude or operator has them queued). T1 also added a new IDA→OTTO entry: "2026-05-28 — RE-APPLY: isPluginMode_ OR (reverts OTTO f2b6f6db)".
-
-If a new `[FROM OTTO → IDA]` entry exists when you check, ack + prune per the protocol BEFORE resuming task execution. Check OTTO's `origin/main` against the pin `871ed4d2`:
+At end-of-session 2026-05-28 the inbox had: 3 `[FROM IDA → OTTO]` `needs-ack` entries (the EventBus brief, the RE-APPLY isPluginMode_ entry from T1, the TAPECOLOR ack/pin-bump). No `[FROM OTTO → IDA]` entries outstanding. If a new `[FROM OTTO → IDA]` entry has landed on OTTO's `origin/main` between sessions, ack + prune per the protocol BEFORE resuming task execution. Check OTTO's `origin/main` against the pin `d756bf15`:
 
 ```bash
-cd /Users/larryseyer/IDA/external/OTTO && git fetch origin && git log --oneline 871ed4d2..origin/main
+cd /Users/larryseyer/IDA/external/OTTO && git fetch origin && git log --oneline d756bf15..origin/main
 ```
 
 If anything new, evaluate whether to bump.
 
-### Step 3: Re-enter subagent-driven-development at T3
+### Step 3: Re-enter subagent-driven-development at T5
 
 ```
 Skill: superpowers:subagent-driven-development
@@ -100,11 +89,12 @@ Skill: superpowers:subagent-driven-development
 
 The skill's per-task loop is: dispatch implementer → spec reviewer → code-quality reviewer → mark complete → next task.
 
-Dispatch T3 implementer using the verbatim T3 task body at `docs/superpowers/plans/2026-05-28-otto-transport-bar-and-asset-path.md` (Task 3, lines ~240-300 of the plan). Key context to pass:
-- IDA HEAD: `f854478`
-- The `getMasterMeter()` accessor T3 introduces is consumed by T8's MainComponent → OttoHost wiring.
-- The master mix point location was tentatively identified as `audio/src/AudioCallback.cpp` but the implementer should verify with `grep -rn "master" engine/src audio/src | grep -i "process\|mix\|buffer"`.
-- T1's submodule bump is already on HEAD (folded into T2's `96d0106`) — implementer does NOT need to handle external/OTTO staging.
+Dispatch T5 implementer using the verbatim T5 task body at `docs/superpowers/plans/2026-05-28-otto-transport-bar-and-asset-path.md` (Task 5, lines 651-794 of the plan). Key context to pass:
+- IDA HEAD: `4877c66` (pushed to origin/master)
+- T3+T4 already added `getMasterMeter()` and `getMasterSpectrum()` accessors on AudioCallback returning `const ida::MasterMeter&` / `const ida::MasterSpectrum&`. T5's `setMasterPublishers` signature should take pointer-or-reference to those types and stash them in OttoHost for T8 to wire via MainComponent.
+- Transport forwarding hooks into OTTOProcessor: OTTO's editor calls `onPlayPauseClicked` etc. — find the existing message path inside the OTTO submodule and route T5's play/stop/setTempo through it. **No OTTO source change in T5**; everything is IDA-side OttoHost surface area.
+- `snapshotMaster` and `spectrumBin{Count,Db}` are thin pass-through accessors on top of the stashed publisher pointers (call `.snapshot()` and `.numBins()`/`.binDb(bin)` respectively).
+- The publish signature precedent from T2/T4 (engine PUBLIC headers stay JUCE-free) is still in force — if T5 needs to expose anything JUCE-typed in OttoHost's public header, surface it as raw pointers or pimpl.
 
 ### Step 4: Continue until either S3a is done (then operator verification T10) or a HALT condition fires.
 
@@ -116,8 +106,8 @@ The plan's "Slice Sequence + Stop Conditions" section (near the bottom of the pl
 
 - **In-tree spec:** `docs/superpowers/specs/2026-05-28-otto-transport-bar-and-asset-path-design.md`
 - **In-tree plan:** `docs/superpowers/plans/2026-05-28-otto-transport-bar-and-asset-path.md`
-- **Brainstorm screens (browser companion):** `.superpowers/brainstorm/83769-1779945843/content/` — gitignored, persists locally for reference. Server may have auto-exited after 30 min idle; re-run `scripts/start-server.sh --project-dir /Users/larryseyer/IDA` if you want to re-view.
-- **RT contract:** `docs/RT_SAFETY_CONTRACT.md` (gained one row in T2).
+- **Brainstorm screens (browser companion):** `.superpowers/brainstorm/83769-1779945843/content/` — gitignored, persists locally. Server likely auto-exited; re-run `scripts/start-server.sh --project-dir /Users/larryseyer/IDA` if you want to re-view.
+- **RT contract:** `docs/RT_SAFETY_CONTRACT.md` (gained two rows total — MasterMeter::publish in T2, MasterSpectrum::publish in T4).
 
 ---
 
@@ -125,16 +115,16 @@ The plan's "Slice Sequence + Stop Conditions" section (near the bottom of the pl
 
 | Check | Result |
 |---|---|
-| `git rev-parse HEAD` (IDA) | **f854478** — pushed to origin/master (will push end-of-session) |
-| `git ls-tree HEAD external/OTTO` | 871ed4d2 |
-| `git ls-tree HEAD external/lsfx_tapecolor` | 3dda009 |
-| `git status --short` | clean except `m external/OTTO` (intentional, see §1) + pre-existing `m external/sfizz` |
-| `ctest --test-dir build` | **798 passed, 1 not-run** — baseline preserved + `[ida-master-meter]` 2 new cases added |
+| `git rev-parse HEAD` (IDA) | **4877c66** — pushed to origin/master |
+| `git ls-tree HEAD external/OTTO` | d756bf15 (unchanged this session) |
+| `git ls-tree HEAD external/lsfx_tapecolor` | 0a7189c (unchanged this session) |
+| `git status --short` | clean except pre-existing `m external/sfizz` |
+| `ctest --test-dir build` | **800 passed, 1 not-run** (baseline preserved; +2 from T4's `[ida-master-spectrum]` cases) |
 | `cmake --build build --target IDA` | succeeds; `IDA.app` codesigned |
-| OTTO origin/main HEAD | 871ed4d2 (need to fetch + re-check at next-chat start) |
-| OTTO `[FROM IDA → OTTO]` entries | 6 outstanding (5 restored from prior sessions + T1's new RE-APPLY entry) |
-| OTTO `[FROM OTTO → IDA]` entries | 0 (pruned during 2026-05-28 ack roundtrip) |
+| OTTO origin/main HEAD | d756bf15 (need to fetch + re-check at next-chat start) |
+| OTTO `[FROM IDA → OTTO]` entries | 3 outstanding (EventBus brief + RE-APPLY isPluginMode_ + TAPECOLOR pin-bump ack) |
+| OTTO `[FROM OTTO → IDA]` entries | 0 |
 
 ---
 
-*End of session at 32% context. Spec + plan committed and pushed. T1 + T2 of 14 plan tasks landed via subagent flow. Next chat: continue with T3 per `superpowers:subagent-driven-development` against the plan.*
+*End of session. T3 + T4 (incl. follow-on) landed via subagent-driven flow. 4 of 14 plan tasks complete. T5–T8 + the remaining-S3a push remain. Next chat: resume `superpowers:subagent-driven-development` at T5.*
