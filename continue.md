@@ -1,10 +1,10 @@
-# Session Continuation — T5–T9 landed; T10 awaiting operator GUI verification
+# Session Continuation — T5–T9 landed; T10 partial PASS, two failures point straight at S3b
 
 ## ▶ 0. TL;DR (60 seconds)
 
-Eight IDA commits landed this session (T5 + T5 follow-on, T6 + T6 follow-on, T7, T8 + T8 follow-on, plus the implicit T9 final-push gate). S3a is now **9 of 10 tasks done** (T1–T9). All commits pushed to `origin/master`. T10 is the operator's eyes-on 7-step GUI checklist. After T10 passes, S3b (T11–T14) is the OTTO asset path single-source-of-truth slice.
+Eight IDA commits landed this session (T5 + T5 follow-on, T6 + T6 follow-on, T7, T8 + T8 follow-on, plus the implicit T9 final-push gate). S3a is **9 of 10 tasks done** (T1–T9). All commits pushed to `origin/master`. T10 ran end-of-session and **partially passed** — bar visible everywhere, tempo edit works, OTTO's internal transport row correctly hidden. **Two failures: Play button produces no audio, and the OTTO preset list is empty.** Both root-cause to the same thing: OTTO can't find its assets when embedded in IDA. That's exactly what S3b (T11–T14) is designed to fix.
 
-**Next chat:** the operator either reports T10 results (pass → proceed to S3b; fail → diagnose + fix), OR if T10 has already happened, dispatch T11 implementer via the same `superpowers:subagent-driven-development` skill against the same plan.
+**Next chat:** dispatch T11 (`otto::paths::AssetsRoot` singleton in OTTO) via `superpowers:subagent-driven-development` against `docs/superpowers/plans/2026-05-28-otto-transport-bar-and-asset-path.md` lines 1239-1422. Do NOT diagnose the Play/preset failures separately — they will resolve when T13's `setOverride` call wires `IDA_OTTO_ASSETS_DIR` into OTTO's preset/sampler/IR loaders. After T11+T12+T13 land, re-run T10 along with T14.
 
 ---
 
@@ -79,11 +79,31 @@ If the next-chat session finds OTTO `origin/main` has further advanced AND the i
 
 ## ▶ 4. What's left — 5 tasks across S3a remainder + S3b
 
-### S3a remaining (T10)
+### S3a T10 — operator results (end-of-session 2026-05-28)
 
-| Task | Status | Notes |
-|---|---|---|
-| T10 — S3a operator GUI verification | **AWAITING OPERATOR** | 7-step checklist below. Clean rebuild ran at end-of-session 2026-05-28; `IDA.app` was launched. The operator's checklist results land in the next chat. |
+| Step | Result |
+|---|---|
+| 1. TransportBar visible at top of window | ✅ PASS |
+| 2. Bar visible + meter responsive across all tabs | ✅ PASS (operator said "looks good") |
+| 3. Play button → audible audio | ❌ **FAIL — Play does not produce audio** |
+| 4. Stop button stops OTTO from a non-OTTO tab | not exercised (couldn't start playback) |
+| 5. OTTO tab's internal transport row hidden | ✅ PASS (implied by "looks good") |
+| 6. Tempo edit | ✅ PASS ("I can edit tempo") |
+| 7. Tap-tempo round-trip into OTTO's UI | not explicitly tested |
+| BONUS — preset list shows OTTO factory presets | ❌ **FAIL — "see nothing in presets"** |
+
+**Diagnosis: both failures share a root cause — OTTO can't locate its assets when embedded in IDA.**
+
+OTTO's factory presets, sample folders (LSAD kits, percs, shakers, hands), and IRs all live at `/Users/larryseyer/AudioDevelopment/OTTO/assets/` (gitignored — see `project_otto_assets_out_of_git`). IDA's build already passes `OTTO_ASSETS_DIR` as a CMake variable, but inside OTTO's runtime — `SamplerPresetLoader::findSamplerFolder`, the IR loader, and `PresetPaths::getRoot(Factory)` — there's no path injection point yet. The fallback ladders in those three call sites look in OTTO's own bundled-app locations, none of which exist when OTTO is consumed as a static lib (`OTTOEngine`) inside IDA.
+
+No presets → no patterns loadable → Play has nothing to schedule → no audio. The Play button DOES correctly post `AudioMessage{TransportControl, Play}` to OTTO's audio-message queue (T5's wire is verified by [otto-host-transport-control] tests + the bar's tempo edit works, proving the audio thread is running); OTTO's `processBlock` just has nothing to play.
+
+**S3b T11–T13 is exactly the fix for this.** Plan lines 1239–1600:
+- T11 creates `otto::paths::AssetsRoot` singleton inside OTTO with a `setOverride(juce::File)` API.
+- T12 refactors the three OTTO call sites to consult `AssetsRoot` first, fallback ladder preserved.
+- T13 wires the IDA side: top-level CMake injects `IDA_OTTO_ASSETS_DIR` as a compile-def sourced from the existing `OTTO_ASSETS_DIR`, and `OttoHost::Impl::Impl()` calls `otto::paths::AssetsRoot::setOverride(IDA_OTTO_ASSETS_DIR)` at the top.
+
+After T13 lands, re-run T10's checklist + T14's S3b-specific checks. The Play / preset failures should resolve in the same step.
 
 **T10's 7-step checklist (spec §5.2 verbatim — recite these to the operator):**
 
@@ -124,17 +144,24 @@ At end-of-session 2026-05-28 the inbox had 3 `[FROM IDA → OTTO]` `needs-ack` e
 cd /Users/larryseyer/IDA/external/OTTO && git fetch origin && git log --oneline d756bf15..origin/main
 ```
 
-### Step 3: Branch on T10 status
+### Step 3: Resume directly at T11 (S3b first task)
 
-- **If the operator reports T10 passed**: re-enter `superpowers:subagent-driven-development` at T11 against `docs/superpowers/plans/2026-05-28-otto-transport-bar-and-asset-path.md` (lines 1239-1422). T11 is the first cross-project task of S3b — `otto::paths::AssetsRoot` singleton inside `external/OTTO/`.
+The two T10 failures (Play / presets) are explicitly the gap S3b is designed to close. Do NOT spawn a separate debugging subagent for them — the diagnosis above already names the root cause, and S3b's T11+T12+T13 IS the fix. Skipping ahead would be the wrong move; the correct move is to proceed with the planned sequence.
 
-- **If the operator reports T10 failed on any step**: do NOT proceed to S3b. Diagnose the specific step failure (capture a screenshot, read MainComponent::resized layout, inspect TransportBarHost wiring), land a fix commit, re-launch, re-run the checklist.
+```
+Skill: superpowers:subagent-driven-development
+```
 
-- **If T10 hasn't been attempted yet**: re-launch via `open build/app/IDA_artefacts/Release/IDA.app` (the clean build is already on disk from end-of-session). Hand the operator the 7-step checklist above.
+Dispatch T11 implementer using the verbatim task body at `docs/superpowers/plans/2026-05-28-otto-transport-bar-and-asset-path.md` (Task 11, lines 1239-1422). Key context to pass:
 
-### Step 4: Continue until either S3b is done (then operator verification T14) or a HALT condition fires.
+- IDA HEAD `ebe732c`, pushed to origin/master. (continue.md was the last commit; the actual S3a code work tops out at `07b539e`.)
+- OTTO pin `d756bf15`; OTTO origin/main `4fe66565` (3 commits ahead, net-zero code per §3 — bumping is deliberately deferred until OTTO's iPhone 11 Pro Max work converges OR T13 forces a bump).
+- T11 lives in OTTO source (`external/OTTO/src/otto-core/include/otto/paths/AssetsRoot.h` + cpp + `[assets-root]` Catch2 tests). Per the **Cross-Project Inbox Protocol** in IDA's CLAUDE.md, IDA's Claude has full edit autonomy on OTTO. Commit with `Ida-Origin: <ida-sha-or-pending>` trailer + append a `[FROM IDA → OTTO]` inbox entry describing the new singleton.
+- After T11 commits to OTTO's origin/main, the IDA-side commit that bumps the submodule lands as part of T13 (per the plan's atomic-commit pattern — T11 + T12 land on OTTO first, then T13 bumps + wires IDA-side in one IDA commit).
 
-The plan's "Slice Sequence + Stop Conditions" section (near the bottom of the plan file) lists the HALT triggers. Honor them.
+### Step 4: Continue T12 → T13 → T14 (operator verification) until S3b is done or a HALT condition fires.
+
+The plan's "Slice Sequence + Stop Conditions" section lists the HALT triggers. Honor them.
 
 ---
 
@@ -164,4 +191,4 @@ The plan's "Slice Sequence + Stop Conditions" section (near the bottom of the pl
 
 ---
 
-*End of session. T5–T9 landed via subagent-driven flow (8 commits across 4 tasks + 1 push-gate). 9 of 14 plan tasks complete. T10 awaiting operator. S3b (T11–T14) queued. Next chat: branch on T10 status per §5 Step 3.*
+*End of session. T5–T9 landed via subagent-driven flow (8 commits across 4 tasks + 1 push-gate). 9 of 14 plan tasks complete. T10 partial PASS — Play + presets fail, both root-causing to the missing AssetsRoot injection that S3b is designed to fix. Next chat: dispatch T11 directly per §5 Step 3.*
