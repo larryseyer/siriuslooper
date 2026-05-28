@@ -47,7 +47,8 @@ target_sources(IDA PRIVATE
     FileInputPlayerWindow.mm
     Main.cpp
     MainComponent.cpp
-    OttoPane.cpp)
+    OttoPane.cpp
+    TransportBarHost.cpp)
 
 target_compile_definitions(IDA PRIVATE
     JUCE_WEB_BROWSER=0

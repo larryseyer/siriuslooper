@@ -195,7 +195,15 @@ add_executable(IdaTests
     # message-thread forwards (callable without crashing pre- and post-
     # prepare) and the null-safe / wired master-snapshot accessors that the
     # IDA-wide transport bar consumes.
-    OttoHostTransportControlTests.cpp)
+    OttoHostTransportControlTests.cpp
+    # S3a T6 — ida::TransportBarHost (app/TransportBarHost.cpp) wraps
+    # otto::ui::TransportBar, forwards listener events to OttoHost, mirrors
+    # OTTO transport state into the bar, and ticks meter+spectrum at 30 Hz.
+    # Same pulled-in-source pattern as OttoPaneTests above (app target is
+    # a juce_add_gui_app, not a static library, so app/ TUs aren't
+    # link-reachable from IdaTests).
+    TransportBarHostTests.cpp
+    ${CMAKE_SOURCE_DIR}/app/TransportBarHost.cpp)
 
 # T3a: EqAdapterTests includes "fx/EqAdapter.h" (engine-private header) and
 # EqAdapter.h transitively includes <otto/effects/PlayerEQ.h>. Both paths
