@@ -22,6 +22,7 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 using ida::OttoHost;
 
@@ -68,15 +69,19 @@ TEST_CASE ("OttoHost::snapshotMaster returns the documented sentinel before setM
 
     OttoHost host;
     const auto s = host.snapshotMaster();
-    CHECK (s.leftDb  == -100.0f);
-    CHECK (s.rightDb == -100.0f);
-    CHECK (s.peakDb  == -100.0f);
-    CHECK (s.lufs    == -100.0f);
+    // Sentinel is a hardcoded -100.0f constant in the null-publisher branch,
+    // so exact equality is correct — but -Wfloat-equal can't see through the
+    // forwarder, so WithinAbs with a tight tolerance reads the same and stays
+    // warning-clean (matches the FlacTapeSinkTests.cpp convention).
+    CHECK_THAT (s.leftDb,  Catch::Matchers::WithinAbs (-100.0f, 1.0e-6f));
+    CHECK_THAT (s.rightDb, Catch::Matchers::WithinAbs (-100.0f, 1.0e-6f));
+    CHECK_THAT (s.peakDb,  Catch::Matchers::WithinAbs (-100.0f, 1.0e-6f));
+    CHECK_THAT (s.lufs,    Catch::Matchers::WithinAbs (-100.0f, 1.0e-6f));
 
     CHECK (host.spectrumBinCount() == 0);
-    CHECK (host.spectrumBinDb (0)  == -100.0f);
-    CHECK (host.spectrumBinDb (-1) == -100.0f);
-    CHECK (host.spectrumBinDb (4096) == -100.0f);
+    CHECK_THAT (host.spectrumBinDb (0),    Catch::Matchers::WithinAbs (-100.0f, 1.0e-6f));
+    CHECK_THAT (host.spectrumBinDb (-1),   Catch::Matchers::WithinAbs (-100.0f, 1.0e-6f));
+    CHECK_THAT (host.spectrumBinDb (4096), Catch::Matchers::WithinAbs (-100.0f, 1.0e-6f));
 }
 
 TEST_CASE ("OttoHost::snapshotMaster forwards to the wired MasterMeter publisher",
@@ -116,6 +121,8 @@ TEST_CASE ("OttoHost::snapshotMaster forwards to the wired MasterMeter publisher
     CHECK (host.spectrumBinCount() == spec.numBins());
     // Out-of-range bin always returns the -100 dB floor (per MasterSpectrum
     // contract), regardless of whether the publisher has been driven yet.
-    CHECK (host.spectrumBinDb (-1) == -100.0f);
-    CHECK (host.spectrumBinDb (spec.numBins() + 1024) == -100.0f);
+    CHECK_THAT (host.spectrumBinDb (-1),
+                Catch::Matchers::WithinAbs (-100.0f, 1.0e-6f));
+    CHECK_THAT (host.spectrumBinDb (spec.numBins() + 1024),
+                Catch::Matchers::WithinAbs (-100.0f, 1.0e-6f));
 }
