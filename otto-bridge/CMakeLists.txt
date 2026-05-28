@@ -20,6 +20,14 @@ target_include_directories(IdaOttoBridge PUBLIC include)
 
 target_compile_features(IdaOttoBridge PUBLIC cxx_std_20)
 
+# S3b T13 — bridge must point OTTO's AssetsRoot singleton at the operator's
+# OTTO_ASSETS_DIR before OTTOProcessor's ctor runs. The macro mirrors the
+# Ida::Engine convention (engine/CMakeLists.txt:82, consumed by RvbAdapter.cpp):
+# expose the path as a PRIVATE string-literal compile-def on each target that
+# needs it. OTTO_ASSETS_DIR itself is the top-level cache var (CMakeLists.txt:22).
+target_compile_definitions(IdaOttoBridge PRIVATE
+    IDA_OTTO_ASSETS_DIR="${OTTO_ASSETS_DIR}")
+
 # otto::core gives access to PlayerManager + TransportTracker (header-only
 # in OTTO's public headers; transitively pulls sfizz + Ableton::Link via
 # otto-core's PUBLIC link surface). juce_audio_basics is needed at compile

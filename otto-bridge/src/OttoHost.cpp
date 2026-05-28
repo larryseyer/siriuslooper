@@ -9,6 +9,7 @@
 #include <otto/common/EventBus.h>
 #include <otto/manager/PlayerManager.h>
 #include <otto/mixer/GlobalMixer.h>
+#include <otto/paths/AssetsRoot.h>
 #include <otto/transport/TransportTracker.h>
 
 #include <PluginProcessor.h>   // OTTOProcessor — the juce::AudioProcessor we embed
@@ -57,7 +58,20 @@ struct OttoHost::Impl : public juce::Timer
 {
     Impl()
         : transportRing (kTransportRingCapacity)
-        , processor     (std::make_unique<OTTOProcessor>())
+        , processor     (
+            // S3b T13 — set OTTO's AssetsRoot override BEFORE OTTOProcessor's
+            // ctor runs. The IIFE sequences setOverride strictly before
+            // make_unique<OTTOProcessor>(): the lambda body runs as part of
+            // the `processor` member-init expression, and the lambda's return
+            // value is what initializes `processor`. OTTO's per-platform path
+            // ladders (SamplerPresetLoader::findSamplerFolder,
+            // IRPresetLoader::findAllIRFolders, PresetPaths::getRoot(Factory))
+            // consult AssetsRoot first; without this override they fall back
+            // to OTTO bundle paths that do not exist when running inside IDA.app.
+            []{
+                otto::paths::AssetsRoot::instance().setOverride (juce::File { IDA_OTTO_ASSETS_DIR });
+                return std::make_unique<OTTOProcessor>();
+            }())
     {
         // S2: signal the editor that it is embedded in IDA (a JUCE Standalone
         // host that itself owns the transport bar + routing UI). Set BEFORE
