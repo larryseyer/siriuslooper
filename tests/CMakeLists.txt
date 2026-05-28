@@ -183,7 +183,13 @@ add_executable(IdaTests
     # master mix point. publish() is audio-thread-safe (alloc-free, lock-free);
     # snapshot() is any-thread atomic load. The alloc-count test pins the
     # RT-safety contract.
-    IdaMasterMeterTests.cpp)
+    IdaMasterMeterTests.cpp
+    # S3a T4 — MasterSpectrum: lock-free per-bin FFT magnitude snapshot at the
+    # master mix point. publish() is audio-thread-safe; binDb() is any-thread
+    # atomic load. This TU owns the shared operator-new override + alloc
+    # counters consumed (via `extern`) by IdaMasterMeterTests.cpp — exactly
+    # one TU per IdaTests binary must define the operators (ODR).
+    IdaMasterSpectrumTests.cpp)
 
 # T3a: EqAdapterTests includes "fx/EqAdapter.h" (engine-private header) and
 # EqAdapter.h transitively includes <otto/effects/PlayerEQ.h>. Both paths

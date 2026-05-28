@@ -55,7 +55,14 @@ add_library(IdaEngine STATIC
     # S3a T2 — MasterMeter: lock-free per-block peak/RMS snapshot at the
     # master mix point. publish() is audio-thread-safe (alloc-free, lock-free);
     # snapshot() is any-thread atomic load.
-    src/MasterMeter.cpp)
+    src/MasterMeter.cpp
+    # S3a T4 — MasterSpectrum: lock-free per-bin FFT magnitude snapshot at the
+    # master mix point. publish() is audio-thread-safe (Hann-windowed FFT into
+    # pre-allocated scratch, per-bin std::atomic<float> stores); binDb() is
+    # any-thread atomic load. Mirror of MasterMeter's shape; raw-pointer public
+    # API keeps juce_audio_basics out of the engine's public include surface
+    # (juce_dsp::FFT is forward-declared in the header).
+    src/MasterSpectrum.cpp)
 
 target_include_directories(IdaEngine PUBLIC include)
 

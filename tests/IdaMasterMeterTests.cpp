@@ -5,35 +5,9 @@
 #include <atomic>
 #include <cstdlib>
 
-namespace {
-thread_local std::atomic<size_t> g_allocCount { 0 };
-thread_local bool g_counting { false };
-} // namespace
-
-// Operator-new override is defined in tests/IdaMasterSpectrumTests.cpp
-// (Task 4) as a shared TU for [ida-master-meter] + [ida-master-spectrum]
-// suites. This file declares EXTERN access only — do NOT redefine the
-// operators here (ODR). For this isolated landing (Task 2 lands before
-// Task 4), if the operator-new override block is needed RIGHT NOW for
-// alloc-counting, place it inline below with the understanding that
-// Task 4 will move it to that file:
-
-void* operator new(size_t n) {
-    if (g_counting) g_allocCount.fetch_add(1, std::memory_order_relaxed);
-    void* p = std::malloc(n);
-    if (!p) throw std::bad_alloc{};
-    return p;
-}
-void* operator new[](size_t n) {
-    if (g_counting) g_allocCount.fetch_add(1, std::memory_order_relaxed);
-    void* p = std::malloc(n);
-    if (!p) throw std::bad_alloc{};
-    return p;
-}
-void operator delete(void* p) noexcept { std::free(p); }
-void operator delete[](void* p) noexcept { std::free(p); }
-void operator delete(void* p, size_t) noexcept { std::free(p); }
-void operator delete[](void* p, size_t) noexcept { std::free(p); }
+// Operator-new override + alloc counters live in IdaMasterSpectrumTests.cpp (shared TU).
+extern thread_local std::atomic<size_t> g_allocCount;
+extern thread_local bool g_counting;
 
 TEST_CASE("MasterMeter publishes peak from a known signal", "[ida-master-meter]") {
     ida::MasterMeter meter;

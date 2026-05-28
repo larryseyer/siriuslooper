@@ -111,6 +111,12 @@ void AudioCallback::audioDeviceIOCallbackWithContext (
         masterMeter_.publish (outputChannelData[0],
                               outputChannelData[1],
                               numSamples);
+        // S3a T4 — also publish the master FFT spectrum from the same
+        // finalized stereo master. Shares the guard with masterMeter_'s
+        // publish; both are RT-safe (atomic stores, pre-allocated scratch).
+        masterSpectrum_.publish (outputChannelData[0],
+                                 outputChannelData[1],
+                                 numSamples);
     }
 
     // Step 4: sample-clock to LMC (white paper §4.4). A single fetch_add +
@@ -161,6 +167,12 @@ void AudioCallback::audioDeviceAboutToStart (juce::AudioIODevice* device)
         // size. Runs on the message thread (JUCE's device-setup callback),
         // before any audio block reaches the meter's `publish()`.
         masterMeter_.prepare (sampleRate, maxBlockSize);
+
+        // S3a T4 — prepare the master spectrum (256 bins → 512-point FFT).
+        // 256 bins matches the plan's hardcoded fast-default; if a UI ever
+        // needs finer resolution it lands as a follow-on. Also message-
+        // thread; allocates window + scratch + atomic bin vector.
+        masterSpectrum_.prepare (sampleRate, maxBlockSize, 256);
     } else {
         currentSampleRate_.store (0.0, std::memory_order_release);
         currentBufferSize_.store (0,   std::memory_order_release);

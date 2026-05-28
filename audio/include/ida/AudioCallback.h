@@ -2,6 +2,7 @@
 
 #include "ida/EngineConfig.h"
 #include "ida/MasterMeter.h"
+#include "ida/MasterSpectrum.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
 
@@ -186,6 +187,14 @@ public:
     /// the audio thread is required.
     const ida::MasterMeter& getMasterMeter() const noexcept { return masterMeter_; }
 
+    /// S3a T4 — read-only access to the master mix point's FFT-spectrum
+    /// snapshot publisher. Same lifecycle as `getMasterMeter()`: value member,
+    /// prepared in `audioDeviceAboutToStart`, `publish()`'d once per audio
+    /// block from the finalized stereo master, read by the message thread via
+    /// `binDb(int)`. Per-bin reads are atomic loads — no synchronization with
+    /// the audio thread required.
+    const ida::MasterSpectrum& getMasterSpectrum() const noexcept { return masterSpectrum_; }
+
 private:
     EngineConfig config_;
     Lmc*         lmc_ { nullptr };
@@ -214,6 +223,13 @@ private:
     // after OutputMixer has written the finalized master stereo into
     // outputChannelData[0,1]. `publish()` is RT-safe (atomic store, no alloc).
     MasterMeter masterMeter_;
+
+    // S3a T4 — value-member FFT-spectrum publisher. Same lifecycle as
+    // masterMeter_: prepared in audioDeviceAboutToStart, published once per
+    // audio block under the same numOutputChannels >= 2 guard, read by the
+    // message thread via getMasterSpectrum().binDb(int). RT-safe per the
+    // RT_SAFETY_CONTRACT.md audit row.
+    MasterSpectrum masterSpectrum_;
 };
 
 } // namespace ida
