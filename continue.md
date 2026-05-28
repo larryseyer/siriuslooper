@@ -1,10 +1,12 @@
-# Session Continuation — T5–T9 landed; T10 partial PASS, two failures point straight at S3b
+# Session Continuation — S3b landed (AssetsRoot wire works); T14 surfaced the real Play blocker — OTTO audio-pump architectural gap
 
 ## ▶ 0. TL;DR (60 seconds)
 
-Eight IDA commits landed this session (T5 + T5 follow-on, T6 + T6 follow-on, T7, T8 + T8 follow-on, plus the implicit T9 final-push gate). S3a is **9 of 10 tasks done** (T1–T9). All commits pushed to `origin/master`. T10 ran end-of-session and **partially passed** — bar visible everywhere, tempo edit works, OTTO's internal transport row correctly hidden. **Two failures: Play button produces no audio, and the OTTO preset list is empty.** Both root-cause to the same thing: OTTO can't find its assets when embedded in IDA. That's exactly what S3b (T11–T14) is designed to fix.
+S3b (T11–T14) shipped this session. The AssetsRoot wire works end-to-end: IDA's OTTO tab now shows real sample-based kits in the picker (LSAD pop, LSAD rock, Percs, Shakers, Hands) — pre-S3b the picker was empty. Five OTTO commits + one IDA atomic commit pushed.
 
-**Next chat:** dispatch T11 (`otto::paths::AssetsRoot` singleton in OTTO) via `superpowers:subagent-driven-development` against `docs/superpowers/plans/2026-05-28-otto-transport-bar-and-asset-path.md` lines 1239-1422. Do NOT diagnose the Play/preset failures separately — they will resolve when T13's `setOverride` call wires `IDA_OTTO_ASSETS_DIR` into OTTO's preset/sampler/IR loaders. After T11+T12+T13 land, re-run T10 along with T14.
+**T14 surfaced what the prior session's T10 diagnosis missed.** The actual reason Play doesn't produce audio is architectural and pre-existing, NOT an asset-bundle issue: IDA's `OttoHost::renderBlock` only calls `processGlobalMixer` (channel/bus sum), never `processBlock`. So the SPSC AudioMessage queue where Play/Stop/TempoChange land is **never drained**; even if it drained, conductor advance + MIDI dispatch + sfizz rendering all live inside processBlock too — also never run. Tempo edit "appearing to work" at T10 was via OTTO's internal UI in the OTTO tab, NOT the bar. Operator confirmed S3b's wire is correct (kits visible) and chose to defer the pump-fix to its own session.
+
+**Next chat:** brainstorm + design session on the IDA-side OTTO audio pump. Read `external/OTTO/src/otto-plugin/PluginProcessor.cpp::processBlock` (line 665+) end-to-end, then decide between (a) call processor->processBlock directly and intercept its output for IDA's mixer routing, (b) ask OTTO for a non-rendering `drainAudioThreadState(numSamples)` API that splits housekeeping from rendering, or (c) hybrid. todo.md entry dated 2026-05-28 carries the full diagnosis. Do NOT just call processBlock without thinking — the original S2 design comment at `OttoHost.cpp:84-95` and `:230-238` explicitly avoided it.
 
 ---
 
@@ -12,164 +14,127 @@ Eight IDA commits landed this session (T5 + T5 follow-on, T6 + T6 follow-on, T7,
 
 | Thing | SHA | Note |
 |---|---|---|
-| IDA HEAD (origin/master) | **07b539e** | T8 follow-on: kTransportBarDesktopHeightPx + captureBanner_ bias |
-| OTTO HEAD (IDA's pin) | **d756bf15** | unchanged this session |
-| OTTO HEAD (origin/main, upstream) | **4fe66565** | 3 commits ahead: feat 1a4dde96 + revert 403388e9 (net-zero) + docs 4fe66565 — see §3 below |
+| IDA HEAD (origin/master) | **d7338de** | T13 atomic: submodule bump + IDA_OTTO_ASSETS_DIR compile-def + setOverride IIFE |
+| OTTO HEAD (IDA's pin) | **4130d7a5** | T11 fixup top: factoryPresetsFolder returns <override>/Presets/Factory |
+| OTTO HEAD (origin/main, upstream) | **4130d7a5** | equals IDA's pin |
 | lsfx_tapecolor (IDA's pin) | **0a7189c** | unchanged this session |
 
-Working tree at end of session: `m external/sfizz` only (pre-existing drift, leave alone).
+Working tree end-of-session: `m external/sfizz` only (pre-existing drift; the existing `M src/Config.h.in` + `M src/sfizz/Config.h` is the 64-channel patch the build applies on every configure — leave alone).
 
 ---
 
 ## ▶ 2. What landed this session, in order
 
-Every task ran through `superpowers:subagent-driven-development` (implementer → spec reviewer → code-quality reviewer → land follow-on fixes → mark complete).
+Every task ran through `superpowers:subagent-driven-development` (implementer → spec reviewer → code-quality reviewer → land follow-on fixes → mark complete). The full chain is FIVE OTTO commits + ONE IDA atomic commit.
 
-### T5 — OttoHost transport + master snapshot accessors
-- `0c87ba6 feat: OttoHost::play/stop/setTempo/tapTempo + snapshotMaster + spectrum accessors (S3a)`
-- `88ea2ae fix: T5 test — WithinAbs sentinel comparisons (silence -Wfloat-equal)`
+### T11 — `otto::paths::AssetsRoot` singleton (OTTO side)
+- OTTO `803f952f` — feat: otto::paths::AssetsRoot singleton + Catch2 [assets-root] tests + CMake wiring via SharedPluginSources.cmake. Header includes `<juce_core/juce_core.h>`, `<mutex>`, `<optional>`; class exposes `instance()`, `setOverride(juce::File)`, `get()`, `samplerFolder()`, `irFolder()`, `factoryPresetsFolder()`. Tests pass 2/2 via scratch harness (OTTO's top-level configure is pre-existingly broken — see §6).
+- OTTO `505d9c5a` — fix: T11 follow-on. Code-quality review flagged the threading contract was internally inconsistent (mutex + unsynchronized reads on Apple Silicon's weaker memory model). Dropped the mutex, narrowed docs to "single-call-at-init / NOT audio-thread safe (juce::File::getChildFile heap-allocates via juce::String concat)." Test refactored into one TEST_CASE / two SECTIONs for case independence.
 
-Forwards `play/stop` to OTTO's `AudioMessage{TransportControl, Play/Stop}` queue via `OTTOProcessor::sendToAudioThread`. Forwards `setTempo` to `AudioMessage{TempoChange, bpm}`. `tapTempo` is an explicit no-op matching `OTTOEditor::tapTempo()`'s upstream stub. `snapshotMaster()` returns a plain-POD `{leftDb,rightDb,peakDb,lufs}` mirroring `MasterMeter::Snapshot` — the public header stays JUCE-free. `setMasterPublishers(const MasterMeter&, const MasterSpectrum&)` stashes non-owning const-pointers in `Impl`. Null-safe sentinels (`-100`/`0`) before wiring.
+### T12 — 3 OTTO call-site refactors (OTTO side)
+- OTTO `54397871` — feat: refactor 3 path-resolution sites to consult AssetsRoot first. Sites: `SamplerPresetLoader::findSamplerFolder` (early-return on override-set + isDirectory), `IRPresetLoader::findAllIRFolders` (PREPEND override candidate to the array — existing ladder appends after), `PresetPaths::getRoot(StorageTier::Factory)` (early-return). Each `#include "otto/paths/AssetsRoot.h"` placed inside the existing `JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED` gate (the plan said "top of file" but the existing class bodies live inside the gate — gate-internal placement is architecturally correct). Combined T11+T12 inbox entry appended (`[FROM IDA → OTTO]`, `needs-ack`) with the operator-asset-layout note.
 
-### T6 — ida::TransportBarHost wrapper Component
-- `102b68c feat: ida::TransportBarHost wraps otto::ui::TransportBar with listener+timer wiring (S3a T6)`
-- `ced414d fix: T6 — kRefreshRateHz constant, dynamic spectrum configure, getPreparedSampleRate, restore-previous L&F in test fixture`
+### T11 fixup — `factoryPresetsFolder()` returns `<override>/Presets/Factory` (OTTO side)
+- OTTO `4130d7a5` — fix: code-quality review of T12 flagged the bundle-vs-override asymmetry. Bundle: `getRoot(Factory)` returns `<app>/Contents/Resources/Presets/Factory` (2-level); pre-fixup AssetsRoot returned `<override>/Presets` (1-level). With Presets/ + Sampler/ + IR/ already mirroring bundle layout in the operator's assets dir, factoryPresetsFolder() should mirror the bundle too — so that the installer can flat-copy from bundled OTTO.app's `Contents/Resources/` into the operator's assets dir. One-line cpp change + test SECTION 1 assertion + per-accessor doc tweak. Tests pass 1 case / 2 sections / 9 assertions.
 
-`app/TransportBarHost.{h,cpp}` — `juce::Component` + `TransportBarListener` + `IOttoTransportListener` + `juce::Timer`. The follow-on adds `OttoHost::getPreparedSampleRate()` (so the bar's spectrum frequency mapping uses the real device sample rate, not a hardcoded 48 kHz), names the magic `30` Hz timer rate as `kRefreshRateHz`, deletes the ctor's `configureSpectrum(0, ...)` no-op call and replaces it with a bin-count-change detector in `timerCallback` (re-configures the bar once `setMasterPublishers` lands and `spectrumBinCount` goes non-zero). Test fixture `ScopedJuceTestEnv` now snapshots and restores the previous default LookAndFeel rather than unconditionally setting it to nullptr.
+### T13 — IDA atomic wire (IDA side)
+- IDA `d7338de` — feat: IDA setOverride on otto::paths::AssetsRoot at OttoHost init; IDA_OTTO_ASSETS_DIR compile-def from OTTO_ASSETS_DIR (S3b). Three changes in one atomic commit: (1) bumped `external/OTTO` from `d756bf15` to `4130d7a5` (picks up the four S3b OTTO commits + 3 net-zero unrelated drift: TAPECOLOR feat `1a4dde96` + its revert `403388e9` + docs `4fe66565`); (2) added `target_compile_definitions(IdaOttoBridge PRIVATE IDA_OTTO_ASSETS_DIR="${OTTO_ASSETS_DIR}")` to `otto-bridge/CMakeLists.txt` — mirrors the existing PRIVATE def on `Ida::Engine` (`engine/CMakeLists.txt:82`); (3) restructured `OttoHost::Impl::Impl()` to use an IIFE wrap so `otto::paths::AssetsRoot::instance().setOverride(juce::File{IDA_OTTO_ASSETS_DIR})` runs strictly before `make_unique<OTTOProcessor>()` (sequenced as part of the `processor` member-init expression). Baseline `[otto-host-render]`/`[otto-host-transport]`/`[otto-host-processor-access]` tests pass: 16 cases / 261 assertions. Full ctest: **808 passed / 1 not-run** (the documented separately-built `MainComponentPluginEditorTests`).
 
-### T7 — [otto-pane-no-internal-transport] regression pin
-- `3baed99 test: [otto-pane-no-internal-transport] regression pin for S3a (S3a)`
-
-Single Catch2 test that pins OTTO-side T1's contract (OTTOEditor's internal `transportBar_` hidden when embedded in IDA). The plan's literal `isVisible()`-only walk produced a false positive on OTTO's hidden `layoutManager_` legacy subtree (which owns its own `TransportBar` whose own visible-flag is true, despite its grandparent being hidden). Implementer threaded an `ancestorsVisible` flag down the recursion — a node is considered paintable only if its visible-flag AND every ancestor's visible-flag up to the editor are true. Spec reviewer approved the deviation. Regression catch preserved: a revert of OTTO's `isPluginMode_` OR would still make this test fail.
-
-### T8 — MainComponent integration
-- `1fb037d feat: MainComponent mounts ida::TransportBarHost above tabs_ (S3a)`
-- `07b539e fix: T8 — name 88px as kTransportBarDesktopHeightPx + bias captureBanner_ below it`
-
-26-line surgical diff at `app/MainComponent.cpp:5669` (ctor wiring) + `:5806` (resized carve). Member declaration order is correct: `audioCallback_(366) < ottoHost_(374) < ottoPane_(459) < transportBarHost_(464)` → LIFO unwind tears down the bar first while OttoHost is still alive. The wire call is literal: `ottoHost_->setMasterPublishers(audioCallback_->getMasterMeter(), audioCallback_->getMasterSpectrum())`. The follow-on names the 88 px constant and biases `captureBanner_` Y from `40` to `kTransportBarDesktopHeightPx + 40 = 128` so the banner doesn't z-collide with the new bar when an arm-failure / file-input-failure event fires.
-
-### T9 — Atomic push gate
-No new commit — every per-task commit was pushed incrementally as it landed. Final ctest at `07b539e`: **808 passed, 1 not-run** (the documented `MainComponentPluginEditorTests_NOT_BUILT` separately-run editor exe). The optional T1 inbox SHA-backfill was declined per the plan's note that operator-pattern (`Ida-Origin: pending` + durable `git log --grep` record) is acceptable. The optional OTTO `d756bf15 → 4fe66565` bump was declined too — see §3.
-
-### Important design notes carried forward
-
-- **TransportBarHost::timerCallback handles the deferred-publisher-prepare path correctly.** `audioCallback_->prepare()` is driven by JUCE's `audioDeviceAboutToStart` callback, not synchronously by MainComponent's ctor. At the moment `setMasterPublishers` fires inside the ctor, MasterMeter/MasterSpectrum report 0 bins. OttoHost stashes the const-references safely; the bar's 30 Hz timer detects the first non-zero `spectrumBinCount()` and calls `configureSpectrum(currentBinCount, host_.getPreparedSampleRate())`. This is the designed behavior — no further wiring needed.
-
-- **Reference-stability invariant for `setMasterPublishers`.** `MasterMeter::prepare` and `MasterSpectrum::prepare` mutate in place — no relocation, no swap, no move. So the raw const-pointers OttoHost holds remain valid across any number of device/sample-rate changes. The publishers are value-members of AudioCallback, which is declared FIRST in MainComponent and therefore destructed LAST (after OttoHost), so the references never go dangling.
-
-- **`ScopedJuceTestEnv` duplication.** It now lives byte-identical in two test files (`tests/TransportBarHostTests.cpp` and `tests/OttoPaneNoInternalTransportTests.cpp`). Both are anonymous-namespaced so no ODR conflict. Worth lifting to `tests/ScopedJuceTestEnv.h` the next time a third caller needs it — "rule of three minus one" sweet spot. Not blocking.
-
----
-
-## ▶ 3. OTTO upstream state — why we didn't bump
-
-OTTO `origin/main` advanced **d756bf15 → 4fe66565** during this session (3 commits):
-
-- `1a4dde96` — feat: TAPECOLOR mode-aware engagement + platform-aware quality defaults (closes the queued next-pass work from IDA's 2026-05-28 ACK + PIN-BUMP inbox entry).
-- `403388e9` — REVERT of `1a4dde96`. iPhone 11 Pro Max distortion is still unresolved on OTTO's side; OTTO's next session must clean-rebuild + deploy + bisect.
-- `4fe66565` — docs: continue.md handoff describing the unresolved state.
-
-**Net code change: zero** (revert nullifies the feat). The IDA-side wire to TAPECOLOR is at `external/lsfx_tapecolor` (already pinned at `0a7189c` — the true short-circuit DSP fix), which is independent of OTTO's mode-aware engagement work. Bumping IDA's OTTO pin to `4fe66565` would pick up a benign docs commit + an in-flight unresolved investigation state. Leaving the pin at `d756bf15` until OTTO converges on iPhone 11 Pro Max is the cleaner posture.
-
-**Inbox state at the pin:** 3 `[FROM IDA → OTTO]` `needs-ack` entries (EventBus brief, RE-APPLY isPluginMode_, TAPECOLOR pin-bump ack). 0 `[FROM OTTO → IDA]` entries. Nothing addressed to IDA to ack/prune.
-
-If the next-chat session finds OTTO `origin/main` has further advanced AND the iPhone 11 Pro Max distortion is resolved AND the EventBus + isPluginMode_ entries have been acked, then bump and prune. Otherwise leave the pin alone.
-
----
-
-## ▶ 4. What's left — 5 tasks across S3a remainder + S3b
-
-### S3a T10 — operator results (end-of-session 2026-05-28)
+### T14 — Operator GUI verification (operator)
+Performed end-of-session. Results:
 
 | Step | Result |
 |---|---|
-| 1. TransportBar visible at top of window | ✅ PASS |
-| 2. Bar visible + meter responsive across all tabs | ✅ PASS (operator said "looks good") |
-| 3. Play button → audible audio | ❌ **FAIL — Play does not produce audio** |
-| 4. Stop button stops OTTO from a non-OTTO tab | not exercised (couldn't start playback) |
-| 5. OTTO tab's internal transport row hidden | ✅ PASS (implied by "looks good") |
-| 6. Tempo edit | ✅ PASS ("I can edit tempo") |
-| 7. Tap-tempo round-trip into OTTO's UI | not explicitly tested |
-| BONUS — preset list shows OTTO factory presets | ❌ **FAIL — "see nothing in presets"** |
+| 1. Bar visible across all tabs | ✅ PASS (same as T10) |
+| 2. OTTO kit picker shows real sample-based kits (LSAD, Percs, Shakers, Hands) | ✅ PASS — **S3b's actual win** |
+| 3. Play in the bar produces audible audio | ❌ FAIL — and not for the reason T10 thought |
+| 4. Factory preset list populated | not exercised (operator's assets dir has no top-level `Presets/Factory/`; bundle-copy would populate it, but T3 blocker landed first) |
 
-**Diagnosis: both failures share a root cause — OTTO can't locate its assets when embedded in IDA.**
+**Operator-confirmed at end of session: "everything looks right it just does not play."** Step 2 confirms AssetsRoot end-to-end. Steps 3+4 surface the architectural gap — see §3.
 
-OTTO's factory presets, sample folders (LSAD kits, percs, shakers, hands), and IRs all live at `/Users/larryseyer/AudioDevelopment/OTTO/assets/` (gitignored — see `project_otto_assets_out_of_git`). IDA's build already passes `OTTO_ASSETS_DIR` as a CMake variable, but inside OTTO's runtime — `SamplerPresetLoader::findSamplerFolder`, the IR loader, and `PresetPaths::getRoot(Factory)` — there's no path injection point yet. The fallback ladders in those three call sites look in OTTO's own bundled-app locations, none of which exist when OTTO is consumed as a static lib (`OTTOEngine`) inside IDA.
+---
 
-No presets → no patterns loadable → Play has nothing to schedule → no audio. The Play button DOES correctly post `AudioMessage{TransportControl, Play}` to OTTO's audio-message queue (T5's wire is verified by [otto-host-transport-control] tests + the bar's tempo edit works, proving the audio thread is running); OTTO's `processBlock` just has nothing to play.
+## ▶ 3. The real T10/T14 Play blocker — IDA's OTTO audio pump skips processBlock
 
-**S3b T11–T13 is exactly the fix for this.** Plan lines 1239–1600:
-- T11 creates `otto::paths::AssetsRoot` singleton inside OTTO with a `setOverride(juce::File)` API.
-- T12 refactors the three OTTO call sites to consult `AssetsRoot` first, fallback ladder preserved.
-- T13 wires the IDA side: top-level CMake injects `IDA_OTTO_ASSETS_DIR` as a compile-def sourced from the existing `OTTO_ASSETS_DIR`, and `OttoHost::Impl::Impl()` calls `otto::paths::AssetsRoot::setOverride(IDA_OTTO_ASSETS_DIR)` at the top.
+Prior session's continue.md §4 diagnosed Step 3 + BONUS as "OTTO can't find its assets → no presets → no patterns → Play has nothing to schedule." S3b was designed to be that fix. T14 proved the diagnosis WRONG: even with AssetsRoot finding samples (Step 2 PASS), Play still doesn't produce audio.
 
-After T13 lands, re-run T10's checklist + T14's S3b-specific checks. The Play / preset failures should resolve in the same step.
+### Trace
 
-**T10's 7-step checklist (spec §5.2 verbatim — recite these to the operator):**
+1. Bar's `playPauseClicked()` (app/TransportBarHost.cpp:42-50) calls `host_.play()` based on the bar's current visible transport state.
+2. `OttoHost::play()` (otto-bridge/src/OttoHost.cpp:288-294) posts an `AudioMessage{TransportControl, Play}` via `processor->sendToAudioThread(msg)` into OTTO's lock-free SPSC `uiToAudioQueue_`.
+3. `OTTOProcessor::processAudioMessages()` (external/OTTO/src/otto-plugin/PluginProcessor.cpp:1923) drains the queue and routes to `handleAudioMessage(...)` which mutates `transportTracker_`, `conductor_`, `songTimelinePlayer_` based on the command.
+4. `processAudioMessages()` is called from EXACTLY ONE site: line 673, at the top of `OTTOProcessor::processBlock(buffer, midi)`.
+5. IDA's `audio/src/AudioCallback.cpp:87` calls `ottoRenderSource_->renderBlock(numSamples)`.
+6. `OttoHost::renderBlock(numSamples)` (otto-bridge/src/OttoHost.cpp:234-240) calls `processor->getPlayerManager().processGlobalMixer(numSamples)` ONLY — the channel/bus sum + meter stage. **It does NOT call `processor->processBlock`.** The design comment at `OttoHost.cpp:84-95` and `:230-238` explicitly documents this choice.
+7. → `processAudioMessages` never runs → the queue is never drained → every Play/Stop/TempoChange post is permanently buffered.
+8. Worse: even if drained, `updateTransportState` (which would broadcast TransportEvent back to the bar's listener) also runs only inside processBlock. So even if we drained, the bar wouldn't see OTTO's state flip.
+9. Worst: even if both ran, `conductor_.play()` advances the song timeline → MIDI events get dispatched to Players → players drive sfizz to render samples — but **all of that chain runs inside processBlock too** (MIDI dispatch via `playerManager_.pinEnginesForBuffer()` + per-player MIDI/audio render). `processGlobalMixer` only sums what's already in the channel buffers; with no MIDI dispatch upstream, the channel buffers are zero, the sum is zero, output is silent.
 
-1. Launch `IDA.app` (Desktop alias `IDA` already points at `build/app/IDA_artefacts/Release/IDA.app`).
-2. Verify the **TransportBar is visible at the top of the window**.
-3. Switch tabs (**Performance / Preparation / In Mix / Out Mix / OTTO / Tapes / Plugins / Video / Settings**). Verify the bar stays visible on every tab and meter is responsive.
-4. Click the bar's **Play** button. Verify audio is audible through the master (M-OTTO-4 audibility regression check).
-5. Switch to a non-OTTO tab during playback. Verify the bar's **Stop** button still stops OTTO.
-6. Verify the OTTO tab **no longer shows OTTO's internal transport row** (the player rack starts immediately below the tab strip).
-7. **Tap the tempo button** repeatedly. Verify BPM updates in the bar AND inside OTTO's UI (sync round-trip).
+### Why the in-tree tests pass despite the gap
 
-If any step fails, do NOT proceed to S3b. Capture a screenshot, diagnose, land a fix commit, re-verify before unlocking T11.
+`[otto-host-transport-control]` (tests/OttoHostTransportControlTests.cpp:37-65): "transport-control methods are callable before/after prepare without crashing." It calls `host.play()` and `host.stop()` and asserts NO CRASH. It does NOT assert that OTTO actually changed transport state, did not assert any audio output. Smoke test of the wire, not the round-trip.
 
-### S3b remaining (T11–T14)
+That's why T5/T6/T7/T8/T9 reviews kept landing green while the system-level capability never worked.
 
-| Task | Status | Notes |
-|---|---|---|
-| T11 — `otto::paths::AssetsRoot` singleton | pending | Cross-project. New header + cpp + `[assets-root]` tests inside `external/OTTO/`. Plan lines 1239-1422. |
-| T12 — Refactor 3 OTTO call sites | pending | Cross-project. SamplerPresetLoader::findSamplerFolder, IR loader, PresetPaths::getRoot(Factory) — consult AssetsRoot first, fallback ladder preserved. Plan lines 1423-1517. |
-| T13 — IDA wiring | pending | Bump OTTO submodule + new `IDA_OTTO_ASSETS_DIR` CMake compile-def (sourced from existing top-level `OTTO_ASSETS_DIR`) + `setOverride` call at top of `OttoHost::Impl::Impl()`. Plan lines 1518-1600. |
-| T14 — S3b operator GUI verification | OPERATOR | 4-step checklist. LSAD kits + percs/shakers/hands load; factory presets route. Plan lines 1601-1655. |
+### Why the prior session's diagnosis missed it
+
+The prior session's continue.md confidently attributed T10 Step 3 + BONUS to AssetsRoot (samples-not-found → presets-not-loaded → patterns-not-loaded → Play silent). That was a plausible-sounding chain, and AssetsRoot WAS broken. But "no samples" wasn't the only problem — Play was independently broken at a deeper layer. Fixing AssetsRoot revealed the second blocker that had been hidden behind the first.
+
+The fix for Play is NOT in S3b's scope and needs its own design pass.
+
+---
+
+## ▶ 4. Cross-project state — OTTO inbox
+
+OTTO `origin/main` = `4130d7a5` = IDA's pin (no drift). Three outstanding `[FROM IDA → OTTO]` entries — all `needs-ack`, all pre-existing (none added this session except the combined T11+T12 entry):
+
+1. **EventBus brief** (older) — convert `EventBus::publish` to lock-free + alloc-free. Acceptance criteria + full design spec. Independent of S3b.
+2. **RE-APPLY isPluginMode_** (2026-05-28 from prior session) — re-apply the OR `|| proc.isEmbeddedInHost()` to OTTOEditor's `isPluginMode_` initializer. Supports IDA's option-B TransportBar mount. Independent of S3b.
+3. **FEAT: AssetsRoot singleton + 3 call-site refactors (S3b)** (2026-05-28, this session) — combined T11+T12+T11-fixup entry. References OTTO commits `803f952f`, `505d9c5a`, `54397871`, `4130d7a5`. Documents the threading contract, the OTTO-standalone byte-identical guarantee, and the operator-asset-layout note (Presets/Factory/ missing on operator's disk — populating is operator-domain).
+
+`[FROM OTTO → IDA]`: 0 outstanding.
+
+Audit trail: `git -C external/OTTO log --grep='Ida-Origin'` surfaces every IDA-originated OTTO commit forever (the `Ida-Origin: pending` literal trailer is the convention since the IDA-side SHA chickens-and-eggs at OTTO commit time).
 
 ---
 
 ## ▶ 5. Resume protocol for next chat
 
-### Step 1: Read this file (you're here).
+### Step 1: Read this file.
 
-### Step 2: Read the inbox + check for new OTTO→IDA entries
+### Step 2: Inbox check + OTTO origin/main check
 
 ```bash
 cat /Users/larryseyer/IDA/external/OTTO/CROSS_PROJECT_INBOX.md
+git -C /Users/larryseyer/IDA/external/OTTO fetch origin && \
+  git -C /Users/larryseyer/IDA/external/OTTO log --oneline 4130d7a5..origin/main
 ```
 
-At end-of-session 2026-05-28 the inbox had 3 `[FROM IDA → OTTO]` `needs-ack` entries and 0 `[FROM OTTO → IDA]` entries. If a new `[FROM OTTO → IDA]` entry has landed on OTTO's `origin/main` between sessions, ack + prune per the protocol BEFORE resuming task execution. Check OTTO's `origin/main` against the pin `d756bf15` (see §3 for why this pin is held):
+If a new `[FROM OTTO → IDA]` entry has landed between sessions, ack + prune per the protocol BEFORE starting the brainstorm.
 
-```bash
-cd /Users/larryseyer/IDA/external/OTTO && git fetch origin && git log --oneline d756bf15..origin/main
-```
+### Step 3: Brainstorm the OTTO audio-pump design
 
-### Step 3: Resume directly at T11 (S3b first task)
+The blocker is well-defined (§3 + the 2026-05-28 todo.md entry). Use `superpowers:brainstorming` to explore three branches:
 
-The two T10 failures (Play / presets) are explicitly the gap S3b is designed to close. Do NOT spawn a separate debugging subagent for them — the diagnosis above already names the root cause, and S3b's T11+T12+T13 IS the fix. Skipping ahead would be the wrong move; the correct move is to proceed with the planned sequence.
+- **(a) IDA calls processor->processBlock directly.** Trade-off: OTTO does its own master rendering (master bus + master meter + master output), which competes with IDA's Output Mixer model. Mitigation options: (i) pass an empty/discard buffer to processBlock and read OTTO's pre-master channel buffers via the existing accessors, (ii) read OTTO's POST-master output and route THAT into IDA's mixer (loses per-channel routing). Code shape: ~5-10 LOC change in renderBlock.
+- **(b) OTTO grows `drainAudioThreadState(numSamples)` public API.** Splits processBlock's housekeeping (drain messages, updateTransportState, pinEngines, MIDI dispatch, per-player render) from the master-bus rendering. IDA calls drain + processGlobalMixer; OTTO standalone calls drain + processGlobalMixer + master-bus path inside its existing processBlock. Cross-project work; cleaner long-term but requires OTTO refactor. Code shape: ~30-60 LOC in OTTOProcessor + ~3 LOC in IDA.
+- **(c) Hybrid.** IDA calls a thin wrapper that does steps 1-N of processBlock (everything except the master-bus stage). Could be a private OTTO `processBlockExceptMaster(buffer, midi)` or a public-facing equivalent. Combines (a)'s implementation simplicity with (b)'s architectural cleanliness.
 
-```
-Skill: superpowers:subagent-driven-development
-```
+The brainstorm needs to read `external/OTTO/src/otto-plugin/PluginProcessor.cpp::processBlock` end-to-end (line 665 to ~line 900) and map each step to "must run in IDA" / "must NOT run in IDA (conflicts with IDA's master)" / "could go either way." Then design accordingly.
 
-Dispatch T11 implementer using the verbatim task body at `docs/superpowers/plans/2026-05-28-otto-transport-bar-and-asset-path.md` (Task 11, lines 1239-1422). Key context to pass:
+This is genuinely architectural — don't skip the brainstorm, don't just call processBlock.
 
-- IDA HEAD `ebe732c`, pushed to origin/master. (continue.md was the last commit; the actual S3a code work tops out at `07b539e`.)
-- OTTO pin `d756bf15`; OTTO origin/main `4fe66565` (3 commits ahead, net-zero code per §3 — bumping is deliberately deferred until OTTO's iPhone 11 Pro Max work converges OR T13 forces a bump).
-- T11 lives in OTTO source (`external/OTTO/src/otto-core/include/otto/paths/AssetsRoot.h` + cpp + `[assets-root]` Catch2 tests). Per the **Cross-Project Inbox Protocol** in IDA's CLAUDE.md, IDA's Claude has full edit autonomy on OTTO. Commit with `Ida-Origin: <ida-sha-or-pending>` trailer + append a `[FROM IDA → OTTO]` inbox entry describing the new singleton.
-- After T11 commits to OTTO's origin/main, the IDA-side commit that bumps the submodule lands as part of T13 (per the plan's atomic-commit pattern — T11 + T12 land on OTTO first, then T13 bumps + wires IDA-side in one IDA commit).
+### Step 4: Spec → plan → execute via subagent-driven-development
 
-### Step 4: Continue T12 → T13 → T14 (operator verification) until S3b is done or a HALT condition fires.
-
-The plan's "Slice Sequence + Stop Conditions" section lists the HALT triggers. Honor them.
+Standard flow once the brainstorm settles.
 
 ---
 
-## ▶ 6. Active artifacts
+## ▶ 6. Known issues / non-blocking artifacts
 
-- **In-tree spec:** `docs/superpowers/specs/2026-05-28-otto-transport-bar-and-asset-path-design.md`
-- **In-tree plan:** `docs/superpowers/plans/2026-05-28-otto-transport-bar-and-asset-path.md`
-- **RT contract:** `docs/RT_SAFETY_CONTRACT.md` (gained two rows from S3a — MasterMeter::publish in T2, MasterSpectrum::publish in T4).
+- **OTTO standalone top-level CMake configure is pre-existingly broken** — missing submodules (CLAP, Catch2, clap-juce-extensions — not in `.gitmodules`) + missing `cmake/OTTOConfig.cmake`. Surfaced during T11 verification; not caused by S3b. The implementer verified `[assets-root]` tests via a scratch harness (compiled `AssetsRoot.cpp` + the test file + Catch2 + juce_core directly) — 1 case / 2 sections / 9 assertions pass. The canonical `test_assets_root_app` target is wired correctly in `tests/CMakeLists.txt` (mirrors `test_import_folder_name_app` line-for-line); it'll build cleanly once OTTO's host configure is unblocked separately. **Not blocking** for IDA's build (IDA's CMake assembles OTTO via its own paths, not OTTO's top-level configure).
+- **Operator's assets dir has no top-level `Presets/Factory/`** — `ls /Users/larryseyer/AudioDevelopment/OTTO/assets/` returns `{data, Fonts, GUI, IR, models, Sampler}` with no `Presets/`. AssetsRoot's `factoryPresetsFolder()` returns `<override>/Presets/Factory` (mirrors bundle); `getRoot(Factory)`'s `isDirectory()` guard correctly short-circuits → bundle-path code runs (which itself fails when running inside IDA.app since IDA's bundle has no OTTO presets). End-state: factory preset list is empty. Populating is operator-domain — copy from a built OTTO.app's `Contents/Resources/Presets/Factory/` into the operator's assets dir. Documented in the OTTO inbox entry.
+- **Submodule pin moved past prior session's intent.** Prior session's §3 said the OTTO pin would deliberately stay at `d756bf15` until OTTO's iPhone 11 Pro Max distortion investigation converged. T13's bump advanced past that. Necessary (S3b had to land on top of OTTO `origin/main`) and net-zero in compiled code (the TAPECOLOR feat+revert pair cancels exactly, the docs commit is text-only) — verified via `git -C external/OTTO diff d756bf15 403388e9 --stat` returning empty. Worth knowing that IDA's pin is now ahead of the prior-session intent; nothing functionally regressed.
 
 ---
 
@@ -177,18 +142,18 @@ The plan's "Slice Sequence + Stop Conditions" section lists the HALT triggers. H
 
 | Check | Result |
 |---|---|
-| `git rev-parse HEAD` (IDA) | **07b539e** — pushed to origin/master |
-| `git ls-tree HEAD external/OTTO` | d756bf15 (unchanged this session) |
-| `git ls-tree HEAD external/lsfx_tapecolor` | 0a7189c (unchanged this session) |
+| `git rev-parse HEAD` (IDA) | **d7338de** — pushed to origin/master |
+| `git ls-tree HEAD external/OTTO` | **4130d7a5** |
+| `git ls-tree HEAD external/lsfx_tapecolor` | **0a7189c** (unchanged) |
 | `git status --short` | clean except pre-existing `m external/sfizz` |
-| `ctest --test-dir build` | **808 passed, 1 not-run** (baseline; +5 from S3a vs prior session) |
-| Failed test 263 (`concurrent producer + consumer`) | **flake** — passes on `--rerun-failed`; ignore under parallel load |
-| `cmake --build build --target IDA` | succeeds; `IDA.app` codesigned |
-| OTTO origin/main HEAD | 4fe66565 (3 commits ahead of pin; deliberately not bumped — see §3) |
-| OTTO `[FROM IDA → OTTO]` entries | 3 outstanding (EventBus brief + RE-APPLY isPluginMode_ + TAPECOLOR pin-bump ack) |
+| `ctest --test-dir build` (clean rebuild + full suite) | **808 passed, 1 not-run** (= prior baseline; +0 net) |
+| `cmake --build build --target IDA` (clean) | succeeds; `IDA.app` codesigned via Developer ID |
+| OTTO origin/main HEAD | **4130d7a5** (= IDA's pin) |
+| OTTO `[FROM IDA → OTTO]` entries | 3 outstanding (EventBus brief + RE-APPLY isPluginMode_ + S3b combined entry) |
 | OTTO `[FROM OTTO → IDA]` entries | 0 |
-| Clean rebuild for T10 handoff | running at end-of-session — see operator handoff message |
+| S3b operator T14 step 2 (kits visible) | ✅ PASS |
+| S3b operator T14 step 3 (Play audible) | ❌ FAIL — pump-gap blocker (§3) |
 
 ---
 
-*End of session. T5–T9 landed via subagent-driven flow (8 commits across 4 tasks + 1 push-gate). 9 of 14 plan tasks complete. T10 partial PASS — Play + presets fail, both root-causing to the missing AssetsRoot injection that S3b is designed to fix. Next chat: dispatch T11 directly per §5 Step 3.*
+*End of session. S3b (T11–T14) landed five OTTO commits + one IDA atomic via subagent-driven flow. AssetsRoot wire end-to-end verified by operator (kits visible). Play-still-silent surfaced the pre-existing OTTO audio-pump architectural gap — IDA's renderBlock skips processBlock, so the AudioMessage queue never drains and MIDI dispatch + sample render never run. Documented in §3 + todo.md 2026-05-28 entry. Next session: brainstorm the pump architecture per §5 Step 3.*
