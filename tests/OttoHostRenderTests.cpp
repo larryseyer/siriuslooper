@@ -175,3 +175,47 @@ TEST_CASE ("OttoHost::renderBlock tolerates zero / negative numSamples without c
     CHECK (host.getOttoOutputLeft  (0) != nullptr);
     CHECK (host.getOttoOutputRight (0) != nullptr);
 }
+
+TEST_CASE ("OttoHost embeds OTTOProcessor — getPlayerManager() reaches GlobalMixer through the processor",
+           "[otto-host-render][processor-embed]")
+{
+    juce::ScopedJuceInitialiser_GUI juceInit;
+
+    OttoHost host;
+    host.prepare (kTestSampleRate, kTestBlockSize);
+    REQUIRE (host.isPrepared());
+
+    // First renderBlock populates GlobalMixer's per-channel output pointers
+    // (which getOttoOutputLeft/Right read). The S1 wire change routes
+    // processGlobalMixer through the embedded OTTOProcessor's
+    // getPlayerManager() accessor instead of the bare PlayerManager member
+    // pre-S1 used. Identical observable behavior — the accessor chain
+    // returns the same GlobalMixer instance the processor manages.
+    host.renderBlock (kTestBlockSize);
+
+    for (int i = 0; i < OttoHost::kNumOttoOutputs; ++i)
+    {
+        CHECK (host.getOttoOutputLeft  (i) != nullptr);
+        CHECK (host.getOttoOutputRight (i) != nullptr);
+    }
+
+    // Sustained per-block driving — the OTTOProcessor embed must survive
+    // many renderBlock calls without destabilizing GlobalMixer's per-channel
+    // buffer pointers (OTTO's GlobalMixer allocates its buffers once in
+    // prepare() and reuses them). This pins the IDA-side WIRING, not the
+    // OTTO-side audio invariants.
+    const float* l0_first   = host.getOttoOutputLeft  (0);
+    const float* lFx_first  = host.getOttoOutputLeft  (OttoHost::kOttoFxReturnRangeBegin);
+    const float* rBus_first = host.getOttoOutputRight (OttoHost::kOttoPlayerBusRangeBegin);
+
+    REQUIRE (l0_first   != nullptr);
+    REQUIRE (lFx_first  != nullptr);
+    REQUIRE (rBus_first != nullptr);
+
+    for (int block = 0; block < 100; ++block)
+        host.renderBlock (kTestBlockSize);
+
+    CHECK (host.getOttoOutputLeft  (0)                                  == l0_first);
+    CHECK (host.getOttoOutputLeft  (OttoHost::kOttoFxReturnRangeBegin)  == lFx_first);
+    CHECK (host.getOttoOutputRight (OttoHost::kOttoPlayerBusRangeBegin) == rBus_first);
+}

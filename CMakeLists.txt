@@ -55,6 +55,21 @@ add_subdirectory(otto-bridge)
 # The performer's instrument — undo, latency budget, performance/preparation views.
 add_subdirectory(ui)
 
+# S1 (2026-05-27): OTTOEngine's shared UI .cpp files reference OTTOBinaryData::*
+# symbols (logo / fonts / grain texture) via the generated OTTOBinaryData.h
+# header. OTTOEngine intentionally does NOT bundle its own binary-data target
+# (that would multiply-define the namespaced wrapper symbols at executable
+# link time — IDA's ui/CMakeLists.txt already defines IdaBinaryData in the
+# OTTOBinaryData namespace). Link IdaBinaryData into OTTOEngine PRIVATE so the
+# generated header lands on OTTOEngine's compile include path AND so executable
+# link order pulls the asset symbols ahead of OTTOEngine's UI .cpp references.
+# This add_subdirectory ordering — ui BEFORE otto-bridge is wrong — wait, the
+# ordering is Dependencies.cmake (line 32, where OTTOEngine is defined via
+# add_subdirectory of external/OTTO/src/otto-engine) → core → engine → ... →
+# otto-bridge → ui. So OTTOEngine exists before ui; this attach happens after
+# ui is processed.
+target_link_libraries(OTTOEngine PRIVATE IdaBinaryData)
+
 # Ensemble — LMC election, CRDT session merge, transport messages.
 add_subdirectory(net)
 

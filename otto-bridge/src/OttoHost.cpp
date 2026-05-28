@@ -8,6 +8,10 @@
 #include <otto/mixer/GlobalMixer.h>
 #include <otto/transport/TransportTracker.h>
 
+#include <PluginProcessor.h>   // OTTOProcessor — the juce::AudioProcessor we embed
+
+#include <juce_audio_basics/juce_audio_basics.h>
+#include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_events/juce_events.h>
 
 #include <algorithm>
@@ -50,13 +54,15 @@ struct OttoHost::Impl : public juce::Timer
 {
     Impl()
         : transportRing (kTransportRingCapacity)
+        , processor     (std::make_unique<OTTOProcessor>())
     {
         // Subscribe on the message thread (ctor invariant). The handler
         // captures `this` and runs on whatever thread `EventBus::publish`
         // is invoked from — today that is OTTO's audio thread, called
-        // from `TransportTracker::update()` inside `processBlock`. The
-        // handler therefore obeys audio-thread invariants: no allocation,
-        // no locks, no I/O, no throw.
+        // from `OTTOProcessor::processBlock` (which drives
+        // TransportTracker::update internally). The handler therefore
+        // obeys audio-thread invariants: no allocation, no locks, no I/O,
+        // no throw.
         //
         // (Note: OTTO's `EventBus::publish` itself currently locks a mutex
         // and allocates a vector to copy the subscriber list before
@@ -88,10 +94,10 @@ struct OttoHost::Impl : public juce::Timer
     ~Impl() override
     {
         // Stop the drain timer first so no further listener callbacks fire
-        // while we tear down. The SubscriptionHandle dtor (below, via
-        // member-declaration order) unsubscribes from OTTO's bus, which
-        // also blocks until any in-flight publish returns. After that the
-        // listeners vector and ring are safe to drop.
+        // while we tear down. Member destruction then runs in reverse
+        // declaration order: subscription (LAST-declared) unsubscribes from
+        // the singleton bus, serialising against any in-flight publish;
+        // then processor is torn down; then everything else.
         stopTimer();
     }
 
@@ -117,8 +123,21 @@ struct OttoHost::Impl : public juce::Timer
         }
     }
 
-    ::otto::manager::PlayerManager playerManager;
-    ::otto::TransportTracker       transportTracker;
+    // OTTOProcessor IS a juce::AudioProcessor — prepareToPlay drives OTTO's
+    // full pipeline (Conductor + Pattern engine + MIDI dispatch + sampler
+    // voices + internal FX + GlobalMixer + internal TransportTracker). S1
+    // embeds the processor so S2 (OttoPane via createEditor()), S3 (transport
+    // bar via transportTracker accessor) and S4 (preset state) can consume
+    // it. renderBlock itself still drives audio via
+    // playerManager.processGlobalMixer() — that path populates GlobalMixer's
+    // per-channel output pointers regardless of transport state, which is
+    // what IDA's 32-output accessors read. OTTOProcessor::processBlock would
+    // gate routing on conductor_.isPlaying() and leave the per-channel
+    // pointers nullptr when the transport is stopped (only relevant for
+    // S3's future transport drive); for S1 it would be a regression
+    // against the [otto-host-render] baseline.
+    std::unique_ptr<OTTOProcessor> processor;
+    bool                           prepared { false };
 
     LockFreeSpscQueue<TransportSnapshot> transportRing;
     std::vector<IOttoTransportListener*> listeners;       // message-thread only
@@ -139,12 +158,17 @@ OttoHost::~OttoHost() = default;
 
 void OttoHost::prepare (double sampleRate, int maxBlockSize)
 {
-    impl_->playerManager.prepare (sampleRate, maxBlockSize);
+    // Drive OTTO's AudioProcessor prepareToPlay — propagates internally to
+    // PlayerManager::prepare AND to every other subsystem OTTOProcessor owns
+    // (Conductor, Pattern engine, internal FX, TransportTracker). S2+ will
+    // additionally drive processBlock for transport advancement.
+    impl_->processor->prepareToPlay (sampleRate, maxBlockSize);
+    impl_->prepared = true;
 }
 
 bool OttoHost::isPrepared() const noexcept
 {
-    return impl_->playerManager.isPrepared();
+    return impl_->prepared;
 }
 
 void OttoHost::addTransportListener (IOttoTransportListener* listener)
@@ -173,24 +197,26 @@ void OttoHost::drainForTesting()
 
 void OttoHost::renderBlock (int numSamples) noexcept
 {
-    if (! impl_->playerManager.isPrepared() || numSamples <= 0)
+    if (! impl_->prepared || numSamples <= 0)
         return;
 
-    // OTTO's processGlobalMixer runs channels + sends + buses + meter taps in
+    // Drive GlobalMixer through the embedded OTTOProcessor's PlayerManager.
+    // processGlobalMixer runs channels + sends + buses + meter taps in
     // sequence and is RT-safe per OTTO's CLAUDE.md. After it returns, the
     // per-channel / per-FX-return / per-player-bus accessors on GlobalMixer
-    // return live pointers into OTTO's pre-master mixer buffers.
-    impl_->playerManager.processGlobalMixer (numSamples);
+    // return live pointers into OTTO's pre-master mixer buffers. (See Impl
+    // struct comment for why we do not drive processor->processBlock here.)
+    impl_->processor->getPlayerManager().processGlobalMixer (numSamples);
 }
 
 const float* OttoHost::getOttoOutputLeft (int ottoOutputIndex) const noexcept
 {
     if (ottoOutputIndex < 0 || ottoOutputIndex >= kNumOttoOutputs)
         return nullptr;
-    if (! impl_->playerManager.isPrepared())
+    if (! impl_->prepared)
         return nullptr;
 
-    const auto& mixer = impl_->playerManager.getGlobalMixer();
+    const auto& mixer = impl_->processor->getPlayerManager().getGlobalMixer();
     if (ottoOutputIndex < kOttoFxReturnRangeBegin)
         return mixer.getChannelOutputLeft (ottoOutputIndex - kOttoChannelRangeBegin);
     if (ottoOutputIndex < kOttoPlayerBusRangeBegin)
@@ -202,10 +228,10 @@ const float* OttoHost::getOttoOutputRight (int ottoOutputIndex) const noexcept
 {
     if (ottoOutputIndex < 0 || ottoOutputIndex >= kNumOttoOutputs)
         return nullptr;
-    if (! impl_->playerManager.isPrepared())
+    if (! impl_->prepared)
         return nullptr;
 
-    const auto& mixer = impl_->playerManager.getGlobalMixer();
+    const auto& mixer = impl_->processor->getPlayerManager().getGlobalMixer();
     if (ottoOutputIndex < kOttoFxReturnRangeBegin)
         return mixer.getChannelOutputRight (ottoOutputIndex - kOttoChannelRangeBegin);
     if (ottoOutputIndex < kOttoPlayerBusRangeBegin)

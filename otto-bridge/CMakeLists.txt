@@ -39,9 +39,21 @@ target_link_libraries(IdaOttoBridge
     # OttoHost.h, so Ida::Core moves from transitive-PRIVATE (via
     # Ida::Engine) to PUBLIC on IdaOttoBridge — consumers of OttoHost.h
     # need the IOttoRenderSource header on their include path.
+    #
+    # S1 (2026-05-27): otto::engine added alongside otto::core. OTTOEngine
+    # is OTTO's static-library shape (alias otto::engine) providing
+    # OTTOProcessor (the juce::AudioProcessor subclass Impl now embeds).
+    # otto-engine transitively pulls otto-core, every JUCE module
+    # OTTOPlugin uses, and Ableton::Link — but we keep the explicit
+    # otto::core + juce::juce_audio_basics + juce::juce_events +
+    # lsfx::lsfx_tapecolor lines for link-order clarity. juce_audio_processors
+    # is new: OTTOProcessor inherits juce::AudioProcessor which OttoHost.cpp
+    # now names directly.
     PUBLIC  Ida::Core
     PRIVATE otto::core
+            otto::engine
             juce::juce_audio_basics
+            juce::juce_audio_processors
             juce::juce_events
             lsfx::lsfx_tapecolor
             Ida::Engine)

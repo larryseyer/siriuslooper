@@ -228,7 +228,72 @@ if(NOT EXISTS "${OTTO_CORE_PATH}/CMakeLists.txt")
         "Run: git submodule update --init --recursive")
 endif()
 
-set(OTTO_ENABLE_GENERATION OFF CACHE BOOL "Build OTTO's in-app content generation module (TF Lite, OTTO-only)" FORCE)
+set(OTTO_ENABLE_GENERATION ON CACHE BOOL "Build OTTO's in-app content generation module (TF Lite + Magenta — required by OTTOEngine's shared UI sources which reference MagentaBridge / GenerationCoordinator unconditionally from PluginEditor.cpp)" FORCE)
+
+# -----------------------------------------------------------------------------
+# TFLite IMPORTED target — required by otto-core + OTTOEngine when
+# OTTO_ENABLE_GENERATION=ON. Mirror of external/OTTO/cmake/TFLite.cmake but
+# with paths anchored at the operator's working OTTO checkout (where the
+# prebuilt static-lib bundle is produced by OTTO's tools/build-tflite-static.sh).
+# IDA's add_subdirectory of otto-core/otto-engine bypasses OTTO's top-level
+# CMakeLists.txt (which would normally include cmake/TFLite.cmake), so we
+# create the tensorflow::tensorflowlite target ourselves before configuring
+# otto-core — otto-core/CMakeLists.txt:62-63's `if(TARGET ...)` check then
+# picks it up.
+# -----------------------------------------------------------------------------
+set(IDA_OTTO_WORKING_ROOT "/Users/larryseyer/AudioDevelopment/OTTO"
+    CACHE PATH "Operator's working OTTO checkout — host of the prebuilt TFLite static-lib bundle and asset bundle. Dev-time only; install-time bundling pipeline copies these into the customer install.")
+
+set(TFLITE_LIBRARY     "${IDA_OTTO_WORKING_ROOT}/external/prebuilt/tflite-static/lib/macos-arm64/libtensorflowlite-bundle.a")
+set(TFLITE_INCLUDE_DIR "${IDA_OTTO_WORKING_ROOT}/external/prebuilt/tflite-static/include")
+set(TFLITE_SOURCE_DIR  "${IDA_OTTO_WORKING_ROOT}/external/tensorflow")
+
+if(NOT EXISTS "${TFLITE_LIBRARY}")
+    message(FATAL_ERROR
+        "TFLite prebuilt static library not found at:\n"
+        "  ${TFLITE_LIBRARY}\n"
+        "Build it from the operator's working OTTO checkout:\n"
+        "  cd ${IDA_OTTO_WORKING_ROOT} && tools/build-tflite-static.sh")
+endif()
+if(NOT EXISTS "${TFLITE_INCLUDE_DIR}/tensorflow/lite/interpreter.h")
+    message(FATAL_ERROR "TFLite headers not found at ${TFLITE_INCLUDE_DIR}.")
+endif()
+
+add_library(tensorflow::tensorflowlite STATIC IMPORTED GLOBAL)
+set_target_properties(tensorflow::tensorflowlite PROPERTIES
+    IMPORTED_LOCATION "${TFLITE_LIBRARY}"
+    INTERFACE_INCLUDE_DIRECTORIES "${TFLITE_INCLUDE_DIR};${TFLITE_SOURCE_DIR}")
+
+find_package(Threads REQUIRED)
+set_property(TARGET tensorflow::tensorflowlite APPEND PROPERTY
+    INTERFACE_LINK_LIBRARIES Threads::Threads)
+
+message(STATUS "TFLite imported from: ${TFLITE_LIBRARY}")
 
 add_subdirectory("${OTTO_CORE_PATH}" "${CMAKE_BINARY_DIR}/otto-core")
 message(STATUS "otto-core configured from: ${OTTO_CORE_PATH}")
+
+# -----------------------------------------------------------------------------
+# OTTOEngine — OTTO's audio engine as a STATIC library. Provides
+# OTTOProcessor (the juce::AudioProcessor subclass) and its full transitive
+# dependency chain (Conductor, Pattern engine, MIDI dispatch, sampler voices,
+# internal FX, GlobalMixer, self-driven TransportTracker). IDA's OttoHost
+# embeds one instance and drives its processBlock per audio buffer.
+#
+# We add_subdirectory(src/otto-engine) directly rather than going through
+# OTTO's top-level CMakeLists, so OTTO's OTTO_* variable surface + the
+# pre-existing missing OTTOConfig.cmake reference + plugin-format bundle
+# generation are all bypassed. OTTOEngine's CMakeLists is self-contained
+# and computes its own paths via CMAKE_CURRENT_SOURCE_DIR. See
+# docs/superpowers/specs/2026-05-27-otto-engine-static-target.md.
+# -----------------------------------------------------------------------------
+set(OTTO_ENGINE_PATH "${CMAKE_SOURCE_DIR}/external/OTTO/src/otto-engine")
+
+if(NOT EXISTS "${OTTO_ENGINE_PATH}/CMakeLists.txt")
+    message(FATAL_ERROR
+        "otto-engine not found at ${OTTO_ENGINE_PATH}. "
+        "Submodule may be stale — run: git submodule update --init --recursive")
+endif()
+
+add_subdirectory("${OTTO_ENGINE_PATH}" "${CMAKE_BINARY_DIR}/otto-engine")
+message(STATUS "otto-engine configured from: ${OTTO_ENGINE_PATH}")

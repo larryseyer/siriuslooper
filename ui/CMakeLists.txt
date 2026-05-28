@@ -40,7 +40,18 @@ juce_add_binary_data(IdaBinaryData
         "${CMAKE_SOURCE_DIR}/assets/Fonts/Bricolage_Grotesque/BricolageGrotesque-ExtraBold.ttf"
         "${CMAKE_SOURCE_DIR}/assets/Fonts/JetBrains_Mono/JetBrainsMono-Regular.ttf"
         "${CMAKE_SOURCE_DIR}/assets/Fonts/JetBrains_Mono/JetBrainsMono-Medium.ttf"
-        "${CMAKE_SOURCE_DIR}/assets/Fonts/JetBrains_Mono/JetBrainsMono-SemiBold.ttf")
+        "${CMAKE_SOURCE_DIR}/assets/Fonts/JetBrains_Mono/JetBrainsMono-SemiBold.ttf"
+        # OTTOEngine-required OTTOBinaryData symbols (S1, 2026-05-27): OTTO's
+        # PluginEditor.cpp + UI .cpps reference logo + grain-texture + the OFL
+        # license blob unconditionally. IDA's own assets/ tree does not bundle
+        # the OTTO-specific items (copyright + OTTO-only branding); they live
+        # under the operator's working OTTO checkout. IDA_OTTO_WORKING_ROOT
+        # is exported by cmake/Dependencies.cmake's TFLite block; falls back
+        # to the same default path if not set (matches the dev-time location).
+        "${IDA_OTTO_WORKING_ROOT}/assets/GUI/OTTO App Logo.png"
+        "${IDA_OTTO_WORKING_ROOT}/assets/GUI/OTTO IOS NB.png"
+        "${IDA_OTTO_WORKING_ROOT}/assets/GUI/grain-160.png"
+        "${IDA_OTTO_WORKING_ROOT}/assets/Fonts/OFL.txt")
 
 # Source layout (T0b, 2026-05-22): all L&F sources consumed from the OTTO
 # submodule at external/OTTO/src/otto-plugin/ui. Bug fixes in OTTO
