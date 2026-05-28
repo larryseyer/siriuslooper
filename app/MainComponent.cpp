@@ -5669,6 +5669,23 @@ MainComponent::MainComponent()
     ottoPane_ = std::make_unique<ida::OttoPane>(*ottoHost_);
     tabs_.addTab ("OTTO", juce::Colours::black, ottoPane_.get(), false);
 
+    // --- OTTO TransportBar (S3a T8) --------------------------------------
+    // Mount the OTTO-styled transport bar above the tab strip. The bar
+    // subscribes to ottoHost_'s transport listener in its ctor and starts
+    // its 30 Hz timer. The setMasterPublishers wire below hands OttoHost
+    // const-refs to the AudioCallback's master meter + spectrum publishers;
+    // those publishers may still report zero bins / zero sample rate at
+    // this moment (AudioCallback::prepare is driven by the JUCE audio
+    // device callback, which can fire after this ctor returns). That is
+    // fine — OttoHost stashes pointers-to-references and the bar's 30 Hz
+    // timerCallback picks up the first non-zero spectrum bin count and
+    // calls configureSpectrum at that moment.
+    transportBarHost_ = std::make_unique<ida::TransportBarHost>(*ottoHost_);
+    addAndMakeVisible (*transportBarHost_);
+
+    ottoHost_->setMasterPublishers (audioCallback_->getMasterMeter(),
+                                    audioCallback_->getMasterSpectrum());
+
     // --- Tapes tab (tape-UI T5 — the operator-facing tape-pool management
     // surface). Every gesture relays out to the T3 pool methods, which keep
     // pool/mixer/sink consistent and call refreshTapesPane() to push the new
@@ -5790,6 +5807,15 @@ void MainComponent::resized()
 {
     auto area = getLocalBounds();
     auto bottom = area.removeFromBottom (44);
+    if (transportBarHost_ != nullptr)
+    {
+        // OTTO's TransportBar adapts via internal Breakpoint logic; use a
+        // sensible Desktop default and let the bar's own resized() handle
+        // child layout. 88 px matches the Desktop breakpoint OTTO's bar
+        // currently lays out for; phone/tablet breakpoints can come later
+        // via a window-width helper.
+        transportBarHost_->setBounds (area.removeFromTop (88));
+    }
     tabs_.setBounds (area);
 
     bottom = bottom.reduced (8, 4);

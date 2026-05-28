@@ -35,6 +35,7 @@
 
 #include "FileInputPlayerWindow.h"
 #include "OttoPane.h"
+#include "TransportBarHost.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -456,6 +457,11 @@ private:
     // reverse-declaration destruction tears down the editor BEFORE the
     // processor.
     std::unique_ptr<ida::OttoPane> ottoPane_;
+
+    // OTTO TransportBar host (S3a T8 — declared AFTER ottoPane_ so LIFO
+    // destruction tears down the bar first (it unsubscribes from
+    // ottoHost_'s transport listener), then the pane, then the host).
+    std::unique_ptr<ida::TransportBarHost> transportBarHost_;
     /// One source pair per stereo pair of device inputs. `stereo` true → one
     /// stereo strip; false → two mono-source strips (RME split). `leftCh`/
     /// `rightCh` are device channel indices.
