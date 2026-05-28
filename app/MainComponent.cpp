@@ -110,6 +110,11 @@ namespace
     /// `kNotificationsRowHeightPx` + `removeFromBottom`.
     constexpr int kPreparationTreeMinHeightPx = 80;
 
+    /// Top-strip height reserved for ida::TransportBarHost above the tab
+    /// strip (S3a). Matches OTTO's TransportBar Desktop breakpoint layout;
+    /// phone/tablet breakpoints come later via a window-width helper.
+    constexpr int kTransportBarDesktopHeightPx = 88;
+
     /// Format a single Notification into a one-line operator-facing string:
     /// `[level] category: message (Δt ago)`. Δt computed at render time
     /// against `nowTicks` so the surface ages naturally on every refresh.
@@ -5808,14 +5813,7 @@ void MainComponent::resized()
     auto area = getLocalBounds();
     auto bottom = area.removeFromBottom (44);
     if (transportBarHost_ != nullptr)
-    {
-        // OTTO's TransportBar adapts via internal Breakpoint logic; use a
-        // sensible Desktop default and let the bar's own resized() handle
-        // child layout. 88 px matches the Desktop breakpoint OTTO's bar
-        // currently lays out for; phone/tablet breakpoints can come later
-        // via a window-width helper.
-        transportBarHost_->setBounds (area.removeFromTop (88));
-    }
+        transportBarHost_->setBounds (area.removeFromTop (kTransportBarDesktopHeightPx));
     tabs_.setBounds (area);
 
     bottom = bottom.reduced (8, 4);
@@ -5832,14 +5830,15 @@ void MainComponent::resized()
     bottomInfo_.setBounds (bottom.removeFromRight (220));
     playhead_.setBounds (bottom);
 
-    // Banner: top-centred over the tabbed content. Sits below the tab bar so
-    // it doesn't occlude tab switching, above the body so it remains the
-    // visual top of stack within the active tab. Sized big enough that a
-    // glance can't miss it — white paper 14.5 wants the gesture confirmed
-    // through shape and position, not text legibility.
+    // Banner: top-centred over the tabbed content. Sits below the transport
+    // bar + a small inset so it doesn't occlude tab switching, above the body
+    // so it remains the visual top of stack within the active tab. Sized big
+    // enough that a glance can't miss it — white paper 14.5 wants the gesture
+    // confirmed through shape and position, not text legibility.
     const int bw = 480;
     const int bh = 52;
-    captureBanner_->setBounds ((getWidth() - bw) / 2, 40, bw, bh);
+    const int by = kTransportBarDesktopHeightPx + 40;
+    captureBanner_->setBounds ((getWidth() - bw) / 2, by, bw, bh);
 }
 
 void MainComponent::mouseDown (const juce::MouseEvent& e)
