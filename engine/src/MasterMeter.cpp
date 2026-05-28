@@ -2,6 +2,10 @@
 #include <algorithm>
 #include <cmath>
 
+static_assert(std::atomic<ida::MasterMeter::Snapshot>::is_always_lock_free,
+              "MasterMeter: std::atomic<Snapshot> must be lock-free on all "
+              "target platforms. See RT_SAFETY_CONTRACT.md.");
+
 namespace ida {
 
 namespace {
@@ -23,13 +27,9 @@ void MasterMeter::prepare (double sampleRate, int /*maxBlockSize*/) noexcept
     sampleRate_ = sampleRate;
 }
 
-void MasterMeter::publish (const juce::AudioBuffer<float>& buf) noexcept
+void MasterMeter::publish (const float* L, const float* R, int N) noexcept
 {
-    const int N = buf.getNumSamples();
-    if (N <= 0 || buf.getNumChannels() < 2) return;
-
-    const float* L = buf.getReadPointer(0);
-    const float* R = buf.getReadPointer(1);
+    if (N <= 0) return;
 
     float sumL = 0.0f, sumR = 0.0f, peak = 0.0f;
     for (int i = 0; i < N; ++i)

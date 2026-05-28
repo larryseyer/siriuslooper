@@ -1,6 +1,7 @@
 #include "ida/MasterMeter.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <juce_audio_basics/juce_audio_basics.h>
 #include <atomic>
 #include <cstdlib>
 
@@ -42,7 +43,7 @@ TEST_CASE("MasterMeter publishes peak from a known signal", "[ida-master-meter]"
     buf.clear();
     buf.setSample(0, 100, 0.5f);  // 0.5 peak on L only
 
-    meter.publish(buf);
+    meter.publish(buf.getReadPointer(0), buf.getReadPointer(1), buf.getNumSamples());
 
     const auto snap = meter.snapshot();
     CHECK(snap.peakDb > -7.0f);
@@ -57,12 +58,12 @@ TEST_CASE("MasterMeter::publish is alloc-free under load", "[ida-master-meter][r
     juce::AudioBuffer<float> buf(2, 256);
     for (int i = 0; i < 256; ++i) buf.setSample(0, i, 0.2f);
 
-    meter.publish(buf);  // warm-up
+    meter.publish(buf.getReadPointer(0), buf.getReadPointer(1), buf.getNumSamples());  // warm-up
 
     constexpr int N = 10'000;
     g_allocCount.store(0, std::memory_order_relaxed);
     g_counting = true;
-    for (int i = 0; i < N; ++i) meter.publish(buf);
+    for (int i = 0; i < N; ++i) meter.publish(buf.getReadPointer(0), buf.getReadPointer(1), buf.getNumSamples());
     g_counting = false;
 
     REQUIRE(g_allocCount.load(std::memory_order_relaxed) == 0u);
