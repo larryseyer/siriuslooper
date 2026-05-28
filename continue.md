@@ -11,9 +11,9 @@ After a five-option architectural fork discussion with the operator (Options A t
 2. **The original S1 plan is INVALIDATED:** `plans/2026-05-27-otto-host-embeds-ottoprocessor.md` assumed `OTTOPlugin` as the link target. The new plan's only structural difference is T1 — instead of "add `getPlayerManager()` accessor" (the accessor already exists at `external/OTTO/src/otto-plugin/PluginProcessor.h:377-378`, another plan-author miss), T1 is "create OTTOEngine target + parameterize SharedPluginSources.cmake + push OTTO." T2-T5 carry over with the link target name corrected from `OTTOPlugin` to `otto::engine`.
 
 3. **Commits this session, in order, all on `master`:**
-   - `2c92b58` (docs-only, this session) — OTTOEngine static-target design spec + new memory entry + MEMORY.md index update + continue.md handoff (this commit).
+   - `924836d` (docs-only, this session) — OTTOEngine static-target design spec + new memory entry + MEMORY.md index update + continue.md handoff (this commit).
    - Pre-session HEAD was `d5d4fae` (the now-invalidated S1 plan).
-   - HEAD = `2c92b58` (verify with `git log -1 --oneline`).
+   - HEAD = `924836d` (verify with `git log -1 --oneline`).
 
 4. **OTTO upstream activity this session:** none from this session. **Concurrent OTTO Claude session is active, scoped to TAPECOLOR** (operator-confirmed mid-session 2026-05-27). The 2026-05-27 IDA→OTTO EventBus brief in `external/OTTO/CROSS_PROJECT_INBOX.md` remains `needs-ack`. The TAPECOLOR session is touching `external/lsfx_tapecolor/` + OTTO's TAPECOLOR adapter — NOT `src/otto-plugin/CMakeLists.txt`, `cmake/SharedPluginSources.cmake`, or any path the new OTTOEngine work would touch. File-level collision is unlikely; if the TAPECOLOR session pushed first, `git pull --rebase` handles it.
 
@@ -77,7 +77,7 @@ Decision log in spec §4 has the full reasoning. Future Claude: do NOT relitigat
 | Check | Result |
 |---|---|
 | Branch | `master`, local == origin |
-| HEAD | `2c92b58` (docs-only commit this session) |
+| HEAD | `924836d` (docs-only commit this session) |
 | `git status --short` | clean (sfizz submodule shows as `m` — expected; unrelated) |
 | New spec | `docs/superpowers/specs/2026-05-27-otto-engine-static-target.md` (13 sections, ~30 KB) |
 | New memory | `~/.claude/projects/-Users-larryseyer-IDA/memory/project_otto_engine_static_target.md` + MEMORY.md index updated |
