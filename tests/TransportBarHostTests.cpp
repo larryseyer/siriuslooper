@@ -26,6 +26,11 @@
 // argument`. Production wires this in `app/Main.cpp` (setDefaultLookAndFeel
 // + reset to nullptr at shutdown); the `ScopedJuceTestEnv` RAII guard
 // below mirrors that contract so each test exits cleanly.
+//
+// The fixture snapshots the previous default LookAndFeel in its ctor and
+// restores it in its dtor, instead of unconditionally setting null. That
+// protects future tests from inheriting a null default L&F if this fixture
+// is composed with another that already installed one.
 
 #include "TransportBarHost.h"
 #include "ida/OttoHost.h"
@@ -44,16 +49,18 @@ struct ScopedJuceTestEnv
 {
     ScopedJuceTestEnv()
     {
+        previousDefault_ = &juce::LookAndFeel::getDefaultLookAndFeel();
         juce::LookAndFeel::setDefaultLookAndFeel (&lookAndFeel);
     }
 
     ~ScopedJuceTestEnv()
     {
-        juce::LookAndFeel::setDefaultLookAndFeel (nullptr);
+        juce::LookAndFeel::setDefaultLookAndFeel (previousDefault_);
     }
 
     juce::ScopedJuceInitialiser_GUI juceInit;
     otto::OTTOLookAndFeel           lookAndFeel;
+    juce::LookAndFeel*              previousDefault_ { nullptr };
 };
 
 } // namespace

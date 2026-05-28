@@ -9,15 +9,16 @@ TransportBarHost::TransportBarHost (OttoHost& host)
     bar_.addListener (this);
     addAndMakeVisible (bar_);
 
-    // Configure the bar's spectrum to match the publisher's resolution
-    // wired into OttoHost via setMasterPublishers. If the publishers
-    // haven't been wired yet the bin count is 0 (sentinel) — that's a
-    // legal value the bar will not paint a spectrum for.
-    bar_.configureSpectrum (host_.spectrumBinCount(), 48000.0);
+    // Spectrum configure is deferred to `timerCallback`: at ctor time the
+    // master publishers may not be wired yet (T8 attaches them between
+    // construction and the first tick), so `spectrumBinCount()` would
+    // return 0 and bake a zero-bin bar. The timer detects the bin-count
+    // change on the next tick and configures the bar with the host's real
+    // sample rate.
 
     host_.addTransportListener (this);
 
-    startTimerHz (30);
+    startTimerHz (kRefreshRateHz);
 }
 
 TransportBarHost::~TransportBarHost()
@@ -46,6 +47,7 @@ void TransportBarHost::playPauseClicked()
         host_.stop();
     else
         host_.play();
+    // Duplicate stop() during OTTO's stop-message-posted-but-not-yet-emitted window is idempotent on OTTO's side.
 }
 
 void TransportBarHost::stopClicked()
@@ -85,13 +87,25 @@ void TransportBarHost::onOttoTransport (const TransportSnapshot& snap)
 
 void TransportBarHost::timerCallback()
 {
+    const int currentBinCount = host_.spectrumBinCount();
+    if (currentBinCount != configuredBinCount_)
+    {
+        const double sr = host_.getPreparedSampleRate();
+        // 48 kHz fallback only if the host hasn't been prepared yet (sentinel
+        // 0.0) — the bar still needs a non-zero sample rate to avoid divide-
+        // by-zero in its frequency mapping. Once `prepare()` lands, the real
+        // rate takes over on the next bin-count change.
+        bar_.configureSpectrum (currentBinCount,
+                                sr > 0.0 ? sr : 48000.0);
+        configuredBinCount_ = currentBinCount;
+    }
+
     const auto m = host_.snapshotMaster();
     bar_.setMasterLevels (m.leftDb, m.rightDb);
     bar_.setMasterPeak   (m.peakDb);
     bar_.setMasterLUFS   (m.lufs);
 
-    const int numBins = host_.spectrumBinCount();
-    for (int bin = 0; bin < numBins; ++bin)
+    for (int bin = 0; bin < currentBinCount; ++bin)
         bar_.setSpectrumBin (bin, host_.spectrumBinDb (bin));
 }
 

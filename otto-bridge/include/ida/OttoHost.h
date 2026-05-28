@@ -154,6 +154,11 @@ public:
     int   spectrumBinCount() const noexcept;
     float spectrumBinDb (int bin) const noexcept;
 
+    /// Returns the sample rate `prepare()` was last called with, or 0.0
+    /// before `prepare()`. Used by `TransportBarHost` to configure spectrum
+    /// frequency mapping.
+    double getPreparedSampleRate() const noexcept;
+
     /// Wire the master-mix-point publishers into the host so the snapshot
     /// accessors above can read them. Called once at MainComponent
     /// construction time after the publishers are attached to the master

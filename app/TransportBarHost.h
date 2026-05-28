@@ -49,12 +49,20 @@ public:
     void onOttoTransport (const TransportSnapshot& snapshot) override;
 
 private:
-    /// juce::Timer — 30 Hz; pulls meter + spectrum from OttoHost and pushes
-    /// the latest snapshot into the bar.
+    /// juce::Timer — `kRefreshRateHz`; pulls meter + spectrum from OttoHost
+    /// and pushes the latest snapshot into the bar.
     void timerCallback() override;
+
+    /// Bar refresh cadence. Matches IDA's other message-thread UI polls.
+    static constexpr int kRefreshRateHz = 30;
 
     OttoHost& host_;
     otto::ui::TransportBar bar_;
+
+    /// Last bin count we configured `bar_` with. Tracked so the timer can
+    /// re-call `configureSpectrum` exactly when the host's bin count first
+    /// becomes non-zero (i.e. after T8 calls `setMasterPublishers`).
+    int configuredBinCount_ { 0 };
 };
 
 } // namespace ida

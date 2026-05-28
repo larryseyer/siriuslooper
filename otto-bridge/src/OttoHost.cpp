@@ -146,6 +146,7 @@ struct OttoHost::Impl : public juce::Timer
     // against the [otto-host-render] baseline.
     std::unique_ptr<OTTOProcessor> processor;
     bool                           prepared { false };
+    double                         preparedSampleRate { 0.0 };
 
     LockFreeSpscQueue<TransportSnapshot> transportRing;
     std::vector<IOttoTransportListener*> listeners;       // message-thread only
@@ -177,7 +178,8 @@ void OttoHost::prepare (double sampleRate, int maxBlockSize)
     // (Conductor, Pattern engine, internal FX, TransportTracker). S2+ will
     // additionally drive processBlock for transport advancement.
     impl_->processor->prepareToPlay (sampleRate, maxBlockSize);
-    impl_->prepared = true;
+    impl_->prepared           = true;
+    impl_->preparedSampleRate = sampleRate;
 }
 
 bool OttoHost::isPrepared() const noexcept
@@ -329,6 +331,11 @@ void OttoHost::setMasterPublishers (const MasterMeter& meter,
 {
     impl_->masterMeter    = &meter;
     impl_->masterSpectrum = &spec;
+}
+
+double OttoHost::getPreparedSampleRate() const noexcept
+{
+    return impl_->preparedSampleRate;
 }
 
 } // namespace ida
