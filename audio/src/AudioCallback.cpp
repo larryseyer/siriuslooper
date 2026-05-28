@@ -97,6 +97,22 @@ void AudioCallback::audioDeviceIOCallbackWithContext (
                          numOutputChannels,
                          numSamples);
 
+    // Step 3b: publish the master mix point's meter snapshot (S3a T3).
+    // OutputMixer renders the master bus (BusId{0}) into hardware pair 0 —
+    // i.e. outputChannelData[0,1] — so the finalized stereo master lives
+    // there once `dispatchOutputMixer` returns. `publish()` is RT-safe
+    // (atomic store of an RMS/peak snapshot, no allocation). Guarded
+    // against headless / mono devices so we never deref a null channel
+    // pointer; on miss we silently skip (no logging on the audio thread).
+    if (numOutputChannels >= 2
+        && outputChannelData[0] != nullptr
+        && outputChannelData[1] != nullptr)
+    {
+        masterMeter_.publish (outputChannelData[0],
+                              outputChannelData[1],
+                              numSamples);
+    }
+
     // Step 4: sample-clock to LMC (white paper §4.4). A single fetch_add +
     // store on the LMC's atomic pair. Re-loading the rate per buffer rather
     // than capturing it at start handles devices that change rate mid-session.
@@ -136,8 +152,15 @@ void AudioCallback::audioDeviceAboutToStart (juce::AudioIODevice* device)
     }
 
     if (device != nullptr) {
-        currentSampleRate_.store (device->getCurrentSampleRate(), std::memory_order_release);
-        currentBufferSize_.store (device->getCurrentBufferSizeSamples(), std::memory_order_release);
+        const double sampleRate   = device->getCurrentSampleRate();
+        const int    maxBlockSize = device->getCurrentBufferSizeSamples();
+        currentSampleRate_.store (sampleRate,   std::memory_order_release);
+        currentBufferSize_.store (maxBlockSize, std::memory_order_release);
+
+        // S3a T3 — prepare the master meter for the device's rate / block
+        // size. Runs on the message thread (JUCE's device-setup callback),
+        // before any audio block reaches the meter's `publish()`.
+        masterMeter_.prepare (sampleRate, maxBlockSize);
     } else {
         currentSampleRate_.store (0.0, std::memory_order_release);
         currentBufferSize_.store (0,   std::memory_order_release);

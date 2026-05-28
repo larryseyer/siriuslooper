@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ida/EngineConfig.h"
+#include "ida/MasterMeter.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
 
@@ -176,6 +177,15 @@ public:
         return lastCallbackElapsedSec_.load (std::memory_order_acquire);
     }
 
+    /// S3a T3 — read-only access to the master mix point's meter snapshot
+    /// publisher. The MasterMeter is owned by the AudioCallback as a value
+    /// member, prepared in `audioDeviceAboutToStart`, and `publish()`'d at
+    /// the end of every audio block from the finalized stereo output. UI
+    /// consumers (TransportBar's master meter) call `getMasterMeter().snapshot()`
+    /// on the message thread — that's an atomic load, no synchronization with
+    /// the audio thread is required.
+    const ida::MasterMeter& getMasterMeter() const noexcept { return masterMeter_; }
+
 private:
     EngineConfig config_;
     Lmc*         lmc_ { nullptr };
@@ -197,6 +207,13 @@ private:
     std::atomic<double> currentSampleRate_       { 0.0 };
     std::atomic<int>    currentBufferSize_       { 0 };
     std::atomic<double> lastCallbackElapsedSec_  { 0.0 };
+
+    // S3a T3 — value-member meter publisher driven from the master mix point.
+    // Prepared on the message thread in `audioDeviceAboutToStart`; published
+    // from the audio thread at the end of `audioDeviceIOCallbackWithContext`
+    // after OutputMixer has written the finalized master stereo into
+    // outputChannelData[0,1]. `publish()` is RT-safe (atomic store, no alloc).
+    MasterMeter masterMeter_;
 };
 
 } // namespace ida
