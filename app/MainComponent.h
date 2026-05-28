@@ -34,6 +34,7 @@
 #include "ida/OttoHost.h"
 
 #include "FileInputPlayerWindow.h"
+#include "OttoPane.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -448,6 +449,13 @@ private:
     // methods (addTape/renameTape/removeTape). ---
     class TapesPane;
     std::unique_ptr<TapesPane>      tapesPane_;
+
+    // --- OTTO tab (whitepaper V10 §5.7 — OTTO embedded as a top-level tab).
+    // Constructed AFTER ottoHost_ is prepared; the editor reads processor state
+    // at construction. Declared AFTER ottoHost_ in this header (line ~372) so
+    // reverse-declaration destruction tears down the editor BEFORE the
+    // processor.
+    std::unique_ptr<ida::OttoPane> ottoPane_;
     /// One source pair per stereo pair of device inputs. `stereo` true → one
     /// stereo strip; false → two mono-source strips (RME split). `leftCh`/
     /// `rightCh` are device channel indices.

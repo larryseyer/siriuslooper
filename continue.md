@@ -1,12 +1,17 @@
-# Session Continuation — S1 LANDED (OTTOEngine embed working in IDA). S2 (OttoPane tab) is next.
+# Session Continuation — S2 PARTIAL LANDING. Transport bar design + asset path queued for brainstorm next session.
 
 ## ▶ 0. TL;DR (60 seconds)
 
-S1 — the OttoHost-embeds-OTTOProcessor slice — is done. IDA links OTTOEngine, embeds an `OTTOProcessor` instance in `OttoHost::Impl`, and drives `playerManager.processGlobalMixer` through the new `processor->getPlayerManager()` accessor. The 7 baseline `[otto-host-render]` cases pass (6 pre-S1 + 1 new processor-embed case), all 13 OttoHost-related tests pass, total ctest is **791/792** (the one not-run is the expected pre-existing `MainComponentPluginEditorTests`). IDA app builds and codesigns clean. Pushed.
+S2 landed **partially**. The IDA-side code shape (Tasks 1-8 of the plan) is in place: `OttoHost::getProcessor()` accessor + `ida::OttoPane` Component + "OTTO" tab in MainComponent + 5 new headless tests passing. ctest 796/797 (the 1 not-run is the expected pre-existing `MainComponentPluginEditorTests_NOT_BUILT-b12d07c`). Clean Release build passes; `IDA.app` codesigns. Pushed.
 
-Both `[FROM OTTO → IDA]` inbox entries are acked + pruned (TAPECOLOR canonical editor bump + TFLite topology query — IDA is case 3 / transitive). The new `[FROM IDA → OTTO]` entry covering the OTTOEngine binary-data + accessibility wiring fix is awaiting OTTO's next-session ack.
+Operator-verified GUI launch (Task 9) discovered **two issues that re-scope S2**:
 
-**Next plan target: S2 — OttoPane tab via `OTTOProcessor::createEditor()`.** S1 unblocked this. Invoke `superpowers:writing-plans` against §7 row S2 of `docs/superpowers/specs/2026-05-27-otto-integration-architecture.md` when ready.
+1. **Transport bar design needs a fresh design pass.** My Task 2 OR'd `setEmbeddedInHost` into OTTO's `isPluginMode_`, hiding OTTO's unified TransportBar (where Play/Pause/tempo/meter/spectrum live). Operator clarified: ONE transport bar, mounted ABOVE the IDA tab strip, visible at all times regardless of selected tab — **option B**, not the spec's §2.3 "build a new IDA-side TransportBar widget" option A. Option B is a design change to the integration spec (§1.1 diagram + §2.3 component definition) and the operator wants to brainstorm it properly in the next chat using web example interface references.
+2. **OTTO sample assets aren't loading inside IDA.** All players fall back to synth-mode because `otto::library::SamplerPresetLoader::findSamplerFolder()` probes hardcoded paths off `juce::File::currentExecutableFile` (which is `IDA.app`, not `OTTO.app`). Diagnosed in §3 below. Clean fix recipe ready; not landed.
+
+The IDA-side code that DID land is good shape and doesn't need to be undone by the brainstorm. The disagreement is purely about where OTTO's TransportBar widget lives and how the assets-root override is plumbed.
+
+**Next chat:** Brainstorm transport bar design (option B mechanics) + asset path injection. Then a new plan supersedes the queued §6 of this doc.
 
 ---
 
@@ -14,103 +19,153 @@ Both `[FROM OTTO → IDA]` inbox entries are acked + pruned (TAPECOLOR canonical
 
 | Thing | SHA | Note |
 |---|---|---|
-| IDA HEAD (origin/master) | **5b3e990** | S1 atomic commit |
-| OTTO HEAD (origin/main, IDA's pin) | **b7654144** | dda4ef2e OTTOEngine + 58d2115e accessibility/binary-data + b7654144 inbox prune |
-| lsfx_tapecolor (IDA's pin) | **7219f05** | bumped from a812670 per resolved TAPECOLOR inbox entry |
-| sfizz | unchanged | `m external/sfizz` pre-existing dirt, never staged |
+| IDA HEAD (origin/master) | **(filled at commit time)** | S2 partial — see §4 |
+| OTTO HEAD (origin/main, IDA's pin) | **f2b6f6db** | Was `b7654144` pre-session; +2 OTTO commits this session |
+| OTTO commit 1 (pushed earlier) | **fb5ff039** | `feat: OTTOProcessor::setEmbeddedInHost() + PreferencesDialog gate` — the §2.2 setup work |
+| OTTO commit 2 (pushed earlier) | **f2b6f6db** | `fix: revert isPluginMode_ OR — embedded host must keep TransportBar visible` — the revert based on a wrong understanding of the design; see §2 |
+| lsfx_tapecolor (IDA's pin) | **7219f05** | Unchanged this session |
+
+Both OTTO commits carry `Ida-Origin: <pending>` trailers — the inbox entries reference them but the `IDA commit:` line in those inbox entries is the `(filled at IDA-side atomic commit time)` placeholder. Optional follow-up: backfill those via a docs-only OTTO commit. The durable cross-project record is `git log --grep='Ida-Origin'` regardless.
 
 ---
 
-## ▶ 2. What S1 actually did (vs. what the in-tree plan said)
+## ▶ 2. Where the design diverged (operator clarification mid-session)
 
-**The in-tree plan** at `docs/superpowers/plans/2026-05-27-otto-engine-embed.md` is still the architectural source of truth — read it for the design rationale. **Actual execution diverged** on three things the plan didn't anticipate. If S2/S3 plans get written against the in-tree plan as a template, calibrate against these:
+The S2 integration spec at `docs/superpowers/specs/2026-05-27-otto-integration-architecture.md` §1.2 commitment 4 + §2.3 says:
 
-### 2.1 OTTOEngine had real OTTO-side gaps the spec missed
+> A persistent IDA-wide transport bar drives OTTO's transport. Visible from every tab… The bar subscribes to the existing `IOttoTransportListener` for state mirroring and invokes OTTO's transport actions on the message thread for control.
 
-The Option D spec assumed OTTOEngine could be built from just `cmake/SharedPluginSources.cmake` + a new `src/otto-engine/CMakeLists.txt`. Two things were missing:
+I read that as **option A**: build a NEW IDA-side `TransportBar` widget that subscribes to OTTO's transport events and sends control commands back. Two widgets exist; IDA's is the operator-visible one; OTTO's is hidden.
 
-- **Platform-specific OTTOAccessibility .mm/.cpp.** `PluginEditor.cpp`'s `ViewTransitionAnimator::crossFade()` calls `otto::ui::Accessibility::queryReducedMotionPreference()` unconditionally, but the implementation lives in `ui/OTTOAccessibility_mac.mm` (macOS) / `ui/OTTOAccessibility.cpp` (generic-desktop) — added to OTTOPlugin via generator expressions at `otto-plugin/CMakeLists.txt:106-108` and **NOT enumerated in `OTTO_SHARED_UI_SOURCES`**. Mirror added to OTTOEngine via `target_sources(OTTOEngine PRIVATE $<$<PLATFORM_ID:Darwin>:.../OTTOAccessibility_mac.mm> $<$<NOT:...>:.../OTTOAccessibility.cpp>)`.
+Operator clarified **option B**: ONE widget. Reuse OTTO's existing `otto::ui::TransportBar` (which lives at `external/OTTO/src/otto-plugin/ui/components/TransportBar.{h,cpp}`). Mount one instance of it above IDA's tab strip — visible at all times. Hide it inside the OTTO tab (the `isPluginMode_` OR was actually correct for this — but I had reverted it during the design uncertainty, see commit `f2b6f6db`).
 
-- **Binary-data (`OTTOBinaryData::*`) collision.** The spec hinted at `juce_add_binary_data(OTTOEngineAssets ...)` mirroring OTTOPlugin. But IDA's `ui/CMakeLists.txt:28` already defines `IdaBinaryData` in the SAME `OTTOBinaryData` namespace (for IDA's L&F use). Two libraries in the same executable link → duplicate `OTTOBinaryData::namedResourceList` / `originalFilenames` / `getNamedResource()` / `getNamedResourceOriginalFilename()` symbols. **Resolution:** OTTOEngine does NOT bundle its own binary-data; leaves OTTOBinaryData::* as unresolved external; consumer's `IdaBinaryData` satisfies at executable link. IDA-side `IdaBinaryData` was expanded to include the OTTO-only assets (OTTO App Logo / OTTO IOS NB / grain-160 / OFL.txt) at `IDA_OTTO_WORKING_ROOT/assets/`. Documented in a new in-file comment block in OTTO's `src/otto-engine/CMakeLists.txt`.
+Operator's exact words: *"OTTO's Top Bar is supposed to be IDA's top bar... we only need ONE transport bar... the transport should be visible AT ALL TIMES regardless of which tab is selected... It should sit ABOVE the tabs."*
 
-Both landed in OTTO commit `58d2115e`. A `[FROM IDA → OTTO]` inbox entry documents the fix; OTTO's next session needs to ack it (`Status: needs-ack` as of `b7654144`).
-
-### 2.2 OttoHost::renderBlock continues to drive processGlobalMixer (NOT processBlock)
-
-The plan called for `processor->processBlock(view, midi)` to be the new render path. **That breaks the 6 baseline `[otto-host-render]` tests** because OTTOProcessor::processBlock gates audio routing on `conductor_.isPlaying() || playerManager_.hasTailsActive()` (PluginProcessor.cpp:1070). When transport is stopped, the `else` branch fires (`buffer.clear()`) — `outputRouter_.routeAudio()` is never called, and `GlobalMixer::channelOutputsL_/R_` remain nullptr (they only populate inside `processAllChannels`).
-
-**Resolution:** renderBlock continues to call `playerManager.processGlobalMixer(numSamples)` directly (pre-S1 behavior), routed through the new `processor->getPlayerManager()` accessor. The 32 per-output stereo pointers populate every block, matching pre-S1 semantics that the baseline tests expect. The embedded `OTTOProcessor` is there for S2 (`createEditor()`), S3 (transport bar), and S4 (preset state) to consume; S1 doesn't drive `processBlock` itself.
-
-S3+ will need to figure out the transport-drive path (either provide a synthetic playhead, or call processBlock conditionally, or drive the conductor directly via OTTOProcessor's public API). The OttoHost.cpp comment in the `Impl` struct documents this trade-off.
-
-### 2.3 TFLite / OTTO_ENABLE_GENERATION / IDA_OTTO_WORKING_ROOT
-
-The plan didn't anticipate the TFLite linkage chain. Three discoveries during execution:
-
-- **OTTOEngine pulls TFLite transitively** because OTTOPlugin's shared sources reference `otto::plugin::generation::*` symbols unconditionally from PluginEditor.cpp (no `#if OTTO_ENABLE_GENERATION` guards). So `OTTO_ENABLE_GENERATION` had to flip OFF → ON in `cmake/Dependencies.cmake`. Confirms IDA is **case 3** of the TFLite topology query (transitive via submodule).
-- **IDA needs to create the `tensorflow::tensorflowlite` IMPORTED target itself.** OTTO's `cmake/TFLite.cmake` runs only from OTTO's top-level CMakeLists, which IDA bypasses (it `add_subdirectory`s otto-core directly). Mirror added in IDA's `cmake/Dependencies.cmake` before the otto-core block, anchored at the operator's working OTTO checkout via new `IDA_OTTO_WORKING_ROOT` cache variable (default `/Users/larryseyer/AudioDevelopment/OTTO`).
-- **OTTO assets live at the operator's working OTTO checkout, not the submodule.** Per `project_otto_assets_out_of_git` — assets are gitignored. IDA's expanded `IdaBinaryData` sources for the OTTO-only assets point at `${IDA_OTTO_WORKING_ROOT}/assets/`.
+This is a real design decision that needs a brainstorm session with web example references. The current spec needs to be updated to reflect option B before any code change.
 
 ---
 
-## ▶ 3. Memory entries added this session
+## ▶ 3. Asset path diagnosis (recipe ready, not landed)
 
-- `feedback_tapecolor_7219f05_ui_unhappy.md` — operator finds the canonical editor UI at `7219f05` "ugly, buggy, and not what I asked for"; IDA consumes DSP only.
-- `project_macos_tahoe_xcode_26_5_baseline.md` — Apple clang 21.0.0 / SDK 26.5 / macOS Tahoe 26.5 / Darwin 25.5.0. Records the std::abs template-deduction tightening + OTTO's tflite-elementwise-clang-fix.patch.
-- `feedback_operator_typo_not_means_now.md` — "not" → "now" typo pattern. When "not" contradicts known state, try the substitution. Sibling to `feedback_ida_not_ada`.
+Operator-verified: every player falls back to synth-mode (no LSAD drumkits, no percs/shakers/hands).
 
-`MEMORY.md` index updated with all three.
+Root cause: `otto::library::SamplerPresetLoader::findSamplerFolder()` (in `external/OTTO/src/otto-core/include/otto/library/SamplerPresetLoader.h:301-471`) probes a hardcoded ladder rooted at `juce::File::getSpecialLocation(juce::File::currentExecutableFile)`:
+
+1. `<exe>/../../Resources/Sampler` (i.e. bundle Resources)
+2. `<.app sibling>/assets/Sampler`
+3. Dev-tree fallbacks
+4. `~/Library/Application Support/OTTO/Sampler`
+
+Inside IDA, `currentExecutableFile` is `IDA.app/Contents/MacOS/IDA`. None of those probes hit the operator's real assets at `/Users/larryseyer/AudioDevelopment/OTTO/assets/Sampler`. Same problem affects the IR loader and `otto::paths::PresetPaths::getRoot(StorageTier::Factory)`.
+
+Assets are gitignored (copyright). Build-time copy into `IDA.app/Contents/Resources/Sampler` is the install-time fix but not the dev-loop fix.
+
+**Recommended dev-loop + install fix (cross-project edit):**
+
+Layer A — OTTO-side: new singleton `otto::paths::AssetsRoot` with `setOverride(juce::File)` / `get()` / `samplerFolder()` / `irFolder()` / `factoryPresetsFolder()`. Refactor the 3 existing path-resolution call sites to consult it first, falling through to their existing per-platform ladders when unset. OTTO standalone's behavior is unchanged (no `setOverride` call → existing probes run verbatim).
+
+Layer B — IDA-side: call `otto::paths::AssetsRoot::setOverride(<assets path>)` from `OttoHost::Impl::Impl()` before `prepareToPlay`, sourced from a new `IDA_OTTO_ASSETS_DIR` CMake compile-def (default to `IDA_OTTO_WORKING_ROOT/assets`).
+
+Layer C — installer: copy OTTO's assets into `IDA.app/Contents/Resources/` at install time; `setOverride` points there in production builds.
+
+Full diagnostic + recipe in agent transcript `/private/tmp/claude-501/.../a5f62e3314b852242.output`. Roughly 80 lines of OTTO refactor + 5 lines of IDA call site + inbox protocol round-trip. Bounded scope.
 
 ---
 
-## ▶ 4. Baseline at end-of-session
+## ▶ 4. What landed (the IDA atomic commit + the 2 OTTO commits)
+
+### IDA-side (this session's atomic commit)
+
+- **`otto-bridge/include/ida/OttoHost.h`** — added `namespace juce { class AudioProcessor; }` forward decl + `juce::AudioProcessor& getProcessor() noexcept` public accessor. Header stays JUCE-include-free.
+- **`otto-bridge/src/OttoHost.cpp`** — implemented `getProcessor()`; `Impl::Impl()` calls `processor->setEmbeddedInHost(true)` as first body statement.
+- **`app/OttoPane.{h,cpp}`** (new) — `ida::OttoPane final : public juce::Component`, owns `std::unique_ptr<juce::AudioProcessorEditor>`, ctor constructs editor via `host.getProcessor().createEditor()`, `resized()` forwards bounds, `paint()` fallback when editor null. Header forward-declares `juce::AudioProcessorEditor` and stays minimal.
+- **`app/MainComponent.{h,cpp}`** — `#include "OttoPane.h"`; new `std::unique_ptr<ida::OttoPane> ottoPane_` member declared AFTER `ottoHost_` (line 373 vs 458); `tabs_.addTab("OTTO", ...)` inserted between Output Mixer and Tapes at line ~5670.
+- **`app/CMakeLists.txt`** — `OttoPane.cpp` registered in IDA target sources.
+- **`tests/OttoHostProcessorAccessTests.cpp`** (new) — 3 cases tagged `[otto-host-processor-access]`: vendor returns runtime-OTTOProcessor, `isEmbeddedInHost()` flipped at construction, pointer-stable across calls.
+- **`tests/OttoPaneTests.cpp`** (new) — 2 cases tagged `[otto-pane-construction]`: constructs with non-null editor child, `resized()` forwards bounds.
+- **`tests/CMakeLists.txt`** — new test sources registered + `${CMAKE_SOURCE_DIR}/app/OttoPane.cpp` pulled into IdaTests (mirrors `MainComponentPluginEditorTests` pattern since the app is `juce_add_gui_app`, not a static lib) + `${CMAKE_SOURCE_DIR}/app` added to IdaTests include dirs + `otto::engine` added to IdaTests link line (PluginProcessor.h + OTTOProcessor RTTI).
+- **`external/OTTO`** submodule pointer bumped `b7654144` → `f2b6f6db`.
+- **`docs/superpowers/plans/2026-05-27-otto-pane-s2.md`** (new) — the S2 plan as authored (10 tasks). The plan's Task 2 hide-via-isPluginMode_ step is now known-wrong per §2 above; Task 10 was atomized differently than the plan wrote it (operator-verified discovery → partial landing).
+
+### OTTO-side (pushed during this session — already on `origin/main`)
+
+- **`fb5ff039`** — added `OTTOProcessor::setEmbeddedInHost(bool)` / `isEmbeddedInHost() const` accessor pair + `std::atomic<bool> embeddedInHost_ { false }` storage; OR'd `proc.isEmbeddedInHost()` into `isPluginMode_`; passed `processor_.isEmbeddedInHost()` to `PreferencesDialog`; `PreferencesDialog` ctor now takes `bool embedded = false` + gates `OutputRoutingSection` add. Inbox entry filed (`Status: needs-ack`).
+- **`f2b6f6db`** — reverted the `isPluginMode_` OR (kept everything else). Reverted based on the wrong understanding that OTTO's TransportBar should stay visible inside the OTTO tab. Per §2 above, the actual decision is option B (hide inside the tab AND mount above tabs) — but the relocation half is not landed. So `f2b6f6db` is currently the wrong direction for option B, but the right direction for the half-baked option-A interpretation. Next session decides whether to revert-the-revert (re-apply the OR) once the design is locked.
+
+### What did NOT land
+
+- IDA-side TransportBar (whatever shape — option A widget or option B relocation of OTTO's widget). Pending design brainstorm.
+- Asset path override (`otto::paths::AssetsRoot` singleton + IDA `setOverride` call). Pending design brainstorm OR direct implementation if operator OKs the recipe in §3.
+- The `Ida commit: <pending>` placeholders in OTTO's 2 inbox entries. Optional cleanup.
+
+### Operator-visible state right now
+
+If you launch `build/app/IDA_artefacts/Release/IDA.app` against the freshly-committed master:
+
+- "OTTO" tab is visible between Output Mixer and Tapes. ✅
+- Click the OTTO tab → OTTO's full editor UI renders. ✅
+- OTTO's unified TransportBar (logo + play/pause + tempo + meter + spectrum + BeatProgressBar) IS visible inside the OTTO tab. ✅ (per the `f2b6f6db` revert)
+- BUT: every player's kit picker shows only the synth mode — sample-based LSAD/percs/shakers/hands kits do not load. ❌ (§3 asset path bug)
+- BUT: there's NO transport bar at IDA's top level — switching to any tab other than OTTO leaves no transport surface. ❌ (the option-B relocation is what's missing)
+
+---
+
+## ▶ 5. Baseline at end-of-session
 
 | Check | Result |
 |---|---|
-| `git rev-parse HEAD` (IDA) | **5b3e990** (pushed to origin/master) |
-| `git ls-tree HEAD external/OTTO` | **b7654144** |
-| `git ls-tree HEAD external/lsfx_tapecolor` | **7219f05** |
-| `git status --short` | clean except `m external/sfizz` (pre-existing) and `Mm external/OTTO` working-tree marker (OTTO's own dirty `external/lsfx_tapecolor` pointer — OTTO-side mess, not IDA's) |
-| `ctest --test-dir build` | **791 passed, 1 not-run** — the not-run is the expected `MainComponentPluginEditorTests_NOT_BUILT-b12d07c` |
-| `cmake --build build --target IDA` | succeeds; `build/app/IDA_artefacts/Release/IDA.app` codesigned |
-| `git diff 126dc41..HEAD -- otto-bridge/include/ida/OttoHost.h` | empty (public surface byte-identical) |
-| `ls build/otto-engine/libOTTOEngine.a` | 32 MB present |
-| OTTO origin/main HEAD | **b7654144** |
-| OTTO `[FROM OTTO → IDA]` entries | 0 (both pruned this session) |
-| OTTO `[FROM IDA → OTTO]` entries | 3 total: M-OTTO-3 EventBus brief (older, still needs-ack), getPlayerManager accessor (older, still needs-ack), OTTOEngine static target (older, still needs-ack), OTTOEngine binary-data + accessibility fix **NEW** (needs-ack) — wait, that's 4. OTTO Claude's next session has accumulated work. |
+| `git rev-parse HEAD` (IDA) | (filled at commit time) — pushed to origin/master |
+| `git ls-tree HEAD external/OTTO` | f2b6f6db (post-bump) |
+| `git ls-tree HEAD external/lsfx_tapecolor` | 7219f05 (unchanged) |
+| `git status --short` | clean except pre-existing `m external/sfizz` |
+| `ctest --test-dir build` | **796 passed, 1 not-run** — baseline preserved (+5 new tests from S2: 3 processor-access + 2 OttoPane-construction; the 1 not-run is the expected `MainComponentPluginEditorTests_NOT_BUILT-b12d07c`) |
+| `cmake --build build --target IDA` | succeeds; `IDA.app` codesigned |
+| OTTO origin/main HEAD | f2b6f6db |
+| OTTO `[FROM OTTO → IDA]` entries | 0 |
+| OTTO `[FROM IDA → OTTO]` entries | 4 outstanding (M-OTTO-3 EventBus brief + getPlayerManager accessor + OTTOEngine static target + setEmbeddedInHost flag — none of which need IDA-side action; OTTO's next session acks) + 1 more (`f2b6f6db` revert) for 5 total |
 
 ---
 
-## ▶ 5. Resume protocol for next chat
+## ▶ 6. Resume protocol for the next chat
 
-1. **Read this file.**
-2. **Decide direction.** Options:
-   - **S2 — OttoPane tab via `OTTOProcessor::createEditor()`.** The audibility-gap closer. Spec §7 row S2 of `docs/superpowers/specs/2026-05-27-otto-integration-architecture.md`. Invoke `superpowers:writing-plans` against it. Notes: OTTOProcessor's createEditor returns `new OTTOEditor(*this)` (PluginProcessor.cpp:1128); the editor's compile is already covered by OTTOEngine since UI sources are in there. The IDA-side tab work is the larger surface — UI placement, lifecycle, sizing.
-   - **Pivot to non-OTTO work.** Mixer slices (Input Mixer routing destinations, Output Mixer), render-to-parts/timeline/song, energy-arrangement design, the monitor path. All independent of OTTO.
-   - **Address the operator's TAPECOLOR UI complaint.** If the operator wants to relay the "ugly/buggy/not what I asked for" feedback to OTTO Claude, file a new `[FROM IDA → OTTO]` inbox entry describing the specific UX issues. See `feedback_tapecolor_7219f05_ui_unhappy.md` for context. Wait for operator's lead — don't initiate.
-3. **Verify toolchain still healthy** before any new build work: `xcrun clang --version` should still report Apple clang 21.0.0. macOS auto-updates can churn this.
-4. **For any new OTTO-side edit:** the cross-project protocol still applies — full IDA-side autonomy, `Ida-Origin: <ida-sha>` trailer on the OTTO commit, append a `[FROM IDA → OTTO]` inbox entry, push OTTO, then bump the IDA submodule SHA.
+### Step 1: Read this file
 
----
+### Step 2: Brainstorm — Transport Bar (option B mechanics) using web example interface references
 
-## ▶ 6. Tests that exist now
+Use `superpowers:brainstorming`. Key questions to resolve:
 
-- 6 baseline `[otto-host-render]` cases (pre-S1, preserved byte-identical in behavior).
-- 6 `[otto-host-transport]` cases (subscription wiring; not affected by S1).
-- 1 NEW `[otto-host-render][processor-embed]` case — verifies the embedded processor's getPlayerManager → GlobalMixer accessor chain + 100-block sustained pointer stability.
+1. **Component reuse mechanics.** `otto::ui::TransportBar` is in `external/OTTO/src/otto-plugin/ui/components/TransportBar.{h,cpp}`. Default ctor, listener-based callbacks (`TransportBarListener` interface with `playPauseClicked`/`stopClicked`/`tempoChanged`/`tapTempo`). Can IDA construct its own instance and listener-bind to drive `OTTOProcessor` directly?
+2. **Layout impact.** Mounting it ABOVE the tab strip changes `MainComponent::resized()`. How tall? Operator's pro-audio convention?
+3. **What gets hidden inside the OTTO tab.** With IDA's top-level bar present, OTTO's `transportBar_` inside `OTTOEditor` must be invisible (or replaced) — the operator wants ONE bar, not two stacked. Revisit the `isPluginMode_` gate.
+4. **State sync.** OTTO's `processBlock` already publishes transport state via `EventBus<TransportEvent>` which `OttoHost` marshals to listeners. IDA's TransportBar instance subscribes and reflects state; user inputs flow back via `OttoHost` method calls on the message thread.
+5. **What happens before any OTTO transport activity.** Initial state, layout when OTTO isn't playing, BPM at 0 vs default.
+6. **Web examples to reference.** Operator will bring them. Likely DAW transport bars (Ableton Live, Logic Pro, Pro Tools, Reaper).
+7. **Asset path injection.** The §3 recipe is independent of the transport design — could land in parallel as its own slice, or fold into the same atomic commit as the transport relocation. Operator's call.
 
-**Total IDA OttoHost tests: 13.** All pass.
+Output: an updated `docs/superpowers/specs/2026-05-27-otto-integration-architecture.md` §2.3 (or supersede it) + a new plan against the updated spec.
+
+### Step 3: After the brainstorm, write the plan via `superpowers:writing-plans`
+
+The plan should:
+- Restore the embedded-mode `isPluginMode_` OR (revert-the-revert) IF the design needs OTTO's tab-internal TransportBar hidden. (If the design has OTTO's bar reused above the tabs, then `f2b6f6db`'s revert was wrong-direction and needs to be re-reverted via a new OTTO commit.)
+- Mount IDA's transport surface above the tab strip.
+- Land the `otto::paths::AssetsRoot` override + IDA setOverride call.
+- Re-verify GUI by operator with the spec'd checklist.
+
+### Step 4: Inbox SHA backfill (optional cleanup)
+
+The 2 OTTO commits this session (`fb5ff039`, `f2b6f6db`) have `Ida-Origin: <pending>` trailers and the inbox entries' `IDA commit:` lines still say `(filled at IDA-side atomic commit time)`. A docs-only OTTO commit can backfill both with the actual IDA atomic SHA. Low-priority — the durable record is `git log --grep='Ida-Origin'`.
 
 ---
 
 ## ▶ 7. Reference docs
 
-- **In-tree plan (now LANDED):** `docs/superpowers/plans/2026-05-27-otto-engine-embed.md` — read for design rationale; the divergences are documented in §2 above.
-- **Architectural parent spec:** `docs/superpowers/specs/2026-05-27-otto-engine-static-target.md` — Option D, still the durable architectural record.
-- **Broader integration spec:** `docs/superpowers/specs/2026-05-27-otto-integration-architecture.md` — S1 is the first of 7 slices; §7 row S2 is the next plan target.
-- **Whitepaper V10:** `docs/IDA_Whitepaper_V10.md` — §5.7 doctrinal anchor.
-- **Cross-project inbox protocol** lives in IDA's `CLAUDE.md` and OTTO's `CLAUDE.md`. Both are current.
+- **In-tree S2 plan (PARTIAL LANDING):** `docs/superpowers/plans/2026-05-27-otto-pane-s2.md` — Tasks 1-7 IDA-side + 1-3 OTTO-side landed; Task 9 surfaced design gaps; Task 2's `isPluginMode_` OR is known-wrong direction for either A or B half-built.
+- **Integration spec (needs update post-brainstorm):** `docs/superpowers/specs/2026-05-27-otto-integration-architecture.md` — §2.3 TransportBar definition is option-A-shaped; needs option-B revision.
+- **Engine-static spec (unchanged):** `docs/superpowers/specs/2026-05-27-otto-engine-static-target.md` — S1's durable architectural record.
+- **Whitepaper V10 §5.7** — doctrinal anchor; "from the operator's perspective OTTO is the transport when OTTO is active" remains the load-bearing assertion regardless of A/B.
+- **Cross-project inbox protocol:** `CLAUDE.md` (IDA) + `external/OTTO/CLAUDE.md` (OTTO) — both current.
 
 ---
 
-*End of session. S1 landed at IDA `5b3e990` / OTTO `b7654144` / lsfx_tapecolor `7219f05`. ctest 791/792 (the 1 not-run is the expected MainComponentPluginEditorTests). Next plan target: S2 OttoPane tab.*
+*End of session. S2 partial. Transport bar design + asset path resolution queued for brainstorm next chat. ctest 796/797. IDA `(filled at commit time)` / OTTO `f2b6f6db` / lsfx_tapecolor `7219f05`.*

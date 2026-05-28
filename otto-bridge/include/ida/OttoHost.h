@@ -4,6 +4,8 @@
 
 #include <memory>
 
+namespace juce { class AudioProcessor; }
+
 namespace ida
 {
 
@@ -89,6 +91,13 @@ public:
     /// (Drums=28, Percs=29, Shakers=30, Hands=31), post-bus-EQ/CMP /
     /// post-bus-fader/pan, pre-master-bus. Most natural per-player taps.
     static constexpr int kOttoPlayerBusRangeBegin = 28;
+
+    /// Returns the embedded `OTTOProcessor` typed as `juce::AudioProcessor&`
+    /// so the public header stays OTTO-type-free. Intended caller is
+    /// `ida::OttoPane`, which calls `createEditor()` on the result to
+    /// host OTTO's UI as a top-level IDA tab. Message-thread only;
+    /// pointer-stable for the lifetime of this `OttoHost` instance.
+    juce::AudioProcessor& getProcessor() noexcept;
 
     /// Run one audio block of OTTO's mixer pipeline: pump all 4 players
     /// through GlobalMixer and populate the 32 per-output stereo pair

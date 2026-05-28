@@ -5662,6 +5662,13 @@ MainComponent::MainComponent()
         outputMixerPane_->triggerDefaultMasterSelection();
     }
 
+    // --- OTTO tab (V10 §5.7, S2 of the OTTO integration spec) ---
+    // ottoHost_ is already prepared (line ~4274); OttoPane constructs OTTO's
+    // AudioProcessorEditor at this point and the editor is ready to receive
+    // operator input as soon as the tab is selected.
+    ottoPane_ = std::make_unique<ida::OttoPane>(*ottoHost_);
+    tabs_.addTab ("OTTO", juce::Colours::black, ottoPane_.get(), false);
+
     // --- Tapes tab (tape-UI T5 — the operator-facing tape-pool management
     // surface). Every gesture relays out to the T3 pool methods, which keep
     // pool/mixer/sink consistent and call refreshTapesPane() to push the new

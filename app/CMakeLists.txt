@@ -46,7 +46,8 @@ juce_add_gui_app(IDA
 target_sources(IDA PRIVATE
     FileInputPlayerWindow.mm
     Main.cpp
-    MainComponent.cpp)
+    MainComponent.cpp
+    OttoPane.cpp)
 
 target_compile_definitions(IDA PRIVATE
     JUCE_WEB_BROWSER=0

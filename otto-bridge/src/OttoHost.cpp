@@ -56,6 +56,11 @@ struct OttoHost::Impl : public juce::Timer
         : transportRing (kTransportRingCapacity)
         , processor     (std::make_unique<OTTOProcessor>())
     {
+        // S2: signal the editor that it is embedded in IDA (a JUCE Standalone
+        // host that itself owns the transport bar + routing UI). Set BEFORE
+        // any createEditor() call — OTTOEditor reads the flag at construction.
+        processor->setEmbeddedInHost (true);
+
         // Subscribe on the message thread (ctor invariant). The handler
         // captures `this` and runs on whatever thread `EventBus::publish`
         // is invoked from — today that is OTTO's audio thread, called
@@ -237,6 +242,11 @@ const float* OttoHost::getOttoOutputRight (int ottoOutputIndex) const noexcept
     if (ottoOutputIndex < kOttoPlayerBusRangeBegin)
         return mixer.getFxReturnOutputRight (ottoOutputIndex - kOttoFxReturnRangeBegin);
     return mixer.getPlayerOutputRight (ottoOutputIndex - kOttoPlayerBusRangeBegin);
+}
+
+juce::AudioProcessor& OttoHost::getProcessor() noexcept
+{
+    return *impl_->processor;
 }
 
 } // namespace ida

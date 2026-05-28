@@ -164,7 +164,21 @@ add_executable(IdaTests
     # (24 instrument channels + 4 FX returns + 4 player buses) through
     # the IDA-flavoured `int → const float*` API, without depending on
     # OTTO transport actually rolling.
-    OttoHostRenderTests.cpp)
+    OttoHostRenderTests.cpp
+    # S2 T5 — OttoHost::getProcessor accessor + setEmbeddedInHost(true)
+    # ctor-side flag. The accessor is the engine seam OttoPane uses to
+    # call processor->createEditor() for the embedded OTTO GUI tab.
+    OttoHostProcessorAccessTests.cpp
+    # S2 T6 — ida::OttoPane (app/OttoPane.cpp) headless construction
+    # contract: pane builds, hosts a non-null editor, the editor becomes
+    # a child Component, and resized() forwards bounds. Interactive GUI
+    # behavior is operator-verified per CLAUDE.md, not unit-tested. The
+    # app/OttoPane.cpp source is pulled into IdaTests directly (same
+    # pattern MainComponentPluginEditorTests uses for app/MainComponent.cpp)
+    # because the app target is a juce_add_gui_app, not a static library,
+    # so its translation units are not link-reachable from IdaTests.
+    OttoPaneTests.cpp
+    ${CMAKE_SOURCE_DIR}/app/OttoPane.cpp)
 
 # T3a: EqAdapterTests includes "fx/EqAdapter.h" (engine-private header) and
 # EqAdapter.h transitively includes <otto/effects/PlayerEQ.h>. Both paths
@@ -172,7 +186,10 @@ add_executable(IdaTests
 # OTTO-free, and only the test target reaches into the engine internals.
 target_include_directories(IdaTests PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/src
-    ${CMAKE_SOURCE_DIR}/external/OTTO/src/otto-core/include)
+    ${CMAKE_SOURCE_DIR}/external/OTTO/src/otto-core/include
+    # S2 T6 — OttoPaneTests.cpp and the pulled-in app/OttoPane.cpp need to
+    # resolve "OttoPane.h" from the app/ source tree.
+    ${CMAKE_SOURCE_DIR}/app)
 
 target_compile_features(IdaTests PRIVATE cxx_std_20)
 
@@ -193,6 +210,12 @@ target_link_libraries(IdaTests PRIVATE
     # singleton + TransportEvent type.
     Ida::OttoBridge
     otto::core
+    # S2 T5 — OttoHostProcessorAccessTests includes <PluginProcessor.h>
+    # and dynamic_casts to OTTOProcessor. otto::engine PUBLIC-exports the
+    # otto-plugin include dir and provides OTTOProcessor's vtable + RTTI.
+    # otto-bridge links otto::engine PRIVATE, so the include surface
+    # doesn't propagate to test consumers — pick it up here.
+    otto::engine
     # T3a: EqAdapterTests transitively includes <otto/effects/PlayerEQ.h>
     # through "fx/EqAdapter.h", which pulls juce_dsp + juce_audio_basics.
     # Engine links them PRIVATE so they don't propagate; the test target
