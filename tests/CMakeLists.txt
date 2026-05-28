@@ -179,6 +179,12 @@ add_executable(IdaTests
     # so its translation units are not link-reachable from IdaTests.
     OttoPaneTests.cpp
     ${CMAKE_SOURCE_DIR}/app/OttoPane.cpp
+    # S3a T7 — regression pin for [otto-pane-no-internal-transport]: when
+    # IDA embeds OTTO, OTTOEditor's internal TransportBar must not be
+    # visible (IDA's TransportBarHost above the tab strip is the canonical
+    # transport surface). Pinned here so any future drift in OTTO's
+    # `isPluginMode_` / `setEmbeddedInHost` chain is caught at IdaTests time.
+    OttoPaneNoInternalTransportTests.cpp
     # S3a T2 — MasterMeter: lock-free per-block peak/RMS snapshot at the
     # master mix point. publish() is audio-thread-safe (alloc-free, lock-free);
     # snapshot() is any-thread atomic load. The alloc-count test pins the
