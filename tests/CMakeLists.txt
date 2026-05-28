@@ -178,7 +178,12 @@ add_executable(IdaTests
     # because the app target is a juce_add_gui_app, not a static library,
     # so its translation units are not link-reachable from IdaTests.
     OttoPaneTests.cpp
-    ${CMAKE_SOURCE_DIR}/app/OttoPane.cpp)
+    ${CMAKE_SOURCE_DIR}/app/OttoPane.cpp
+    # S3a T2 — MasterMeter: lock-free per-block peak/RMS snapshot at the
+    # master mix point. publish() is audio-thread-safe (alloc-free, lock-free);
+    # snapshot() is any-thread atomic load. The alloc-count test pins the
+    # RT-safety contract.
+    IdaMasterMeterTests.cpp)
 
 # T3a: EqAdapterTests includes "fx/EqAdapter.h" (engine-private header) and
 # EqAdapter.h transitively includes <otto/effects/PlayerEQ.h>. Both paths

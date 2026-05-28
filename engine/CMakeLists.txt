@@ -51,7 +51,11 @@ add_library(IdaEngine STATIC
     src/fx/CmpAdapter.cpp
     src/fx/DlyAdapter.cpp
     src/fx/RvbAdapter.cpp
-    src/fx/TapeColorAdapter.cpp)
+    src/fx/TapeColorAdapter.cpp
+    # S3a T2 — MasterMeter: lock-free per-block peak/RMS snapshot at the
+    # master mix point. publish() is audio-thread-safe (alloc-free, lock-free);
+    # snapshot() is any-thread atomic load.
+    src/MasterMeter.cpp)
 
 target_include_directories(IdaEngine PUBLIC include)
 
