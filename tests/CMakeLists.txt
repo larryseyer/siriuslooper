@@ -189,7 +189,13 @@ add_executable(IdaTests
     # atomic load. This TU owns the shared operator-new override + alloc
     # counters consumed (via `extern`) by IdaMasterMeterTests.cpp — exactly
     # one TU per IdaTests binary must define the operators (ODR).
-    IdaMasterSpectrumTests.cpp)
+    IdaMasterSpectrumTests.cpp
+    # S3a T5 — OttoHost::play/stop/setTempo/tapTempo + snapshotMaster +
+    # spectrumBin{Count,Db} + setMasterPublishers. Pins the transport-control
+    # message-thread forwards (callable without crashing pre- and post-
+    # prepare) and the null-safe / wired master-snapshot accessors that the
+    # IDA-wide transport bar consumes.
+    OttoHostTransportControlTests.cpp)
 
 # T3a: EqAdapterTests includes "fx/EqAdapter.h" (engine-private header) and
 # EqAdapter.h transitively includes <otto/effects/PlayerEQ.h>. Both paths

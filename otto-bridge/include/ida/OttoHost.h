@@ -10,6 +10,8 @@ namespace ida
 {
 
 class IOttoTransportListener;
+class MasterMeter;
+class MasterSpectrum;
 
 /// Owns one OTTO runtime instance (PlayerManager + TransportTracker) for
 /// the lifetime of an IDA session. The header is JUCE-free and OTTO-free
@@ -117,6 +119,49 @@ public:
     /// prepared. Audio-thread only.
     const float* getOttoOutputLeft  (int ottoOutputIndex) const noexcept;
     const float* getOttoOutputRight (int ottoOutputIndex) const noexcept;
+
+    // -------------------------------------------------------------------------
+    // S3a T5 — transport controls + master-output snapshot accessors
+    // -------------------------------------------------------------------------
+
+    /// Transport controls — message-thread only. Forward to the embedded
+    /// OTTOProcessor's existing audio-message path (see
+    /// `OTTOEditor::onPlayPauseClicked` / `onStopClicked` / `onTempoChanged`
+    /// in `external/OTTO/src/otto-plugin/PluginEditor.cpp`). Used by
+    /// `ida::TransportBarHost` to drive OTTO from IDA's persistent
+    /// transport bar.
+    void play();
+    void stop();
+    void setTempo (double bpm);
+
+    /// Currently a no-op: OTTO does not yet have an audio-thread tap-tempo
+    /// path (`OTTOEditor::tapTempo()` is itself a stub with the same
+    /// comment). The TransportBar (T6) will still call this so the
+    /// wiring is in place when OTTO adds support.
+    void tapTempo();
+
+    /// Master-output meter snapshot. Any-thread (atomic load). Mirrors
+    /// `ida::MasterMeter::Snapshot` field-for-field so the public surface
+    /// stays JUCE-free / engine-header-free for consumers that only see
+    /// OttoHost. Returns the sentinel `{-100,-100,-100,-100}` until
+    /// `setMasterPublishers` has been called.
+    struct MasterSnapshot { float leftDb; float rightDb; float peakDb; float lufs; };
+    MasterSnapshot snapshotMaster() const noexcept;
+
+    /// Master-spectrum bin. Any-thread (atomic load). Forwards to the
+    /// `ida::MasterSpectrum` publisher wired in at the master mix point.
+    /// Returns 0 / -100 dB until `setMasterPublishers` has been called.
+    int   spectrumBinCount() const noexcept;
+    float spectrumBinDb (int bin) const noexcept;
+
+    /// Wire the master-mix-point publishers into the host so the snapshot
+    /// accessors above can read them. Called once at MainComponent
+    /// construction time after the publishers are attached to the master
+    /// mix point. The references must outlive this OttoHost. Message-thread
+    /// only; the stored pointers are read via atomic-load APIs on the
+    /// publishers themselves.
+    void setMasterPublishers (const ida::MasterMeter& meter,
+                              const ida::MasterSpectrum& spec) noexcept;
 
 private:
     struct Impl;

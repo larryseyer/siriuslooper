@@ -2,7 +2,10 @@
 #include "ida/IOttoTransportListener.h"
 
 #include "ida/LockFreeSpscQueue.h"
+#include "ida/MasterMeter.h"
+#include "ida/MasterSpectrum.h"
 
+#include <otto/common/AudioMessage.h>
 #include <otto/common/EventBus.h>
 #include <otto/manager/PlayerManager.h>
 #include <otto/mixer/GlobalMixer.h>
@@ -147,6 +150,12 @@ struct OttoHost::Impl : public juce::Timer
     LockFreeSpscQueue<TransportSnapshot> transportRing;
     std::vector<IOttoTransportListener*> listeners;       // message-thread only
 
+    // S3a T5: non-owning references to the master-mix-point publishers.
+    // Set once via setMasterPublishers; null until then. Reads are
+    // protected by the null check in each snapshot accessor.
+    const MasterMeter*    masterMeter    { nullptr };
+    const MasterSpectrum* masterSpectrum { nullptr };
+
     // Declared LAST so it is destroyed FIRST. The SubscriptionHandle dtor
     // unsubscribes from the singleton bus, which serialises against any
     // in-flight `publish` — once it returns, no more callbacks can fire.
@@ -247,6 +256,79 @@ const float* OttoHost::getOttoOutputRight (int ottoOutputIndex) const noexcept
 juce::AudioProcessor& OttoHost::getProcessor() noexcept
 {
     return *impl_->processor;
+}
+
+// -----------------------------------------------------------------------------
+// S3a T5 — transport controls
+// -----------------------------------------------------------------------------
+//
+// Mirrors `OTTOEditor::onPlayPauseClicked` / `onStopClicked` / `onTempoChanged`
+// in `external/OTTO/src/otto-plugin/PluginEditor.cpp` — the editor-side path
+// posts an `otto::AudioMessage` via `OTTOProcessor::sendToAudioThread`. We do
+// the same here, minus the editor-only FillBag/timeline re-seed logic which is
+// an editor concern. Pause is not used by IDA; play/stop are the two states
+// the persistent transport bar drives.
+
+void OttoHost::play()
+{
+    ::otto::AudioMessage msg;
+    msg.type     = ::otto::AudioMessageType::TransportControl;
+    msg.intValue = static_cast<int> (::otto::TransportCommand::Play);
+    impl_->processor->sendToAudioThread (msg);
+}
+
+void OttoHost::stop()
+{
+    ::otto::AudioMessage msg;
+    msg.type     = ::otto::AudioMessageType::TransportControl;
+    msg.intValue = static_cast<int> (::otto::TransportCommand::Stop);
+    impl_->processor->sendToAudioThread (msg);
+}
+
+void OttoHost::setTempo (double bpm)
+{
+    ::otto::AudioMessage msg;
+    msg.type       = ::otto::AudioMessageType::TempoChange;
+    msg.floatValue = static_cast<float> (bpm);
+    impl_->processor->sendToAudioThread (msg);
+}
+
+void OttoHost::tapTempo()
+{
+    // OTTO does not yet have an audio-thread tap-tempo path —
+    // `OTTOEditor::tapTempo()` is itself a stub with the same comment. The
+    // IDA-side TransportBar (T6) still calls this so the wiring is in place
+    // when OTTO adds support.
+}
+
+// -----------------------------------------------------------------------------
+// S3a T5 — master-output snapshot accessors
+// -----------------------------------------------------------------------------
+
+OttoHost::MasterSnapshot OttoHost::snapshotMaster() const noexcept
+{
+    if (impl_->masterMeter == nullptr)
+        return { -100.0f, -100.0f, -100.0f, -100.0f };
+
+    const auto s = impl_->masterMeter->snapshot();
+    return { s.leftDb, s.rightDb, s.peakDb, s.lufs };
+}
+
+int OttoHost::spectrumBinCount() const noexcept
+{
+    return impl_->masterSpectrum != nullptr ? impl_->masterSpectrum->numBins() : 0;
+}
+
+float OttoHost::spectrumBinDb (int bin) const noexcept
+{
+    return impl_->masterSpectrum != nullptr ? impl_->masterSpectrum->binDb (bin) : -100.0f;
+}
+
+void OttoHost::setMasterPublishers (const MasterMeter& meter,
+                                    const MasterSpectrum& spec) noexcept
+{
+    impl_->masterMeter    = &meter;
+    impl_->masterSpectrum = &spec;
 }
 
 } // namespace ida
