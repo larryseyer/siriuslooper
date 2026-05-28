@@ -18,6 +18,7 @@ namespace ida {
 
 namespace {
 constexpr float kDbFloor = -100.0f;
+constexpr float kTwoPi   = 6.283185307179586f;
 
 inline float linToDb (float lin) noexcept
 {
@@ -42,21 +43,19 @@ MasterSpectrum::~MasterSpectrum() = default;
 
 void MasterSpectrum::prepare (double sampleRate, int /*maxBlockSize*/, int numBins) noexcept
 {
+    // All-or-nothing prepare contract: validate ALL inputs (including the
+    // derived power-of-two FFT size) before mutating any member. binDb() is
+    // documented "any-thread"; if we stored numBins_ and then bailed without
+    // sizing bins_, a concurrent UI poll would OOB-read the unresized vector.
     if (numBins <= 0) return;
+    const int newFftSize = numBins * 2;
+    const int order      = log2OfPow2(newFftSize);
+    if (order < 0) return;
 
     sampleRate_ = sampleRate;
     numBins_    = numBins;
-    fftSize_    = numBins * 2;
+    fftSize_    = newFftSize;
     hopFill_    = 0;
-
-    const int order = log2OfPow2(fftSize_);
-    if (order < 0) {
-        // numBins didn't yield a power-of-two FFT size. Leave the spectrum
-        // disabled (numBins_ stays as captured, but the FFT pointer is null
-        // and publish() will early-return). No allocation, no throw.
-        fft_.reset();
-        return;
-    }
 
     // Hann window — pre-computed once on the message thread.
     window_.assign(static_cast<std::size_t>(fftSize_), 0.0f);
@@ -64,7 +63,7 @@ void MasterSpectrum::prepare (double sampleRate, int /*maxBlockSize*/, int numBi
     {
         const float phase = static_cast<float>(i) / static_cast<float>(fftSize_ - 1);
         window_[static_cast<std::size_t>(i)] =
-            0.5f * (1.0f - std::cos(2.0f * 3.14159265358979323846f * phase));
+            0.5f * (1.0f - std::cos(kTwoPi * phase));
     }
 
     // Scratch holds real input + complex output: juce::dsp::FFT::perform-

@@ -66,9 +66,12 @@ TEST_CASE("MasterSpectrum::publish is alloc-free under load",
     juce::AudioBuffer<float> buf(2, 256);
     for (int i = 0; i < 256; ++i) buf.setSample(0, i, 0.1f);
 
-    // Warm-up — primes the accumulator and runs the first FFT, so any
-    // implicit one-shot allocation (none expected, but defensive) lands
-    // outside the counted region.
+    // Warm-up — two iterations to ensure the first FFT (and any one-shot
+    // JUCE FFT init) lands before we start counting. fftSize_ = 512 and each
+    // publish carries 256 samples, so one call only fills hopFill_ to 256;
+    // the second call triggers the FFT and resets hopFill_ to 0, leaving the
+    // counted region starting from a clean state.
+    spec.publish(buf.getReadPointer(0), buf.getReadPointer(1), buf.getNumSamples());
     spec.publish(buf.getReadPointer(0), buf.getReadPointer(1), buf.getNumSamples());
 
     g_allocCount.store(0, std::memory_order_relaxed);
