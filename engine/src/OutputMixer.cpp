@@ -120,7 +120,7 @@ void OutputMixer::registerChannelWithId (SignalType type, OutputChannelId id)
     channelPreFaderSends_.push_back (0);   // slice E2: default post-fader
     channelMainOutKind_.push_back (MainOutDest::Bus);    // slice E3: default = master
     channelMainOutBus_.push_back  (BusId { 0 });
-    channelOttoSource_.push_back  (-1);   // S6: default phrase channel
+    channelOttoSource_.push_back  (kOttoSourcePhraseChannel);   // S6: default phrase channel
     channelAudioSources_.push_back ({ nullptr, nullptr }); // 2026-05-24: silent default
 }
 
@@ -512,12 +512,12 @@ void OutputMixer::setOttoSource (OutputChannelId channel, int ottoSource) noexce
     // Unknown id — silent no-op, mirror of `setChannelMainOutToHardwareOutput`.
 }
 
-int OutputMixer::getOttoSource (OutputChannelId id) const noexcept
+int OutputMixer::channelOttoSource (OutputChannelId id) const noexcept
 {
     for (std::size_t i = 0; i < channels_.size(); ++i)
         if (channels_[i].id == id)
             return channelOttoSource_[i];
-    return -1;
+    return kOttoSourcePhraseChannel;
 }
 
 bool OutputMixer::channelSendIsPreFader (OutputChannelId channel) const noexcept

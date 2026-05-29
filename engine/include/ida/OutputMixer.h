@@ -129,7 +129,7 @@ public:
     /// Reads channel `id`'s recorded OTTO-source marker. Returns -1 for
     /// unknown ids (the phrase-channel default — same defensive default as
     /// `channelMainOutHardwareOutPair`). Message-thread accessor.
-    int getOttoSource (OutputChannelId id) const noexcept;
+    int channelOttoSource (OutputChannelId id) const noexcept;
 
     /// Slice E3 (2026-05-24) — output-channel main-out manifest. Mirror of
     /// `busMainOut`. Returns Bus when the channel routes into a bus (master

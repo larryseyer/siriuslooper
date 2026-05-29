@@ -206,20 +206,36 @@ TEST_CASE ("OutputChannelState round-trips ottoSource (-1, 0..31, -2 reserved)",
 {
     using namespace ida;
 
-    SECTION ("default ottoSource is -1")
+    SECTION ("default ottoSource is kOttoSourcePhraseChannel")
     {
         OutputChannelState a;
-        REQUIRE (a.ottoSource == -1);
+        REQUIRE (a.ottoSource == kOttoSourcePhraseChannel);
     }
 
-    SECTION ("operator== includes ottoSource")
+    SECTION ("operator== includes ottoSource (pinned: only ottoSource differs)")
     {
-        OutputChannelState a; a.channelId = 7;
-        OutputChannelState b; b.channelId = 7;
+        auto makeFullyPopulated = []
+        {
+            OutputChannelState s;
+            s.channelId       = 42;
+            s.signalType      = SignalType::Audio;
+            s.hardwareOutPair = 3;
+            s.preFaderSends   = true;
+            s.mainOutKind     = OutputChannelMainOutKind::HardwareOutput;
+            s.mainOutBus      = 7;
+            s.sends.push_back ({ 1, 0.5f });
+            s.ottoSource      = 12;
+            return s;
+        };
+
+        const auto a = makeFullyPopulated();
+        auto b       = makeFullyPopulated();
         REQUIRE (a == b);
-        b.ottoSource = 3;
-        REQUIRE (a != b);
-        a.ottoSource = 3;
+
+        b.ottoSource = 13;            // only difference between a and b
+        REQUIRE (a != b);             // FAILS if operator== ever drops ottoSource
+
+        b.ottoSource = a.ottoSource;
         REQUIRE (a == b);
     }
 

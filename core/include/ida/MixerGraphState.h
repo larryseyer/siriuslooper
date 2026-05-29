@@ -176,6 +176,15 @@ struct InputChannelState
 /// stored separately in `sends` and are independent of the main-out.
 enum class OutputChannelMainOutKind { Bus, HardwareOutput };
 
+/// S6 (2026-05-29) — sentinel values for OutputChannelState::ottoSource.
+/// kOttoSourcePhraseChannel marks an ordinary phrase channel (the default);
+/// kOttoSourceStereoMixReserved is reserved for the future S7 OTTO Stereo Mix
+/// summing strip (lands in a later slice — read-only reservation today, never
+/// emitted by current code paths). Non-negative values name an OTTO output
+/// index in [0, OttoHost::kNumOttoOutputs).
+inline constexpr int kOttoSourcePhraseChannel     = -1;
+inline constexpr int kOttoSourceStereoMixReserved = -2;
+
 struct OutputChannelState
 {
     std::int64_t             channelId       { 0 };
@@ -187,14 +196,15 @@ struct OutputChannelState
     OutputChannelMainOutKind mainOutKind     { OutputChannelMainOutKind::Bus };
     std::int64_t             mainOutBus      { 0 }; // valid when mainOutKind == Bus
     /// S6 (2026-05-29) — channel-provenance marker for persistence + import-time
-    /// rebind. -1 = phrase channel (the default); 0..31 = the OTTO output index
-    /// this channel was minted from via MainComponent::addOttoOutputStrip;
-    /// -2 reserved for the future S7 OTTO Stereo Mix sentinel. The engine never
+    /// rebind. kOttoSourcePhraseChannel (-1) = phrase channel (the default);
+    /// 0..31 = the OTTO output index this channel was minted from via
+    /// MainComponent::addOttoOutputStrip; kOttoSourceStereoMixReserved is
+    /// reserved for the future S7 OTTO Stereo Mix sentinel. The engine never
     /// reads this at runtime — pure transport metadata round-tripped through
     /// exportGraphState/importGraphState so MainComponent's post-import rebind
     /// pass can identify OTTO channels and rebind their buffer pointers via
     /// OttoHost::getOttoOutputLeft/Right.
-    int                      ottoSource      { -1 };
+    int                      ottoSource      { kOttoSourcePhraseChannel };
 
     bool operator== (const OutputChannelState& o) const noexcept
     {
