@@ -1062,6 +1062,11 @@ namespace
         {
             obj->setProperty ("mainOutBus", juce::int64 (c.mainOutBus));
         }
+        // S6: emit ottoSource only when non-default (-1 = phrase channel,
+        // the addChannel baseline). Mirror of the slice-E3 emit-if-non-default
+        // pattern used for mainOutKind/mainOutBus.
+        if (c.ottoSource != ida::kOttoSourcePhraseChannel)
+            obj->setProperty ("ottoSource", c.ottoSource);
         return objectVar (obj);
     }
     OutputChannelState outputChannelFromVar (const juce::var& v)
@@ -1083,6 +1088,8 @@ namespace
             c.hardwareOutPair = requireInt (p, "channel.hardwareOutPair");
         if (const auto b = optionalProperty (v, "mainOutBus"); ! b.isVoid())
             c.mainOutBus = requireInt64 (b, "channel.mainOutBus");
+        if (const auto s = optionalProperty (v, "ottoSource"); ! s.isVoid())
+            c.ottoSource = requireInt (s, "channel.ottoSource");
         return c;
     }
 

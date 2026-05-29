@@ -423,6 +423,37 @@ TEST_CASE ("OutputMixerGraphState round-trips through JSON", "[sessionformat]")
     CHECK (restored == s);
 }
 
+TEST_CASE ("OutputMixerGraphState carries ottoSource through JSON",
+           "[sessionformat][otto-source]")
+{
+    using namespace ida;
+
+    OutputMixerGraphState state;
+    // Master bus has to be present for the round-trip helpers to accept the doc.
+    MixerBusState master; master.busId = 0; master.name = "Master"; master.kind = MixerBusKind::Bus;
+    state.buses.push_back (master);
+
+    OutputChannelState chPhrase; chPhrase.channelId = 1;
+    OutputChannelState chOtto0;  chOtto0.channelId  = 2; chOtto0.ottoSource  = 0;
+    OutputChannelState chOtto31; chOtto31.channelId = 3; chOtto31.ottoSource = 31;
+    chPhrase.sends.push_back ({ 0, 1.0f });
+    chOtto0.sends.push_back  ({ 0, 1.0f });
+    chOtto31.sends.push_back ({ 0, 1.0f });
+    state.channels.push_back (chPhrase);
+    state.channels.push_back (chOtto0);
+    state.channels.push_back (chOtto31);
+    state.nextChannelId = 4;
+
+    const auto json     = ida::persistence::serializeMixerGraphState (state);
+    const auto restored = ida::persistence::deserializeOutputMixerGraphState (json);
+
+    REQUIRE (restored.channels.size() == 3);
+    REQUIRE (restored.channels[0].ottoSource == kOttoSourcePhraseChannel);
+    REQUIRE (restored.channels[1].ottoSource == 0);
+    REQUIRE (restored.channels[2].ottoSource == 31);
+    REQUIRE (restored == state);   // S6: equality includes ottoSource
+}
+
 TEST_CASE ("a pre-graph (empty) mixer document deserializes to defaults", "[sessionformat]")
 {
     // A document carrying only a version and empty arrays — what a forward
