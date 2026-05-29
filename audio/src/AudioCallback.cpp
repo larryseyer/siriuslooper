@@ -6,6 +6,8 @@
 #include "ida/NotificationBus.h"
 #include "ida/OutputMixer.h"
 
+#include <juce_audio_basics/juce_audio_basics.h>
+
 #include <cstdio>
 #include <cstring>
 
@@ -78,13 +80,18 @@ void AudioCallback::audioDeviceIOCallbackWithContext (
         inputMixer_->renderInputGraph (inputChannelData, numInputChannels,
                                        nullptr, 0, numSamples);
 
-    // Step 2b: M-OTTO-4 — pump OTTO's mixer pipeline so its 32 per-output
-    // stereo pair buffers are fresh before any OutputMixer channel sourced
-    // from OTTO audio reads them in Step 3. RT-safe per OTTO's CLAUDE.md
-    // (wraps `processGlobalMixer`, which is alloc/lock/log-free). No-op when
-    // no source is attached (default for sessions / tests without OTTO).
+    // Step 2b: S3c — drive OTTO's full per-block pump (housekeeping prefix
+    // drains Play/Stop/TempoChange messages + advances conductor + dispatches
+    // MIDI into sfizz + generates pattern MIDI; per-channel sum populates the
+    // 32 stereo-pair buffers IDA's Output Mixer reads; housekeeping suffix
+    // advances totalSamplePosition + syncs fillMode). RT-safe per OTTO's
+    // CLAUDE.md. No-op when no source is attached (default for sessions /
+    // tests without OTTO).
+    juce::MidiBuffer ottoMidi; // S3c: file-input / external-MIDI routing
+                               // into OTTO is a future slice (design spec
+                               // §7). Empty buffer is RT-safe — no allocation.
     if (ottoRenderSource_ != nullptr)
-        ottoRenderSource_->renderBlock (numSamples);
+        ottoRenderSource_->renderBlock (numSamples, ottoMidi);
 
     // Step 3: OutputMixer render. Writes additively into the output buffers.
     // V9 Slice 3 auto-created MON channels read the InputMixer's post-strip

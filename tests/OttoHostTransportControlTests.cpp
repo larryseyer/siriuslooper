@@ -14,6 +14,7 @@
 // the sibling OttoHost tests).
 
 #include "ida/OttoHost.h"
+#include "ida/IOttoTransportListener.h"
 #include "ida/MasterMeter.h"
 #include "ida/MasterSpectrum.h"
 
@@ -23,6 +24,8 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
+
+#include <vector>
 
 using ida::OttoHost;
 
@@ -125,4 +128,56 @@ TEST_CASE ("OttoHost::snapshotMaster forwards to the wired MasterMeter publisher
                 Catch::Matchers::WithinAbs (-100.0f, 1.0e-6f));
     CHECK_THAT (host.spectrumBinDb (spec.numBins() + 1024),
                 Catch::Matchers::WithinAbs (-100.0f, 1.0e-6f));
+}
+
+// S3c — listener-fire assertion. Pre-S3c, play() pushed a TransportControl
+// AudioMessage but no audio block ever drained the SPSC queue, so the
+// listener never fired. With S3c's renderBlock pumping the housekeeping
+// prefix, play() + renderBlock + drainForTesting must surface a
+// TransportSnapshot::Kind::Started event to a registered listener.
+
+namespace
+{
+struct CapturingListener : public ida::IOttoTransportListener
+{
+    std::vector<ida::TransportSnapshot> received;
+
+    void onOttoTransport (const ida::TransportSnapshot& s) override
+    {
+        received.push_back (s);
+    }
+};
+} // namespace
+
+TEST_CASE ("OttoHost::play() drives TransportSnapshot::Kind::Started through listener",
+           "[otto-host-transport-control][listener-fire]")
+{
+    juce::ScopedJuceInitialiser_GUI juceInit;
+
+    ida::OttoHost host;
+    host.prepare (kTestSampleRate, kTestBlockSize);
+
+    juce::MidiBuffer midi;
+
+    // Prime the TransportTracker. OTTO's tracker suppresses events on the
+    // first update() (no prior state to diff); drive one baseline block so
+    // the subsequent Play transition is detected and published.
+    host.renderBlock (kTestBlockSize, midi);
+    host.drainForTesting();
+
+    CapturingListener listener;
+    host.addTransportListener (&listener);
+
+    host.play();
+    host.renderBlock (kTestBlockSize, midi);
+    host.drainForTesting();
+
+    bool sawStarted = false;
+    for (const auto& s : listener.received)
+        if (s.kind == ida::TransportSnapshot::Kind::Started && s.isPlaying)
+            sawStarted = true;
+
+    REQUIRE (sawStarted);
+
+    host.removeTransportListener (&listener);
 }

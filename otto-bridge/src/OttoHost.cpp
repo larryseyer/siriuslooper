@@ -147,17 +147,10 @@ struct OttoHost::Impl : public juce::Timer
 
     // OTTOProcessor IS a juce::AudioProcessor — prepareToPlay drives OTTO's
     // full pipeline (Conductor + Pattern engine + MIDI dispatch + sampler
-    // voices + internal FX + GlobalMixer + internal TransportTracker). S1
-    // embeds the processor so S2 (OttoPane via createEditor()), S3 (transport
-    // bar via transportTracker accessor) and S4 (preset state) can consume
-    // it. renderBlock itself still drives audio via
-    // playerManager.processGlobalMixer() — that path populates GlobalMixer's
-    // per-channel output pointers regardless of transport state, which is
-    // what IDA's 32-output accessors read. OTTOProcessor::processBlock would
-    // gate routing on conductor_.isPlaying() and leave the per-channel
-    // pointers nullptr when the transport is stopped (only relevant for
-    // S3's future transport drive); for S1 it would be a regression
-    // against the [otto-host-render] baseline.
+    // voices + internal FX + GlobalMixer + internal TransportTracker).
+    // renderBlock drives the per-block audio pump via OTTO's S3c split:
+    // processBlockBeforeRouting + processGlobalMixer + processBlockAfterRouting.
+    // See docs/superpowers/specs/2026-05-28-otto-audio-pump-design.md.
     std::unique_ptr<OTTOProcessor> processor;
     bool                           prepared { false };
     double                         preparedSampleRate { 0.0 };
@@ -225,18 +218,37 @@ void OttoHost::drainForTesting()
     impl_->drain();
 }
 
-void OttoHost::renderBlock (int numSamples) noexcept
+void OttoHost::renderBlock (int numSamples,
+                            juce::MidiBuffer& midiMessages) noexcept
 {
     if (! impl_->prepared || numSamples <= 0)
         return;
 
-    // Drive GlobalMixer through the embedded OTTOProcessor's PlayerManager.
-    // processGlobalMixer runs channels + sends + buses + meter taps in
-    // sequence and is RT-safe per OTTO's CLAUDE.md. After it returns, the
-    // per-channel / per-FX-return / per-player-bus accessors on GlobalMixer
-    // return live pointers into OTTO's pre-master mixer buffers. (See Impl
-    // struct comment for why we do not drive processor->processBlock here.)
-    impl_->processor->getPlayerManager().processGlobalMixer (numSamples);
+    // S3c — IDA's OTTO audio pump. Drives OTTO's processBlock housekeeping
+    // prefix + per-channel sum + housekeeping suffix, skipping OTTO's master
+    // mixdown path (which competes with IDA's Output Mixer). See
+    // docs/superpowers/specs/2026-05-28-otto-audio-pump-design.md.
+    juce::ScopedNoDenormals noDenormals;
+
+    auto& proc = *impl_->processor;
+
+    // Half A prefix: drain Play/Stop/TempoChange AudioMessages, update
+    // transport tracker (which publishes TransportEvent → the EventBus
+    // subscription above marshals into the SPSC ring → drainer fans out
+    // to listeners), pin engines, dispatch host MIDI into sfizz, advance
+    // the conductor + song timeline.
+    proc.processBlockBeforeRouting (midiMessages, numSamples);
+
+    // Per-channel / per-FX-return / per-player-bus sum. Populates the
+    // GlobalMixer accessors IDA's Output Mixer reads via
+    // getOttoOutputLeft/Right. Replaces OTTO's processBlock master path
+    // (outputRouter_.routeAudio + de-click + spectrum + clear) entirely
+    // — IDA owns the master.
+    proc.getPlayerManager().processGlobalMixer (numSamples);
+
+    // Half A suffix: totalSamplePosition advance + per-player fillMode
+    // sync to pluginState_ (for UI display).
+    proc.processBlockAfterRouting (numSamples);
 }
 
 const float* OttoHost::getOttoOutputLeft (int ottoOutputIndex) const noexcept

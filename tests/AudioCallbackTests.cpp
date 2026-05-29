@@ -27,6 +27,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_devices/juce_audio_devices.h>
 
 #include <cstring>
@@ -234,7 +235,7 @@ TEST_CASE ("AudioCallback invokes IOttoRenderSource::renderBlock once per buffer
     {
         int  calls               = 0;
         int  lastNumSamples      = -1;
-        void renderBlock (int numSamples) noexcept override
+        void renderBlock (int numSamples, juce::MidiBuffer&) noexcept override
         {
             ++calls;
             lastNumSamples = numSamples;

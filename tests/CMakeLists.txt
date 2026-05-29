@@ -202,6 +202,13 @@ add_executable(IdaTests
     # prepare) and the null-safe / wired master-snapshot accessors that the
     # IDA-wide transport bar consumes.
     OttoHostTransportControlTests.cpp
+    # S3c — end-to-end OTTO audio-pump tests. Pins play/stop/setTempo +
+    # renderBlock driving the SPSC AudioMessage queue → TransportTracker
+    # state change → EventBus publish → listener fan-out, and the
+    # per-channel accessors returning live pointers after renderBlock.
+    # Catches any future regression of the processBlockBeforeRouting +
+    # processGlobalMixer + processBlockAfterRouting sequence.
+    OttoHostPumpTests.cpp
     # S3a T6 — ida::TransportBarHost (app/TransportBarHost.cpp) wraps
     # otto::ui::TransportBar, forwards listener events to OttoHost, mirrors
     # OTTO transport state into the bar, and ticks meter+spectrum at 30 Hz.

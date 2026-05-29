@@ -2,6 +2,8 @@
 
 #include "ida/IOttoRenderSource.h"
 
+#include <juce_audio_basics/juce_audio_basics.h>
+
 #include <memory>
 
 namespace juce { class AudioProcessor; }
@@ -101,15 +103,23 @@ public:
     /// pointer-stable for the lifetime of this `OttoHost` instance.
     juce::AudioProcessor& getProcessor() noexcept;
 
-    /// Run one audio block of OTTO's mixer pipeline: pump all 4 players
-    /// through GlobalMixer and populate the 32 per-output stereo pair
-    /// buffers behind `getOttoOutputLeft/Right`. Audio-thread only.
-    /// RT-safe: wraps OTTO's `PlayerManager::processGlobalMixer`, which
-    /// OTTO's CLAUDE.md guarantees as alloc/lock/log-free. Must be called
-    /// BEFORE any same-block read via the accessors below. A call before
-    /// `prepare()` is a no-op. Satisfies the `IOttoRenderSource` port the
-    /// AudioCallback drives once per buffer.
-    void renderBlock (int numSamples) noexcept override;
+    /// Run one audio block of OTTO's full pipeline: drains the SPSC
+    /// AudioMessage queue (Play/Stop/Tempo), advances the conductor +
+    /// song timeline, dispatches host MIDI into sfizz, generates pattern
+    /// MIDI, then pumps GlobalMixer to populate the 32 per-output stereo
+    /// pair buffers behind `getOttoOutputLeft/Right`. Skips OTTO's master
+    /// mixdown path (which IDA's Output Mixer owns). Audio-thread only.
+    /// RT-safe: wraps OTTO's `processBlockBeforeRouting` +
+    /// `processGlobalMixer` + `processBlockAfterRouting`, each guaranteed
+    /// alloc/lock/log-free per OTTO's CLAUDE.md. Must be called BEFORE
+    /// any same-block read via the accessors below. A call before
+    /// `prepare()` is a no-op. `midiMessages` is the audio callback's
+    /// per-block MIDI input (host MIDI, file-input MIDI) and may be
+    /// augmented in-place with OTTO's pattern-generated MIDI. Satisfies
+    /// the `IOttoRenderSource` port the AudioCallback drives once per
+    /// buffer.
+    void renderBlock (int numSamples,
+                      juce::MidiBuffer& midiMessages) noexcept override;
 
     /// Pointer into OTTO's per-output left-channel buffer for the most
     /// recent `renderBlock`. Valid until the next `renderBlock` (or

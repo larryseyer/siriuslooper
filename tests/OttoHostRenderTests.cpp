@@ -16,6 +16,7 @@
 
 #include "ida/OttoHost.h"
 
+#include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -40,10 +41,12 @@ TEST_CASE ("OttoHost::renderBlock before prepare is a safe no-op",
     OttoHost host;
     REQUIRE_FALSE (host.isPrepared());
 
+    juce::MidiBuffer midi;
+
     // Must not crash. Must not throw (it's declared noexcept).
-    host.renderBlock (kTestBlockSize);
-    host.renderBlock (0);
-    host.renderBlock (-1);
+    host.renderBlock (kTestBlockSize, midi);
+    host.renderBlock (0, midi);
+    host.renderBlock (-1, midi);
 
     // Accessors still nullptr — neither prepared nor rendered.
     for (int i = 0; i < OttoHost::kNumOttoOutputs; ++i)
@@ -62,7 +65,8 @@ TEST_CASE ("OttoHost::getOttoOutput{Left,Right} returns non-null for every in-ra
     host.prepare (kTestSampleRate, kTestBlockSize);
     REQUIRE (host.isPrepared());
 
-    host.renderBlock (kTestBlockSize);
+    juce::MidiBuffer midi;
+    host.renderBlock (kTestBlockSize, midi);
 
     for (int i = 0; i < OttoHost::kNumOttoOutputs; ++i)
     {
@@ -78,7 +82,8 @@ TEST_CASE ("OttoHost::getOttoOutput{Left,Right} returns nullptr for out-of-range
 
     OttoHost host;
     host.prepare (kTestSampleRate, kTestBlockSize);
-    host.renderBlock (kTestBlockSize);
+    juce::MidiBuffer midi;
+    host.renderBlock (kTestBlockSize, midi);
 
     // Negatives.
     CHECK (host.getOttoOutputLeft  (-1)         == nullptr);
@@ -101,13 +106,14 @@ TEST_CASE ("OttoHost output pointers are stable across renderBlock calls",
     OttoHost host;
     host.prepare (kTestSampleRate, kTestBlockSize);
 
-    host.renderBlock (kTestBlockSize);
+    juce::MidiBuffer midi;
+    host.renderBlock (kTestBlockSize, midi);
     const float* l0_first  = host.getOttoOutputLeft  (0);
     const float* l23_first = host.getOttoOutputLeft  (23);
     const float* l28_first = host.getOttoOutputLeft  (28);
     const float* r24_first = host.getOttoOutputRight (24);
 
-    host.renderBlock (kTestBlockSize);
+    host.renderBlock (kTestBlockSize, midi);
     CHECK (host.getOttoOutputLeft  (0)  == l0_first);
     CHECK (host.getOttoOutputLeft  (23) == l23_first);
     CHECK (host.getOttoOutputLeft  (28) == l28_first);
@@ -117,7 +123,7 @@ TEST_CASE ("OttoHost output pointers are stable across renderBlock calls",
     // allocates its per-channel buffers once in prepare() and never
     // reallocates them.
     for (int i = 0; i < 32; ++i)
-        host.renderBlock (kTestBlockSize);
+        host.renderBlock (kTestBlockSize, midi);
     CHECK (host.getOttoOutputLeft  (0)  == l0_first);
     CHECK (host.getOttoOutputLeft  (23) == l23_first);
     CHECK (host.getOttoOutputLeft  (28) == l28_first);
@@ -131,7 +137,8 @@ TEST_CASE ("OttoHost dispatches each index range to a distinct underlying buffer
 
     OttoHost host;
     host.prepare (kTestSampleRate, kTestBlockSize);
-    host.renderBlock (kTestBlockSize);
+    juce::MidiBuffer midi;
+    host.renderBlock (kTestBlockSize, midi);
 
     // Sanity: a representative pointer from each of the three families
     // (channel / FX-return / player-bus) must point at three distinct
@@ -166,10 +173,11 @@ TEST_CASE ("OttoHost::renderBlock tolerates zero / negative numSamples without c
     OttoHost host;
     host.prepare (kTestSampleRate, kTestBlockSize);
 
-    host.renderBlock (0);
-    host.renderBlock (-1);
-    host.renderBlock (INT_MIN);
-    host.renderBlock (kTestBlockSize);
+    juce::MidiBuffer midi;
+    host.renderBlock (0, midi);
+    host.renderBlock (-1, midi);
+    host.renderBlock (INT_MIN, midi);
+    host.renderBlock (kTestBlockSize, midi);
 
     // Still healthy after the no-op + negative calls.
     CHECK (host.getOttoOutputLeft  (0) != nullptr);
@@ -191,7 +199,8 @@ TEST_CASE ("OttoHost embeds OTTOProcessor — getPlayerManager() reaches GlobalM
     // getPlayerManager() accessor instead of the bare PlayerManager member
     // pre-S1 used. Identical observable behavior — the accessor chain
     // returns the same GlobalMixer instance the processor manages.
-    host.renderBlock (kTestBlockSize);
+    juce::MidiBuffer midi;
+    host.renderBlock (kTestBlockSize, midi);
 
     for (int i = 0; i < OttoHost::kNumOttoOutputs; ++i)
     {
@@ -213,7 +222,7 @@ TEST_CASE ("OttoHost embeds OTTOProcessor — getPlayerManager() reaches GlobalM
     REQUIRE (rBus_first != nullptr);
 
     for (int block = 0; block < 100; ++block)
-        host.renderBlock (kTestBlockSize);
+        host.renderBlock (kTestBlockSize, midi);
 
     CHECK (host.getOttoOutputLeft  (0)                                  == l0_first);
     CHECK (host.getOttoOutputLeft  (OttoHost::kOttoFxReturnRangeBegin)  == lFx_first);
