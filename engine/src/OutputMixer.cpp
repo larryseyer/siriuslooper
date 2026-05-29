@@ -585,6 +585,13 @@ BusId OutputMixer::busIdAt (int index) const noexcept
     return buses_[static_cast<std::size_t> (index)].id();
 }
 
+OutputChannelId OutputMixer::channelIdAt (int index) const noexcept
+{
+    if (index < 0 || static_cast<std::size_t> (index) >= channels_.size())
+        return OutputChannelId { 0 };
+    return channels_[static_cast<std::size_t> (index)].id;
+}
+
 BusKind OutputMixer::busKindAt (int index) const noexcept
 {
     if (index < 0 || index >= static_cast<int> (buses_.size())) return BusKind::Bus;

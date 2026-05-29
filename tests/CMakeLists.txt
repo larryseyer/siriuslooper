@@ -209,6 +209,14 @@ add_executable(IdaTests
     # Catches any future regression of the processBlockBeforeRouting +
     # processGlobalMixer + processBlockAfterRouting sequence.
     OttoHostPumpTests.cpp
+    # S6 T4 — OTTO strip persistence + rebind. Exercises the
+    # ida::app::rebindOttoChannelsAfterImport helper end-to-end: addChannel +
+    # setOttoSource + exportGraphState + importGraphState into a fresh mixer +
+    # rebind binds the OTTO output buffer pointers (HardwareOutput and Bus
+    # route variants + idempotent re-rebind). Pulls in app/OttoStripRebind.cpp
+    # directly (same pattern OttoPaneTests uses for app/OttoPane.cpp).
+    OttoStripDestPersistenceTests.cpp
+    ${CMAKE_SOURCE_DIR}/app/OttoStripRebind.cpp
     # S3a T6 — ida::TransportBarHost (app/TransportBarHost.cpp) wraps
     # otto::ui::TransportBar, forwards listener events to OttoHost, mirrors
     # OTTO transport state into the bar, and ticks meter+spectrum at 30 Hz.

@@ -258,6 +258,11 @@ public:
     /// — same defensive default as `InputMixer::busIdAt`. Message-thread.
     BusId busIdAt (int index) const noexcept;
 
+    /// Indexed channel accessor (0..channelCount()-1). Returns the invalid
+    /// sentinel `OutputChannelId{0}` for out-of-range indices — same
+    /// defensive default as `busIdAt`. Message-thread.
+    OutputChannelId channelIdAt (int index) const noexcept;
+
     /// Indexed bus-kind accessor (mirror of `InputMixer::busKindAt`). The
     /// kind distinguishes plain aux buses from FX-return buses so the UI
     /// can pre-filter pickers (channels' main-out picker excludes FX
