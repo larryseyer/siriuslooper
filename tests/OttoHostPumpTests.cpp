@@ -43,6 +43,22 @@ struct CapturingListener : public ida::IOttoTransportListener
 constexpr double kSampleRate = 48000.0;
 constexpr int    kBlockSize  = 256;
 
+// Prime OttoHost's TransportTracker: drive one baseline block + drain so
+// the tracker has a "previous state" to diff against on the next update.
+// OTTO's TransportTracker::detectAndPublishChanges short-circuits on
+// hasReceivedFirstUpdate_==false (no spurious init events), so without this
+// prelude the FIRST renderBlock after play()/setTempo()/stop() would be the
+// tracker's baseline rather than its diff source and no listener would fire.
+// In production the audio callback fires many blocks before the user touches
+// the transport bar; this helper mirrors that production reality. Do NOT
+// inline this into individual TEST_CASEs — duplication invites accidental
+// removal during future refactors.
+void primeTransport (ida::OttoHost& host, juce::MidiBuffer& midi)
+{
+    host.renderBlock (kBlockSize, midi);
+    host.drainForTesting();
+}
+
 } // namespace
 
 TEST_CASE ("OttoHost full pump: play → renderBlock drains, advances transport, fires listener",
@@ -54,12 +70,7 @@ TEST_CASE ("OttoHost full pump: play → renderBlock drains, advances transport,
     host.prepare (kSampleRate, kBlockSize);
 
     juce::MidiBuffer midi;
-
-    // Prime the TransportTracker. OTTO's tracker suppresses events on the
-    // first update() so it doesn't fire spurious init events; we drive one
-    // baseline block so the tracker has a "previous state" to diff against.
-    host.renderBlock (kBlockSize, midi);
-    host.drainForTesting();
+    primeTransport (host, midi);
 
     CapturingListener listener;
     host.addTransportListener (&listener);
@@ -82,10 +93,7 @@ TEST_CASE ("OttoHost full pump: setTempo → renderBlock fires BpmChanged",
     host.prepare (kSampleRate, kBlockSize);
 
     juce::MidiBuffer midi;
-
-    // Prime the TransportTracker (see [otto-host-pump][play] comment).
-    host.renderBlock (kBlockSize, midi);
-    host.drainForTesting();
+    primeTransport (host, midi);
 
     CapturingListener listener;
     host.addTransportListener (&listener);
@@ -108,11 +116,9 @@ TEST_CASE ("OttoHost full pump: stop → renderBlock fires Stopped",
     host.prepare (kSampleRate, kBlockSize);
 
     juce::MidiBuffer midi;
+    primeTransport (host, midi);
 
-    // Prime the TransportTracker, then start playing so Stop is observable.
-    host.renderBlock (kBlockSize, midi);
-    host.drainForTesting();
-
+    // Start playing so Stop is observable.
     host.play();
     host.renderBlock (kBlockSize, midi);
     host.drainForTesting();
@@ -129,6 +135,16 @@ TEST_CASE ("OttoHost full pump: stop → renderBlock fires Stopped",
     host.removeTransportListener (&listener);
 }
 
+// Pointer-chain liveness pin: this TEST_CASE proves only that
+// processGlobalMixer ran and the per-channel accessor returns a non-null
+// pointer after renderBlock. It does NOT prove sample-level equivalence
+// with OTTO standalone (that contract is preserved by the verbatim move
+// in OTTO's processBlock split and pinned by OTTO's own
+// [processBlock-split][transport-state-parity] test, which runs from
+// OTTO's standalone CMake — currently pre-existingly broken; tracked
+// separately). Future regression hunts: trust this only as far as
+// "the pointer-chain is alive after pump", not as a behavioral proof
+// of the audio content.
 TEST_CASE ("OttoHost full pump: after play, getOttoOutputLeft(0) returns non-null",
            "[otto-host-pump][channel-accessor]")
 {
@@ -141,8 +157,6 @@ TEST_CASE ("OttoHost full pump: after play, getOttoOutputLeft(0) returns non-nul
     juce::MidiBuffer midi;
     host.renderBlock (kBlockSize, midi);
 
-    // No kit loaded in headless tests, but processGlobalMixer should have
-    // run and the per-channel accessor should expose a live pointer.
     REQUIRE (host.getOttoOutputLeft  (0) != nullptr);
     REQUIRE (host.getOttoOutputRight (0) != nullptr);
 }

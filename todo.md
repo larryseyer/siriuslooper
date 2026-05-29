@@ -1969,14 +1969,17 @@ assets before public launch:
 
 Prior session's pump gap closed by S3c: OTTO's `processBlock` split into `processBlockBeforeRouting(juce::MidiBuffer&, int)` + `processBlockAfterRouting(int)`; IDA's `OttoHost::renderBlock` now calls both with `processGlobalMixer` between. ctest 813/1 (+5 from new `[otto-host-pump]` tests). Operator T17 verification pending.
 
-### [2026-05-28] — S3c follow-on polish (non-blocking)
+### [2026-05-28] — S3c follow-on polish — items (1)–(3) RESOLVED 2026-05-29; (4)–(5) remain OTTO-side
 
-- Files: `core/include/ida/IOttoRenderSource.h:13-19`, `tests/OttoHostPumpTests.cpp` (three TEST_CASEs share a priming prelude + the `[channel-accessor]` file-level comment overclaim), `external/OTTO/src/otto-core/src/common/EventBus.cpp` (OTTO-side), OTTO standalone CMake (OTTO-side).
-- What was deferred: five polish items consolidated from T15 + T16 + final code-quality reviews. All NON-blocking — S3c shipped at IDA `f4111bba` + OTTO `ee390098`; operator-audible Play works.
-  1. **Priming-step helper in `OttoHostPumpTests.cpp`** — `[play]` / `[tempo]` / `[stop]` / listener-fire TEST_CASEs each run the same "prime the TransportTracker" prelude. Extract `primeTransport(host, midi)` at file top with the full production-parallel rationale once, called from each TEST_CASE. Prevents accidental removal during future refactors.
-  2. **Forward-decl bleed doc in `IOttoRenderSource.h:13-19`** — current comment says the `juce::MidiBuffer&` forward-decl "costs no include" but doesn't say translation units that USE (not just name) the arg must include `<juce_audio_basics/juce_audio_basics.h>` themselves. Add one sentence — load-bearing for future test stubs that iterate the buffer.
-  3. **`[channel-accessor]` test scope claim** — file-level comment frames the test as the end-to-end pin for OTTO verbatim-move equivalence; the assertion only proves pointer non-null. Tighten to "pointer-chain liveness pin (sample-equivalence stays in OTTO's own test)" so future regression hunts don't trust the test beyond what it actually verifies.
-  4. **OTTO `EventBus::publish` mutex+alloc** (OTTO-side) — already queued in OTTO inbox 2026-05-27 entry. IDA's handler is RT-clean either way; not blocking.
-  5. **OTTO standalone test suite unblock** (OTTO-side) — OTTO's host-top-level CMake is pre-existingly broken (missing CLAP/Catch2/clap-juce-extensions submodules + `cmake/OTTOConfig.cmake`). T15's `test_processblock_split_app` target is registered correctly but won't build until OTTO's configure is unblocked. IDA's `[otto-host-pump]` 4-case suite + the `[transport-state-parity]` test currently close the verification end-to-end.
-- Why deferred: none threaten correctness or audio-thread safety. Worth landing alongside the next pump-related slice so the test-helper extraction lands with new tests that would otherwise duplicate the priming pattern. Per "elegant and professional" criterion: polish, not a blocker.
-- What's needed to finish: items (1)–(3) are ~30 min of IDA-side work in any fresh session; (4) and (5) land on OTTO's own timeline.
+Items (1)–(3) landed this session as a single IDA-side commit on top of S3c (T17 PASS):
+
+1. ✅ Extracted `primeTransport(host, midi)` helper at the top of `tests/OttoHostPumpTests.cpp` with the full production-parallel rationale (TransportTracker `hasReceivedFirstUpdate_` short-circuit explained once); `[play]` / `[tempo]` / `[stop]` TEST_CASEs each call it. `[channel-accessor]` does NOT prime (it goes straight to play() and only pins pointer-chain liveness).
+2. ✅ Sharpened the `juce::MidiBuffer&` forward-decl doc in `core/include/ida/IOttoRenderSource.h` — added the "USE vs name" clarification so future translation units that iterate/construct the buffer know they must include `<juce_audio_basics/juce_audio_basics.h>` themselves.
+3. ✅ Added a pointer-chain-liveness-only scope comment above the `[otto-host-pump][channel-accessor]` TEST_CASE — tells future regression hunts not to trust the test beyond what it actually verifies; points at OTTO's own `[transport-state-parity]` test as the sample-equivalence pin.
+
+Verification: `[otto-host-pump]` = 4 test cases / 5 assertions all pass; full ctest 813/1 (unchanged baseline — polish landed without regression).
+
+Remaining (OTTO-side timeline, NOT blockers for IDA):
+
+4. **OTTO `EventBus::publish` mutex+alloc** — already queued in OTTO inbox 2026-05-27 entry. IDA's handler is RT-clean either way.
+5. **OTTO standalone test suite unblock** — OTTO's host-top-level CMake is pre-existingly broken (missing CLAP/Catch2/clap-juce-extensions submodules + `cmake/OTTOConfig.cmake`). T15's `test_processblock_split_app` is registered correctly but won't build until OTTO's configure is unblocked. IDA's `[otto-host-pump]` 4-case suite continues to close the verification end-to-end.

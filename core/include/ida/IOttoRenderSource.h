@@ -16,8 +16,11 @@ namespace ida
 /// The interface lives in `core/` (JUCE-free in the public surface
 /// except for the forward-declared `juce::MidiBuffer&` below — a deliberate
 /// minimal bleed so the audio thread can pass MIDI through without an
-/// extra hop. The forward declaration costs no include; the implementing
-/// translation unit pulls in `<juce_audio_basics/juce_audio_basics.h>`).
+/// extra hop. The forward declaration costs no include HERE; any
+/// translation unit that USES the buffer (constructs one, iterates events,
+/// reads bytes — anything beyond naming it in a signature) must include
+/// `<juce_audio_basics/juce_audio_basics.h>` itself. The implementing
+/// translation unit and the audio-callback caller both already do.
 ///
 /// Implementations must obey the audio-thread RT-safety contract: no
 /// allocation, no locks, no I/O, no throw. `AudioCallback` invokes
