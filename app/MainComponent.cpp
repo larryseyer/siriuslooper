@@ -6867,6 +6867,7 @@ ida::OutputChannelId MainComponent::addOttoOutputStrip (int ottoOutputIndex)
     outputMixer_->setChannelStrip (chId,
         std::make_unique<ChannelStrip<SignalType::Audio>>());
     outputMixer_->setChannelAudioSource (chId, leftSrc, rightSrc);
+    outputMixer_->setOttoSource (chId, ottoOutputIndex);   // S6: provenance for save/load rebind
     audioDeviceManager_.addAudioCallback (audioCallback_.get());
 
     ottoChannelByOutputIndex_.emplace (ottoOutputIndex, chId);
