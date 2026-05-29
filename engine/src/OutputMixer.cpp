@@ -83,6 +83,7 @@ OutputMixer::OutputMixer()
     channelPreFaderSends_.reserve   (static_cast<std::size_t> (kMaxOutputChannels));
     channelMainOutKind_.reserve     (static_cast<std::size_t> (kMaxOutputChannels));
     channelMainOutBus_.reserve      (static_cast<std::size_t> (kMaxOutputChannels));
+    channelOttoSource_.reserve      (static_cast<std::size_t> (kMaxOutputChannels));
     channelAudioSources_.reserve    (static_cast<std::size_t> (kMaxOutputChannels));
     freeChannelIds_.reserve         (static_cast<std::size_t> (kMaxOutputChannels));
 
@@ -119,6 +120,7 @@ void OutputMixer::registerChannelWithId (SignalType type, OutputChannelId id)
     channelPreFaderSends_.push_back (0);   // slice E2: default post-fader
     channelMainOutKind_.push_back (MainOutDest::Bus);    // slice E3: default = master
     channelMainOutBus_.push_back  (BusId { 0 });
+    channelOttoSource_.push_back  (-1);   // S6: default phrase channel
     channelAudioSources_.push_back ({ nullptr, nullptr }); // 2026-05-24: silent default
 }
 
@@ -205,6 +207,7 @@ void OutputMixer::removeChannel (OutputChannelId id)
         channelPreFaderSends_[idx]   = channelPreFaderSends_[last];
         channelMainOutKind_[idx]     = channelMainOutKind_[last];
         channelMainOutBus_[idx]      = channelMainOutBus_[last];
+        channelOttoSource_[idx]      = channelOttoSource_[last];
         channelAudioSources_[idx]    = channelAudioSources_[last];
     }
     channels_.pop_back();
@@ -213,6 +216,7 @@ void OutputMixer::removeChannel (OutputChannelId id)
     channelPreFaderSends_.pop_back();
     channelMainOutKind_.pop_back();
     channelMainOutBus_.pop_back();
+    channelOttoSource_.pop_back();
     channelAudioSources_.pop_back();
 
     freeChannelIds_.push_back (channelValue);
@@ -493,6 +497,27 @@ int OutputMixer::channelMainOutHardwareOutPair (OutputChannelId id) const noexce
         if (channels_[i].id == id)
             return channelHardwareOutPair_[i];
     return 0;
+}
+
+void OutputMixer::setOttoSource (OutputChannelId channel, int ottoSource) noexcept
+{
+    for (std::size_t i = 0; i < channels_.size(); ++i)
+    {
+        if (channels_[i].id == channel)
+        {
+            channelOttoSource_[i] = ottoSource;
+            return;
+        }
+    }
+    // Unknown id — silent no-op, mirror of `setChannelMainOutToHardwareOutput`.
+}
+
+int OutputMixer::getOttoSource (OutputChannelId id) const noexcept
+{
+    for (std::size_t i = 0; i < channels_.size(); ++i)
+        if (channels_[i].id == id)
+            return channelOttoSource_[i];
+    return -1;
 }
 
 bool OutputMixer::channelSendIsPreFader (OutputChannelId channel) const noexcept
@@ -978,6 +1003,7 @@ OutputMixerGraphState OutputMixer::exportGraphState() const
                                     ? OutputChannelMainOutKind::HardwareOutput
                                     : OutputChannelMainOutKind::Bus; // slice E3
         entry.mainOutBus      = channelMainOutBus_[ci].value();
+        entry.ottoSource      = channelOttoSource_[ci];   // S6
         if (ce.strip != nullptr) entry.inserts = ce.strip->effectChain();
         for (std::size_t b = 0; b < buses_.size(); ++b)
         {
@@ -1107,6 +1133,7 @@ void OutputMixer::importGraphState (const OutputMixerGraphState& state)
 
         // Slice E2: restore per-channel pre-fader send mode.
         setChannelSendIsPreFader (created, c.preFaderSends);
+        setOttoSource (created, c.ottoSource);            // S6
     }
 
     nextBusId_           = std::max (nextBusId_, state.nextBusId);

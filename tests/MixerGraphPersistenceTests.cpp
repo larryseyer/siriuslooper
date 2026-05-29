@@ -200,3 +200,39 @@ TEST_CASE ("OutputMixer survives serialize -> deserialize with an Internal-FX in
     CHECK (round.channels[0].inserts.entries()[0].kind == ida::EffectChainSlotKind::Internal);
     CHECK (round.channels[0].inserts.entries()[0].internalId == InternalFxId::kDly);
 }
+
+TEST_CASE ("OutputChannelState round-trips ottoSource (-1, 0..31, -2 reserved)",
+           "[output-channel-state][round-trip][otto-source]")
+{
+    using namespace ida;
+
+    SECTION ("default ottoSource is -1")
+    {
+        OutputChannelState a;
+        REQUIRE (a.ottoSource == -1);
+    }
+
+    SECTION ("operator== includes ottoSource")
+    {
+        OutputChannelState a; a.channelId = 7;
+        OutputChannelState b; b.channelId = 7;
+        REQUIRE (a == b);
+        b.ottoSource = 3;
+        REQUIRE (a != b);
+        a.ottoSource = 3;
+        REQUIRE (a == b);
+    }
+
+    SECTION ("a few representative values survive copy-construct + assign")
+    {
+        for (int src : { -1, 0, 17, 31, -2 })
+        {
+            OutputChannelState a; a.channelId = 1; a.ottoSource = src;
+            OutputChannelState copy = a;
+            REQUIRE (copy.ottoSource == src);
+            OutputChannelState assigned;
+            assigned = a;
+            REQUIRE (assigned.ottoSource == src);
+        }
+    }
+}

@@ -186,6 +186,15 @@ struct OutputChannelState
     bool                     preFaderSends   { false };
     OutputChannelMainOutKind mainOutKind     { OutputChannelMainOutKind::Bus };
     std::int64_t             mainOutBus      { 0 }; // valid when mainOutKind == Bus
+    /// S6 (2026-05-29) — channel-provenance marker for persistence + import-time
+    /// rebind. -1 = phrase channel (the default); 0..31 = the OTTO output index
+    /// this channel was minted from via MainComponent::addOttoOutputStrip;
+    /// -2 reserved for the future S7 OTTO Stereo Mix sentinel. The engine never
+    /// reads this at runtime — pure transport metadata round-tripped through
+    /// exportGraphState/importGraphState so MainComponent's post-import rebind
+    /// pass can identify OTTO channels and rebind their buffer pointers via
+    /// OttoHost::getOttoOutputLeft/Right.
+    int                      ottoSource      { -1 };
 
     bool operator== (const OutputChannelState& o) const noexcept
     {
@@ -195,7 +204,8 @@ struct OutputChannelState
             && preFaderSends == o.preFaderSends
             && mainOutKind == o.mainOutKind
             && (mainOutKind == OutputChannelMainOutKind::HardwareOutput
-                    || mainOutBus == o.mainOutBus);
+                    || mainOutBus == o.mainOutBus)
+            && ottoSource == o.ottoSource;
     }
     bool operator!= (const OutputChannelState& o) const noexcept { return ! (*this == o); }
 };

@@ -118,6 +118,19 @@ public:
     /// Message-thread accessor.
     int channelMainOutHardwareOutPair (OutputChannelId id) const noexcept;
 
+    /// S6 (2026-05-29) — sets the OTTO-source provenance marker for `channel`.
+    /// -1 = phrase channel; 0..31 = OTTO output index; -2 reserved for the
+    /// S7 OTTO Stereo Mix sentinel. The engine never reads this at runtime —
+    /// it is purely transport metadata for `exportGraphState`/`importGraphState`
+    /// so MainComponent's post-import rebind pass can identify OTTO channels
+    /// and rebind their buffer pointers. No-op for unknown ids. Message-thread.
+    void setOttoSource (OutputChannelId channel, int ottoSource) noexcept;
+
+    /// Reads channel `id`'s recorded OTTO-source marker. Returns -1 for
+    /// unknown ids (the phrase-channel default — same defensive default as
+    /// `channelMainOutHardwareOutPair`). Message-thread accessor.
+    int getOttoSource (OutputChannelId id) const noexcept;
+
     /// Slice E3 (2026-05-24) — output-channel main-out manifest. Mirror of
     /// `busMainOut`. Returns Bus when the channel routes into a bus (master
     /// or aux); HardwareOutput when the channel goes direct to a physical
@@ -422,6 +435,13 @@ private:
     /// Stable across switches to HardwareOutput and back — the picker UI
     /// can remember the last bus pick.
     std::vector<BusId>        channelMainOutBus_;
+
+    /// S6 (2026-05-29) — per-channel OTTO-source provenance marker. -1 = phrase
+    /// channel; 0..31 = OTTO output index. Parallel to `channels_` /
+    /// `channelHardwareOutPair_` / `channelMainOutKind_` — push_back/swap-erase
+    /// in lockstep. Sized to `kMaxOutputChannels` in the ctor so `push_back` in
+    /// `addChannel` never reallocates.
+    std::vector<int>          channelOttoSource_;
 
     /// Per-channel audio source pointers, parallel to `channels_`
     /// (2026-05-24). Default `{nullptr, nullptr}` (silent) for every newly-

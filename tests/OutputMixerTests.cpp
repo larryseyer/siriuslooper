@@ -1580,3 +1580,60 @@ TEST_CASE ("OutputMixer aux-bus pan / width / gain / muted survive the full JSON
     CHECK (restoredBus->pan()   == Catch::Approx (0.25f));
     CHECK (restoredBus->width() == Catch::Approx (1.5f));
 }
+
+TEST_CASE ("OutputMixer::setOttoSource / getOttoSource round-trip through "
+           "exportGraphState + importGraphState",
+           "[output-mixer][otto-source]")
+{
+    using namespace ida;
+
+    OutputMixer mix;
+
+    const auto chPhrase = mix.addChannel (SignalType::Audio);
+    const auto chOtto0  = mix.addChannel (SignalType::Audio);
+    const auto chOtto31 = mix.addChannel (SignalType::Audio);
+
+    SECTION ("freshly added channels default ottoSource to -1")
+    {
+        REQUIRE (mix.getOttoSource (chPhrase)  == -1);
+        REQUIRE (mix.getOttoSource (chOtto0)   == -1);
+        REQUIRE (mix.getOttoSource (chOtto31)  == -1);
+        REQUIRE (mix.getOttoSource (OutputChannelId { 9999 }) == -1); // unknown id
+    }
+
+    SECTION ("setOttoSource writes; getter reads back")
+    {
+        mix.setOttoSource (chOtto0, 0);
+        mix.setOttoSource (chOtto31, 31);
+
+        REQUIRE (mix.getOttoSource (chPhrase)  == -1);
+        REQUIRE (mix.getOttoSource (chOtto0)   == 0);
+        REQUIRE (mix.getOttoSource (chOtto31)  == 31);
+    }
+
+    SECTION ("ottoSource round-trips through export + import")
+    {
+        mix.setOttoSource (chOtto0, 0);
+        mix.setOttoSource (chOtto31, 31);
+
+        const auto state = mix.exportGraphState();
+
+        OutputMixer fresh;
+        fresh.importGraphState (state);
+
+        REQUIRE (fresh.getOttoSource (chPhrase)  == -1);
+        REQUIRE (fresh.getOttoSource (chOtto0)   == 0);
+        REQUIRE (fresh.getOttoSource (chOtto31)  == 31);
+    }
+
+    SECTION ("removeChannel cleans up the per-channel ottoSource (swap-erase parity)")
+    {
+        mix.setOttoSource (chOtto0,  0);
+        mix.setOttoSource (chOtto31, 31);
+        mix.removeChannel (chOtto0);
+
+        REQUIRE (mix.getOttoSource (chOtto31) == 31);
+        const auto chReplay = mix.addChannel (SignalType::Audio);
+        REQUIRE (mix.getOttoSource (chReplay) == -1);
+    }
+}
