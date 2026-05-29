@@ -1,12 +1,10 @@
-# Session Continuation — S3c SHIPPED + operator T17 VERIFIED 2026-05-29: OTTO audio pump end-to-end through IDA's transport bar
+# Session Continuation — S6 T1–T4 LANDED (T4 reviews pending); T5–T8 queued 2026-05-29
 
 ## ▶ 0. TL;DR (60 seconds)
 
-S3c shipped 2026-05-28 via subagent-driven development: two OTTO commits (T15 split + T15-fixup) + one IDA atomic commit (T16). Operator T17 verification PASSED 2026-05-29 — "All works as far as I can tell." The IDA-side OTTO audio pump drives OTTO's full housekeeping prefix + per-channel sum + housekeeping suffix on every audio block. The pre-S3c blocker (`renderBlock` skipped `processBlock` entirely → SPSC AudioMessage queue never drained → conductor never advanced → sfizz never noteOn'd → silence) is closed and operator-confirmed audible.
+S6 (OTTO output-strip DEST picker + save/load persistence) is mid-flight. **Producer chain (T1–T3) and the post-import rebind helper + end-to-end test (T4) all implemented and pushed** via subagent-driven development. Engine carries `ottoSource` provenance metadata; JSON round-trips it; `MainComponent::addOttoOutputStrip` stamps it; `ida::app::rebindOttoChannelsAfterImport` reads it on import and re-binds OTTO buffer pointers. ctest **819 passed / 1 not-run** (+6 from S3c baseline of 813/1 — exactly the new test cases T1×2 + T2×1 + T4×3). All four implementation tasks went through implementer subagent → spec compliance review → code-quality review per S3c precedent. T1 hit a code-quality fixup loop (rename + named constants + tighter equality test); landed cleanly at `3d2a5b1`. T2, T3 APPROVED on first review. **T4 reviews still PENDING — that is Step 1 of the next session.**
 
-End-to-end at HEAD: ctest **813 passed / 1 not-run = 814 total** (+5 over pre-S3c baseline of 808/1). Clean rebuild + IDA target build + full ctest all verified. Two independent code-quality reviewers + one final cross-cutting review + operator audible-Play verification all approved.
-
-**Next chat:** pick the next slice from `todo.md`. Candidates in §5 Step 4 — recommended order per `project_mixer_then_transport_roadmap.md` is "finish Input Mixer → Output Mixer → then transport + other metering"; S3c was a transport-side detour that's now done, so the mixer work resumes. Alternative: land the 5 S3c follow-on polish items (todo.md 2026-05-28 entry, ~30 min of IDA-side work for items 1-3).
+**Next chat first action:** dispatch the T4 spec-compliance reviewer and T4 code-quality reviewer (sequence + prompt templates in §5 Step 1). Then T5 (UI scaffolding) → T6 (wiring) → T7 (chooseFileAndLoad rebind call) → T8 (operator T-checklist). T5–T8 task texts are in `docs/superpowers/plans/2026-05-29-otto-strip-dest-and-persistence.md`.
 
 ---
 
@@ -14,149 +12,146 @@ End-to-end at HEAD: ctest **813 passed / 1 not-run = 814 total** (+5 over pre-S3
 
 | Thing | SHA | Note |
 |---|---|---|
-| IDA HEAD (origin/master) | **f4111bba** | T16 atomic: submodule pin + interface sig + OttoHost.h/.cpp + AudioCallback caller + 3 test files |
-| OTTO HEAD (IDA's pin) | **ee390098** | T15-fixup: CMake target ref + test rigor + comment polish |
-| OTTO HEAD (origin/main, upstream) | **ee390098** | equals IDA's pin |
-| OTTO prior commit (T15 initial split) | `d9fc41a0` | parent of ee390098; carries the verbatim move |
-| lsfx_tapecolor (IDA's pin) | `0a7189c` | unchanged this session |
+| IDA HEAD (origin/master) | **dd816c0** | T4: rebind helper + 3 end-to-end tests + `channelIdAt` accessor |
+| Prior commits this session (newest→oldest) | `6227550` (T3) · `0abe0a4` (T2) · `3d2a5b1` (T1 fixup) · `dc2d8a8` (T1) · `9f08e12` (plan) · `96a16f2` (spec) | All pushed |
+| OTTO HEAD (IDA's pin) | `ee390098` | Unchanged this session |
+| OTTO HEAD (origin/main) | `ee390098` | = IDA's pin (no drift) |
+| lsfx_tapecolor pin | `0a7189c` | Unchanged this session |
 
-Working tree end-of-session: `m external/sfizz` only (pre-existing 64-channel patch the build applies on every configure — leave alone).
-
-Also pushed this session: spec `7431e15` and plan `6ae911e` (docs commits before the implementation chain).
+Working tree end-of-session: `m external/sfizz` only (pre-existing 64-channel patch; leave alone).
 
 ---
 
 ## ▶ 2. What landed this session, in order
 
-Every implementation task ran through `superpowers:subagent-driven-development` — fresh implementer subagent per task → spec compliance reviewer → code-quality reviewer → fix loop if needed → mark complete. Brainstorm → spec → plan → execution all in one session.
+Brainstorm → spec → plan → subagent-driven execution. All commits on master, all pushed.
 
-### Pre-implementation (controller-driven)
+### Pre-implementation
 
-1. **Brainstorm via `superpowers:brainstorming`**. Explored `processBlock` end-to-end (line 665–1122), mapped 27 steps to "must-run in IDA" / "must-NOT-run in IDA (master conflict)" / "either-way". Result: only ONE step is architecturally contested (`outputRouter_.routeAudio` + downstream tail). Three architecture options surfaced; operator chose "wide architectural pass" with full deferral; locked design B (OTTO splits processBlock; IDA calls prefix + processGlobalMixer + suffix).
-2. **Spec written** at `docs/superpowers/specs/2026-05-28-otto-audio-pump-design.md` (432 lines). Self-review cleanup pass for placeholders + contradictions. Commit `7431e15`.
-3. **Implementation plan written** at `docs/superpowers/plans/2026-05-28-otto-audio-pump.md` (1098 lines). T15 (OTTO split, 9 sub-steps) + T16 (IDA atomic, 14 sub-steps) + T17 (operator verify checklist). Commit `6ae911e`.
+1. **Inbox check** at session start. 5 IDA→OTTO `needs-ack` from prior sessions (none addressed to IDA, no action needed). 0 OTTO→IDA. OTTO `origin/main` == IDA's pin.
+2. **`superpowers:brainstorming`** — explored phrase-strip DEST pattern, OutputChannelState shape, master pair picker, OTTO strip code. Locked option A (extend `OutputChannelState` with `int ottoSource { -1 };` engine-transported as pure metadata; MainComponent owns post-import rebind).
+3. **Spec written** at `docs/superpowers/specs/2026-05-29-otto-strip-dest-and-persistence-design.md` (202 lines). Commit `96a16f2`.
+4. **`superpowers:writing-plans`** — implementation plan at `docs/superpowers/plans/2026-05-29-otto-strip-dest-and-persistence.md` (1195 lines, 8 tasks). Self-review tightened Steps 5.5/5.6/6.2/6.3 to remove placeholders. Commit `9f08e12`.
 
-### T15 — OTTO: split processBlock (subagent-driven)
+### T1 — Engine: `ottoSource` field + setter/getter (subagent-driven)
 
-- **OTTO `d9fc41a0`** — implementer: declared `processBlockBeforeRouting` + `processBlockAfterRouting` public methods; moved lines 665-1069 verbatim into BeforeRouting; moved lines 1111-1118 verbatim into AfterRouting; rewrote `processBlock` as wrapper (`ScopedNoDenormals` + `cpuMeter.begin` + BeforeRouting + routing branch verbatim + AfterRouting + `cpuMeter.end`). Added public `getConductor()` non-const + const accessors (mirrors `getPlayerManager()` / `getOutputRouter()` pattern — needed for the new test). Created `tests/unit/test_processblock_split.cpp` + registered as `test_processblock_split_app` in OTTO's `tests/CMakeLists.txt`. Inbox entry appended. `Ida-Origin: pending` trailer. Pushed.
-- **Spec review** ✅ verbatim move discipline confirmed, sanity-grep invariants all match (`processAudioMessages()`=2, `outputRouter_.routeAudio`=1, `ScopedNoDenormals`=1, etc.). Audio-thread invariant sweep on diff: zero forbidden patterns.
-- **Code-quality review** ✅ APPROVED with one Important fix recommended + 3 minor polish items. The Important: `tests/CMakeLists.txt` linked nonexistent `otto_plugin_shared` target (plan-template bug — should be `otto::engine` = S1 static target).
-- **OTTO `ee390098`** (T15-fixup) — implementer landed: (1) CMake target `otto_plugin_shared` → `otto::engine`; (2) equivalence test rewritten from vacuous empty-buffer byte-equality to honest transport-state-parity (drops fragile routing-branch mirror); (3) "Half A/B" decoder-ring comments renamed to "housekeeping prefix/suffix / OTTO master mixdown (skipped by IDA's pump)"; (4) `getConductor()` docstring threading-paragraph dropped to match sibling-accessor precedent. Inbox fixup-ack appended. Pushed.
+- **`dc2d8a8`** — implementer: added `OutputChannelState::ottoSource` field + `operator==` extension; `OutputMixer::setOttoSource`/`getOttoSource` public; `channelOttoSource_` private parallel vector; 5 touchpoints (ctor reserve, registerChannelWithId push_back, removeChannel swap-erase, exportGraphState read, importGraphState write via setter). 2 new TEST_CASEs: `[output-channel-state][otto-source]` + `[output-mixer][otto-source]`.
+- **Spec compliance review** ✅ — all 5 touchpoints present, doc comments match, tests cover defaults + equality + copy/assign + setter + export/import round-trip + removeChannel swap-erase parity.
+- **Code-quality review** ❌ NEEDS WORK — 1 Critical (later revealed to be a task-boundary misread — JSON wiring IS T2's job, not T1's), 3 Important (getter naming `get*` → noun-form `channel*`; magic sentinels `-1`/`-2`/`0..31`; equality test pins by accident), 3 Minor (dated tags, doc duplication, noexcept-vs-bool mirror claim).
+- **`3d2a5b1`** (T1 fixup) — implementer landed: renamed `getOttoSource` → `channelOttoSource`; added `inline constexpr int kOttoSourcePhraseChannel = -1; kOttoSourceStereoMixReserved = -2;` in `core/include/ida/MixerGraphState.h` (doc references `OttoHost::kNumOttoOutputs` textually — no include, dependency direction preserved); replaced literal `-1` at struct default + cpp push_back + getter fallback + phrase-default test assertions; rewrote the equality SECTION using a `makeFullyPopulated` lambda that pins the assertion to the `ottoSource` line of `operator==`. Skipped: SessionFormat.cpp (T2 scope) + 3 Minor findings (deferred to todo.md).
 
-### T16 — IDA: pump wire (atomic commit, subagent-driven)
+### T2 — Persistence: JSON serialize/deserialize `ottoSource` (subagent-driven)
 
-- **IDA `f4111bba`** — implementer atomic commit covering 10 files (plan said 9; +1 was a justified extension to keep the build green):
-  - Submodule pin → `ee390098`
-  - `core/include/ida/IOttoRenderSource.h` — forward-decl `juce::MidiBuffer` in `namespace juce`; rewrite `renderBlock` to take `(int, juce::MidiBuffer&) noexcept = 0`. Doc-comment explains the deliberate JUCE-bleed in core/.
-  - `otto-bridge/include/ida/OttoHost.h` — signature update + `<juce_audio_basics/juce_audio_basics.h>` include.
-  - `otto-bridge/src/OttoHost.cpp` — new `renderBlock` body: guards → `ScopedNoDenormals` → `processBlockBeforeRouting(midi, N)` → `processGlobalMixer(N)` → `processBlockAfterRouting(N)`. Stale S1-era comments at Impl ~lines 148-160 and old renderBlock ~lines 230-238 REPLACED with brief design-spec pointer (not just supplemented).
-  - `audio/src/AudioCallback.cpp` — line ~87 caller now passes a stack-local `juce::MidiBuffer ottoMidi;` (RT-safe: default-constructed MidiBuffer doesn't allocate). `<juce_audio_basics>` newly added.
-  - `tests/OttoHostRenderTests.cpp` — 11 call sites mechanically updated to pass `juce::MidiBuffer midi;` stack-local. Assertions preserved.
-  - `tests/OttoHostTransportControlTests.cpp` — same mechanical update + new `CapturingListener`-based TEST_CASE asserting `Kind::Started` snapshot fires after `play() + renderBlock + drainForTesting`.
-  - `tests/OttoHostPumpTests.cpp` (NEW, 148 lines) — 4 TEST_CASEs: `[play]`, `[tempo]`, `[stop]`, `[channel-accessor]`. Each tests a distinct behavioral aspect of the end-to-end pump.
-  - `tests/AudioCallbackTests.cpp` — `CountingSource` test stub's `renderBlock` override updated to new signature (mechanical signature propagation — caught during the build's fail-mode pin and added to the atomic commit because the test binary wouldn't link otherwise).
-  - `tests/CMakeLists.txt` — registers the new pump-test source.
-  - Single-line message: `feat: S3c — IDA OTTO audio pump (processBlock split + renderBlock MidiBuffer)`. Pushed.
-- **Spec review** ✅ Both declared deviations (CountingSource + TransportTracker priming) assessed as honest. The priming step mirrors OTTO's `TransportTracker::detectAndPublishChanges` design (returns early on `hasReceivedFirstUpdate_==false`); in production the audio callback fires many blocks before the user clicks Play. The priming is the test-side mirror of that production reality, not a workaround for an IDA pump bug.
-- **Code-quality review** ✅ APPROVED with 3 Important polish items flagged for follow-on (not blockers): forward-decl bleed doc could be sharper; priming-step duplication invites a `primeTransport()` helper; `[channel-accessor]` test comment slightly overclaims what the assertion proves.
-- **Final cross-cutting review** ✅ SHIPPED. Contract holds across the submodule boundary; signatures match; RT-safety inherits cleanly from the verbatim move; Play → audio → EventBus → SPSC → Timer → listener chain traces end-to-end through code at HEAD; operator handoff ready.
+- **`0abe0a4`** — implementer: emit-if-non-default write in `outputChannelToVar` (uses `kOttoSourcePhraseChannel`); optional read in `outputChannelFromVar` via `optionalProperty`+`requireInt` (back-compat for older sessions). New TEST_CASE `[sessionformat][otto-source]`: 3-channel state through `serializeMixerGraphState` → `deserializeOutputMixerGraphState`, asserts per-value round-trip + full-state `restored == state` equality. Implementer aligned with the real API names (the plan had a typo: `serializeOutputMixerGraphState`).
+- **Spec compliance review** ✅ — write guard + read default + property key + test placement + assertions all match.
+- **Code-quality review** ✅ APPROVED — clean symmetry with surrounding `mainOutBus`/`hardwareOutPair` pattern. No issues.
+
+### T3 — `addOttoOutputStrip` stamps `setOttoSource` (subagent-driven)
+
+- **`6227550`** — implementer: single-line insertion at `app/MainComponent.cpp:6870`, between `setChannelAudioSource` and `addAudioCallback`. `outputMixer_->setOttoSource (chId, ottoOutputIndex);   // S6: provenance for save/load rebind`. Surgical diff (+1 line, nothing else).
+- **Spec compliance review** ✅ — placement correct (inside the audio-callback bracket), argument order correct, variable scope correct, no collateral damage.
+- **Code-quality review** ✅ APPROVED — bracket discipline + signature match + informative comment.
+
+### T4 — `rebindOttoChannelsAfterImport` helper + end-to-end tests (subagent-driven)
+
+- **`dd816c0`** — implementer: created `app/OttoStripRebind.{h,cpp}` (free function in `ida::app::` namespace, ~17-line body iterating `OutputMixer::channelCount()`, skipping `channelOttoSource() < 0` — correctly covers both `kOttoSourcePhraseChannel` and `kOttoSourceStereoMixReserved` without hardcoding either). Created `tests/OttoStripDestPersistenceTests.cpp` — 3 TEST_CASEs (map-pop + idempotent, HardwareOutput route round-trip, Bus route round-trip; 15 assertions total). Added `OutputMixer::channelIdAt(int)` accessor (mirror of `busIdAt`) — needed; didn't exist before. Test uses `host.renderBlock` once after `prepare()` to prime OTTO's per-output pointers (null pre-render — same pattern as `OttoHostRenderTests.cpp`). Map insert uses `insert_or_assign` (because `OutputChannelId` has no default ctor — opaque-id pattern; semantically equivalent to `operator[]=`).
+- **Spec compliance review** ⏳ PENDING (next session Step 1)
+- **Code-quality review** ⏳ PENDING (next session Step 2)
 
 ---
 
 ## ▶ 3. Architecture as it stands
 
-OTTO `processBlock` is now a wrapper:
+Per design spec §2 (locked):
 
-```
-processBlock(buffer, midi):
-  ScopedNoDenormals + cpuMeter.beginMeasurement
-  processBlockBeforeRouting(midi, N)        ← drains SPSC, updates transport,
-                                              fires TransportEvent, dispatches
-                                              MIDI to sfizz, generates pattern
-                                              MIDI, advances conductor
-  if (conductor.playing || hasTailsActive):  ← OTTO's master path (unchanged for
-    outputRouter.routeAudio(buffer)           OTTO standalone; SKIPPED by IDA)
-    de-click + spectrum + buffer.clear()
-  processBlockAfterRouting(N)                ← totalSamplePosition advance +
-                                              fillMode sync
-  cpuMeter.endMeasurement
-```
+- **Engine field** `OutputChannelState::ottoSource` — int, default `kOttoSourcePhraseChannel` (-1). Phrase channel = -1; OTTO output index = 0..`kNumOttoOutputs-1`; -2 reserved for future S7 OTTO Stereo Mix sentinel (read-only reservation today).
+- **Engine API** `OutputMixer::setOttoSource(OutputChannelId, int) noexcept` + `channelOttoSource(OutputChannelId) const noexcept` (noun-form per the rest of the header). Message-thread only. The engine NEVER reads `ottoSource` at runtime — pure transport metadata for persistence + post-import rebind.
+- **Persistence** `outputChannelToVar` emits `ottoSource` ONLY when != -1; `outputChannelFromVar` reads via `optionalProperty` so older sessions silently default. Wire key: `"ottoSource"`.
+- **Producer** `MainComponent::addOttoOutputStrip` calls `outputMixer_->setOttoSource(chId, ottoOutputIndex)` after `setChannelAudioSource`, inside the audio-callback bracket.
+- **Consumer** `ida::app::rebindOttoChannelsAfterImport(OutputMixer&, OttoHost&, std::unordered_map<int, OutputChannelId>&)` — message-thread free function. Iterates `channelCount()`, for each channel whose `channelOttoSource() >= 0` looks up `OttoHost::getOttoOutputLeft/Right(ottoSource)` and calls `setChannelAudioSource(chId, leftSrc, rightSrc)`; populates the map. Skip-on-null (host not prepared) is silent. Idempotent.
 
-IDA's `OttoHost::renderBlock`:
-
-```
-renderBlock(N, midi):
-  if (!prepared || N<=0) return
-  ScopedNoDenormals
-  processor->processBlockBeforeRouting(midi, N)        ← same Half A prefix
-  processor->getPlayerManager().processGlobalMixer(N)  ← per-channel/bus sum;
-                                                         populates the 32 stereo
-                                                         output accessors IDA's
-                                                         Output Mixer reads
-  processor->processBlockAfterRouting(N)               ← same Half A suffix
-```
-
-Net effect: every audio block IDA's AudioCallback drives drains OTTO's message queue, advances OTTO's conductor + song timeline, dispatches pattern MIDI into sfizz, sums per-channel audio into IDA-readable buffers. The Play→audible chain works because each link runs every block.
-
-OTTO standalone is byte-equivalent to pre-split (verbatim-move discipline + the wrapper preserving order). OTTO's own master mixdown still happens in OTTO standalone; just doesn't happen inside IDA. By design.
-
-`OutputRouter::Mode` is irrelevant on IDA's path (we don't call routeAudio). OTTO's mode-aware master-disable inbox item is independent of S3c.
+What's NOT shipped yet (T5–T8):
+- **UI surface** — OTTO strips have NO DEST button visible to the operator. `OutputMixerPane` has gain/mute callbacks for OTTO strips but no `onOttoDestinationChosen` and no `ottoDestButtons_`/`ottoChoices_`/`ottoStripDests_`. T5 lands this.
+- **Wiring** — `onOttoDestinationChosen` callback in MainComponent and the OTTO loop in `refreshOutputDestinations()` to populate choices + sync labels. T6 lands this.
+- **Save/load call site** — `MainComponent::chooseFileAndLoad` does NOT currently call `rebindOttoChannelsAfterImport`. Helper exists + is tested in isolation but the live save/load path doesn't invoke it. T7 lands this.
+- **Operator verification** — T8 (clean rebuild + handoff with numbered T-checklist mirror of S3c T17).
 
 ---
 
 ## ▶ 4. Cross-project state — OTTO inbox
 
-OTTO `origin/main` = `ee390098` = IDA's pin (no drift). Five outstanding `[FROM IDA → OTTO]` entries, all `needs-ack` — none added this session except the combined T15 + T15-fixup entry:
-
-1. **EventBus brief** (older, 2026-05-27) — convert `EventBus::publish` to lock-free + alloc-free. Independent of S3c (IDA's TransportEvent handler is RT-clean either way).
-2. **RE-APPLY isPluginMode_** (2026-05-28 prior session) — re-apply the `|| proc.isEmbeddedInHost()` to OTTOEditor's `isPluginMode_` initializer. Supports IDA's option-B TransportBar mount. Independent of S3c.
-3. **ACK + PIN-BUMP TapeColorProcessor** (2026-05-28 prior session) — informational IDA→OTTO ack of the lsfx_tapecolor short-circuit landing at `0a7189c`. Carries the OTTO-side next-pass list (platform-aware default `quality` + mode-aware default engagement) — those are OTTO's timeline.
-4. **AssetsRoot S3b** (2026-05-28 prior session) — singleton + 3 call-site refactors. Independent of S3c.
-5. **AudioPump S3c** (2026-05-28 THIS session) — combined T15 + T15-fixup entry. References OTTO commits `d9fc41a0` (initial split) + `ee390098` (fixup). Documents the split contract, the byte-equivalent guarantee for OTTO standalone, the audio-thread invariant inheritance, the `getConductor()` accessor extension rationale, and the test deferral path (`[otto-host-pump]` 4-case suite in IDA covers behavior end-to-end while OTTO's standalone CMake remains broken).
-
-`[FROM OTTO → IDA]`: 0 outstanding.
-
-Audit trail: `git -C external/OTTO log --grep='Ida-Origin'` surfaces every IDA-originated OTTO commit forever, including S3c's two.
+No changes this session. `external/OTTO/CROSS_PROJECT_INBOX.md` still carries 5 `[FROM IDA → OTTO]` `needs-ack` entries from prior sessions (EventBus + isPluginMode_ + TapeColorProcessor + AssetsRoot + S3c AudioPump). 0 `[FROM OTTO → IDA]`. OTTO `origin/main` == IDA's pin (`ee390098`).
 
 ---
 
 ## ▶ 5. Next-session resume protocol
 
-### Step 1: Read this file.
+### Step 1: Read this file. Then dispatch T4 spec-compliance reviewer.
 
-### Step 2: Inbox check + OTTO origin/main check
-
-```bash
-cat /Users/larryseyer/IDA/external/OTTO/CROSS_PROJECT_INBOX.md
-git -C /Users/larryseyer/IDA/external/OTTO fetch origin && \
-  git -C /Users/larryseyer/IDA/external/OTTO log --oneline ee390098..origin/main
+```
+Agent (general-purpose, description: "Spec compliance review T4"):
+  Plan task = T4 at docs/superpowers/plans/2026-05-29-otto-strip-dest-and-persistence.md.
+  Implementer report summary:
+    - app/OttoStripRebind.h + app/OttoStripRebind.cpp (helper, ida::app:: namespace)
+    - tests/OttoStripDestPersistenceTests.cpp (3 TEST_CASEs, 15 assertions, [otto-strip][persistence][end-to-end])
+    - tests/CMakeLists.txt registers test + pulls in app/OttoStripRebind.cpp
+    - engine OutputMixer::channelIdAt accessor ADDED (didn't exist)
+    - Commit dd816c0, pushed
+    - ctest 819/1
+  Verify:
+    1. Helper signature: rebindOttoChannelsAfterImport(OutputMixer&, OttoHost&, std::unordered_map<int, OutputChannelId>&) in ida::app::
+    2. Idempotency contract: second call leaves map unchanged
+    3. Skip-on-null (host not prepared) path verified
+    4. Three test cases present + tagged [otto-strip][persistence][end-to-end]
+    5. CMake registration follows OttoPaneTests pattern
+    6. channelIdAt added correctly (matches busIdAt pattern)
+    7. Build succeeds + tests pass
 ```
 
-If a new `[FROM OTTO → IDA]` entry has landed between sessions, ack + prune per the protocol BEFORE running T17.
+### Step 2: Dispatch T4 code-quality reviewer (after spec review ✅).
 
-### Step 3: T17 already passed — skip
+```
+Agent (Code Reviewer subagent_type):
+  BASE_SHA: 6227550 (T3 landing)
+  HEAD_SHA: dd816c0 (T4 landing)
+  Working dir: /Users/larryseyer/IDA
+  Files in diff: app/OttoStripRebind.{h,cpp} (new), tests/OttoStripDestPersistenceTests.cpp (new), tests/CMakeLists.txt (+test registration), engine/include/ida/OutputMixer.h + engine/src/OutputMixer.cpp (channelIdAt accessor)
+  Project conventions: C++20, RAII, ≤100-line functions, no audio-thread paths
+  Specific concerns:
+    - Helper file is focused single-responsibility?
+    - channelIdAt accessor matches busIdAt's defensive default (OutputChannelId{0} on out-of-range)?
+    - Test fixture pattern matches OttoHostRenderTests.cpp?
+    - insert_or_assign use is defensible (OutputChannelId has no default ctor)?
+    - Skip-on-null logging — silent skip is correct per the spec, no warn needed?
+```
 
-Operator verified 2026-05-29: "All works as far as I can tell." Audible drumming on Play, transport-bar state echo, Stop and tempo all working through the IDA bar. No diagnostic needed.
+Address any Important findings via a T4 fixup commit (mirror of T1 fixup pattern). If APPROVED, mark task #4 complete and advance to T5.
 
-### Step 4: Decide next slice
+### Step 3: T5 (UI scaffolding) — dispatch the implementer per the plan's Task 5.
 
-Candidates queued in `todo.md`:
+T5 task text is at the plan file lines ~640–810 (`### Task 5: OutputMixerPane — DEST button surface for OTTO strips`). T5 adds the OTTO row's DEST scaffolding to `OutputMixerPane` (`ottoDestButtons_`/`ottoStripDests_`/`ottoChoices_`/`showOttoDestinationMenu`/`onOttoDestinationChosen`/`appendOttoStripImpl` extension + `setOttoStrips`/`resized`/visibility blocks). Touch surface is the largest of the remaining tasks — possibly split into T5a (declarations + clear/append helpers) and T5b (`resized` + visibility) per the plan's "Notes for the subagent runner" guidance if the subagent struggles.
 
-- **S3c follow-on polish** (this session, non-blocking) — 5 items consolidated. ~30 min for IDA-side items (1)-(3); (4)-(5) are OTTO-side timeline.
-- **OTTO Stereo Mix output** (2026-05-27) — 33rd picker entry summing OTTO's PlayerOut1..4 into a single stereo strip. Plan written; waits on M-OTTO-4 slices 4c + 4d.
-- **File-input MIDI source** (2026-05-26) — sister of audio file-input; needs spec.
-- **Mixer routing + tape pool** — design landed; awaiting implementation slices.
+### Step 4: T6, T7, T8 — follow plan tasks in order.
 
-Operator's "near-term order" per `project_mixer_then_transport_roadmap.md`: finish Input Mixer → Output Mixer → then transport + other metering. S3c was a transport-side detour to make OTTO functional inside IDA; the mixer work resumes after T17 confirms S3c.
+T6 wires `onOttoDestinationChosen` + adds the OTTO loop to `refreshOutputDestinations()`. T7 calls `rebindOttoChannelsAfterImport` from `chooseFileAndLoad`. T8 is the operator T-checklist (mirror of S3c T17). Task texts are in the plan file.
+
+### Step 5: Session end — refresh continue.md + todo.md per `feedback_update_continue_md_every_session`.
 
 ---
 
 ## ▶ 6. Known issues / non-blocking artifacts
 
-- **OTTO standalone CMake still pre-existingly broken** — same as S3b §6. T15's `test_processblock_split_app` target is wired correctly in `external/OTTO/tests/CMakeLists.txt` but won't build until OTTO's host-top-level configure is unblocked. IDA's `[otto-host-pump]` 4-case suite + the OTTO-side `[transport-state-parity]` test (the latter still un-runnable from OTTO standalone, but byte-equivalent under verbatim move) currently close the verification.
-- **5 follow-on polish items** queued in `todo.md` 2026-05-28 entry. None threaten correctness or audio-thread safety. Worth landing alongside the next pump-related slice so the test-helper extraction (item 1) lands with new tests that would otherwise duplicate the priming pattern.
-- **LSP stale-index artifacts during the session.** The harness's diagnostic system fired stale "abstract class" / "override hides virtual" warnings on `TransportBarHost.h`, `MainComponent.h`, `OttoPaneNoInternalTransportTests.cpp` after T16's signature change. None reflected real build issues — `ctest --test-dir build` returned 813/1 at HEAD throughout. The LSP index doesn't auto-refresh across file changes in this session. If the operator's next session shows the same noise, it's not a code problem.
-- **Submodule pin moved past prior session's intent** — same caveat as the prior session's §6 §3 (TAPECOLOR feat + revert pair drift). Now extended by S3c (`ee390098` is forward-only from `4130d7a5` via S3c's two commits + the existing drift). Net OTTO source change: the processBlock split + test + inbox + minor docstring/comment polish. All audited.
+- **5 follow-on polish items** queued in `todo.md` 2026-05-29 entry (the new entry added this session — see below). All Minor, none threaten correctness.
+- **OTTO standalone CMake still pre-existingly broken** — same as S3b/S3c §6. The new `OutputMixer::channelIdAt` was needed for T4's helper; it's pure-message-thread, no risk.
+- **LSP stale-index noise** during the session (same pattern continue.md §6 documented in prior S3c session). The harness fired stale "no member named 'ottoSource'" / "no member named 'getOttoSource'" diagnostics after each task landed, even though `ctest` was green throughout. Not real build issues — confirmed by direct `cmake --build build --target IdaTests` runs returning success. If the operator's next session shows the same noise, it's not a code problem.
+- **Pre-existing warnings** that surfaced repeatedly (NOT T1–T4 introduced):
+  - `MainComponent.cpp:5891` — `juce::int64 → double` implicit conversion (`-Wimplicit-int-float-conversion`)
+  - `AudioCallbackTests.cpp:104` — `-Wfloat-equal`
+  - `SessionFormatTests.cpp:604` — `-Wfloat-equal`
+  - `AudioCallbackTests.cpp:23` — unused-include
+  - `SessionFormatTests.cpp:31` — unused-include
+  All predate S6; not blockers; not in scope to fix.
+- **T4 reviews pending** — this is the only mid-task gap. See §5 Step 1+2.
 
 ---
 
@@ -164,18 +159,21 @@ Operator's "near-term order" per `project_mixer_then_transport_roadmap.md`: fini
 
 | Check | Result |
 |---|---|
-| `git rev-parse HEAD` (IDA) | **f4111bba** — pushed to origin/master |
-| `git ls-tree HEAD external/OTTO` | **ee390098** |
+| `git rev-parse HEAD` (IDA) | **dd816c0** — pushed to origin/master |
+| `git ls-tree HEAD external/OTTO` | `ee390098` (unchanged) |
 | `git ls-tree HEAD external/lsfx_tapecolor` | `0a7189c` (unchanged) |
 | `git status --short` | clean except pre-existing `m external/sfizz` |
-| `ctest --test-dir build` (clean rebuild + full suite) | **813 passed, 1 not-run** (= pre-S3c baseline 808/1 + 5 new pump tests; +5 net) |
-| `cmake --build build --target IDA` (clean) | succeeds; `IDA.app` codesigned via Developer ID |
-| OTTO origin/main HEAD | **ee390098** (= IDA's pin) |
-| OTTO `[FROM IDA → OTTO]` entries | 5 outstanding (EventBus + isPluginMode_ + TapeColorProcessor + AssetsRoot + S3c) |
+| `ctest --test-dir build` | **819 passed, 1 not-run** (= S3c baseline 813/1 + T1×2 + T2×1 + T4×3 = +6 new cases) |
+| `cmake --build build --target IDA` | not exercised this session (T1–T4 are headless tests + engine + a small MainComponent insertion — operator GUI verification deferred to T8) |
+| OTTO origin/main HEAD | `ee390098` (= IDA's pin) |
+| OTTO `[FROM IDA → OTTO]` entries | 5 outstanding (unchanged) |
 | OTTO `[FROM OTTO → IDA]` entries | 0 |
-| S3c spec, plan, code, review chain | all four shipped + pushed 2026-05-28 |
-| S3c operator T17 | **PASS 2026-05-29** — audible drumming confirmed |
+| S6 spec, plan | shipped + pushed |
+| S6 T1–T4 code | shipped + pushed |
+| S6 T4 reviews | PENDING (Step 1+2 next session) |
+| S6 T5–T8 | NOT STARTED (queued, in TaskList #5–#8) |
+| Task list state | #1 #2 #3 ✅ completed · #4 in_progress (pending reviews) · #5–#8 pending |
 
 ---
 
-*End of session. S3c shipped 2026-05-28 via subagent-driven flow: brainstorm → spec → plan → T15 implementer/spec/quality review + fixup → T16 implementer/spec/quality review → final cross-cutting review. Operator T17 verified audible 2026-05-29 ("All works as far as I can tell"). OTTO processBlock split is verbatim-equivalent for OTTO standalone; IDA's pump now drives the full housekeeping prefix + per-channel sum + suffix every audio block. The architectural gap that made Play silent post-S3b is closed and operator-confirmed. Five follow-on polish items queued in todo.md, all non-blocking. Next session: pick the next slice — mixer roadmap resumes, or land the S3c follow-on polish.*
+*End of session. S6 producer chain (T1–T3) + consumer helper + end-to-end test (T4) all shipped via subagent-driven flow. T1 hit one fixup loop (rename + named constants + tighter equality test). T2, T3 single-pass approvals. T4 reviews pending — next chat starts with the spec compliance + code-quality reviewers from §5 Step 1+2, then T5 UI scaffolding. ctest 819/1 (+6 from S3c baseline). The whole T5–T8 chain is the user-visible surface: DEST button on each OTTO strip, route persistence through save/load. Once shipped + operator-verified per T8, S6 closes M-OTTO-4 4c part 2.*
