@@ -1,12 +1,12 @@
-# Session Continuation — S3c SHIPPED: OTTO audio pump end-to-end through IDA's transport bar (pending operator T17)
+# Session Continuation — S3c SHIPPED + operator T17 VERIFIED 2026-05-29: OTTO audio pump end-to-end through IDA's transport bar
 
 ## ▶ 0. TL;DR (60 seconds)
 
-S3c shipped this session via subagent-driven development: two OTTO commits (T15 split + T15-fixup) + one IDA atomic commit (T16). The IDA-side OTTO audio pump now drives OTTO's full housekeeping prefix + per-channel sum + housekeeping suffix on every audio block. The previous session's blocker (`renderBlock` skipped `processBlock` entirely → SPSC AudioMessage queue never drained → conductor never advanced → sfizz never noteOn'd → silence) is closed.
+S3c shipped 2026-05-28 via subagent-driven development: two OTTO commits (T15 split + T15-fixup) + one IDA atomic commit (T16). Operator T17 verification PASSED 2026-05-29 — "All works as far as I can tell." The IDA-side OTTO audio pump drives OTTO's full housekeeping prefix + per-channel sum + housekeeping suffix on every audio block. The pre-S3c blocker (`renderBlock` skipped `processBlock` entirely → SPSC AudioMessage queue never drained → conductor never advanced → sfizz never noteOn'd → silence) is closed and operator-confirmed audible.
 
-End-to-end at HEAD: ctest **813 passed / 1 not-run = 814 total** (+5 over pre-S3c baseline of 808/1). Clean rebuild + IDA target build + full ctest all verified. Two independent code-quality reviewers + one final cross-cutting review approved.
+End-to-end at HEAD: ctest **813 passed / 1 not-run = 814 total** (+5 over pre-S3c baseline of 808/1). Clean rebuild + IDA target build + full ctest all verified. Two independent code-quality reviewers + one final cross-cutting review + operator audible-Play verification all approved.
 
-**Next chat:** operator-run T17 verification. Launch `IDA.app` via the Desktop `IDA` alias, load an LSAD kit on Player 1 in OTTO's tab, press Play in the IDA transport bar — audible drumming expected. If silent, the failure is narrow per design spec §7 (Output Mixer wiring of OTTO outputs into master, or asset edge case) — not S3c scope. T17 checklist is at the bottom of this file (§5).
+**Next chat:** pick the next slice from `todo.md`. Candidates in §5 Step 4 — recommended order per `project_mixer_then_transport_roadmap.md` is "finish Input Mixer → Output Mixer → then transport + other metering"; S3c was a transport-side detour that's now done, so the mixer work resumes. Alternative: land the 5 S3c follow-on polish items (todo.md 2026-05-28 entry, ~30 min of IDA-side work for items 1-3).
 
 ---
 
@@ -134,22 +134,11 @@ git -C /Users/larryseyer/IDA/external/OTTO fetch origin && \
 
 If a new `[FROM OTTO → IDA]` entry has landed between sessions, ack + prune per the protocol BEFORE running T17.
 
-### Step 3: Operator T17 — verify Play produces audio (THE point of S3c)
+### Step 3: T17 already passed — skip
 
-Operator-driven, numbered checklist (per `feedback_clean_builds_only_for_testing` — IDA.app already exists from this session's clean rebuild, no rebuild needed if no source changes occurred between sessions):
+Operator verified 2026-05-29: "All works as far as I can tell." Audible drumming on Play, transport-bar state echo, Stop and tempo all working through the IDA bar. No diagnostic needed.
 
-1. **Launch** `IDA.app` via the Desktop `IDA` alias. Bar visible across all tabs ✓ (carries from T14 step 1).
-2. **OTTO tab → kit picker** → load a real sample-based kit on Player 1 (e.g. LSAD pop, LSAD rock). Picker should show real kits ✓ (carries from T14 step 2 — S3b's win).
-3. **Press Play in the IDA bar.** **Audible drumming expected.** This is what S3c fixes.
-4. **Press Stop in the IDA bar.** Audio stops.
-5. **Adjust tempo on the IDA bar** (or in OTTO's internal display). Pattern playback speed changes audibly.
-6. **Transport-bar state echo**: the Play button's visual state should switch to "playing" after step 3 within ~30 ms (the EventBus → SPSC → 30 Hz Timer → listener fan-out). Visible in the bar.
-
-If 3-6 all PASS: **S3c is verified and shipped.** Update `continue.md` with the T17 PASS marker.
-
-If 3 (audio) FAILS despite all 4 `[otto-host-pump]` tests passing in headless: the failure is narrow per design spec §7 — either an asset-path edge case (kit not actually loaded; check OTTO's own UI for kit status) or an Output Mixer wiring issue (OTTO outputs not routed into IDA's master path). **Neither is S3c's scope** — both would be follow-on slices. Document the symptom + which step failed in `continue.md` and brainstorm the narrower diagnostic in a fresh session.
-
-### Step 4: (After T17 PASS) Decide next slice
+### Step 4: Decide next slice
 
 Candidates queued in `todo.md`:
 
@@ -184,9 +173,9 @@ Operator's "near-term order" per `project_mixer_then_transport_roadmap.md`: fini
 | OTTO origin/main HEAD | **ee390098** (= IDA's pin) |
 | OTTO `[FROM IDA → OTTO]` entries | 5 outstanding (EventBus + isPluginMode_ + TapeColorProcessor + AssetsRoot + S3c) |
 | OTTO `[FROM OTTO → IDA]` entries | 0 |
-| S3c spec, plan, code, review chain | all four shipped + pushed in this session |
-| S3c operator T17 | pending |
+| S3c spec, plan, code, review chain | all four shipped + pushed 2026-05-28 |
+| S3c operator T17 | **PASS 2026-05-29** — audible drumming confirmed |
 
 ---
 
-*End of session. S3c shipped via subagent-driven flow: brainstorm → spec → plan → T15 implementer/spec/quality review + fixup → T16 implementer/spec/quality review → final cross-cutting review. OTTO processBlock split is verbatim-equivalent for OTTO standalone; IDA's pump now drives the full housekeeping prefix + per-channel sum + suffix every audio block. The architectural gap that made Play silent post-S3b is closed. Operator T17 next session is the audible verification. Five follow-on polish items queued in todo.md, all non-blocking.*
+*End of session. S3c shipped 2026-05-28 via subagent-driven flow: brainstorm → spec → plan → T15 implementer/spec/quality review + fixup → T16 implementer/spec/quality review → final cross-cutting review. Operator T17 verified audible 2026-05-29 ("All works as far as I can tell"). OTTO processBlock split is verbatim-equivalent for OTTO standalone; IDA's pump now drives the full housekeeping prefix + per-channel sum + suffix every audio block. The architectural gap that made Play silent post-S3b is closed and operator-confirmed. Five follow-on polish items queued in todo.md, all non-blocking. Next session: pick the next slice — mixer roadmap resumes, or land the S3c follow-on polish.*
