@@ -9,9 +9,11 @@
 #include "ida/MixerGraphState.h"
 #include "ida/SignalType.h"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <unordered_map>
 #include <vector>
 
 namespace ida
@@ -336,6 +338,24 @@ public:
 
     // Audio-thread interface (real-time safe in M5 Session 3+) ---------------
 
+    // Phrase-channel scratch (T0b playback path) ----------------------------------
+
+    /// Allocate (once) a stable, zero-initialized stereo scratch buffer owned
+    /// by this channel, sized to the max block. The T0b playback step writes
+    /// decoded tape samples here on the audio thread; the channel's audio
+    /// source points at it via setChannelAudioSource. Idempotent — a second
+    /// call does not move the buffer. Message-thread only (allocates).
+    void ensurePhraseScratch (OutputChannelId id);
+
+    /// Read pointer into the per-channel phrase scratch (side 0=L, 1=R).
+    /// Stable for the channel's lifetime. nullptr for unknown id, side out of
+    /// [0,1], or scratch not yet ensured. Audio-thread safe (no alloc).
+    const float* phraseScratchPointer (OutputChannelId id, int side) const noexcept;
+
+    /// Write pointer into the per-channel phrase scratch. Same contract; the
+    /// playback step memcpys decoded samples through this. Audio-thread safe.
+    float* mutablePhraseScratch (OutputChannelId id, int side) noexcept;
+
     /// Per-channel audio source pointer (2026-05-24). Message-thread setter;
     /// read on the audio thread by `renderBuffer` Step 1 to fill the channel's
     /// scratch. nullptr (default for every newly-added channel) = silent —
@@ -508,6 +528,13 @@ private:
     /// pre-audio-start memory saving that isn't load-bearing. Same
     /// `mutable` rationale as `channelScratch_`.
     mutable std::vector<float> channelPreFaderScratch_;
+
+    /// Stable per-phrase-channel scratch: [channelId] -> stereo pair -> samples.
+    /// Mirror of InputMixer::postStrip_. Sized to kMaxBlockSamples per side.
+    /// Populated lazily by ensurePhraseScratch (message-thread only — allocates).
+    /// Read/write on the audio thread via phraseScratchPointer / mutablePhraseScratch
+    /// (pointers are stable once allocated; no alloc on the hot path).
+    std::unordered_map<std::int64_t, std::array<std::vector<float>, 2>> phraseScratch_;
 
     std::int64_t nextOutputChannelId_ { 1 };
     std::int64_t nextBusId_ { 1 }; // BusId{0} is the master, auto-created.

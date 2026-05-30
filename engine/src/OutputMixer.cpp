@@ -135,6 +135,32 @@ void OutputMixer::setChannelAudioSource (OutputChannelId id,
         }
 }
 
+void OutputMixer::ensurePhraseScratch (OutputChannelId id)
+{
+    auto& pair = phraseScratch_[id.value()];
+    for (auto& side : pair)
+        if (side.empty())
+            side.assign (static_cast<std::size_t> (kMaxBlockSamples), 0.0f);
+}
+
+const float* OutputMixer::phraseScratchPointer (OutputChannelId id, int side) const noexcept
+{
+    if (side < 0 || side > 1) return nullptr;
+    auto it = phraseScratch_.find (id.value());
+    if (it == phraseScratch_.end()) return nullptr;
+    const auto& v = it->second[static_cast<std::size_t> (side)];
+    return v.empty() ? nullptr : v.data();
+}
+
+float* OutputMixer::mutablePhraseScratch (OutputChannelId id, int side) noexcept
+{
+    if (side < 0 || side > 1) return nullptr;
+    auto it = phraseScratch_.find (id.value());
+    if (it == phraseScratch_.end()) return nullptr;
+    auto& v = it->second[static_cast<std::size_t> (side)];
+    return v.empty() ? nullptr : v.data();
+}
+
 OutputChannelId OutputMixer::addChannel (SignalType type)
 {
     if (channels_.size() >= static_cast<std::size_t> (kMaxOutputChannels))

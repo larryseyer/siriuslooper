@@ -1,7 +1,16 @@
 #include "ida/TransportPlayhead.h"
 #include "ida/ActiveReadsSnapshot.h"
+#include "ida/Bus.h"
+#include "ida/ChannelStrip.h"
+#include "ida/OutputMixer.h"
+#include "ida/SignalType.h"
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
+
+#include <array>
+#include <cmath>
+#include <memory>
+#include <vector>
 
 using namespace ida;
 
@@ -61,4 +70,53 @@ TEST_CASE ("publisher read before any publish yields empty", "[tape-playback][sn
     ActiveReadsSnapshot out;
     pub.read (out);
     REQUIRE (out.count == 0);
+}
+
+TEST_CASE ("phrase scratch pointer is stable and zero-initialized",
+           "[tape-playback][phrase-scratch]")
+{
+    OutputMixer mixer;
+    const auto ch = mixer.addChannel (SignalType::Audio);
+    mixer.ensurePhraseScratch (ch);
+
+    const float* l0 = mixer.phraseScratchPointer (ch, 0);
+    const float* r0 = mixer.phraseScratchPointer (ch, 1);
+    REQUIRE (l0 != nullptr);
+    REQUIRE (r0 != nullptr);
+    REQUIRE (l0 != r0);
+    REQUIRE (l0[0] == 0.0f);
+
+    // Pointer must not move across a second ensure call (stable for lifetime).
+    mixer.ensurePhraseScratch (ch);
+    REQUIRE (mixer.phraseScratchPointer (ch, 0) == l0);
+
+    // Out-of-range side and unknown channel return nullptr.
+    REQUIRE (mixer.phraseScratchPointer (ch, 2) == nullptr);
+    REQUIRE (mixer.phraseScratchPointer (OutputChannelId { 9999 }, 0) == nullptr);
+}
+
+TEST_CASE ("writing phrase scratch then rendering produces non-silent output",
+           "[tape-playback][phrase-scratch]")
+{
+    OutputMixer mixer;
+    const auto ch = mixer.addChannel (SignalType::Audio);
+    mixer.setChannelStrip (ch, std::make_unique<ChannelStrip<SignalType::Audio>> ());
+    mixer.ensurePhraseScratch (ch);
+    mixer.setChannelAudioSource (ch,
+                                 mixer.phraseScratchPointer (ch, 0),
+                                 mixer.phraseScratchPointer (ch, 1));
+
+    constexpr int n = 64;
+    float* l = mixer.mutablePhraseScratch (ch, 0);
+    float* r = mixer.mutablePhraseScratch (ch, 1);
+    for (int i = 0; i < n; ++i) { l[i] = 0.5f; r[i] = 0.5f; }
+
+    std::array<float, n> outLeft;  outLeft.fill  (0.0f);
+    std::array<float, n> outRight; outRight.fill (0.0f);
+    float* outputs[2] = { outLeft.data(), outRight.data() };
+
+    // No live input needed — phrase channels read from their audio source.
+    mixer.renderBuffer (nullptr, 0, outputs, 2, n);
+
+    REQUIRE (std::abs (outLeft[0]) > 0.0f);
 }
