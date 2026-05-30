@@ -69,10 +69,13 @@ public:
     void setSampleRate (double sampleRate) noexcept;
 
     /// Message-thread: enqueue an ordered request to flush and close tape `id`'s
-    /// stream. No-op if the tape has no open stream. Same single-producer caveat
-    /// as FlacTapeSink: deliverTapeBlock (audio thread) is the queue's sole
-    /// producer. The caller MUST run closeTape only while the audio callback is
-    /// detached.
+    /// stream. No-op if the tape has no open stream.
+    ///
+    /// SINGLE-PRODUCER INVARIANT: this queue has exactly one producer. Calling
+    /// closeTape while the audio callback is live means two threads push onto a
+    /// single-producer SPSC queue simultaneously, corrupting the queue and
+    /// producing undefined behaviour that will silently drop or mangle records.
+    /// The caller MUST detach the audio callback before calling closeTape.
     void closeTape (TapeId id);
 
     /// Diagnostics (message thread): blocks dropped because queue was full or
@@ -109,6 +112,8 @@ private:
     struct OpenTape
     {
         std::unique_ptr<juce::FileOutputStream> stream;
+        double        sampleRate   { 0.0 }; // captured at open time; all records in
+                                             // this file share this rate
         std::uint64_t nextSeq      { 0 };
         std::uint64_t framesWritten { 0 };
     };

@@ -37,7 +37,8 @@ TapeRecordWriter::~TapeRecordWriter()
         worker_.join();
 
     drainQueue();       // flush anything enqueued just before exit
-    openTapes_.clear(); // each unique_ptr<FileOutputStream> dtor flushes + closes
+    openTapes_.clear(); // each unique_ptr<FileOutputStream> dtor drains the userspace buffer
+                        // and closes the file handle (no fsync)
 }
 
 void TapeRecordWriter::setSampleRate (double sampleRate) noexcept
@@ -154,9 +155,9 @@ TapeRecordWriter::OpenTape* TapeRecordWriter::openTapeFor (std::int64_t tapeId)
     // Write the 12-byte file header before any records.
     std::array<std::byte, kTapeFileHeaderBytes> headerBuf {};
     writeFileHeader (headerBuf.data());
-    stream->write (headerBuf.data(), static_cast<int> (kTapeFileHeaderBytes));
+    stream->write (headerBuf.data(), kTapeFileHeaderBytes);
 
-    auto [ins, ok] = openTapes_.emplace (tapeId, OpenTape { std::move (stream), 0, 0 });
+    auto [ins, ok] = openTapes_.emplace (tapeId, OpenTape { std::move (stream), sr, 0, 0 });
     return ok ? &ins->second : nullptr;
 }
 
@@ -174,7 +175,7 @@ void TapeRecordWriter::writeAudio (const Message& msg)
         return;
     }
 
-    const double sr     = sampleRate_.load (std::memory_order_acquire);
+    const double sr     = ot->sampleRate; // captured at tape-open time; constant for all records
     const int    n      = msg.numFrames;
 
     // De-interleave the POD payload.
@@ -202,7 +203,7 @@ void TapeRecordWriter::writeAudio (const Message& msg)
     hdr.lmcTs        = lmcTs;
 
     encodeRecord (hdr, payload.data(), payload.size(), encodeBuffer_);
-    ot->stream->write (encodeBuffer_.data(), static_cast<int> (encodeBuffer_.size()));
+    ot->stream->write (encodeBuffer_.data(), encodeBuffer_.size());
 
     ot->framesWritten += static_cast<std::uint64_t> (n);
     ++ot->nextSeq;

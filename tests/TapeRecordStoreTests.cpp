@@ -7,11 +7,16 @@
 #include "ida/TapeRecord.h"
 #include "ida/Rational.h"
 #include "ida/AudioPayloadCodec.h"
+#include "ida/IPayloadCodec.h"
+#include "ida/TapeRecordWriter.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <juce_core/juce_core.h>
+
 #include <array>
+#include <cmath>
 #include <cstring>
 #include <vector>
 
@@ -210,7 +215,6 @@ TEST_CASE("decodeRecordBody returns false when bodyLen < kRecordHeaderBytes", "[
 // ---------------------------------------------------------------------------
 // 7. IPayloadCodec interface + TapeCodecRegistry (T0a Task 2)
 // ---------------------------------------------------------------------------
-#include "ida/IPayloadCodec.h"
 
 namespace {
 
@@ -443,14 +447,6 @@ TEST_CASE("FlacAudioCodec — decode of garbage bytes returns false without thro
 // ---------------------------------------------------------------------------
 // 9. TapeRecordWriter — worker-framed append, flush, RT-safe entry (T0a Task 4)
 // ---------------------------------------------------------------------------
-#include "ida/TapeRecordWriter.h"
-
-#include <juce_core/juce_core.h>
-
-#include <chrono>
-#include <cmath>
-#include <thread>
-#include <vector>
 
 namespace {
 
@@ -504,17 +500,6 @@ bool parseAllRecords (const std::vector<std::byte>& raw,
     return pos == raw.size(); // must consume exactly the whole file
 }
 
-// Helper: run a TapeRecordWriter, deliver N blocks, close the tape, then
-// return once the file is non-empty (poll up to 500 ms).
-void waitForFile (const juce::File& f)
-{
-    for (int i = 0; i < 100; ++i)
-    {
-        if (f.getSize() > 0) return;
-        std::this_thread::sleep_for (std::chrono::milliseconds (5));
-    }
-}
-
 } // namespace
 
 TEST_CASE("TapeRecordWriter — N blocks produce N records with valid CRC and ascending seq",
@@ -532,25 +517,23 @@ TEST_CASE("TapeRecordWriter — N blocks produce N records with valid CRC and as
     static constexpr int    kFlushMs    = 5;
     static constexpr std::size_t kQueueCap = 64;
 
-    ida::TapeRecordWriter writer (dir, kSr, kQueueCap, ida::TapeCodecId::AudioPcm, kFlushMs);
-
     const ida::TapeId tape { 1 };
+    juce::File tapeFile;
 
-    // Generate constant-value stereo blocks (value doesn't matter for format test).
-    std::vector<float> left  (kBlockSize, 0.1f);
-    std::vector<float> right (kBlockSize, -0.1f);
+    // Inner scope: writer dtor joins the worker, guaranteeing flush + close.
+    {
+        ida::TapeRecordWriter writer (dir, kSr, kQueueCap, ida::TapeCodecId::AudioPcm, kFlushMs);
 
-    for (int i = 0; i < kNumBlocks; ++i)
-        writer.deliverTapeBlock (tape, left.data(), right.data(), kBlockSize);
+        // Generate constant-value stereo blocks (value doesn't matter for format test).
+        std::vector<float> left  (kBlockSize, 0.1f);
+        std::vector<float> right (kBlockSize, -0.1f);
 
-    // Flush + close so the file is a complete, valid record container.
-    writer.closeTape (tape);
+        for (int i = 0; i < kNumBlocks; ++i)
+            writer.deliverTapeBlock (tape, left.data(), right.data(), kBlockSize);
 
-    // Allow the worker to process after closeTape.
-    const juce::File tapeFile = writer.tapeFile (tape);
-    waitForFile (tapeFile);
-    // Give extra time for the close to finalize.
-    std::this_thread::sleep_for (std::chrono::milliseconds (50));
+        writer.closeTape (tape);
+        tapeFile = writer.tapeFile (tape);
+    } // dtor joins worker; file is complete at this point
 
     // Parse the raw bytes.
     const auto raw = readFileBytes (tapeFile);
@@ -586,24 +569,26 @@ TEST_CASE("TapeRecordWriter — two tapes write to two distinct .idatape files",
     static constexpr int    kBlock    = 128;
     static constexpr int    kFlushMs  = 5;
 
-    ida::TapeRecordWriter writer (dir, kSr, 64, ida::TapeCodecId::AudioPcm, kFlushMs);
-
     const ida::TapeId tapeA { 1 };
     const ida::TapeId tapeB { 2 };
+    juce::File fileA, fileB;
 
-    std::vector<float> lA (kBlock, 0.2f), rA (kBlock, -0.2f);
-    std::vector<float> lB (kBlock, 0.3f), rB (kBlock, -0.3f);
+    // Inner scope: writer dtor joins the worker, guaranteeing flush + close.
+    {
+        ida::TapeRecordWriter writer (dir, kSr, 64, ida::TapeCodecId::AudioPcm, kFlushMs);
 
-    writer.deliverTapeBlock (tapeA, lA.data(), rA.data(), kBlock);
-    writer.deliverTapeBlock (tapeB, lB.data(), rB.data(), kBlock);
+        std::vector<float> lA (kBlock, 0.2f), rA (kBlock, -0.2f);
+        std::vector<float> lB (kBlock, 0.3f), rB (kBlock, -0.3f);
 
-    writer.closeTape (tapeA);
-    writer.closeTape (tapeB);
+        writer.deliverTapeBlock (tapeA, lA.data(), rA.data(), kBlock);
+        writer.deliverTapeBlock (tapeB, lB.data(), rB.data(), kBlock);
 
-    std::this_thread::sleep_for (std::chrono::milliseconds (100));
+        writer.closeTape (tapeA);
+        writer.closeTape (tapeB);
 
-    const juce::File fileA = writer.tapeFile (tapeA);
-    const juce::File fileB = writer.tapeFile (tapeB);
+        fileA = writer.tapeFile (tapeA);
+        fileB = writer.tapeFile (tapeB);
+    } // dtor joins worker; both files are complete at this point
 
     // Files must exist and be distinct paths.
     REQUIRE (fileA.existsAsFile());
@@ -638,18 +623,23 @@ TEST_CASE("TapeRecordWriter — per-record lmcTs increases by blockFrames/sample
     static constexpr int    kN        = 5;
     static constexpr int    kFlushMs  = 5;
 
-    ida::TapeRecordWriter writer (dir, kSr, 64, ida::TapeCodecId::AudioPcm, kFlushMs);
-
     const ida::TapeId tape { 7 };
-    std::vector<float> left (kBlock, 0.0f), right (kBlock, 0.0f);
+    juce::File tapeFile;
 
-    for (int i = 0; i < kN; ++i)
-        writer.deliverTapeBlock (tape, left.data(), right.data(), kBlock);
+    // Inner scope: writer dtor joins the worker, guaranteeing flush + close.
+    {
+        ida::TapeRecordWriter writer (dir, kSr, 64, ida::TapeCodecId::AudioPcm, kFlushMs);
 
-    writer.closeTape (tape);
-    std::this_thread::sleep_for (std::chrono::milliseconds (100));
+        std::vector<float> left (kBlock, 0.0f), right (kBlock, 0.0f);
 
-    const auto raw = readFileBytes (writer.tapeFile (tape));
+        for (int i = 0; i < kN; ++i)
+            writer.deliverTapeBlock (tape, left.data(), right.data(), kBlock);
+
+        writer.closeTape (tape);
+        tapeFile = writer.tapeFile (tape);
+    } // dtor joins worker; file is complete at this point
+
+    const auto raw = readFileBytes (tapeFile);
     std::vector<ParsedRecord> records;
     REQUIRE (parseAllRecords (raw, records));
     REQUIRE (static_cast<int> (records.size()) == kN);
@@ -700,4 +690,44 @@ TEST_CASE("TapeRecordWriter — flushIntervalMs is accessible after construction
     ida::TapeRecordWriter writer (dir, 48000.0, 32, ida::TapeCodecId::AudioPcm, kFlushMs);
 
     REQUIRE (writer.flushIntervalMs() == kFlushMs);
+}
+
+// ---------------------------------------------------------------------------
+// 10. deliverTapeBlock is allocation-free (m5 / spec test d)
+// ---------------------------------------------------------------------------
+// The operator-new override and alloc counters live in IdaMasterSpectrumTests.cpp.
+extern thread_local std::atomic<size_t> g_allocCount;
+extern thread_local bool g_counting;
+
+TEST_CASE("TapeRecordWriter::deliverTapeBlock is allocation-free", "[tape-record][rt-safety]")
+{
+    const juce::File dir = juce::File::getSpecialLocation (
+        juce::File::tempDirectory).getChildFile ("ida-test-trw-alloc");
+    dir.deleteRecursively();
+    dir.createDirectory();
+
+    static constexpr int kBlock   = 64;
+    static constexpr int kFlushMs = 5;
+
+    ida::TapeRecordWriter writer (dir, 48000.0, 256, ida::TapeCodecId::AudioPcm, kFlushMs);
+
+    const ida::TapeId tape { 1 };
+    std::vector<float> left  (kBlock, 0.1f);
+    std::vector<float> right (kBlock, -0.1f);
+
+    // Prime: one block outside the measured region so any lazy setup (queue
+    // pre-allocation, first openTapeFor on the worker) is complete before arming
+    // the counter. The dtor-join guarantees the worker has processed this block.
+    {
+        ida::TapeRecordWriter primer (dir, 48000.0, 256, ida::TapeCodecId::AudioPcm, kFlushMs);
+        primer.deliverTapeBlock (tape, left.data(), right.data(), kBlock);
+    } // worker joins here
+
+    // Measured region: arm counter, call deliverTapeBlock, disarm.
+    g_allocCount.store (0, std::memory_order_relaxed);
+    g_counting = true;
+    writer.deliverTapeBlock (tape, left.data(), right.data(), kBlock);
+    g_counting = false;
+
+    REQUIRE (g_allocCount.load (std::memory_order_relaxed) == 0u);
 }
