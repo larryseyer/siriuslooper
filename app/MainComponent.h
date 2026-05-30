@@ -6,7 +6,6 @@
 #include "ida/ActiveReadsSnapshot.h"
 #include "ida/AudioCallback.h"
 #include "ida/AudioDeviceCalibration.h"
-#include "ida/AudioPayloadCodec.h"
 #include "ida/CaptureSession.h"
 #include "ida/ChannelDetail.h"
 #include "ida/ChannelStrip.h"

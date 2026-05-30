@@ -245,6 +245,12 @@ void OutputMixer::removeChannel (OutputChannelId id)
     channelOttoSource_.pop_back();
     channelAudioSources_.pop_back();
 
+    // Erase phrase scratch so a recycled id does not inherit stale buffers.
+    // ensurePhraseScratch skips re-init for non-empty entries, so without this
+    // erase a reused OutputChannelId would silently read the previous channel's
+    // decoded audio rather than a freshly-zeroed buffer.
+    phraseScratch_.erase (id.value());
+
     freeChannelIds_.push_back (channelValue);
 }
 

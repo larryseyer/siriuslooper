@@ -1,5 +1,6 @@
 #include "MainComponent.h"
 
+#include "ida/AudioPayloadCodec.h"
 #include "ida/TapeRecord.h"
 
 #include "IdaPreferences.h"
@@ -7179,6 +7180,7 @@ void MainComponent::refreshOutputMixerPhraseChannels()
 
             // Find a free slot (null entry) or append a new one.
             int slot = -1;
+            bool slotWasAppended = false;
             for (int s = 0; s < static_cast<int> (phrasePrefetchers_.size()); ++s)
             {
                 if (phrasePrefetchers_[static_cast<std::size_t> (s)] == nullptr)
@@ -7193,12 +7195,21 @@ void MainComponent::refreshOutputMixerPhraseChannels()
                     continue; // at slot cap — channel stays silent
                 phrasePrefetchers_.push_back (nullptr);
                 slot = static_cast<int> (phrasePrefetchers_.size()) - 1;
+                slotWasAppended = true;
             }
 
             auto pre = std::make_unique<ida::TapePrefetcher>();
             if (! pre->open (tapeInfo.tapeFile, tapeCodecRegistry_,
                              sampleRate, tapeInfo.loopLengthSamples))
+            {
+                // Reclaim a freshly-appended slot — repeated unresolved pills
+                // must not grow phrasePrefetchers_ toward kMaxPhraseSlots.
+                // A REUSED slot (hole in the middle) is left null: it was
+                // already null before this iteration and no state was placed.
+                if (slotWasAppended)
+                    phrasePrefetchers_.pop_back();
                 continue; // file unreadable (race with record path) — stays silent
+            }
 
             pre->prepare (kRingFrames);
             pre->start();
