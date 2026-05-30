@@ -202,3 +202,97 @@ TEST_CASE("decodeRecordBody returns false when bodyLen < kRecordHeaderBytes", "[
     // 10 < 44, must return false.
     REQUIRE_FALSE(decodeRecordBody(buf.data(), 10, hdrOut, payloadOut, payloadLen));
 }
+
+// ---------------------------------------------------------------------------
+// 7. IPayloadCodec interface + TapeCodecRegistry (T0a Task 2)
+// ---------------------------------------------------------------------------
+#include "ida/IPayloadCodec.h"
+
+namespace {
+
+// Trivial fake codec: AudioPcm tag, encode returns sentinel bytes,
+// decode fills a 1-frame PcmBlock and returns true.
+class FakePcmCodec final : public ida::IPayloadCodec {
+public:
+    ida::TapeCodecId codecId() const noexcept override
+    {
+        return ida::TapeCodecId::AudioPcm;
+    }
+
+    std::vector<std::byte> encode(const float*, const float*,
+                                  int, double) const override
+    {
+        return { std::byte{0xDE}, std::byte{0xAD} };
+    }
+
+    bool decode(const std::byte*, std::size_t, ida::PcmBlock& out) const override
+    {
+        out.left  = { 0.5f };
+        out.right = { -0.5f };
+        return true;
+    }
+};
+
+// Second fake with the same AudioPcm id (replacement test).
+class FakePcmCodec2 final : public ida::IPayloadCodec {
+public:
+    ida::TapeCodecId codecId() const noexcept override
+    {
+        return ida::TapeCodecId::AudioPcm;
+    }
+
+    std::vector<std::byte> encode(const float*, const float*,
+                                  int, double) const override
+    {
+        return { std::byte{0xBE}, std::byte{0xEF} };
+    }
+
+    bool decode(const std::byte*, std::size_t, ida::PcmBlock& out) const override
+    {
+        out.left  = { 1.0f };
+        out.right = { 1.0f };
+        return true;
+    }
+};
+
+} // namespace
+
+TEST_CASE("TapeCodecRegistry — empty registry returns nullptr for any id", "[tape-record]")
+{
+    ida::TapeCodecRegistry reg;
+    REQUIRE(reg.codecFor(ida::TapeCodecId::AudioPcm)  == nullptr);
+    REQUIRE(reg.codecFor(ida::TapeCodecId::AudioFlac) == nullptr);
+}
+
+TEST_CASE("TapeCodecRegistry — registered codec is retrievable by id", "[tape-record]")
+{
+    ida::TapeCodecRegistry reg;
+    reg.registerCodec(std::make_shared<FakePcmCodec>());
+
+    ida::IPayloadCodec* codec = reg.codecFor(ida::TapeCodecId::AudioPcm);
+    REQUIRE(codec != nullptr);
+    REQUIRE(codec->codecId() == ida::TapeCodecId::AudioPcm);
+
+    // Unrelated id still returns nullptr.
+    REQUIRE(reg.codecFor(ida::TapeCodecId::AudioFlac) == nullptr);
+}
+
+TEST_CASE("TapeCodecRegistry — registering a second codec with same id replaces the first", "[tape-record]")
+{
+    ida::TapeCodecRegistry reg;
+    auto first  = std::make_shared<FakePcmCodec>();
+    auto second = std::make_shared<FakePcmCodec2>();
+
+    reg.registerCodec(first);
+    reg.registerCodec(second);
+
+    ida::IPayloadCodec* found = reg.codecFor(ida::TapeCodecId::AudioPcm);
+    REQUIRE(found != nullptr);
+
+    // The returned codec should encode to the second's sentinel bytes to
+    // confirm identity.
+    auto bytes = found->encode(nullptr, nullptr, 0, 44100.0);
+    REQUIRE(bytes.size() == 2);
+    REQUIRE(bytes[0] == std::byte{0xBE});
+    REQUIRE(bytes[1] == std::byte{0xEF});
+}

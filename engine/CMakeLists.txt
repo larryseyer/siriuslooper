@@ -62,7 +62,10 @@ add_library(IdaEngine STATIC
     # any-thread atomic load. Mirror of MasterMeter's shape; raw-pointer public
     # API keeps juce_audio_basics out of the engine's public include surface
     # (juce_dsp::FFT is forward-declared in the header).
-    src/MasterSpectrum.cpp)
+    src/MasterSpectrum.cpp
+    # T0a Task 2 — IPayloadCodec interface + TapeCodecRegistry: the media-agnostic
+    # codec seam. No JUCE dependency; FLAC/PCM codecs land in Task 3 (audio layer).
+    src/IPayloadCodec.cpp)
 
 target_include_directories(IdaEngine PUBLIC include)
 
