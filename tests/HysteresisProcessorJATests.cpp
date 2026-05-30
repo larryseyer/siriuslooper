@@ -21,7 +21,6 @@
 #include <cmath>
 
 using lsfx::tapecolor::HysteresisProcessor;
-using SaturationModel = HysteresisProcessor::SaturationModel;
 
 namespace
 {
@@ -79,14 +78,14 @@ bool allFinite (const juce::AudioBuffer<float>& buf)
     return true;
 }
 
-// Configure a processor for the J-A model at neutral knob settings
-// (tape T456 idx 2, 15 ips idx 1, hysteresis 0.5 = baseline, saturation 0.5 =
-// unity drive). effectiveSampleRate defaults to the prepared rate (1x).
-void configureJA (HysteresisProcessor& hp, double effectiveSampleRate)
+// Configure the J-A stage at neutral knob settings: HYST 0.5 (default loop
+// width = the operator-approved voicing) and saturation 0.5 (unity drive). The
+// second arg is ignored — the H-domain solver is rate-independent (dt cancels),
+// so updateParameters no longer takes a sample rate; it is retained here only so
+// the existing call sites that pass `sr` stay unchanged.
+void configureJA (HysteresisProcessor& hp, double /*unusedRate*/)
 {
-    hp.updateParameters (/*tape*/ 2, /*speed*/ 1, /*hysteresisAmount*/ 0.5f,
-                         /*saturation*/ 0.5f, effectiveSampleRate,
-                         SaturationModel::JilesAtherton);
+    hp.updateParameters (/*hysteresisAmount*/ 0.5f, /*saturation*/ 0.5f);
 }
 
 double dbDiff (double a, double b) { return 20.0 * std::log10 (a / b); }
@@ -124,22 +123,6 @@ TEST_CASE ("J-A small-signal gain is unity in the deep-linear region", "[hystere
     INFO ("level -40 dBFS, gain " << gainDbAt (-40.0) << " dB");
     REQUIRE (gainDbAt (-40.0) > -0.02);
     REQUIRE (gainDbAt (-40.0) < 0.20);
-}
-
-TEST_CASE ("asinh model remains unity at -60 dBFS (regression)", "[hysteresis-ja][dsp]")
-{
-    constexpr double sr = 48000.0;
-    HysteresisProcessor hp;
-    hp.prepare (sr, 2);
-    hp.updateParameters (2, 1, 0.5f, 0.5f, sr, SaturationModel::Asinh);
-
-    const double amp = std::pow (10.0, -60.0 / 20.0);
-    auto buf = makeSine (amp, 1000.0, sr, 4096);
-    const double inMag = fundamentalMag (buf, 1000.0, sr, 2048);
-    hp.process (buf);
-    const double outMag = fundamentalMag (buf, 1000.0, sr, 2048);
-
-    REQUIRE (std::abs (dbDiff (outMag, inMag)) < 0.05);
 }
 
 TEST_CASE ("J-A frequency response is flat (not dark)", "[hysteresis-ja][dsp]")
@@ -318,16 +301,17 @@ TEST_CASE ("J-A reset clears persistent state", "[hysteresis-ja][dsp]")
 
 TEST_CASE ("J-A is stable and unity across oversampling rates", "[hysteresis-ja][dsp]")
 {
-    // The solver runs inside the oversampling wrap; effectiveSampleRate is
-    // base × osFactor. Small-signal unity is rate-invariant (the trapezoidal
-    // dt cancels in the H domain); output stays finite/bounded at every tier.
+    // The solver runs inside the oversampling wrap. Small-signal unity is rate-
+    // invariant (the trapezoidal dt cancels in the H domain) and the model takes
+    // no sample rate, so the same updateParameters() covers every tier; the test
+    // just drives the stage at 48/96/192 k and checks unity + peak-safety hold.
     HysteresisProcessor hp;
     hp.prepare (48000.0, 2);
 
     for (double esr : { 48000.0, 96000.0, 192000.0 })
     {
         hp.reset();
-        hp.updateParameters (2, 1, 0.5f, 0.5f, esr, SaturationModel::JilesAtherton);
+        configureJA (hp, esr);
 
         auto quiet = makeSine (1.0e-3, 1000.0, esr, 8192);
         const double inMag = fundamentalMag (quiet, 1000.0, esr, 4096);
@@ -337,7 +321,7 @@ TEST_CASE ("J-A is stable and unity across oversampling rates", "[hysteresis-ja]
         REQUIRE (std::abs (dbDiff (outMag, inMag)) < 0.1);
 
         hp.reset();
-        hp.updateParameters (2, 1, 0.5f, 0.5f, esr, SaturationModel::JilesAtherton);
+        configureJA (hp, esr);
         auto loud = makeSine (1.0, 1000.0, esr, 8192);
         hp.process (loud);
         REQUIRE (allFinite (loud));

@@ -77,15 +77,16 @@ namespace
     }
 
     // Run the full chain at defaults (Standard 2x, Level +3, enabled) with the
-    // given saturation model, block by block, and return the output peak.
-    float runChain (int saturationModel, float& inPeakOut)
+    // block by block, and return the output peak. Jiles-Atherton is now the
+    // one and only tape-saturation model (asinh was retired 2026-05-30), so the
+    // chain runs J-A at its defaults — there is no model selector.
+    float runChain (float& inPeakOut)
     {
         TapeColorProcessor dsp;
         dsp.prepare (kSampleR, kBlock, 2);
 
         TapeColorConfig cfg;            // defaults: machine S821, tape T456,
         cfg.enabled         = true;     // Standard 2x, Level +3, mix 1.0
-        cfg.saturationModel = saturationModel;
         dsp.scratchConfig() = cfg;
         dsp.commitConfig();
 
@@ -110,24 +111,15 @@ namespace
     }
 } // namespace
 
-TEST_CASE ("full chain: asinh never expands peaks (control)", "[tapecolor-chain][dsp]")
-{
-    float inPeak = 0.0f;
-    const float outPeak = runChain (/*asinh*/ 0, inPeak);
-    const float marginDb = 20.0f * std::log10 (outPeak / inPeak);
-    INFO ("asinh in-peak " << inPeak << " out-peak " << outPeak
-          << " (" << marginDb << " dB)");
-    REQUIRE (marginDb < 0.5f);
-}
-
 TEST_CASE ("full chain: J-A never expands peaks (regression)", "[tapecolor-chain][dsp]")
 {
     // The bug: enabling J-A in Reaper instantly overloaded the track because a
     // broadband-RMS makeup re-expanded transients above full scale. A tape
     // saturation stage must compress, never expand — output peak must not
     // exceed the input peak (small margin for oversampling halfband overshoot).
+    // J-A is now the only tape model, run at its defaults through the full chain.
     float inPeak = 0.0f;
-    const float outPeak = runChain (/*J-A*/ 1, inPeak);
+    const float outPeak = runChain (inPeak);
     const float marginDb = 20.0f * std::log10 (outPeak / inPeak);
     INFO ("J-A in-peak " << inPeak << " out-peak " << outPeak
           << " (" << marginDb << " dB)");
