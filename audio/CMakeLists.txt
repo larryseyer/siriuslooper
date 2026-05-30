@@ -19,6 +19,7 @@ add_library(IdaAudio STATIC
     src/FileInputPersistence.cpp
     src/FileInputRegistry.cpp
     src/FileInputSource.cpp
+    src/TapePrefetcher.cpp
     src/TapeRecordReader.cpp
     src/TapeRecordWriter.cpp)
 

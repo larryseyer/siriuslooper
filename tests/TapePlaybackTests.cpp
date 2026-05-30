@@ -4,8 +4,13 @@
 #include "ida/ChannelStrip.h"
 #include "ida/OutputMixer.h"
 #include "ida/SignalType.h"
+#include "ida/TapePrefetcher.h"
+#include "ida/AudioPayloadCodec.h"
+#include "ida/TapeRecord.h"
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
+
+#include <juce_core/juce_core.h>
 
 #include <array>
 #include <cmath>
@@ -13,6 +18,71 @@
 #include <vector>
 
 using namespace ida;
+
+// ---------------------------------------------------------------------------
+// writeRampTape: writes `records` PCM records, each `framesPerRecord` stereo
+// frames, directly to disk using PcmAudioCodec + encodeRecord + FileOutputStream.
+// Record r, frame f: both channels == static_cast<float>(r*framesPerRecord + f).
+// PCM codec used for bit-exact round-trip.
+// ---------------------------------------------------------------------------
+namespace {
+
+void writeRampTape (const juce::File& file,
+                    TapeCodecRegistry& registry,
+                    int records,
+                    int framesPerRecord)
+{
+    file.deleteFile();
+    juce::FileOutputStream fos (file);
+    REQUIRE (fos.openedOk());
+
+    // 12-byte file header
+    std::array<std::byte, kTapeFileHeaderBytes> hdrBuf {};
+    writeFileHeader (hdrBuf.data());
+    fos.write (hdrBuf.data(), hdrBuf.size());
+
+    IPayloadCodec* codec = registry.codecFor (TapeCodecId::AudioPcm);
+    REQUIRE (codec != nullptr);
+
+    for (int rec = 0; rec < records; ++rec)
+    {
+        // Build a ramp: sample absolute index = rec * framesPerRecord + frame
+        std::vector<float> left  (static_cast<std::size_t> (framesPerRecord));
+        std::vector<float> right (static_cast<std::size_t> (framesPerRecord));
+        for (int f = 0; f < framesPerRecord; ++f)
+        {
+            const float val = static_cast<float> (rec * framesPerRecord + f);
+            left [static_cast<std::size_t> (f)] = val;
+            right[static_cast<std::size_t> (f)] = val;
+        }
+
+        const auto payload = codec->encode (left.data(), right.data(),
+                                            framesPerRecord, 48000.0);
+        REQUIRE_FALSE (payload.empty());
+
+        TapeRecordHeader recHdr;
+        recHdr.seq   = static_cast<std::uint64_t> (rec);
+        recHdr.type  = TapeRecordType::Audio;
+        recHdr.codec = TapeCodecId::AudioPcm;
+
+        std::vector<std::byte> encoded;
+        encodeRecord (recHdr, payload.data(), payload.size(), encoded);
+        fos.write (encoded.data(), encoded.size());
+    }
+
+    fos.flush();
+}
+
+// Build a registry with both real audio codecs (same pattern as TapeRecordStoreTests).
+TapeCodecRegistry makePlaybackRegistry()
+{
+    TapeCodecRegistry reg;
+    reg.registerCodec (std::make_shared<PcmAudioCodec>());
+    reg.registerCodec (std::make_shared<FlacAudioCodec>());
+    return reg;
+}
+
+} // namespace
 
 TEST_CASE ("advancePlayedSamples advances only while playing", "[tape-playback][playhead]")
 {
@@ -119,4 +189,71 @@ TEST_CASE ("writing phrase scratch then rendering produces non-silent output",
     mixer.renderBuffer (nullptr, 0, outputs, 2, n);
 
     REQUIRE (std::abs (outLeft[0]) > 0.0f);
+}
+
+// ---------------------------------------------------------------------------
+// TapePrefetcher tests (T0b Task 5)
+// ---------------------------------------------------------------------------
+
+TEST_CASE ("prefetcher yields recorded samples from a target position",
+           "[tape-playback][prefetch]")
+{
+    juce::TemporaryFile tmp (".idatape");
+    const juce::File file = tmp.getFile();
+    auto registry = makePlaybackRegistry();
+
+    constexpr int framesPerRecord = 256;
+    constexpr int records = 8;
+    writeRampTape (file, registry, records, framesPerRecord);
+
+    TapePrefetcher pre;
+    REQUIRE (pre.open (file, registry, framesPerRecord, /*loopLengthSamples=*/0));
+    pre.prepare (/*ringFrames=*/4096);
+
+    pre.setTargetSample (0);
+    pre.serviceForTest();                 // synchronous decode-into-ring (test hook)
+
+    std::vector<float> l (512, -1.0f), r (512, -1.0f);
+    const int got = pre.pull (l.data(), r.data(), 512);
+    REQUIRE (got == 512);
+    for (int i = 0; i < 512; ++i)
+        REQUIRE (l[i] == Catch::Approx (static_cast<float> (i))); // ramp matches
+}
+
+TEST_CASE ("prefetcher random-access seek mid-tape", "[tape-playback][prefetch]")
+{
+    juce::TemporaryFile tmp (".idatape");
+    const juce::File file = tmp.getFile();
+    auto registry = makePlaybackRegistry();
+    constexpr int fpr = 256, records = 8;
+    writeRampTape (file, registry, records, fpr);
+
+    TapePrefetcher pre;
+    REQUIRE (pre.open (file, registry, fpr, 0));
+    pre.prepare (4096);
+    pre.setTargetSample (1000);            // mid-record
+    pre.serviceForTest();
+
+    std::vector<float> l (64, -1.0f), r (64, -1.0f);
+    REQUIRE (pre.pull (l.data(), r.data(), 64) == 64);
+    REQUIRE (l[0] == Catch::Approx (1000.0f));
+}
+
+TEST_CASE ("prefetcher underrun zero-fills, never crashes", "[tape-playback][prefetch]")
+{
+    juce::TemporaryFile tmp (".idatape");
+    const juce::File file = tmp.getFile();
+    auto registry = makePlaybackRegistry();
+    writeRampTape (file, registry, /*records=*/1, /*fpr=*/64);
+
+    TapePrefetcher pre;
+    REQUIRE (pre.open (file, registry, 64, 0));
+    pre.prepare (256);
+    pre.setTargetSample (0);
+    pre.serviceForTest();
+
+    std::vector<float> l (256, 7.0f), r (256, 7.0f);
+    const int got = pre.pull (l.data(), r.data(), 256);
+    REQUIRE (got == 64);                   // only 64 real frames available
+    REQUIRE (l[64] == 0.0f);               // remainder zero-filled
 }
