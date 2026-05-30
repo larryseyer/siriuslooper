@@ -19,9 +19,9 @@ namespace ida::app
 /// with no OTTO channels — the map is left unchanged.
 ///
 /// `host` MUST be prepared (`host.prepare(sr, blockSize)` already called)
-/// BEFORE this is invoked; OTTO's per-output buffer pointers are stable for
-/// the OttoHost's lifetime but null pre-prepare. Channels whose source pointer
-/// returns null are skipped.
+/// BEFORE this is invoked; OTTO's per-output buffer pointers are address-stable
+/// once prepared (contents are overwritten each `renderBlock`) but null
+/// pre-prepare. Channels whose source pointer returns null are skipped.
 ///
 /// Existing entries in `ottoMap` are overwritten in-place if their key
 /// (ottoSource) matches a freshly-rebound channel — this is the
@@ -31,7 +31,7 @@ namespace ida::app
 /// is responsible for clearing the map BEFORE calling rebind if the import
 /// is a full replace.
 void rebindOttoChannelsAfterImport (OutputMixer& mix,
-                                    OttoHost& host,
+                                    const OttoHost& host,
                                     std::unordered_map<int, OutputChannelId>& ottoMap);
 
 } // namespace ida::app

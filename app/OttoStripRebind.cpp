@@ -7,7 +7,7 @@ namespace ida::app
 {
 
 void rebindOttoChannelsAfterImport (OutputMixer& mix,
-                                    OttoHost& host,
+                                    const OttoHost& host,
                                     std::unordered_map<int, OutputChannelId>& ottoMap)
 {
     const int total = mix.channelCount();
