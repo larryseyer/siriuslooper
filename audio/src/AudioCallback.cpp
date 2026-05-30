@@ -55,6 +55,15 @@ void AudioCallback::audioDeviceIOCallbackWithContext (
     int                 numSamples,
     const juce::AudioIODeviceCallbackContext& /*context*/)
 {
+    // Denormal protection for the ENTIRE callback (input graph, OTTO render,
+    // output graph + bus FX). Reverb/delay tails, decaying IIR filter state,
+    // and fading signal all generate denormal floats; denormal arithmetic is
+    // 10-100x slower on the CPU, which blows the buffer-time budget and causes
+    // underruns (crackle). FTZ/DAZ flush them to zero. This is the single
+    // top-level guard for the whole audio thread — `OttoHost::renderBlock`
+    // also sets one for OTTO-standalone reuse; nesting is harmless.
+    const juce::ScopedNoDenormals noDenormals;
+
     // Wall-clock at the start of the buffer — `getHighResolutionTicks` maps
     // to `mach_absolute_time` on Apple Silicon (userspace VDSO, ~10 ns,
     // RT-safe). End-of-buffer minus start gives the elapsed seconds we
