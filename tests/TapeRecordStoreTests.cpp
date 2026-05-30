@@ -6,6 +6,7 @@
 #include "ida/Rational.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <array>
 #include <cstring>
@@ -295,4 +296,143 @@ TEST_CASE("TapeCodecRegistry — registering a second codec with same id replace
     REQUIRE(bytes.size() == 2);
     REQUIRE(bytes[0] == std::byte{0xBE});
     REQUIRE(bytes[1] == std::byte{0xEF});
+}
+
+// ---------------------------------------------------------------------------
+// 8. PcmAudioCodec + FlacAudioCodec (T0a Task 3)
+// ---------------------------------------------------------------------------
+#include "ida/AudioPayloadCodec.h"
+
+namespace {
+
+// Build a stereo ramp: left[i] = i / (N-1), right[i] = -left[i].
+void makeStereoRamp (int numFrames, std::vector<float>& left, std::vector<float>& right)
+{
+    left.resize  (static_cast<std::size_t> (numFrames));
+    right.resize (static_cast<std::size_t> (numFrames));
+    for (int i = 0; i < numFrames; ++i)
+    {
+        left [static_cast<std::size_t> (i)] =  static_cast<float> (i) / static_cast<float> (numFrames - 1);
+        right[static_cast<std::size_t> (i)] = -left[static_cast<std::size_t> (i)];
+    }
+}
+
+} // namespace
+
+TEST_CASE("PcmAudioCodec — encode→decode of stereo ramp is bit-exact", "[tape-record]")
+{
+    ida::PcmAudioCodec codec;
+    REQUIRE(codec.codecId() == ida::TapeCodecId::AudioPcm);
+
+    static constexpr int kFrames = 512;
+    std::vector<float> left, right;
+    makeStereoRamp (kFrames, left, right);
+
+    const auto payload = codec.encode (left.data(), right.data(), kFrames, 48000.0);
+    REQUIRE_FALSE (payload.empty());
+
+    ida::PcmBlock block;
+    REQUIRE (codec.decode (payload.data(), payload.size(), block));
+    REQUIRE (block.numFrames() == kFrames);
+
+    for (int i = 0; i < kFrames; ++i)
+    {
+        const auto idx = static_cast<std::size_t> (i);
+        // PCM round-trip must be bit-exact — use tolerance 0 to express the
+        // intent without triggering -Wfloat-equal on ==.
+        CHECK_THAT (block.left [idx], Catch::Matchers::WithinAbs (left [idx], 0.0f));
+        CHECK_THAT (block.right[idx], Catch::Matchers::WithinAbs (right[idx], 0.0f));
+    }
+}
+
+TEST_CASE("FlacAudioCodec — encode→decode returns correct frame count and samples within 24-bit tolerance", "[tape-record]")
+{
+    ida::FlacAudioCodec codec;
+    REQUIRE(codec.codecId() == ida::TapeCodecId::AudioFlac);
+
+    static constexpr int kFrames = 512;
+    std::vector<float> left, right;
+    makeStereoRamp (kFrames, left, right);
+
+    const auto payload = codec.encode (left.data(), right.data(), kFrames, 44100.0);
+    REQUIRE_FALSE (payload.empty());
+
+    ida::PcmBlock block;
+    REQUIRE (codec.decode (payload.data(), payload.size(), block));
+    REQUIRE (block.numFrames() == kFrames);
+
+    // 24-bit FLAC quantization: max error is 1/2^23 plus a small margin.
+    static constexpr float kTol = 2.0f / static_cast<float> (1 << 23);
+    for (int i = 0; i < kFrames; ++i)
+    {
+        const auto idx = static_cast<std::size_t> (i);
+        CHECK_THAT (block.left [idx], Catch::Matchers::WithinAbs (left [idx], kTol));
+        CHECK_THAT (block.right[idx], Catch::Matchers::WithinAbs (right[idx], kTol));
+    }
+}
+
+TEST_CASE("FlacAudioCodec — each block decodes standalone (no cross-block state)", "[tape-record]")
+{
+    ida::FlacAudioCodec codec;
+
+    static constexpr int kFrames = 256;
+
+    // Block A: constant 0.25f / -0.25f.
+    std::vector<float> aL (kFrames, 0.25f);
+    std::vector<float> aR (kFrames, -0.25f);
+    const auto payloadA = codec.encode (aL.data(), aR.data(), kFrames, 44100.0);
+
+    // Block B: ramp, encoded independently.
+    std::vector<float> bL, bR;
+    makeStereoRamp (kFrames, bL, bR);
+    const auto payloadB = codec.encode (bL.data(), bR.data(), kFrames, 44100.0);
+
+    // Decode B WITHOUT ever touching A — simulate receiving out-of-order or
+    // reading from an arbitrary file position.
+    ida::PcmBlock block;
+    REQUIRE (codec.decode (payloadB.data(), payloadB.size(), block));
+    REQUIRE (block.numFrames() == kFrames);
+
+    static constexpr float kTol = 2.0f / static_cast<float> (1 << 23);
+    for (int i = 0; i < kFrames; ++i)
+    {
+        const auto idx = static_cast<std::size_t> (i);
+        CHECK_THAT (block.left [idx], Catch::Matchers::WithinAbs (bL[idx], kTol));
+        CHECK_THAT (block.right[idx], Catch::Matchers::WithinAbs (bR[idx], kTol));
+    }
+    (void) payloadA; // payloadA encoded but never decoded — by design
+}
+
+TEST_CASE("PcmAudioCodec — decode of garbage bytes returns false without throwing", "[tape-record]")
+{
+    ida::PcmAudioCodec codec;
+    static constexpr std::array<std::byte, 7> kGarbage = {
+        std::byte{0xFF}, std::byte{0xFE}, std::byte{0x00},
+        std::byte{0xAB}, std::byte{0xCD}, std::byte{0xEF}, std::byte{0x42}
+    };
+    ida::PcmBlock block;
+    bool threw = false;
+    bool result = false;
+    try { result = codec.decode (kGarbage.data(), kGarbage.size(), block); }
+    catch (...) { threw = true; }
+    REQUIRE_FALSE (threw);
+    REQUIRE_FALSE (result);
+}
+
+TEST_CASE("FlacAudioCodec — decode of garbage bytes returns false without throwing", "[tape-record]")
+{
+    ida::FlacAudioCodec codec;
+    static constexpr std::array<std::byte, 16> kGarbage = {
+        std::byte{0xDE}, std::byte{0xAD}, std::byte{0xBE}, std::byte{0xEF},
+        std::byte{0x00}, std::byte{0x11}, std::byte{0x22}, std::byte{0x33},
+        std::byte{0x44}, std::byte{0x55}, std::byte{0x66}, std::byte{0x77},
+        std::byte{0x88}, std::byte{0x99}, std::byte{0xAA}, std::byte{0xBB}
+    };
+    ida::PcmBlock block;
+    bool threw = false;
+    bool result = false;
+    try { result = codec.decode (kGarbage.data(), kGarbage.size(), block); }
+    catch (...) { threw = true; }
+    REQUIRE_FALSE (threw);
+    REQUIRE_FALSE (result);
 }
