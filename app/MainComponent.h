@@ -185,6 +185,11 @@ private:
     /// (solo-in-place: any solo → non-soloed strips are silenced) and applies it
     /// to both the engine strip and the strip's visual mute indication.
     void recomputeInputStripMutes();
+    /// Output-side analogue of recomputeInputStripMutes, scoped to the OTTO
+    /// band: any OTTO solo → non-soloed OTTO strips are silenced. Single writer
+    /// of each OTTO channel's engine mute; also pushes the effective mute to the
+    /// strip's visual. (Phrase/MON/bus solo is deferred — see todo.md.)
+    void recomputeOttoOutputStripMutes();
     /// (Re)registers the engine input channels and rebuilds the pane's strips
     /// from `inputPairs_`: a stereo pair → one stereo strip, a mono pair → two
     /// mono-source strips (RME split). Brackets the channel-map mutation with
@@ -513,6 +518,15 @@ private:
     /// `ottoHost_->getOttoOutputLeft/Right(ottoOutputIndex)`.
     std::unordered_map<int, ida::OutputChannelId>
                                  ottoChannelByOutputIndex_;
+
+    /// OTTO strip mute + solo state, indexed by ottoOutputIndex (0..31), sized
+    /// to OttoHost::kNumOttoOutputs at construction. Solo is band-local: while
+    /// any OTTO strip is soloed, non-soloed OTTO strips are silenced. Both feed
+    /// recomputeOttoOutputStripMutes(), which is the single writer of each OTTO
+    /// channel's engine mute (own-mute and solo-silence must not fight). Solo is
+    /// transient performance state — not persisted, like input-strip solo.
+    std::vector<bool>            ottoStripMuted_;
+    std::vector<bool>            ottoStripSoloed_;
 
     /// V9 MON strip binding. Indexed by mon-strip row, holds the *input*
     /// ChannelId whose MON-on minted that strip's auto-created OutputMixer

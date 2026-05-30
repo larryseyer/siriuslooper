@@ -2054,6 +2054,7 @@ public:
     std::function<void (int ottoOutputIndex)>              onRemoveOttoOutputStrip;
     std::function<void (int ottoOutputIndex, float gainLinear)> onOttoGain;
     std::function<void (int ottoOutputIndex, bool muted)>  onOttoMute;
+    std::function<void (int ottoOutputIndex, bool soloed)> onOttoSolo;
 
     void setMasterLevelDb (float dbL, float dbR)
     {
@@ -2682,6 +2683,16 @@ public:
             { s->setLUFSLevel (lufs); return; }
     }
 
+    /// Drives the OTTO strip's mute-button visual to its effective state so a
+    /// strip silenced by another's solo shows as muted (mirror of the input
+    /// pane's setEffectiveMute). OTTO strip `id` IS the ottoOutputIndex.
+    void setOttoEffectiveMute (int ottoOutputIndex, bool effectivelyMuted)
+    {
+        for (auto& s : ottoStrips_)
+            if (s != nullptr && s->getChannelIndex() == ottoOutputIndex)
+            { s->setEffectivelyMuted (effectivelyMuted); return; }
+    }
+
     /// Screen bounds of MON strip `monIdx`'s INS button, mirror of
     /// `phraseInsButtonScreenArea`.
     juce::Rectangle<int> monInsButtonScreenArea (int monIdx) const
@@ -3077,7 +3088,15 @@ public:
         { if (onPhraseMute) onPhraseMute (idx, muted); }
         else if (onBusMute)        onBusMute (idx, muted);
     }
-    void stripSoloChanged (int, otto::ui::ChannelType, bool) override {}
+    void stripSoloChanged (int idx, otto::ui::ChannelType type, bool soloed) override
+    {
+        // OTTO strips only for now (band-local solo). Phrase/MON/bus solo
+        // buttons remain inert until the full output-mixer solo lands — see
+        // todo.md "Full output-mixer solo". Real master has no solo.
+        if (idx == kMasterStripId) return;
+        if (type == otto::ui::ChannelType::Master)
+        { if (onOttoSolo) onOttoSolo (idx, soloed); }
+    }
     void stripChannelSelected (int idx, otto::ui::ChannelType type) override
     {
         const bool isMaster = (idx == kMasterStripId);
@@ -3452,6 +3471,7 @@ private:
             info.ottoOutputIndex, otto::ui::ChannelType::Master);
         strip->setChannelName (info.name);
         strip->setOutputComboVisible (false);   // pane owns destination routing
+        strip->setSoloButtonVisible (true);     // Master-typed but solo-capable
         strip->addListener (this);
         addAndMakeVisible (*strip);
         ottoStrips_.push_back (std::move (strip));
@@ -4061,6 +4081,12 @@ MainComponent::MainComponent()
       focusedTape_ (! demo_.inputs.empty() ? demo_.inputs.front().tapeId
                                            : TapeId (0))
 {
+    // OTTO strip mute/solo state is indexed directly by ottoOutputIndex, so it
+    // is sized once to the full output count and never resized as strips are
+    // added/removed (absent indices stay false).
+    ottoStripMuted_.assign (static_cast<std::size_t> (OttoHost::kNumOttoOutputs), false);
+    ottoStripSoloed_.assign (static_cast<std::size_t> (OttoHost::kNumOttoOutputs), false);
+
     // Seed nextConstituentId_ to one past the maximum id present in the
     // initial demo session, so promotion's allocateId callback never collides
     // with an existing id.
@@ -4990,6 +5016,9 @@ MainComponent::MainComponent()
             if (chId.value() == 0) return;   // out-of-range / not-prepared / cap-reached
             outputMixerPane_->appendOttoStrip ({ ottoOutputIndex,
                 OutputMixerPane::ottoFriendlyName (ottoOutputIndex) });
+            // A strip added while another OTTO strip is soloed must inherit the
+            // solo-silence immediately (engine mute + visual).
+            recomputeOttoOutputStripMutes();
         };
         // Slice 4b — strip "Remove" gesture. Undo the engine seam, then
         // drop the matching strip from the OTTO band.
@@ -5010,13 +5039,21 @@ MainComponent::MainComponent()
             if (auto* strip = outputMixer_->audioStripForChannel (it->second))
                 strip->setGain (gainLinear);
         };
+        // Mute + solo both route through recomputeOttoOutputStripMutes so the
+        // own-mute and solo-silence states resolve to a single engine mute write
+        // (a direct setMuted here would fight the solo recompute — same reason
+        // the input side routes mute through recomputeInputStripMutes).
         outputMixerPane_->onOttoMute = [this] (int ottoOutputIndex, bool muted)
         {
-            if (outputMixer_ == nullptr) return;
-            const auto it = ottoChannelByOutputIndex_.find (ottoOutputIndex);
-            if (it == ottoChannelByOutputIndex_.end()) return;
-            if (auto* strip = outputMixer_->audioStripForChannel (it->second))
-                strip->setMuted (muted);
+            if (ottoOutputIndex >= 0 && ottoOutputIndex < static_cast<int> (ottoStripMuted_.size()))
+                ottoStripMuted_[static_cast<std::size_t> (ottoOutputIndex)] = muted;
+            recomputeOttoOutputStripMutes();
+        };
+        outputMixerPane_->onOttoSolo = [this] (int ottoOutputIndex, bool soloed)
+        {
+            if (ottoOutputIndex >= 0 && ottoOutputIndex < static_cast<int> (ottoStripSoloed_.size()))
+                ottoStripSoloed_[static_cast<std::size_t> (ottoOutputIndex)] = soloed;
+            recomputeOttoOutputStripMutes();
         };
         outputMixerPane_->onBusGain = [this] (int busIdx, float gain)
         {
@@ -6613,6 +6650,36 @@ void MainComponent::recomputeInputStripMutes()
     }
 }
 
+void MainComponent::recomputeOttoOutputStripMutes()
+{
+    if (outputMixer_ == nullptr) return;
+
+    // Band-local solo-in-place over the OTTO strips only: if any *present* OTTO
+    // strip is soloed, every non-soloed OTTO strip is silenced. A strip's own
+    // mute always silences it. The effective mute drives both the engine strip
+    // and the strip's visual mute indication. anySolo is computed over present
+    // channels only, so a stale solo on a since-removed strip can't silence the
+    // band. (Phrase/MON/bus are untouched — full cross-group output solo is
+    // deferred; see todo.md.)
+    bool anySolo = false;
+    for (const auto& [outIdx, chId] : ottoChannelByOutputIndex_)
+    {
+        juce::ignoreUnused (chId);
+        if (outIdx >= 0 && outIdx < static_cast<int> (ottoStripSoloed_.size())
+            && ottoStripSoloed_[static_cast<std::size_t> (outIdx)])
+        { anySolo = true; break; }
+    }
+
+    for (const auto& [outIdx, chId] : ottoChannelByOutputIndex_)
+    {
+        if (outIdx < 0 || outIdx >= static_cast<int> (ottoStripMuted_.size())) continue;
+        const auto idx = static_cast<std::size_t> (outIdx);
+        const bool effective = ottoStripMuted_[idx] || (anySolo && ! ottoStripSoloed_[idx]);
+        if (auto* s = outputMixer_->audioStripForChannel (chId)) s->setMuted (effective);
+        if (outputMixerPane_ != nullptr) outputMixerPane_->setOttoEffectiveMute (outIdx, effective);
+    }
+}
+
 void MainComponent::refreshInputMixer()
 {
     if (inputMixerPane_ == nullptr) return;
@@ -6886,6 +6953,16 @@ void MainComponent::removeOttoOutputStrip (int ottoOutputIndex)
     audioDeviceManager_.addAudioCallback (audioCallback_.get());
 
     ottoChannelByOutputIndex_.erase (it);
+
+    // Drop this strip's mute/solo state and recompute: removing a soloed strip
+    // must release the solo-silence it imposed on the rest of the band, and a
+    // later re-add of the same index must not inherit stale state.
+    if (ottoOutputIndex >= 0 && ottoOutputIndex < static_cast<int> (ottoStripMuted_.size()))
+    {
+        ottoStripMuted_[static_cast<std::size_t> (ottoOutputIndex)]  = false;
+        ottoStripSoloed_[static_cast<std::size_t> (ottoOutputIndex)] = false;
+    }
+    recomputeOttoOutputStripMutes();
 }
 
 bool MainComponent::hasOttoOutputStrip (int ottoOutputIndex) const
