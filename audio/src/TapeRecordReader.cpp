@@ -247,9 +247,17 @@ bool TapeRecordReader::readAudioRecord (std::uint64_t     position,
     if (codec == nullptr)
         return false;
 
-    juce::FileInputStream fis (file_);
-    if (! fis.openedOk())
-        return false;
+    if (readStream_ == nullptr)
+    {
+        readStream_ = std::make_unique<juce::FileInputStream> (file_);
+        ++readStreamOpens_;
+        if (! readStream_->openedOk())
+        {
+            readStream_.reset();
+            return false;
+        }
+    }
+    juce::FileInputStream& fis = *readStream_;
 
     // Seek to the record's bodyLen prefix and skip it, then read the body.
     const std::uint64_t bodyOffset = entry.fileOffset + 4;
@@ -272,9 +280,19 @@ bool TapeRecordReader::readAudioRecord (std::uint64_t     position,
 
 void TapeRecordReader::refresh (TapeTruncationReport& reportOut)
 {
+    // Drop the cached read stream: juce::FileInputStream caches total length at
+    // construction, so a stream opened before an append cannot see post-append
+    // records. A fresh stream is opened lazily on the next readAudioRecord call.
+    readStream_.reset();
+
     // Re-scan from the last successfully scanned byte offset, appending any
     // newly-written complete records to the index.
     scanFrom (scannedTo_, /*recover=*/false, reportOut);
+}
+
+std::uint64_t TapeRecordReader::testReadStreamOpenCount() const noexcept
+{
+    return readStreamOpens_;
 }
 
 } // namespace ida

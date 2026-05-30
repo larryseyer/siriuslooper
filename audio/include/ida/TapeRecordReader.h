@@ -53,6 +53,10 @@ public:
     // Safe for recover=false readers polling a live file.
     void refresh (TapeTruncationReport& reportOut);
 
+    // Test-only: how many times the random-access read stream has been opened.
+    // A single sequential read session over the whole tape must report 1.
+    std::uint64_t testReadStreamOpenCount() const noexcept;
+
 private:
     TapeRecordReader() = default;   // I3: only open() constructs via private ctor
 
@@ -60,6 +64,13 @@ private:
     TapeCodecRegistry*  registry_  { nullptr };
     std::vector<RecordIndexEntry> index_;
     std::uint64_t       scannedTo_ { 0 };   // byte offset scanned up to
+
+    // Cached random-access read stream. Lazily opened by readAudioRecord and
+    // reused across calls; reset by refresh() because juce::FileInputStream
+    // caches total length at construction (a stream opened before an append
+    // cannot see post-append records, so refresh MUST drop it).
+    mutable std::unique_ptr<juce::FileInputStream> readStream_;
+    mutable std::uint64_t readStreamOpens_ { 0 };
 
     // Scan records from startOffset, appending valid entries to index_.
     // On a clean file both recover=true and recover=false behave identically.

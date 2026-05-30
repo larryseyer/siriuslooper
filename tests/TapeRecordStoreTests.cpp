@@ -1831,3 +1831,119 @@ TEST_CASE ("TapeRecordWriter clamps flushIntervalMs: 0 → 1, 99999 → 5000",
         REQUIRE (writer.flushIntervalMs() == ida::kMaxFlushIntervalMs);
     }
 }
+
+// ---------------------------------------------------------------------------
+// 18. TapeRecordReader — cached read stream (T0b Task 1)
+// ---------------------------------------------------------------------------
+
+
+TEST_CASE ("readAudioRecord reuses one file stream across many reads",
+           "[tape-record][reader-stream]")
+{
+    const juce::File dir = juce::File::getSpecialLocation (
+        juce::File::tempDirectory).getChildFile ("ida-test-t0b-stream-reuse");
+    dir.deleteRecursively();
+    dir.createDirectory();
+
+    constexpr int kRecords = 8;
+
+    const ida::TapeId tape { 1 };
+    juce::File tapeFile;
+
+    {
+        ida::TapeRecordWriter writer (dir, 48000.0, 256, ida::TapeCodecId::AudioPcm, 5);
+        std::vector<float> left (64, 0.1f), right (64, -0.1f);
+        for (int i = 0; i < kRecords; ++i)
+            writer.deliverTapeBlock (tape, left.data(), right.data(), 64);
+        writer.closeTape (tape);
+        tapeFile = writer.tapeFile (tape);
+    }
+
+    auto reg = makeFullRegistry();
+    ida::TapeTruncationReport report;
+    auto reader = ida::TapeRecordReader::open (tapeFile, reg, report, /*recover=*/false);
+    REQUIRE (reader != nullptr);
+    REQUIRE (reader->recordCount() == static_cast<std::uint64_t> (kRecords));
+
+    ida::PcmBlock block;
+    ida::TapeRecordHeader hdr;
+    for (int pass = 0; pass < 10; ++pass)
+        for (std::uint64_t i = 0; i < reader->recordCount(); ++i)
+            REQUIRE (reader->readAudioRecord (i, block, hdr));
+
+    // 80 reads must have opened the file exactly once.
+    REQUIRE (reader->testReadStreamOpenCount() == 1u);
+}
+
+TEST_CASE ("readAudioRecord sees records appended after a refresh",
+           "[tape-record][reader-stream]")
+{
+    const juce::File dir = juce::File::getSpecialLocation (
+        juce::File::tempDirectory).getChildFile ("ida-test-t0b-stream-refresh");
+    dir.deleteRecursively();
+    dir.createDirectory();
+
+    const ida::TapeId tape { 1 };
+    juce::File tapeFile;
+
+    static constexpr int    kBlock   = 64;
+    static constexpr double kSr      = 48000.0;
+    static constexpr int    kInitial = 4;
+    static constexpr int    kExtra   = 3;
+
+    {
+        ida::TapeRecordWriter writer (dir, kSr, 256, ida::TapeCodecId::AudioPcm, 5);
+        std::vector<float> left (kBlock, 0.1f), right (kBlock, -0.1f);
+        for (int i = 0; i < kInitial; ++i)
+            writer.deliverTapeBlock (tape, left.data(), right.data(), kBlock);
+        writer.closeTape (tape);
+        tapeFile = writer.tapeFile (tape);
+    }
+
+    auto reg = makeFullRegistry();
+    ida::TapeTruncationReport report;
+    auto reader = ida::TapeRecordReader::open (tapeFile, reg, report, /*recover=*/false);
+    REQUIRE (reader->recordCount() == static_cast<std::uint64_t> (kInitial));
+
+    ida::PcmBlock block;
+    ida::TapeRecordHeader hdr;
+    // This read caches the stream (its length at construction == kInitial records).
+    REQUIRE (reader->readAudioRecord (static_cast<std::uint64_t> (kInitial - 1), block, hdr));
+
+    // Append kExtra more records directly via the low-level encode API so we
+    // can extend the existing file without the writer deleting and recreating it.
+    {
+        ida::PcmAudioCodec codec;
+        std::vector<float> left (kBlock, 0.2f), right (kBlock, -0.2f);
+
+        juce::FileOutputStream fos (tapeFile);
+        REQUIRE (fos.openedOk());
+        fos.setPosition (tapeFile.getSize());
+
+        for (int i = 0; i < kExtra; ++i)
+        {
+            ida::TapeRecordHeader appendHdr;
+            appendHdr.seq          = static_cast<std::uint64_t> (kInitial + i);
+            appendHdr.type         = ida::TapeRecordType::Audio;
+            appendHdr.codec        = ida::TapeCodecId::AudioPcm;
+            appendHdr.conceptualTs = ida::Rational { 0, 1 };
+            appendHdr.lmcTs        = ida::Rational {
+                static_cast<std::int64_t> ((kInitial + i) * kBlock),
+                static_cast<std::int64_t> (std::llround (kSr)) };
+
+            const auto payload = codec.encode (left.data(), right.data(), kBlock, kSr);
+            std::vector<std::byte> encoded;
+            ida::encodeRecord (appendHdr, payload.data(), payload.size(), encoded);
+            fos.write (encoded.data(), encoded.size());
+        }
+    }
+
+    ida::TapeTruncationReport refreshReport;
+    reader->refresh (refreshReport);
+    REQUIRE (reader->recordCount() == static_cast<std::uint64_t> (kInitial + kExtra));
+
+    // The cached stream's length was stale; refresh must have reset it so that
+    // reading a post-append record succeeds.
+    REQUIRE (reader->readAudioRecord (static_cast<std::uint64_t> (kInitial + kExtra - 1),
+                                      block, hdr));
+}
