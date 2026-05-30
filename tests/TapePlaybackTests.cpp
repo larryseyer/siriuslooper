@@ -1,5 +1,11 @@
 #include "ida/TransportPlayhead.h"
 #include "ida/ActiveReadsSnapshot.h"
+#include "ida/PlaybackResolver.h"
+#include "ida/RenderPipeline.h"
+#include "ida/Constituent.h"
+#include "ida/Position.h"
+#include "ida/TapeReference.h"
+#include "ida/TempoMap.h"
 #include "ida/Bus.h"
 #include "ida/ChannelStrip.h"
 #include "ida/OutputMixer.h"
@@ -310,4 +316,97 @@ TEST_CASE ("prefetcher loop mode wraps the decode cursor",
     REQUIRE (l[0]  == Catch::Approx (static_cast<float> (loopLen - 32))); // 224
     REQUIRE (l[31] == Catch::Approx (static_cast<float> (loopLen - 1)));  // 255 (loop end)
     REQUIRE (l[32] == Catch::Approx (0.0f));   // wrapped back to sample 0
+}
+
+// ---------------------------------------------------------------------------
+// PlaybackResolver tests (T0b Task 6)
+// Fixture helpers renamed to avoid ODR clash with RenderPipelineTests.cpp.
+// ---------------------------------------------------------------------------
+namespace {
+
+inline std::shared_ptr<const ida::Constituent> makePlaybackLoop (
+    std::int64_t id, ida::Rational placeIn, ida::Rational placeOut,
+    std::int64_t tape, ida::Rational sliceIn, ida::Rational sliceOut)
+{
+    const ida::Constituent loop { ida::ConstituentId (id),
+                                  ida::Position (placeIn), ida::Position (placeOut) };
+    return std::make_shared<const ida::Constituent> (
+        loop.withTapeReference (ida::TapeReference (ida::TapeId (tape), sliceIn, sliceOut)));
+}
+
+inline std::shared_ptr<const ida::Constituent> makePlaybackSession (
+    ida::Rational lengthWholeNotes, std::shared_ptr<const ida::Constituent> child)
+{
+    const ida::Constituent session (ida::ConstituentId (1), ida::Position(),
+                                    ida::Position (lengthWholeNotes));
+    return std::make_shared<const ida::Constituent> (session.withChildAdded (std::move (child)));
+}
+
+inline ida::RenderPipeline makeSingleLoopPipeline()
+{
+    auto session = makePlaybackSession (ida::Rational (8),
+        makePlaybackLoop (10, ida::Rational (0), ida::Rational (8),
+                          100, ida::Rational (2), ida::Rational (4)));
+    return ida::RenderPipeline (session, ida::TempoMap::fromBpm (ida::Rational (120)));
+}
+
+} // namespace
+
+TEST_CASE ("resolver publishes a slot per active read", "[tape-playback][resolver]")
+{
+    ida::RenderPipeline pipeline = makeSingleLoopPipeline();
+    ida::ActiveReadsPublisher publisher;
+
+    ida::PlaybackResolver resolver;
+    resolver.setPipeline (&pipeline);
+    resolver.setPublisher (&publisher);
+    resolver.setSampleRate (48000.0);
+    resolver.setPlayheadProvider ([] { return ida::TransportPlayhead { /*positionInSeconds=*/0.0, /*isPlaying=*/true }; });
+    resolver.setSlotForConstituent ([] (ida::ConstituentId c) { return static_cast<int> (c.value()); });
+    int steered = -1; std::int64_t steeredTo = -1;
+    resolver.setSteerPrefetcher ([&] (int slot, std::int64_t s) { steered = slot; steeredTo = s; });
+
+    resolver.resolveOnceForTest();
+
+    ida::ActiveReadsSnapshot snap;
+    publisher.read (snap);
+    REQUIRE (snap.count >= 1);
+    REQUIRE (snap.slots[0].active);
+    REQUIRE (steered == snap.slots[0].slot);
+    REQUIRE (steeredTo == snap.slots[0].tapeSampleStart);
+    REQUIRE (snap.slots[0].tapeSampleStart == 96000); // tapePosition 2s * 48000
+}
+
+TEST_CASE ("resolver publishes empty snapshot when stopped", "[tape-playback][resolver]")
+{
+    ida::RenderPipeline pipeline = makeSingleLoopPipeline();
+    ida::ActiveReadsPublisher publisher;
+    ida::PlaybackResolver resolver;
+    resolver.setPipeline (&pipeline);
+    resolver.setPublisher (&publisher);
+    resolver.setSampleRate (48000.0);
+    resolver.setPlayheadProvider ([] { return ida::TransportPlayhead { 0.0, /*isPlaying=*/false }; });
+    resolver.setSlotForConstituent ([] (ida::ConstituentId c) { return static_cast<int> (c.value()); });
+    resolver.setSteerPrefetcher ([] (int, std::int64_t) {});
+
+    resolver.resolveOnceForTest();
+    ida::ActiveReadsSnapshot snap; publisher.read (snap);
+    REQUIRE (snap.count == 0);
+}
+
+TEST_CASE ("resolver skips reads whose constituent has no slot", "[tape-playback][resolver]")
+{
+    ida::RenderPipeline pipeline = makeSingleLoopPipeline();
+    ida::ActiveReadsPublisher publisher;
+    ida::PlaybackResolver resolver;
+    resolver.setPipeline (&pipeline);
+    resolver.setPublisher (&publisher);
+    resolver.setSampleRate (48000.0);
+    resolver.setPlayheadProvider ([] { return ida::TransportPlayhead { 0.0, true }; });
+    resolver.setSlotForConstituent ([] (ida::ConstituentId) { return -1; }); // no slot
+    resolver.setSteerPrefetcher ([] (int, std::int64_t) {});
+
+    resolver.resolveOnceForTest();
+    ida::ActiveReadsSnapshot snap; publisher.read (snap);
+    REQUIRE (snap.count == 0); // unmapped reads are dropped
 }

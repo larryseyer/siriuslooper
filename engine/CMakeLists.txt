@@ -65,7 +65,11 @@ add_library(IdaEngine STATIC
     src/MasterSpectrum.cpp
     # T0a Task 2 — IPayloadCodec interface + TapeCodecRegistry: the media-agnostic
     # codec seam. No JUCE dependency; FLAC/PCM codecs land in Task 3 (audio layer).
-    src/IPayloadCodec.cpp)
+    src/IPayloadCodec.cpp
+    # T0b Task 6 — PlaybackResolver: off-audio-thread control-worker that runs
+    # activeReadsAt, maps loop reads to phrase-channel slots, steers prefetchers,
+    # and publishes an ActiveReadsSnapshot via seqlock.
+    src/PlaybackResolver.cpp)
 
 target_include_directories(IdaEngine PUBLIC include)
 
