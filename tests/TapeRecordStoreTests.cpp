@@ -1836,7 +1836,6 @@ TEST_CASE ("TapeRecordWriter clamps flushIntervalMs: 0 → 1, 99999 → 5000",
 // 18. TapeRecordReader — cached read stream (T0b Task 1)
 // ---------------------------------------------------------------------------
 
-
 TEST_CASE ("readAudioRecord reuses one file stream across many reads",
            "[tape-record][reader-stream]")
 {
@@ -1916,6 +1915,8 @@ TEST_CASE ("readAudioRecord sees records appended after a refresh",
         ida::PcmAudioCodec codec;
         std::vector<float> left (kBlock, 0.2f), right (kBlock, -0.2f);
 
+        // Direct encode: couples to the on-disk record framing. If the record
+        // format changes, update the header fields constructed here.
         juce::FileOutputStream fos (tapeFile);
         REQUIRE (fos.openedOk());
         fos.setPosition (tapeFile.getSize());

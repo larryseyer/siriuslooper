@@ -69,6 +69,9 @@ private:
     // reused across calls; reset by refresh() because juce::FileInputStream
     // caches total length at construction (a stream opened before an append
     // cannot see post-append records, so refresh MUST drop it).
+    // Threading: this reader is NOT thread-safe — readAudioRecord and refresh
+    // must be called from a single worker thread; concurrent calls on the same
+    // reader would race on readStream_.
     mutable std::unique_ptr<juce::FileInputStream> readStream_;
     mutable std::uint64_t readStreamOpens_ { 0 };
 

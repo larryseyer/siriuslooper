@@ -250,12 +250,12 @@ bool TapeRecordReader::readAudioRecord (std::uint64_t     position,
     if (readStream_ == nullptr)
     {
         readStream_ = std::make_unique<juce::FileInputStream> (file_);
-        ++readStreamOpens_;
         if (! readStream_->openedOk())
         {
             readStream_.reset();
             return false;
         }
+        ++readStreamOpens_;
     }
     juce::FileInputStream& fis = *readStream_;
 
