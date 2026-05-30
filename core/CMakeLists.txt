@@ -23,7 +23,8 @@ add_library(IdaCore STATIC
     src/SharedMemoryRegion.cpp
     src/Sha256.cpp
     src/VersionPinningRecord.cpp
-    src/TapePool.cpp)
+    src/TapePool.cpp
+    src/TapeRecord.cpp)
 
 target_include_directories(IdaCore PUBLIC include)
 

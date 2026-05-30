@@ -86,6 +86,8 @@ add_executable(IdaTests
     StatefulSynthFixtureTests.cpp
     MixerGraphTests.cpp
     FlacTapeSinkTests.cpp
+    # T0a — TapeRecord byte-layer: LE helpers, CRC-32, file-header, encode/decode.
+    TapeRecordStoreTests.cpp
     # P7 T3a (internal-FX adapters — EQ first): adapter wrapper + factory.
     # EqAdapter lives in engine/src/fx/ (private to the engine target);
     # the include path below lets the test reach it.
