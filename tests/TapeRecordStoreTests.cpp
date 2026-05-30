@@ -449,6 +449,17 @@ TEST_CASE("FlacAudioCodec — decode of garbage bytes returns false without thro
     REQUIRE_FALSE (result);
 }
 
+TEST_CASE("Audio codecs — both encode() return empty for zero frames", "[tape-record]")
+{
+    // Zero-frame guard must be symmetric across codecs: a 0-frame block is not
+    // a record, so encode() yields no payload for PCM and FLAC alike.
+    const float dummy = 0.0f;
+    ida::PcmAudioCodec  pcm;
+    ida::FlacAudioCodec flac;
+    REQUIRE (pcm.encode (&dummy, &dummy, 0, 48000.0).empty());
+    REQUIRE (flac.encode (&dummy, &dummy, 0, 48000.0).empty());
+}
+
 // ---------------------------------------------------------------------------
 // 9. TapeRecordWriter — worker-framed append, flush, RT-safe entry (T0a Task 4)
 // ---------------------------------------------------------------------------

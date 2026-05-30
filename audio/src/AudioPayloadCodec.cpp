@@ -92,7 +92,7 @@ bool FlacAudioCodec::decode(const std::byte* payload, std::size_t len, PcmBlock&
 std::vector<std::byte> PcmAudioCodec::encode(const float* left, const float* right,
                                               int numFrames, double /*sampleRate*/) const
 {
-    if (numFrames < 0)
+    if (numFrames <= 0)   // empty for 0 frames too, matching FlacAudioCodec::encode
         return {};
 
     static constexpr std::size_t kHeaderBytes   = 4;          // u32 numFrames
