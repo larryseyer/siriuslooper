@@ -1,5 +1,15 @@
 # IDA — Deferred Items
 
+### 2026-05-30 — Phrase arrangement / playback / pruning / crossfades / timeline export (OPERATOR-RAISED; own design session, NOT in the T0a/T0b render-path plan)
+- Raised by the operator 2026-05-30 mid-T0a-execution as "must do at some point, no need to add to the current plan." These are facets of the future arrangement subsystem (see the 2026-05-19 "Render-to-parts / timeline / finished-song" entry below and memory `project_render_to_parts_timeline`). T0b delivers raw playback-resolution (what sounds at LMC time T → phrase-channel scratch); these go beyond it.
+- Open topics to design (each gets brainstorm→spec→plan when scheduled):
+  1. **How phrases are played back AND arranged.** The arrangement model itself (how defined phrases are sequenced/placed on a timeline for playback) has not been discussed yet. T0b wires the audio of a sounding phrase but does not define the arrangement/sequencing UX or data model.
+  2. **"Pruning."** A concept the operator will explain later — capture the term now; do not infer its meaning. Likely related to the "record everything, keep only what's promoted" end-goal (memory `feedback_hide_internals_from_musician` / render-to-parts), but await the operator's definition before designing.
+  3. **Phrase-boundary crossfades for MIDI, audio, AND video.** Each medium needs boundary crossfade behaviour at phrase edges (audio equal-power-ish; MIDI note/CC handling across the seam; video frame blend/cut). Media-agnostic container (T0a) is ready to carry the media; crossfade is a render/arrangement-time concern.
+  4. **Export of an arranged phrase timeline to disk.** Bounce/materialize an arranged timeline to a file on disk (distinct from the live tape container — this is the "finished song / part" output, whitepaper §6.11 "render" reserved word). Pairs with topic 1 (arrangement) and topic 3 (crossfades baked into the export).
+- What's needed: schedule a dedicated arrangement-subsystem design session after T0b lands; start by having the operator define "pruning" and the arrangement/playback UX, then spec crossfades + timeline export against the media-agnostic tape store.
+
+
 ### 2026-05-30 — RESOLVED (not a real bug): "single TAPECOLOR overloads CPU" was a stale-build ghost
 - Investigated 2026-05-30 with IDA's OverloadProtection load meter (Preparation pane "Load: X%").
   CLEAN-built binary (M4 Max, 1 OTTO player-1 strip, OTTO playing): TAPECOLOR disabled 24.4%, Eco 22.4%,
