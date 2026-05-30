@@ -1,6 +1,7 @@
 #include "MainComponent.h"
 
 #include "IdaPreferences.h"
+#include "OttoStripRebind.h"
 #include "StripContextOverlay.h"
 #include "components/ChannelDetailPanWidTab.h"
 #include "components/CompactFaderStrip.h"
@@ -8589,6 +8590,40 @@ void MainComponent::chooseFileAndLoad()
                             outputMixer_ = std::make_unique<ida::OutputMixer>();
                             outputMixer_->setEffectChainHost (&effectChainHost_);
                             outputMixer_->importGraphState (*loadedOutputMixer);
+
+                            // S6 — re-mint OTTO strips the imported state declared via
+                            // ottoSource. Clear the old map first so a fresh import doesn't
+                            // accumulate stale entries from the prior session.
+                            ottoChannelByOutputIndex_.clear();
+                            if (ottoHost_ != nullptr)
+                                ida::app::rebindOttoChannelsAfterImport (
+                                    *outputMixer_, *ottoHost_, ottoChannelByOutputIndex_);
+
+                            // S6 — output-channel mute/solo is transient (NOT persisted:
+                            // OutputChannelState carries no mute field), so the loaded
+                            // session's OTTO strips start clean. Reset both transient
+                            // vectors so a mute/solo from the prior session can't bleed
+                            // onto a freshly-loaded one at the same OTTO output index.
+                            ottoStripMuted_.assign  (static_cast<std::size_t> (OttoHost::kNumOttoOutputs), false);
+                            ottoStripSoloed_.assign (static_cast<std::size_t> (OttoHost::kNumOttoOutputs), false);
+
+                            // Rebuild the OTTO band in the pane from the rebound map. Sort
+                            // by OTTO output index so the strips appear in a deterministic
+                            // order (the map is unordered).
+                            if (outputMixerPane_ != nullptr)
+                            {
+                                std::vector<OutputMixerPane::OttoStripInfo> infos;
+                                infos.reserve (ottoChannelByOutputIndex_.size());
+                                for (const auto& kv : ottoChannelByOutputIndex_)
+                                    infos.push_back ({ kv.first, OutputMixerPane::ottoFriendlyName (kv.first) });
+                                std::sort (infos.begin(), infos.end(),
+                                           [] (const auto& a, const auto& b) { return a.ottoOutputIndex < b.ottoOutputIndex; });
+                                outputMixerPane_->setOttoStrips (infos);
+                            }
+
+                            // Apply the (clean) effective mute to the freshly-rebuilt strips.
+                            recomputeOttoOutputStripMutes();
+                            refreshOutputDestinations();
                         }
                         // V9: re-bind the InputMixer's OutputMixer attachment
                         // AFTER both are re-minted so MON replay (in a future

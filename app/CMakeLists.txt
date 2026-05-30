@@ -48,6 +48,7 @@ target_sources(IDA PRIVATE
     Main.cpp
     MainComponent.cpp
     OttoPane.cpp
+    OttoStripRebind.cpp
     TransportBarHost.cpp)
 
 target_compile_definitions(IDA PRIVATE
