@@ -16,7 +16,12 @@ inline constexpr int kMaxPhraseSlots = 64;
 /// needs no map lookup.
 struct PhraseSlotRead {
     int          slot            { -1 };   ///< dense phrase-channel slot index
-    std::int64_t tapeSampleStart { 0 };    ///< absolute tape sample for this block's start
+    /// Absolute tape sample index for this block's start. Consumed by the
+    /// resolver WORKER's steer path (PlaybackResolver::setSteerPrefetcher →
+    /// TapePrefetcher::setTargetSample). The audio thread does NOT re-seek
+    /// per block — it pulls from the ring's current head. Never use this
+    /// field on the audio thread to seek; that would race the prefetch cursor.
+    std::int64_t tapeSampleStart { 0 };
     bool         active          { false };
 };
 

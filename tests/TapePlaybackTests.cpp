@@ -451,12 +451,48 @@ TEST_CASE ("playback step pulls active slot into its scratch; inactive stays zer
     cb.runPlaybackStepForTest (/*numSamples=*/128);
     REQUIRE (scratchL[0] == Catch::Approx (0.0f));
     REQUIRE (scratchL[1] == Catch::Approx (1.0f));   // ramp landed in scratch
+    REQUIRE (scratchR[1] == Catch::Approx (1.0f));   // R must match L (ramp writes both)
 
     // Now publish an empty snapshot: the step zeroes the previously-active slot.
     ActiveReadsSnapshot empty;
     publisher.publish (empty);
     cb.runPlaybackStepForTest (128);
     REQUIRE (scratchL[1] == 0.0f);
+    REQUIRE (scratchR[1] == 0.0f);   // R must also be zeroed on deactivation
+}
+
+TEST_CASE ("playback step fills multiple active slots independently",
+           "[tape-playback][callback]")
+{
+    juce::TemporaryFile tmpA (".idatape"), tmpB (".idatape");
+    TapeCodecRegistry registry = makePlaybackRegistry();
+    writeRampTape (tmpA.getFile(), registry, 4, 256);
+    writeRampTape (tmpB.getFile(), registry, 4, 256);
+
+    TapePrefetcher preA, preB;
+    REQUIRE (preA.open (tmpA.getFile(), registry, 256, 0));
+    REQUIRE (preB.open (tmpB.getFile(), registry, 256, 0));
+    preA.prepare (4096); preA.setTargetSample (0);   preA.serviceForTest();
+    preB.prepare (4096); preB.setTargetSample (512); preB.serviceForTest(); // mid-tape
+
+    std::vector<float> aL (256, -1.0f), aR (256, -1.0f);
+    std::vector<float> bL (256, -1.0f), bR (256, -1.0f);
+
+    ActiveReadsPublisher publisher;
+    ida::AudioCallback cb { ida::EngineConfig {} };
+    cb.setActiveReadsPublisher (&publisher);
+    cb.bindPlaybackSlotForTest (0, &preA, aL.data(), aR.data());
+    cb.bindPlaybackSlotForTest (3, &preB, bL.data(), bR.data());   // non-adjacent slot
+
+    ActiveReadsSnapshot snap;
+    snap.add ({ 0, 0,   true });
+    snap.add ({ 3, 512, true });
+    publisher.publish (snap);
+
+    cb.runPlaybackStepForTest (64);
+    REQUIRE (aL[1] == Catch::Approx (1.0f));     // slot 0 ramp from sample 0
+    REQUIRE (bL[0] == Catch::Approx (512.0f));   // slot 3 ramp from sample 512
+    REQUIRE (bL[1] == Catch::Approx (513.0f));
 }
 
 TEST_CASE ("playback step performs zero allocations", "[tape-playback][callback][rt-safety]")

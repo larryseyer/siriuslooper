@@ -154,8 +154,9 @@ void AudioCallback::audioDeviceIOCallbackWithContext (
         ottoRenderSource_->renderBlock (numSamples, ottoMidiScratch_);
 
     // Step 2c: T0b playback-resolution. Fill each sounding phrase channel's
-    // stable scratch from its prefetch ring (atomic snapshot read + lock-free
-    // ring pull + memcpy). RT-safe: no alloc/lock/IO/decode/tree-walk.
+    // stable scratch from its prefetch ring (lock-free seqlock snapshot read
+    // with bounded expected-zero retries + wait-free ring pull + memcpy).
+    // RT-safe: no alloc/lock/IO/decode/tree-walk.
     renderPlaybackStep (numSamples);
 
     // Step 3: OutputMixer render. Writes additively into the output buffers.

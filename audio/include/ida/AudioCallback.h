@@ -125,10 +125,11 @@ public:
     /// to detach (default for sessions / tests without OTTO).
     void setOttoRenderSource (IOttoRenderSource* source) noexcept { ottoRenderSource_ = source; }
 
-    /// T0b Task 7 — attach the lock-free active-reads publisher. The playback
-    /// step reads a snapshot each block (seqlock, no alloc/lock). Set-once on
-    /// the message thread before the device starts; non-owning. Pass nullptr
-    /// to disable the playback step (default).
+    /// T0b Task 7 — attach the active-reads publisher. The playback step reads
+    /// a snapshot each block via a lock-free seqlock with bounded
+    /// (expected-zero) retries — not wait-free. Set-once on the message thread
+    /// before the device starts; non-owning. Pass nullptr to disable the
+    /// playback step (default).
     void setActiveReadsPublisher (ActiveReadsPublisher* p) noexcept { activeReads_ = p; }
 
     /// Bind a phrase-channel slot to its prefetcher + destination scratch
