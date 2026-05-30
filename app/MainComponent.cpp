@@ -6758,6 +6758,17 @@ void MainComponent::refreshOutputMixer()
                                                s->lufsShortTerm());
         }
     }
+
+    // OTTO output strip meters — feed each surfaced OTTO output's strip from
+    // its OutputMixer channel (post-fader signal), mirror of the bus loop.
+    for (const auto& [ottoOutputIndex, chId] : ottoChannelByOutputIndex_)
+        if (auto* s = outputMixer_->audioStripForChannel (chId))
+        {
+            outputMixerPane_->setOttoStripLevelDb (ottoOutputIndex,
+                                                   linToDb (s->peakLeft()),
+                                                   linToDb (s->peakRight()));
+            outputMixerPane_->setOttoStripLufs (ottoOutputIndex, s->lufsShortTerm());
+        }
 }
 
 void MainComponent::rebuildOutputBusStrips()
