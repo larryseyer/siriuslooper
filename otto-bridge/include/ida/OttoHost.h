@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ida/IOttoRenderSource.h"
+#include "ida/TransportPlayhead.h"
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
@@ -170,6 +171,11 @@ public:
     /// `setMasterPublishers` has been called.
     struct MasterSnapshot { float leftDb; float rightDb; float peakDb; float lufs; };
     MasterSnapshot snapshotMaster() const noexcept;
+
+    /// Transport playhead snapshot. Any-thread (atomic load). Advances while
+    /// OTTO's conductor reports isPlaying(), holds while stopped. v1 identity
+    /// calibration — positionInSeconds is elapsed playing-seconds (plan RD1).
+    TransportPlayhead snapshotPlayhead() const noexcept;
 
     /// Master-spectrum bin. Any-thread (atomic load). Forwards to the
     /// `ida::MasterSpectrum` publisher wired in at the master mix point.

@@ -1,5 +1,6 @@
 #include "ida/OttoHost.h"
 #include "ida/IOttoTransportListener.h"
+#include "ida/TransportPlayhead.h"
 
 #include "ida/LockFreeSpscQueue.h"
 #include "ida/MasterMeter.h"
@@ -19,6 +20,8 @@
 #include <juce_events/juce_events.h>
 
 #include <algorithm>
+#include <atomic>
+#include <cstdint>
 #include <functional>
 #include <vector>
 
@@ -171,6 +174,13 @@ struct OttoHost::Impl : public juce::Timer
     const MasterMeter*    masterMeter    { nullptr };
     const MasterSpectrum* masterSpectrum { nullptr };
 
+    // T0b — transport playhead. playedSamples_ is audio-thread private
+    // (no sharing); playheadSeconds_ and playheadPlaying_ are published
+    // via release/acquire atomics for any-thread snapshot reads.
+    std::int64_t        playedSamples_   { 0 };       // audio-thread private
+    std::atomic<double> playheadSeconds_ { 0.0 };     // published
+    std::atomic<bool>   playheadPlaying_ { false };   // published
+
     // Declared LAST so it is destroyed FIRST. The SubscriptionHandle dtor
     // unsubscribes from the singleton bus, which serialises against any
     // in-flight `publish` — once it returns, no more callbacks can fire.
@@ -194,6 +204,7 @@ void OttoHost::prepare (double sampleRate, int maxBlockSize)
     impl_->processor->prepareToPlay (sampleRate, maxBlockSize);
     impl_->prepared           = true;
     impl_->preparedSampleRate = sampleRate;
+    impl_->playedSamples_     = 0;
 
     // Re-assert IDA's selective-bus mask after (re-)prepare so a strip set
     // chosen before this prepare stays authoritative.
@@ -269,6 +280,14 @@ void OttoHost::renderBlock (int numSamples,
     // Half A suffix: totalSamplePosition advance + per-player fillMode
     // sync to pluginState_ (for UI display).
     proc.processBlockAfterRouting (numSamples);
+
+    // T0b — advance the playhead clock. Pure arithmetic + two lock-free
+    // atomic stores; RT-safe (no alloc, no lock, no I/O).
+    const bool playing = proc.getConductor().isPlaying();
+    impl_->playedSamples_ = advancePlayedSamples (impl_->playedSamples_, numSamples, playing);
+    impl_->playheadSeconds_.store (playheadSeconds (impl_->playedSamples_, impl_->preparedSampleRate),
+                                   std::memory_order_release);
+    impl_->playheadPlaying_.store (playing, std::memory_order_release);
 }
 
 const float* OttoHost::getOttoOutputLeft (int ottoOutputIndex) const noexcept
@@ -360,6 +379,12 @@ OttoHost::MasterSnapshot OttoHost::snapshotMaster() const noexcept
 
     const auto s = impl_->masterMeter->snapshot();
     return { s.leftDb, s.rightDb, s.peakDb, s.lufs };
+}
+
+TransportPlayhead OttoHost::snapshotPlayhead() const noexcept
+{
+    return { impl_->playheadSeconds_.load (std::memory_order_acquire),
+             impl_->playheadPlaying_.load (std::memory_order_acquire) };
 }
 
 int OttoHost::spectrumBinCount() const noexcept
