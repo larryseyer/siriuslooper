@@ -4,6 +4,7 @@
 // encode→decode round-trips for every header field and the payload.
 // Task 4 tests additionally cover TapeRecordWriter (worker-framed append,
 // flush, RT-safe entry, per-tape sequencing, exact Rational lmcTs).
+// Task 7 tests cover concurrent read-during-write via reader refresh.
 #include "ida/TapeRecord.h"
 #include "ida/Rational.h"
 #include "ida/AudioPayloadCodec.h"
@@ -17,8 +18,10 @@
 #include <juce_core/juce_core.h>
 
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstring>
+#include <thread>
 #include <vector>
 
 using namespace ida;
@@ -1495,4 +1498,214 @@ TEST_CASE("TapeRecordReader recover=true: CRC-valid malformed body is truncated 
     REQUIRE (report.recordsKept == static_cast<std::uint64_t> (kN));
     REQUIRE (report.truncatedAtOffset == malformedStart);
     REQUIRE (static_cast<std::uint64_t> (tapeFile.getSize()) == malformedStart);
+}
+
+// ---------------------------------------------------------------------------
+// 16. TapeRecordReader — concurrent read-during-write (T0a Task 7)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Poll until `reader.recordCount()` reaches `atLeast` or `timeoutMs` elapses.
+// Returns the count seen at the polling deadline.
+std::uint64_t pollForCount (ida::TapeRecordReader& reader,
+                             std::uint64_t          atLeast,
+                             int                    timeoutMs)
+{
+    using Clock    = std::chrono::steady_clock;
+    using Ms       = std::chrono::milliseconds;
+    const auto deadline = Clock::now() + Ms (timeoutMs);
+
+    std::uint64_t last = reader.recordCount();
+    while (last < atLeast && Clock::now() < deadline)
+    {
+        std::this_thread::sleep_for (Ms (10));
+        ida::TapeTruncationReport tmp;
+        reader.refresh (tmp);
+        last = reader.recordCount();
+    }
+    return last;
+}
+
+// Verify that every entry in `reader.index()` [0, count) has a valid CRC
+// by re-reading from disk. Returns true if all pass.
+bool allVisibleRecordsHaveValidCrc (const ida::TapeRecordReader& reader,
+                                    const juce::File&             file)
+{
+    const auto& idx = reader.index();
+    juce::FileInputStream fis (file);
+    if (! fis.openedOk())
+        return false;
+
+    for (const auto& entry : idx)
+    {
+        // Read bodyLen prefix, body, and CRC directly from disk.
+        const std::uint64_t bodyOffset = entry.fileOffset + 4;
+
+        std::vector<std::byte> body (entry.bodyLen);
+        fis.setPosition (static_cast<juce::int64> (bodyOffset));
+        const int bodyRead = fis.read (body.data(), static_cast<int> (entry.bodyLen));
+        if (static_cast<std::uint32_t> (bodyRead) != entry.bodyLen)
+            return false;
+
+        std::byte crcBuf[4];
+        if (fis.read (crcBuf, 4) != 4)
+            return false;
+
+        if (ida::crc32 (body.data(), entry.bodyLen) != ida::readLE32 (crcBuf))
+            return false;
+    }
+    return true;
+}
+
+} // namespace
+
+// (a) Live writer: open(recover=false) + refresh() see monotonically growing,
+//     always-valid-CRC record set; final refresh after writer closes sees all.
+TEST_CASE("TapeRecordReader — live writer: refresh is monotonic and all visible CRCs valid",
+          "[tape-record]")
+{
+    static constexpr int    kBlockSize  = 64;
+    static constexpr int    kFirstBatch = 8;
+    static constexpr int    kMoreBatch  = 8;
+    static constexpr int    kTotalBlocks = kFirstBatch + kMoreBatch;
+    static constexpr double kSr         = 48000.0;
+    static constexpr int    kFlushMs    = 5;
+
+    // Generous timeout: 2 s covers any realistic CI slowdown.
+    static constexpr int kPollTimeoutMs = 2000;
+
+    const juce::File dir = juce::File::getSpecialLocation (
+        juce::File::tempDirectory).getChildFile ("ida-test-concurrent-rw");
+    dir.deleteRecursively();
+    dir.createDirectory();
+
+    const ida::TapeId tape { 1 };
+    juce::File tapeFile;
+
+    // Registry with PCM codec (same as the writer).
+    auto reg = makeFullRegistry();
+
+    {
+        ida::TapeRecordWriter writer (dir, kSr, 256, ida::TapeCodecId::AudioPcm, kFlushMs);
+        tapeFile = writer.tapeFile (tape);
+
+        // --- First batch ---
+        {
+            std::vector<float> left (kBlockSize, 0.1f), right (kBlockSize, -0.1f);
+            for (int i = 0; i < kFirstBatch; ++i)
+                writer.deliverTapeBlock (tape, left.data(), right.data(), kBlockSize);
+        }
+
+        // Wait at least one flush window, then open a reader.
+        std::this_thread::sleep_for (std::chrono::milliseconds (kFlushMs * 3));
+
+        ida::TapeTruncationReport report;
+        auto reader = ida::TapeRecordReader::open (tapeFile, reg, report, /*recover=*/false);
+
+        // The file header must be valid (writer created it on first open).
+        REQUIRE (reader != nullptr);
+        REQUIRE (report.truncated == false);
+
+        // recordCount must be in [0, kFirstBatch] — we don't assert an exact
+        // count mid-stream; timing determines how many are flushed so far.
+        const std::uint64_t countAfterFirstOpen = reader->recordCount();
+        REQUIRE (countAfterFirstOpen <= static_cast<std::uint64_t> (kFirstBatch));
+
+        // Every visible record must have a valid CRC — never expose a partial.
+        REQUIRE (allVisibleRecordsHaveValidCrc (*reader, tapeFile));
+
+        // Poll until all first-batch records are visible (or timeout).
+        const std::uint64_t countAfterFirstBatch =
+            pollForCount (*reader,
+                          static_cast<std::uint64_t> (kFirstBatch),
+                          kPollTimeoutMs);
+        REQUIRE (countAfterFirstBatch == static_cast<std::uint64_t> (kFirstBatch));
+        REQUIRE (allVisibleRecordsHaveValidCrc (*reader, tapeFile));
+
+        // --- Second batch ---
+        {
+            std::vector<float> left (kBlockSize, 0.2f), right (kBlockSize, -0.2f);
+            for (int i = 0; i < kMoreBatch; ++i)
+                writer.deliverTapeBlock (tape, left.data(), right.data(), kBlockSize);
+        }
+
+        // Poll until we see all second-batch records too.
+        const std::uint64_t countAfterSecondBatch =
+            pollForCount (*reader,
+                          static_cast<std::uint64_t> (kTotalBlocks),
+                          kPollTimeoutMs);
+
+        // Index must be monotonically growing — never shrink.
+        REQUIRE (countAfterSecondBatch >= countAfterFirstBatch);
+        REQUIRE (countAfterSecondBatch <= static_cast<std::uint64_t> (kTotalBlocks));
+
+        // Every visible record still has a valid CRC.
+        REQUIRE (allVisibleRecordsHaveValidCrc (*reader, tapeFile));
+
+        writer.closeTape (tape);
+    } // writer dtor joins the worker: all records flushed and file closed
+
+    // After the writer is fully gone, one last refresh must see ALL records.
+    ida::TapeTruncationReport finalReport;
+    auto finalReader = ida::TapeRecordReader::open (tapeFile, reg, finalReport, /*recover=*/false);
+    REQUIRE (finalReader != nullptr);
+    REQUIRE (finalReport.truncated == false);
+    REQUIRE (finalReader->recordCount() == static_cast<std::uint64_t> (kTotalBlocks));
+    REQUIRE (allVisibleRecordsHaveValidCrc (*finalReader, tapeFile));
+}
+
+// (b) Deterministic partial tail: open(recover=false) on a file whose trailing
+//     bytes are a dangling bodyLen prefix (no body/CRC yet) returns only the
+//     complete prefix, truncated==false, and does NOT change the file size.
+TEST_CASE("TapeRecordReader recover=false: dangling bodyLen prefix is invisible and file unchanged",
+          "[tape-record]")
+{
+    static constexpr int kN = 4;
+
+    const juce::File dir = juce::File::getSpecialLocation (
+        juce::File::tempDirectory).getChildFile ("ida-test-partial-tail-open");
+    dir.deleteRecursively();
+    dir.createDirectory();
+
+    std::vector<std::uint64_t> recordOffsets;
+    const juce::File tapeFile = buildNRecordFile (dir, kN, recordOffsets);
+    REQUIRE (static_cast<int> (recordOffsets.size()) == kN);
+
+    // Append only a 4-byte bodyLen prefix (claims 5000 bytes of body, none present).
+    // This simulates a writer that has written the length field but not yet flushed body+CRC.
+    static constexpr std::uint32_t kDanglingBodyLen = 5000;
+    {
+        juce::FileOutputStream fos (tapeFile);
+        REQUIRE (fos.openedOk());
+        fos.setPosition (fos.getFile().getSize());
+        std::byte lenBuf[4];
+        ida::writeLE32 (lenBuf, kDanglingBodyLen);
+        fos.write (lenBuf, 4);
+    }
+
+    const std::uint64_t sizeWithDanglingPrefix =
+        static_cast<std::uint64_t> (tapeFile.getSize());
+
+    // The 4-byte dangling prefix was appended, so the file is larger than the
+    // last record's start offset (which is at most sizeWithDanglingPrefix - 4 - bodySize).
+    // Simplest correct check: the file grew by exactly 4 bytes vs the clean end.
+    // We know clean-end == last-record-start + last-record-size; easiest: just
+    // assert the file is strictly larger than the last record START (i.e. not empty tail).
+    REQUIRE (sizeWithDanglingPrefix > recordOffsets.back());
+
+    auto reg = makeFullRegistry();
+    ida::TapeTruncationReport report;
+    auto reader = ida::TapeRecordReader::open (tapeFile, reg, report, /*recover=*/false);
+
+    REQUIRE (reader != nullptr);
+    // Only the N complete records are visible — the dangling prefix is not.
+    REQUIRE (reader->recordCount() == static_cast<std::uint64_t> (kN));
+    // recover=false must never claim truncation.
+    REQUIRE (report.truncated == false);
+    // File must be byte-for-byte unchanged — no writes occurred.
+    REQUIRE (static_cast<std::uint64_t> (tapeFile.getSize()) == sizeWithDanglingPrefix);
+
+    // All visible records must have valid CRCs.
+    REQUIRE (allVisibleRecordsHaveValidCrc (*reader, tapeFile));
 }
