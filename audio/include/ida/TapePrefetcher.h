@@ -25,10 +25,11 @@ public:
     TapePrefetcher (const TapePrefetcher&) = delete;
     TapePrefetcher& operator= (const TapePrefetcher&) = delete;
 
-    /// Open the tape file. framesPerRecord is the writer's fixed block size;
+    /// Open the tape file. sampleRate is used to convert the reader index's
+    /// per-record lmcTs timestamps to absolute sample positions;
     /// loopLengthSamples==0 means non-looping forward read. Message thread.
     bool open (const juce::File& file, TapeCodecRegistry& registry,
-               int framesPerRecord, std::int64_t loopLengthSamples);
+               double sampleRate, std::int64_t loopLengthSamples);
 
     /// Size the ring (message thread, before start()).
     void prepare (int ringFrames);
@@ -54,8 +55,9 @@ private:
 
     std::unique_ptr<TapeRecordReader> reader_;
     TapeCodecRegistry*                registry_ { nullptr };
-    int                               framesPerRecord_ { 0 };
+    double                            sampleRate_ { 0.0 };
     std::int64_t                      loopLengthSamples_ { 0 };
+    std::vector<std::int64_t>         recordStartSample_;   // precomputed from index lmcTs
 
     // Stereo ring: parallel L/R float buffers, SPSC head/tail.
     std::vector<float>          ringL_, ringR_;

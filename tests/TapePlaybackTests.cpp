@@ -62,6 +62,7 @@ void writeRampTape (const juce::File& file,
     IPayloadCodec* codec = registry.codecFor (TapeCodecId::AudioPcm);
     REQUIRE (codec != nullptr);
 
+    int cumulativeFrames = 0;
     for (int rec = 0; rec < records; ++rec)
     {
         // Build a ramp: sample absolute index = rec * framesPerRecord + frame
@@ -79,13 +80,16 @@ void writeRampTape (const juce::File& file,
         REQUIRE_FALSE (payload.empty());
 
         TapeRecordHeader recHdr;
-        recHdr.seq   = static_cast<std::uint64_t> (rec);
-        recHdr.type  = TapeRecordType::Audio;
-        recHdr.codec = TapeCodecId::AudioPcm;
+        recHdr.seq          = static_cast<std::uint64_t> (rec);
+        recHdr.type         = TapeRecordType::Audio;
+        recHdr.codec        = TapeCodecId::AudioPcm;
+        recHdr.lmcTs        = ida::Rational (cumulativeFrames, 48000);
+        recHdr.conceptualTs = recHdr.lmcTs;
 
         std::vector<std::byte> encoded;
         encodeRecord (recHdr, payload.data(), payload.size(), encoded);
         fos.write (encoded.data(), encoded.size());
+        cumulativeFrames += framesPerRecord;
     }
 
     fos.flush();
@@ -98,6 +102,59 @@ TapeCodecRegistry makePlaybackRegistry()
     reg.registerCodec (std::make_shared<PcmAudioCodec>());
     reg.registerCodec (std::make_shared<FlacAudioCodec>());
     return reg;
+}
+
+// ---------------------------------------------------------------------------
+// writeRampTapeVariable: writes `count` records with variable frame counts
+// (sizes[k] frames each). Each frame's value == its absolute sample index
+// (cumulative across records). lmcTs stamped as cumulativeFrames/48000.
+// ---------------------------------------------------------------------------
+void writeRampTapeVariable (const juce::File& file,
+                            TapeCodecRegistry& registry,
+                            const int* sizes,
+                            int count)
+{
+    file.deleteFile();
+    juce::FileOutputStream fos (file);
+    REQUIRE (fos.openedOk());
+
+    std::array<std::byte, kTapeFileHeaderBytes> hdrBuf {};
+    writeFileHeader (hdrBuf.data());
+    fos.write (hdrBuf.data(), hdrBuf.size());
+
+    IPayloadCodec* codec = registry.codecFor (TapeCodecId::AudioPcm);
+    REQUIRE (codec != nullptr);
+
+    int cumulativeFrames = 0;
+    for (int rec = 0; rec < count; ++rec)
+    {
+        const int nFrames = sizes[rec];
+        std::vector<float> left  (static_cast<std::size_t> (nFrames));
+        std::vector<float> right (static_cast<std::size_t> (nFrames));
+        for (int f = 0; f < nFrames; ++f)
+        {
+            const float val = static_cast<float> (cumulativeFrames + f);
+            left [static_cast<std::size_t> (f)] = val;
+            right[static_cast<std::size_t> (f)] = val;
+        }
+
+        const auto payload = codec->encode (left.data(), right.data(), nFrames, 48000.0);
+        REQUIRE_FALSE (payload.empty());
+
+        TapeRecordHeader recHdr;
+        recHdr.seq          = static_cast<std::uint64_t> (rec);
+        recHdr.type         = TapeRecordType::Audio;
+        recHdr.codec        = TapeCodecId::AudioPcm;
+        recHdr.lmcTs        = ida::Rational (cumulativeFrames, 48000);
+        recHdr.conceptualTs = recHdr.lmcTs;
+
+        std::vector<std::byte> encoded;
+        encodeRecord (recHdr, payload.data(), payload.size(), encoded);
+        fos.write (encoded.data(), encoded.size());
+        cumulativeFrames += nFrames;
+    }
+
+    fos.flush();
 }
 
 } // namespace
@@ -225,7 +282,7 @@ TEST_CASE ("prefetcher yields recorded samples from a target position",
     writeRampTape (file, registry, records, framesPerRecord);
 
     TapePrefetcher pre;
-    REQUIRE (pre.open (file, registry, framesPerRecord, /*loopLengthSamples=*/0));
+    REQUIRE (pre.open (file, registry, 48000.0, /*loopLengthSamples=*/0));
     pre.prepare (/*ringFrames=*/4096);
 
     pre.setTargetSample (0);
@@ -247,7 +304,7 @@ TEST_CASE ("prefetcher random-access seek mid-tape", "[tape-playback][prefetch]"
     writeRampTape (file, registry, records, fpr);
 
     TapePrefetcher pre;
-    REQUIRE (pre.open (file, registry, fpr, 0));
+    REQUIRE (pre.open (file, registry, 48000.0, 0));
     pre.prepare (4096);
     pre.setTargetSample (1000);            // mid-record
     pre.serviceForTest();
@@ -265,7 +322,7 @@ TEST_CASE ("prefetcher underrun zero-fills, never crashes", "[tape-playback][pre
     writeRampTape (file, registry, /*records=*/1, /*fpr=*/64);
 
     TapePrefetcher pre;
-    REQUIRE (pre.open (file, registry, 64, 0));
+    REQUIRE (pre.open (file, registry, 48000.0, 0));
     pre.prepare (256);
     pre.setTargetSample (0);
     pre.serviceForTest();
@@ -286,7 +343,7 @@ TEST_CASE ("prefetcher worker thread fills the ring and stops cleanly",
     writeRampTape (file, registry, records, fpr);
 
     TapePrefetcher pre;
-    REQUIRE (pre.open (file, registry, fpr, 0));
+    REQUIRE (pre.open (file, registry, 48000.0, 0));
     pre.prepare (4096);
     pre.setTargetSample (0);
     pre.start();
@@ -316,7 +373,7 @@ TEST_CASE ("prefetcher loop mode wraps the decode cursor",
     writeRampTape (file, registry, records, fpr);
 
     TapePrefetcher pre;
-    REQUIRE (pre.open (file, registry, fpr, loopLen));
+    REQUIRE (pre.open (file, registry, 48000.0, loopLen));
     pre.prepare (1024);
     pre.setTargetSample (loopLen - 32);   // start 32 frames before the loop end
     pre.serviceForTest();
@@ -452,7 +509,7 @@ TEST_CASE ("playback step pulls active slot into its scratch; inactive stays zer
     TapeCodecRegistry registry = makePlaybackRegistry();
     writeRampTape (tmp.getFile(), registry, /*records=*/4, /*fpr=*/256);
     TapePrefetcher pre;
-    REQUIRE (pre.open (tmp.getFile(), registry, 256, 0));
+    REQUIRE (pre.open (tmp.getFile(), registry, 48000.0, 0));
     pre.prepare (4096);
     pre.setTargetSample (0);
     pre.serviceForTest();
@@ -490,8 +547,8 @@ TEST_CASE ("playback step fills multiple active slots independently",
     writeRampTape (tmpB.getFile(), registry, 4, 256);
 
     TapePrefetcher preA, preB;
-    REQUIRE (preA.open (tmpA.getFile(), registry, 256, 0));
-    REQUIRE (preB.open (tmpB.getFile(), registry, 256, 0));
+    REQUIRE (preA.open (tmpA.getFile(), registry, 48000.0, 0));
+    REQUIRE (preB.open (tmpB.getFile(), registry, 48000.0, 0));
     preA.prepare (4096); preA.setTargetSample (0);   preA.serviceForTest();
     preB.prepare (4096); preB.setTargetSample (512); preB.serviceForTest(); // mid-tape
 
@@ -521,7 +578,7 @@ TEST_CASE ("playback step performs zero allocations", "[tape-playback][callback]
     TapeCodecRegistry registry = makePlaybackRegistry();
     writeRampTape (tmp.getFile(), registry, 4, 256);
     TapePrefetcher pre;
-    REQUIRE (pre.open (tmp.getFile(), registry, 256, 0));
+    REQUIRE (pre.open (tmp.getFile(), registry, 48000.0, 0));
     pre.prepare (4096); pre.setTargetSample (0); pre.serviceForTest();
 
     std::vector<float> l (256, 0.0f), r (256, 0.0f);
@@ -578,7 +635,7 @@ TEST_CASE ("end-to-end: playing the playhead sounds the phrase; stopped is silen
 
     // 4. Prefetcher for the loop's tape (loopLength = 2048 samples matches the ramp tape).
     TapePrefetcher pre;
-    REQUIRE (pre.open (tmp.getFile(), registry, fpr, /*loopLengthSamples=*/records * fpr));
+    REQUIRE (pre.open (tmp.getFile(), registry, 48000.0, /*loopLengthSamples=*/records * fpr));
     pre.prepare (8192);
 
     // 5. AudioCallback playback step bound: slot 0 -> prefetcher -> phrase scratch.
@@ -627,4 +684,36 @@ TEST_CASE ("end-to-end: playing the playhead sounds the phrase; stopped is silen
     bool silent = true;
     for (int i = 0; i < 128; ++i) silent &= (l[i] == 0.0f);
     REQUIRE (silent);
+}
+
+// ---------------------------------------------------------------------------
+// Variable-size record test (T0b Task 5 correctness — the whole point)
+// ---------------------------------------------------------------------------
+
+TEST_CASE ("prefetcher locates samples across variable-size records",
+           "[tape-playback][prefetch]")
+{
+    // Write 5 records with IRREGULAR frame counts (reality: one record per
+    // audio-callback block, block size is NOT constant under JUCE/AUv3 hosts).
+    // Record values: frame f of record r == its absolute sample index (cumulative).
+    // Cumulative starts: {0, 100, 356, 406, 706}.
+    juce::TemporaryFile tmp (".idatape");
+    const juce::File file = tmp.getFile();
+    TapeCodecRegistry registry = makePlaybackRegistry();
+    const int sizes[] = { 100, 256, 50, 300, 64 };
+    writeRampTapeVariable (file, registry, sizes, 5);
+
+    TapePrefetcher pre;
+    REQUIRE (pre.open (file, registry, 48000.0, /*loopLengthSamples=*/0));
+    pre.prepare (4096);
+
+    // Target sample 400 sits in record 2 (start=356, 50 frames → covers 356..405)
+    // at offset 44.  Pulling 128 frames crosses records 2→3 (start=406, 300 frames).
+    pre.setTargetSample (400);
+    pre.serviceForTest();
+
+    std::vector<float> l (128, -1.0f), r (128, -1.0f);
+    REQUIRE (pre.pull (l.data(), r.data(), 128) == 128);
+    for (int i = 0; i < 128; ++i)
+        REQUIRE (l[i] == Catch::Approx (static_cast<float> (400 + i)));
 }

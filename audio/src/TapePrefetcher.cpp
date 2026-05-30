@@ -5,20 +5,30 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 
 namespace ida {
 
 TapePrefetcher::~TapePrefetcher() { stop(); }
 
 bool TapePrefetcher::open (const juce::File& file, TapeCodecRegistry& registry,
-                           int framesPerRecord, std::int64_t loopLengthSamples)
+                           double sampleRate, std::int64_t loopLengthSamples)
 {
     registry_          = &registry;
-    framesPerRecord_   = framesPerRecord;
+    sampleRate_        = sampleRate;
     loopLengthSamples_ = loopLengthSamples;
     TapeTruncationReport report;
     reader_ = TapeRecordReader::open (file, registry, report, /*recover=*/false);
-    return reader_ != nullptr;
+    if (reader_ == nullptr) return false;
+
+    // Precompute per-record start samples from the index lmcTs timestamps.
+    // Records are in append-only (ascending time) order, so the vector is sorted.
+    const auto& idx = reader_->index();
+    recordStartSample_.resize (idx.size());
+    for (std::size_t k = 0; k < idx.size(); ++k)
+        recordStartSample_[k] = std::llround (idx[k].lmcTs.toDouble() * sampleRate_);
+
+    return true;
 }
 
 void TapePrefetcher::prepare (int ringFrames)
@@ -61,7 +71,7 @@ int TapePrefetcher::pull (float* l, float* r, int n) noexcept
 
 void TapePrefetcher::fillRing()
 {
-    if (reader_ == nullptr || framesPerRecord_ <= 0) return;
+    if (reader_ == nullptr || recordStartSample_.empty()) return;
     const std::size_t cap = ringL_.size();
     if (cap == 0) return;
 
@@ -71,21 +81,28 @@ void TapePrefetcher::fillRing()
         std::size_t tail = tail_.load (std::memory_order_relaxed);
         const std::size_t head = head_.load (std::memory_order_acquire);
         const std::size_t space = (cap - 1) - ringAvail (head, tail, cap);
-        if (space < static_cast<std::size_t> (framesPerRecord_)) break;
+        if (space == 0) break;
 
         std::int64_t s = nextDecodeSample_;
         if (loopLengthSamples_ > 0) s %= loopLengthSamples_;
-        const std::uint64_t rec = static_cast<std::uint64_t> (s / framesPerRecord_);
-        const int off          = static_cast<int> (s % framesPerRecord_);
-        if (rec >= reader_->recordCount()) break;        // nothing more to decode
-        if (! reader_->readAudioRecord (rec, block, hdr)) break;
+
+        // Locate the record whose lmcTs-derived start sample is <= s.
+        // recordStartSample_ is sorted ascending (append-only tape order).
+        auto it = std::upper_bound (recordStartSample_.begin(),
+                                    recordStartSample_.end(), s);
+        if (it == recordStartSample_.begin()) break;   // s before first record
+        --it;
+        const std::uint64_t k = static_cast<std::uint64_t> (
+            it - recordStartSample_.begin());
+        const int off = static_cast<int> (s - *it);
+
+        if (k >= reader_->recordCount()) break;        // nothing more to decode
+        if (! reader_->readAudioRecord (k, block, hdr)) break;
 
         const int nframes = block.numFrames();
-        // Clamp the copy to (a) the frames actually present in this record past
-        // `off` and (b) the remaining contiguous ring space. (a) guards a short
-        // final record (a flushed partial block where nframes < framesPerRecord_,
-        // so off could exceed nframes → a negative advance); (b) guards a codec
-        // returning more frames than framesPerRecord_ from overwriting unread data.
+        // Clamp the copy to (a) the frames present in this record past `off` and
+        // (b) the remaining ring space. (a) guards a short final record where
+        // off could reach nframes; (b) guards against overwriting unread data.
         const int toWrite = std::min (std::max (0, nframes - off),
                                       static_cast<int> (space));
         for (int i = 0; i < toWrite; ++i)
