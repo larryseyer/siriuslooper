@@ -360,6 +360,26 @@ inline ida::RenderPipeline makeSingleLoopPipeline()
     return ida::RenderPipeline (session, ida::TempoMap::fromBpm (ida::Rational (120)));
 }
 
+struct BoundLoopPipeline
+{
+    std::shared_ptr<const ida::Constituent> root;
+    ida::ConstituentId loop;
+    ida::TapeId        tape;
+};
+
+// A single leaf loop filling [0, 8) whole notes, reading tape slice [0, 8).
+// At playhead t=0 its tapePosition is Rational(0), so the ramp read starts at
+// absolute sample 0 (keeps the test tape small: 8 records * 256 frames = 2048 frames).
+inline BoundLoopPipeline makeBoundLoop()
+{
+    const ida::ConstituentId loopId (10);
+    const ida::TapeId        tapeId (100);
+    auto child = makePlaybackLoop (loopId.value(), ida::Rational (0), ida::Rational (8),
+                                   tapeId.value(), ida::Rational (0), ida::Rational (8));
+    auto root  = makePlaybackSession (ida::Rational (8), child);
+    return { root, loopId, tapeId };
+}
+
 } // namespace
 
 TEST_CASE ("resolver publishes a slot per active read", "[tape-playback][resolver]")
@@ -518,4 +538,93 @@ TEST_CASE ("playback step performs zero allocations", "[tape-playback][callback]
     for (int i = 0; i < 1000; ++i) cb.runPlaybackStepForTest (128);
     g_counting = false;
     REQUIRE (g_allocCount.load (std::memory_order_relaxed) == 0u);
+}
+
+// ---------------------------------------------------------------------------
+// End-to-end playback resolution (T0b Task 8a)
+// Wires resolver -> prefetcher -> playback step -> output mixer scratch by hand.
+// ---------------------------------------------------------------------------
+
+TEST_CASE ("end-to-end: playing the playhead sounds the phrase; stopped is silent",
+           "[tape-playback][e2e]")
+{
+    // 1. A known ramp tape (PCM, bit-exact): 8 records * 256 frames = 2048 frames.
+    juce::TemporaryFile tmp (".idatape");
+    TapeCodecRegistry registry = makePlaybackRegistry();
+    constexpr int fpr = 256, records = 8;          // 2048 frames total
+    writeRampTape (tmp.getFile(), registry, records, fpr);
+
+    // 2. Pipeline with one FreeRunning leaf loop reading that tape from slice 0.
+    //    sliceIn=0 -> tapePosition==Rational(0) at playhead t=0 -> tapeSampleStart==0.
+    BoundLoopPipeline fixture = makeBoundLoop();
+    ida::RenderPipeline pipeline (fixture.root, ida::TempoMap::fromBpm (ida::Rational (120)));
+
+    // Sanity: the loop sounds at t=0 with tapePosition 0.
+    {
+        const auto reads = pipeline.activeReadsAt (ida::Rational (0));
+        REQUIRE (reads.size() == 1);
+        REQUIRE (reads[0].loop == fixture.loop);
+        REQUIRE (reads[0].tapePosition == ida::Rational (0));
+    }
+
+    // 3. OutputMixer phrase channel with stable scratch; audio source points at it.
+    OutputMixer mixer;
+    const auto ch = mixer.addChannel (SignalType::Audio);
+    mixer.setChannelStrip (ch, std::make_unique<ChannelStrip<SignalType::Audio>> ());
+    mixer.ensurePhraseScratch (ch);
+    mixer.setChannelAudioSource (ch,
+                                 mixer.phraseScratchPointer (ch, 0),
+                                 mixer.phraseScratchPointer (ch, 1));
+
+    // 4. Prefetcher for the loop's tape (loopLength = 2048 samples matches the ramp tape).
+    TapePrefetcher pre;
+    REQUIRE (pre.open (tmp.getFile(), registry, fpr, /*loopLengthSamples=*/records * fpr));
+    pre.prepare (8192);
+
+    // 5. AudioCallback playback step bound: slot 0 -> prefetcher -> phrase scratch.
+    ActiveReadsPublisher publisher;
+    ida::AudioCallback cb { ida::EngineConfig {} };
+    cb.setActiveReadsPublisher (&publisher);
+    cb.bindPlaybackSlotForTest (0, &pre,
+                                mixer.mutablePhraseScratch (ch, 0),
+                                mixer.mutablePhraseScratch (ch, 1));
+
+    // 6. Resolver: loop constituent -> slot 0; steer drives the prefetcher target.
+    ida::PlaybackResolver resolver;
+    resolver.setPipeline (&pipeline);
+    resolver.setPublisher (&publisher);
+    resolver.setSampleRate (48000.0);
+    resolver.setSlotForConstituent ([&] (ida::ConstituentId c)
+        { return c == fixture.loop ? 0 : -1; });
+    resolver.setSteerPrefetcher ([&] (int /*slot*/, std::int64_t s)
+        { pre.setTargetSample (s); });
+
+    // 7. PLAYING at t=0: resolve -> steer prefetcher -> prefetch -> step -> scratch non-silent.
+    resolver.setPlayheadProvider ([] { return ida::TransportPlayhead { 0.0, /*isPlaying=*/true }; });
+    resolver.resolveOnceForTest();
+
+    ActiveReadsSnapshot snap;
+    publisher.read (snap);
+    REQUIRE (snap.count == 1);
+    const std::int64_t tapeSampleStart = snap.slots[0].tapeSampleStart;  // == 0 here
+
+    pre.serviceForTest();                  // synchronous decode-into-ring
+    cb.runPlaybackStepForTest (128);
+
+    const float* l = mixer.phraseScratchPointer (ch, 0);
+    const float* r = mixer.phraseScratchPointer (ch, 1);
+    bool nonSilent = false;
+    for (int i = 0; i < 128; ++i) nonSilent |= (l[i] != 0.0f);
+    REQUIRE (nonSilent);
+    // Ramp value at absolute sample (tapeSampleStart + i): both channels match.
+    REQUIRE (l[1] == Catch::Approx (static_cast<float> (tapeSampleStart + 1)));
+    REQUIRE (r[1] == Catch::Approx (static_cast<float> (tapeSampleStart + 1)));
+
+    // 8. STOPPED: empty snapshot -> step zeroes the previously-active scratch.
+    resolver.setPlayheadProvider ([] { return ida::TransportPlayhead { 0.0, /*isPlaying=*/false }; });
+    resolver.resolveOnceForTest();
+    cb.runPlaybackStepForTest (128);
+    bool silent = true;
+    for (int i = 0; i < 128; ++i) silent &= (l[i] == 0.0f);
+    REQUIRE (silent);
 }
