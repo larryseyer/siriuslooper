@@ -37,6 +37,8 @@ void TapePrefetcher::setTargetSample (std::int64_t tapeSample) noexcept
 namespace {
 inline std::size_t ringAvail (std::size_t head, std::size_t tail, std::size_t cap) noexcept
 { return (tail + cap - head) % cap; }
+
+static constexpr auto kWorkerPollInterval = std::chrono::milliseconds (5);
 }
 
 int TapePrefetcher::pull (float* l, float* r, int n) noexcept
@@ -79,14 +81,22 @@ void TapePrefetcher::fillRing()
         if (! reader_->readAudioRecord (rec, block, hdr)) break;
 
         const int nframes = block.numFrames();
-        for (int i = off; i < nframes; ++i)
+        // Clamp the copy to (a) the frames actually present in this record past
+        // `off` and (b) the remaining contiguous ring space. (a) guards a short
+        // final record (a flushed partial block where nframes < framesPerRecord_,
+        // so off could exceed nframes → a negative advance); (b) guards a codec
+        // returning more frames than framesPerRecord_ from overwriting unread data.
+        const int toWrite = std::min (std::max (0, nframes - off),
+                                      static_cast<int> (space));
+        for (int i = 0; i < toWrite; ++i)
         {
-            ringL_[tail] = block.left[static_cast<std::size_t> (i)];
-            ringR_[tail] = block.right[static_cast<std::size_t> (i)];
+            ringL_[tail] = block.left[static_cast<std::size_t> (off + i)];
+            ringR_[tail] = block.right[static_cast<std::size_t> (off + i)];
             tail = (tail + 1) % cap;
         }
         tail_.store (tail, std::memory_order_release);
-        nextDecodeSample_ += (nframes - off);
+        nextDecodeSample_ += toWrite;
+        if (toWrite == 0) break;   // record had no usable frames at `off`
     }
 }
 
@@ -105,7 +115,7 @@ void TapePrefetcher::workerLoop()
             nextDecodeSample_ = target;    // honor a seek once the ring has drained
         fillRing();
         std::unique_lock<std::mutex> lk (cvMutex_);
-        cv_.wait_for (lk, std::chrono::milliseconds (5));
+        cv_.wait_for (lk, kWorkerPollInterval);   // demand-driven via notify_one(); this timeout is only a fallback
     }
 }
 

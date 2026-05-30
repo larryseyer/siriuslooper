@@ -13,8 +13,10 @@
 #include <juce_core/juce_core.h>
 
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <memory>
+#include <thread>
 #include <vector>
 
 using namespace ida;
@@ -256,4 +258,56 @@ TEST_CASE ("prefetcher underrun zero-fills, never crashes", "[tape-playback][pre
     const int got = pre.pull (l.data(), r.data(), 256);
     REQUIRE (got == 64);                   // only 64 real frames available
     REQUIRE (l[64] == 0.0f);               // remainder zero-filled
+}
+
+TEST_CASE ("prefetcher worker thread fills the ring and stops cleanly",
+           "[tape-playback][prefetch]")
+{
+    juce::TemporaryFile tmp (".idatape");
+    const juce::File file = tmp.getFile();
+    TapeCodecRegistry registry = makePlaybackRegistry();
+    constexpr int fpr = 256, records = 8;
+    writeRampTape (file, registry, records, fpr);
+
+    TapePrefetcher pre;
+    REQUIRE (pre.open (file, registry, fpr, 0));
+    pre.prepare (4096);
+    pre.setTargetSample (0);
+    pre.start();
+
+    // Poll briefly for the worker to fill the ring (bounded wait, no flakiness:
+    // up to ~500ms, succeeds as soon as frames are available).
+    std::vector<float> l (256, -1.0f), r (256, -1.0f);
+    int got = 0;
+    for (int tries = 0; tries < 50 && got == 0; ++tries)
+    {
+        got = pre.pull (l.data(), r.data(), 256);
+        if (got == 0) std::this_thread::sleep_for (std::chrono::milliseconds (10));
+    }
+    pre.stop();   // must join cleanly
+    REQUIRE (got > 0);
+    REQUIRE (l[0] == Catch::Approx (0.0f));   // first sample of the ramp
+}
+
+TEST_CASE ("prefetcher loop mode wraps the decode cursor",
+           "[tape-playback][prefetch]")
+{
+    juce::TemporaryFile tmp (".idatape");
+    const juce::File file = tmp.getFile();
+    TapeCodecRegistry registry = makePlaybackRegistry();
+    constexpr int fpr = 64, records = 4;          // 256 total frames
+    constexpr std::int64_t loopLen = records * fpr; // 256
+    writeRampTape (file, registry, records, fpr);
+
+    TapePrefetcher pre;
+    REQUIRE (pre.open (file, registry, fpr, loopLen));
+    pre.prepare (1024);
+    pre.setTargetSample (loopLen - 32);   // start 32 frames before the loop end
+    pre.serviceForTest();
+
+    std::vector<float> l (64, -1.0f), r (64, -1.0f);
+    REQUIRE (pre.pull (l.data(), r.data(), 64) == 64);
+    REQUIRE (l[0]  == Catch::Approx (static_cast<float> (loopLen - 32))); // 224
+    REQUIRE (l[31] == Catch::Approx (static_cast<float> (loopLen - 1)));  // 255 (loop end)
+    REQUIRE (l[32] == Catch::Approx (0.0f));   // wrapped back to sample 0
 }

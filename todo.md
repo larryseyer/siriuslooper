@@ -2098,3 +2098,9 @@ Remaining (OTTO-side timeline, NOT blockers for IDA):
 - What was deferred: `readAudioRecord` constructs a fresh `juce::FileInputStream(file_)` on every call. Fine for the random-access test usage, but T0b's render/playback path will call it in a tight loop over many records → O(N) file opens, a perf cliff.
 - Why deferred: Not a T0a blocker — not visible at current call sites, tests unaffected, and the fix changes the reader's internal lifetime model (cache an open stream + seek). Surfaced by the T0a final holistic review.
 - What's needed to finish: Before T0b playback lands, cache an open read stream in the reader (or accept a stream) and seek per record rather than re-open. Keep the recover=false concurrent-read guarantees (no write) intact.
+
+### [2026-05-30] — T0b Task 5 v1 seek-latency tradeoff (TapePrefetcher)
+- Files: `audio/src/TapePrefetcher.cpp` (`workerLoop`)
+- What was deferred: `TapePrefetcher` honors a `setTargetSample` seek only after the ring drains (worker loop condition `target != nextDecodeSample_ && ringAvail == 0`), so a transport jump/scrub has up to one-ring-depth latency (~85ms at 4096 frames / 48kHz). v1-acceptable for looping playback of already-running loops; the ring drains quickly in normal playback when the consumer (render thread) is pulling steadily.
+- Why deferred: v1 design choice — implementing instant seek would require flushing and resetting the ring atomically across the reader and consumer threads, adding significant complexity. Not a correctness issue; a UX latency issue for scrub/relocate workflows.
+- What's needed to finish: Revisit for scrub/transport-relocate UX (Task 8 or later). Options: (a) flush-on-seek (invalidate ring, reset tail to head, restart decode from target); (b) dual-buffer swap; (c) reader-thread seek with a generation counter. Whichever approach, must preserve the lock-free stereo ring invariants and the RT-safe `pull()` contract.
