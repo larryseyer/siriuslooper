@@ -2055,6 +2055,9 @@ public:
     std::function<void (int ottoOutputIndex, float gainLinear)> onOttoGain;
     std::function<void (int ottoOutputIndex, bool muted)>  onOttoMute;
     std::function<void (int ottoOutputIndex, bool soloed)> onOttoSolo;
+    /// S6 — OTTO strip DEST picker selection. `ottoOutputIndex` is the strip's
+    /// id (0..31). Mirror of `onBusDestinationChosen`.
+    std::function<void (int ottoOutputIndex, DestChoice dest)> onOttoDestinationChosen;
 
     void setMasterLevelDb (float dbL, float dbR)
     {
@@ -2619,6 +2622,9 @@ public:
     {
         ottoStrips_.clear();
         ottoOverlays_.clear();
+        ottoDestButtons_.clear();   // S6
+        ottoStripDests_.clear();    // S6
+        ottoChoices_.clear();       // S6
         for (std::size_t i = 0; i < infos.size(); ++i)
             appendOttoStripImpl (infos[i]);
         rebuildChannelPills();
@@ -2646,6 +2652,13 @@ public:
             if (ottoStrips_[i]->getChannelIndex() != ottoOutputIndex) continue;
             ottoStrips_.erase (ottoStrips_.begin() + static_cast<std::ptrdiff_t> (i));
             ottoOverlays_.erase (ottoOverlays_.begin() + static_cast<std::ptrdiff_t> (i));
+            // S6 — keep the DEST scaffolding in lockstep with the strip vector.
+            if (i < ottoDestButtons_.size())
+                ottoDestButtons_.erase (ottoDestButtons_.begin() + static_cast<std::ptrdiff_t> (i));
+            if (i < ottoStripDests_.size())
+                ottoStripDests_.erase (ottoStripDests_.begin() + static_cast<std::ptrdiff_t> (i));
+            if (i < ottoChoices_.size())
+                ottoChoices_.erase (ottoChoices_.begin() + static_cast<std::ptrdiff_t> (i));
             rebuildChannelPills();
             resized();
             return;
@@ -2817,6 +2830,7 @@ public:
             for (auto& b : monInsButtons_)       b->setVisible (false);
             for (auto& s : ottoStrips_)          s->setVisible (false);
             for (auto& o : ottoOverlays_)        o->setVisible (false);
+            for (auto& b : ottoDestButtons_)     b->setVisible (false);   // S6
             if (master_)             master_           ->setVisible (false);
             if (masterIns_)          masterIns_        ->setVisible (false);
             if (masterDestButton_)   masterDestButton_ ->setVisible (false);
@@ -2884,6 +2898,7 @@ public:
         for (auto& b : monInsButtons_)       b->setVisible (true);
         for (auto& s : ottoStrips_)          s->setVisible (true);
         for (auto& o : ottoOverlays_)        o->setVisible (true);
+        for (auto& b : ottoDestButtons_)     b->setVisible (true);    // S6
         for (auto& p : channelPills_)        if (p) p->setVisible (false);
         if (master_)    master_   ->setVisible (true);
         if (masterIns_) masterIns_->setVisible (true);
@@ -3012,7 +3027,8 @@ public:
                 ottoOverlays_[static_cast<std::size_t> (i)]->toFront (false);
             }
             insRow.removeFromLeft (kStripW);     // reserve slot (empty in 4b)
-            pickerRow.removeFromLeft (kStripW);  // reserve slot (empty in 4b)
+            ottoDestButtons_[static_cast<std::size_t> (i)]->setBounds (
+                pickerRow.removeFromLeft (kStripW));   // S6 — mirror phrase DEST row
             if (i + 1 < ottoStripCount())
             {
                 area.removeFromLeft (kGap);
@@ -3363,6 +3379,31 @@ private:
             busDestButtons_[static_cast<std::size_t> (idx)].get()));
     }
 
+    /// Builds + shows the OTTO strip's destination menu from its own choice
+    /// list (`ottoChoices_[idx]`). Selecting fires `onOttoDestinationChosen`
+    /// with the strip's `ottoOutputIndex` (read from the strip itself) and the
+    /// chosen `DestChoice`. Mirror of `showBusDestinationMenu`.
+    void showOttoDestinationMenu (int idx)
+    {
+        if (idx < 0 || idx >= static_cast<int> (ottoStrips_.size())) return;
+        if (idx >= static_cast<int> (ottoChoices_.size())) return;
+        const auto& choices = ottoChoices_[static_cast<std::size_t> (idx)];
+        if (choices.empty()) return;
+        const auto& cur = ottoStripDests_[static_cast<std::size_t> (idx)];
+        const int ottoOutputIndex = ottoStrips_[static_cast<std::size_t> (idx)]->getChannelIndex();
+        juce::PopupMenu menu;
+        for (const auto& choice : choices)
+        {
+            const bool ticked = destMatches (choice, cur);
+            const DestChoice d = choice;
+            menu.addItem (choice.name, /*enabled*/ true, ticked,
+                          [this, ottoOutputIndex, d]
+                          { if (onOttoDestinationChosen) onOttoDestinationChosen (ottoOutputIndex, d); });
+        }
+        menu.showMenuAsync (juce::PopupMenu::Options{}.withTargetComponent (
+            ottoDestButtons_[static_cast<std::size_t> (idx)].get()));
+    }
+
     void showMasterDestinationMenu()
     {
         if (masterChoices_.empty() || masterDestButton_ == nullptr) return;
@@ -3484,6 +3525,19 @@ private:
         addAndMakeVisible (*overlay);
         overlay->toFront (false);
         ottoOverlays_.push_back (std::move (overlay));
+
+        // S6 — DEST button paired with the strip. The button index in
+        // `ottoDestButtons_` is parallel to the strip's index in `ottoStrips_`,
+        // so resized() can lay them out in lockstep.
+        auto destButton = std::make_unique<juce::TextButton>();
+        destButton->setButtonText ("—");                  // placeholder until refresh
+        destButton->setTooltip ("Route this OTTO output");
+        const int idx = static_cast<int> (ottoStrips_.size()) - 1;
+        destButton->onClick = [this, idx] { showOttoDestinationMenu (idx); };
+        addAndMakeVisible (*destButton);
+        ottoDestButtons_.push_back (std::move (destButton));
+        ottoStripDests_.push_back ({});                   // currentKind=Bus, currentId=0 default
+        ottoChoices_.emplace_back();                      // empty until refreshOutputDestinations
     }
 
     // Master strip (always present)
@@ -3526,6 +3580,15 @@ private:
     // remove only.
     std::vector<std::unique_ptr<otto::ui::CompactFaderStrip>>  ottoStrips_;
     std::vector<std::unique_ptr<ida::app::StripContextOverlay>> ottoOverlays_;
+
+    // S6 — OTTO strip DEST picker scaffolding. Parallel to the phrase row's
+    // phraseDestButtons_ / phraseStripDests_ / phraseChoices_. One entry per
+    // OTTO strip, kept in lockstep with `ottoStrips_`. The strip's id
+    // (= ottoOutputIndex) is the key passed back through
+    // `onOttoDestinationChosen` — no row→index translation.
+    std::vector<std::unique_ptr<juce::TextButton>>             ottoDestButtons_;
+    std::vector<StripDest>                                     ottoStripDests_;
+    std::vector<std::vector<DestChoice>>                       ottoChoices_;
 
     // Tabbed detail panel (slice U + slice EC + slice EC-Polish). One of
     // selectedPhrase_ / selectedBus_ / selectedMaster_ is "active" at a time;
