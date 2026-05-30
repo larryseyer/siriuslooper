@@ -5108,6 +5108,11 @@ MainComponent::MainComponent()
             // A strip added while another OTTO strip is soloed must inherit the
             // solo-silence immediately (engine mute + visual).
             recomputeOttoOutputStripMutes();
+            // S6 — populate the new strip's DEST picker choices + relabel its
+            // button from the "—" placeholder (mirror of the bus-add handler).
+            // Without this the strip's ottoChoices_ stays empty and the DEST
+            // menu opens to nothing.
+            refreshOutputDestinations();
         };
         // Slice 4b — strip "Remove" gesture. Undo the engine seam, then
         // drop the matching strip from the OTTO band.
@@ -5116,6 +5121,9 @@ MainComponent::MainComponent()
             removeOttoOutputStrip (ottoOutputIndex);
             if (outputMixerPane_ != nullptr)
                 outputMixerPane_->removeOttoStripByIndex (ottoOutputIndex);
+            // S6 — refresh remaining OTTO strips' DEST choices/labels (their
+            // pane indices shift on removal).
+            refreshOutputDestinations();
         };
         // Slice 4b — fader and mute on OTTO strips drive the OutputMixer
         // channel that the slice-4a engine seam bound. `ottoOutputIndex`
