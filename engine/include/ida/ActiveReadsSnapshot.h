@@ -48,6 +48,10 @@ static_assert (std::is_trivially_copyable_v<ActiveReadsSnapshot>);
 /// never blocks. No allocation on either side. The single release fence in
 /// publish() pairs with the single acquire fence in read() — the seq stores/loads
 /// alone do not order the bulk buffer_ copy, so those two fences are load-bearing.
+/// The bulk `buffer_` copy is a deliberate seqlock race (consumer copy concurrent
+/// with producer write); the odd-seq skip + before==after re-check discards any
+/// torn read. Correct on all real architectures; ThreadSanitizer will flag the
+/// non-atomic copy and needs a suppression if ever run on this path.
 class ActiveReadsPublisher {
 public:
     void publish (const ActiveReadsSnapshot& s) noexcept

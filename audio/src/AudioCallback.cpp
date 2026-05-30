@@ -38,6 +38,12 @@ void AudioCallback::renderPlaybackStep (int numSamples) noexcept
     if (activeReads_ == nullptr) return;
     activeReads_->read (playbackSnapshot_);   // lock-free seqlock read into reused member
 
+    // Clamp to the phrase-scratch capacity (Bus::kMaxBusMixSamples): the pull /
+    // zero-fill destinations are fixed-size buffers, so an oversized device block
+    // must never write past them on the audio thread (every other engine consumer
+    // clamps to this same ceiling).
+    const int n = juce::jmin (numSamples, static_cast<int> (Bus::kMaxBusMixSamples));
+
     std::array<bool, kMaxPhraseSlots> active {};
     for (int i = 0; i < playbackSnapshot_.count; ++i)
     {
@@ -52,14 +58,14 @@ void AudioCallback::renderPlaybackStep (int numSamples) noexcept
         if (ps.l == nullptr) continue;
         if (active[static_cast<std::size_t> (slot)] && ps.pre != nullptr)
         {
-            ps.pre->pull (ps.l, ps.r, numSamples);  // fills + zero-fills underrun; wait-free
+            ps.pre->pull (ps.l, ps.r, n);  // fills + zero-fills underrun; wait-free
             ps.wasActive = true;
         }
         else if (ps.wasActive)
         {
             // Active→inactive: silence the scratch exactly once (not every block).
-            std::fill (ps.l, ps.l + numSamples, 0.0f);
-            std::fill (ps.r, ps.r + numSamples, 0.0f);
+            std::fill (ps.l, ps.l + n, 0.0f);
+            std::fill (ps.r, ps.r + n, 0.0f);
             ps.wasActive = false;
         }
     }
