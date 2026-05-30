@@ -26,6 +26,7 @@ bool readBytesAt (juce::FileInputStream& fis,
 
 // Truncate `file` to `offset` bytes and fill `reportOut` honestly.
 // Called only when recover==true after the input stream has been destroyed.
+// reportOut.truncated is set to true ONLY when bytes are actually removed from disk.
 void truncateAt (const juce::File&     file,
                  std::uint64_t         offset,
                  std::uint64_t         recordsKept,
@@ -33,22 +34,28 @@ void truncateAt (const juce::File&     file,
                  TapeTruncationReport& reportOut)
 {
     juce::FileOutputStream fos (file);
-    if (fos.openedOk())
+    if (! fos.openedOk())
     {
-        fos.setPosition (static_cast<juce::int64> (offset));
-        const juce::Result result = fos.truncate();
-        if (result.failed())
-        {
-            reportOut.truncated         = true;
-            reportOut.recordsKept       = recordsKept;
-            reportOut.truncatedAtOffset = offset;
-            reportOut.reason            = reason + " (truncate failed: "
-                                          + result.getErrorMessage().toStdString() + ")";
-            return;
-        }
-        fos.flush();
+        reportOut.truncated         = false;
+        reportOut.recordsKept       = recordsKept;
+        reportOut.truncatedAtOffset = 0;
+        reportOut.reason            = "truncation failed: could not open file for writing";
+        return;
     }
 
+    fos.setPosition (static_cast<juce::int64> (offset));
+    const juce::Result result = fos.truncate();
+    if (result.failed())
+    {
+        reportOut.truncated         = false;
+        reportOut.recordsKept       = recordsKept;
+        reportOut.truncatedAtOffset = 0;
+        reportOut.reason            = "truncation failed: " + result.getErrorMessage().toStdString();
+        return;
+    }
+
+    // Successful open + setPosition + truncate: bytes were actually removed.
+    // juce::FileOutputStream::truncate() already flushes/syncs; no extra flush needed.
     reportOut.truncated         = true;
     reportOut.recordsKept       = recordsKept;
     reportOut.truncatedAtOffset = offset;
@@ -92,10 +99,12 @@ std::unique_ptr<TapeRecordReader> TapeRecordReader::open (
 }
 
 // Scan one record starting at `offset` from `fis`. Returns true if a complete
-// valid record was decoded and appended to `index_`; returns false and sets
-// `truncOffsetOut`/`reasonOut` if the record is bad (caller decides next step).
-// `truncOffsetOut` is set to `recordStart` on any bad-record exit.
-// `reasonOut` describes the fault (empty on clean EOF or I/O error).
+// valid record was decoded and appended to `index_`. Returns false on three
+// distinct failure modes:
+//   1. Clean EOF (offset+4 > fileLen): reasonOut is empty, truncOffsetOut unchanged.
+//   2. Partial/CRC-bad/malformed-body: reasonOut is non-empty, truncOffsetOut set
+//      to recordStart. Caller should truncate when recover==true.
+//   3. I/O short-read: reasonOut is empty, truncOffsetOut unchanged (treat as EOF).
 bool TapeRecordReader::tryReadRecord (juce::FileInputStream& fis,
                                        std::uint64_t          fileLen,
                                        std::uint64_t&         offset,
@@ -141,7 +150,14 @@ bool TapeRecordReader::tryReadRecord (juce::FileInputStream& fis,
     const std::byte* payloadPtr = nullptr;
     std::size_t      payloadLen = 0;
     if (! decodeRecordBody (body.data(), bodyLen, hdr, payloadPtr, payloadLen))
+    {
+        // CRC matched but body is structurally invalid (bodyLen < kRecordHeaderBytes).
+        // This is not clean EOF — set offset and reason so caller can truncate.
+        truncOffsetOut = recordStart;
+        reasonOut      = "malformed record body";
+        offset         = recordStart;
         return false;
+    }
 
     RecordIndexEntry entry;
     entry.seq        = hdr.seq;

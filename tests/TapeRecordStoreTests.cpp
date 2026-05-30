@@ -1215,11 +1215,16 @@ void corruptRecordBodyByte (const juce::File& f,
 {
     const std::uint64_t byteOffset = recordOffset + 4 + byteInBody;
 
-    juce::FileInputStream fis (f);
-    REQUIRE (fis.openedOk());
-    fis.setPosition (static_cast<juce::int64> (byteOffset));
-    std::byte b;
-    fis.read (&b, 1);
+    // Read the byte in its own scope so the FileInputStream is fully closed
+    // before the write handle opens (two competing handles on the same file
+    // will fail on Windows).
+    std::byte b{};
+    {
+        juce::FileInputStream fis (f);
+        REQUIRE (fis.openedOk());
+        fis.setPosition (static_cast<juce::int64> (byteOffset));
+        fis.read (&b, 1);
+    } // fis destroyed here — safe to open write handle below
 
     FILE* fp = std::fopen (f.getFullPathName().toRawUTF8(), "r+b");
     REQUIRE (fp != nullptr);
@@ -1260,6 +1265,7 @@ TEST_CASE("TapeRecordReader recover=true: partial trailing record is truncated",
     REQUIRE (reader != nullptr);
     REQUIRE (reader->recordCount() == static_cast<std::uint64_t> (kN));
     REQUIRE (report.truncated == true);
+    REQUIRE (! report.reason.empty());
     REQUIRE (report.recordsKept == static_cast<std::uint64_t> (kN));
     REQUIRE (report.truncatedAtOffset == partialStart);
 
@@ -1292,6 +1298,7 @@ TEST_CASE("TapeRecordReader recover=true: last record CRC mismatch truncates tha
     REQUIRE (reader != nullptr);
     REQUIRE (reader->recordCount() == static_cast<std::uint64_t> (kN - 1));
     REQUIRE (report.truncated == true);
+    REQUIRE (! report.reason.empty());
     REQUIRE (report.recordsKept == static_cast<std::uint64_t> (kN - 1));
     REQUIRE (report.truncatedAtOffset == lastRecordStart);
 
@@ -1325,6 +1332,7 @@ TEST_CASE("TapeRecordReader recover=true: middle record CRC mismatch truncates f
     REQUIRE (reader != nullptr);
     REQUIRE (reader->recordCount() == static_cast<std::uint64_t> (kCorruptIdx));
     REQUIRE (report.truncated == true);
+    REQUIRE (! report.reason.empty());
     REQUIRE (report.recordsKept == static_cast<std::uint64_t> (kCorruptIdx));
     REQUIRE (report.truncatedAtOffset == corruptStart);
 
@@ -1391,4 +1399,100 @@ TEST_CASE("TapeRecordReader recover=false: partial trailing record leaves file u
     REQUIRE (report.truncated == false);
     // File must be byte-for-byte unchanged.
     REQUIRE (static_cast<std::uint64_t> (tapeFile.getSize()) == sizeWithPartial);
+}
+
+// (f) recover=false with a CRC-corrupt last record: file unchanged, recordCount==N-1.
+TEST_CASE("TapeRecordReader recover=false: CRC-corrupt last record leaves file unchanged",
+          "[tape-record]")
+{
+    static constexpr int kN = 4;
+
+    const juce::File dir = juce::File::getSpecialLocation (
+        juce::File::tempDirectory).getChildFile ("ida-test-recover-false-crc");
+    dir.deleteRecursively();
+    dir.createDirectory();
+
+    std::vector<std::uint64_t> recordOffsets;
+    const juce::File tapeFile = buildNRecordFile (dir, kN, recordOffsets);
+    REQUIRE (static_cast<int> (recordOffsets.size()) == kN);
+
+    const std::uint64_t originalSize = static_cast<std::uint64_t> (tapeFile.getSize());
+
+    // Corrupt the last record's body — CRC will mismatch.
+    const std::uint64_t lastRecordStart = recordOffsets.back();
+    corruptRecordBodyByte (tapeFile, lastRecordStart, 5);
+
+    // File size must not change from the corruption (only one byte was flipped).
+    REQUIRE (static_cast<std::uint64_t> (tapeFile.getSize()) == originalSize);
+
+    auto reg = makeFullRegistry();
+    ida::TapeTruncationReport report;
+    auto reader = ida::TapeRecordReader::open (tapeFile, reg, report, /*recover=*/false);
+
+    REQUIRE (reader != nullptr);
+    // Stops at the corrupt record — N-1 complete records indexed.
+    REQUIRE (reader->recordCount() == static_cast<std::uint64_t> (kN - 1));
+    // recover=false must never claim truncation.
+    REQUIRE (report.truncated == false);
+    // File must be byte-for-byte unchanged.
+    REQUIRE (static_cast<std::uint64_t> (tapeFile.getSize()) == originalSize);
+}
+
+// (g) recover=true with a CRC-valid but structurally malformed body
+//     (bodyLen < kRecordHeaderBytes): truncated==true, reason=="malformed record body",
+//     recordsKept==N, file truncated to the malformed record's offset.
+TEST_CASE("TapeRecordReader recover=true: CRC-valid malformed body is truncated honestly",
+          "[tape-record]")
+{
+    static constexpr int kN = 3;
+
+    const juce::File dir = juce::File::getSpecialLocation (
+        juce::File::tempDirectory).getChildFile ("ida-test-recover-malformed");
+    dir.deleteRecursively();
+    dir.createDirectory();
+
+    std::vector<std::uint64_t> recordOffsets;
+    const juce::File tapeFile = buildNRecordFile (dir, kN, recordOffsets);
+
+    // Record the truncation point: where the malformed record will start.
+    const std::uint64_t malformedStart = static_cast<std::uint64_t> (tapeFile.getSize());
+
+    // Craft a record with bodyLen = 10 (< kRecordHeaderBytes == 44).
+    // The CRC must match the 10-byte body so the CRC check passes and
+    // decodeRecordBody is reached (where it will return false for bodyLen < 44).
+    static constexpr std::uint32_t kBodyLen = 10;
+    std::array<std::byte, kBodyLen> body{};
+    for (std::size_t i = 0; i < kBodyLen; ++i)
+        body[i] = std::byte{ static_cast<unsigned char> (i + 1) };
+
+    const std::uint32_t goodCrc = ida::crc32 (body.data(), kBodyLen);
+
+    {
+        juce::FileOutputStream fos (tapeFile);
+        REQUIRE (fos.openedOk());
+        fos.setPosition (static_cast<juce::int64> (malformedStart));
+
+        std::byte lenBuf[4];
+        ida::writeLE32 (lenBuf, kBodyLen);
+        fos.write (lenBuf, 4);
+        fos.write (body.data(), kBodyLen);
+
+        std::byte crcBuf[4];
+        ida::writeLE32 (crcBuf, goodCrc);
+        fos.write (crcBuf, 4);
+    }
+
+    REQUIRE (static_cast<std::uint64_t> (tapeFile.getSize()) > malformedStart);
+
+    auto reg = makeFullRegistry();
+    ida::TapeTruncationReport report;
+    auto reader = ida::TapeRecordReader::open (tapeFile, reg, report, /*recover=*/true);
+
+    REQUIRE (reader != nullptr);
+    REQUIRE (reader->recordCount() == static_cast<std::uint64_t> (kN));
+    REQUIRE (report.truncated == true);
+    REQUIRE (report.reason == "malformed record body");
+    REQUIRE (report.recordsKept == static_cast<std::uint64_t> (kN));
+    REQUIRE (report.truncatedAtOffset == malformedStart);
+    REQUIRE (static_cast<std::uint64_t> (tapeFile.getSize()) == malformedStart);
 }
