@@ -28,6 +28,8 @@ These terms appear throughout the guide. Pin them down once here.
 | **Arm**         | Standing the system up so capture gestures take effect. Disarmed = nothing captures, no surprises. Armed = the next Mark In / Mark Out will land. |
 | **Playhead**    | The current time position. Where you are in the song. |
 | **LMC**         | "Local Machine Clock" — the system's continuous time reference. The unit on the Tape rulers. You don't usually need to think about LMC; the playhead and the song timeline handle this for you. |
+| **HYST**        | Tape Colour knob: the amount of tape hysteresis — turn it up for a wider, more coloured tape character, down for a cleaner one. It changes the colour, not the level. |
+| **SAT**         | Tape Colour knob: how hard the signal is driven into the tape, for more harmonic saturation. It adds character, not loudness — the level stays matched. |
 
 ---
 

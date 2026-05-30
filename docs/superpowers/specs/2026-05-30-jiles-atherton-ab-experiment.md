@@ -1,8 +1,8 @@
 # Jiles-Atherton vs. asinh — tape-saturation A/B experiment
 
-Status: **RESOLVED — Jiles-Atherton adopted (operator verdict by ear, 2026-05-30).**
-J-A is now the operator-preferred tape-saturation model. `asinh` is retained as
-the selectable fallback (`SaturationModel::Asinh`); J-A is `SaturationModel::JilesAtherton`.
+Status: **RESOLVED — Jiles-Atherton adopted (operator verdict by ear, 2026-05-30),
+then made the ONLY model.** The A/B is over: `asinh` was removed entirely and the
+`SaturationModel` selector deleted. See the closing note below.
 
 ## Verdict + the overload fix (2026-05-30)
 
@@ -31,6 +31,26 @@ full oversampled chain for both models (RED +65 dB → GREEN ≤ +0.4 dB);
 `tests/HysteresisProcessorJATests.cpp` pins deep-linear unity, flat FR, peak-safety,
 no-NaN, and rate-stability. The earlier always-on dynamic level-match is **gone** —
 do not reintroduce a makeup that can raise output peak above input peak.
+
+## Closing note — A/B over, J-A is the only model (2026-05-30)
+
+After the operator's "FAR superior" verdict, the experiment harness was dismantled
+and J-A made the sole tape nonlinearity:
+
+- `asinh` removed entirely. The `SaturationModel` enum, the `Asinh` branch, and the
+  `saturationModel` config field / parameter ID / picker (the "SAT MODEL" control in
+  the OTTO native editor + the `TAPECOLOR AB` VST3) are all gone. `grep saturationModel`
+  across lsfx + OTTO src + tests is zero.
+- The **HYST knob was rewired to the J-A loop width** (`kJaK`, pinning/coercivity),
+  geometric around noon: 0.5 → `kLoopWidthDefault = 0.12` (the operator-approved
+  voicing, bit-identical), 0 → 0.06 (tighter/cleaner), 1 → 0.24 (wider/more colour).
+  The deep-linear slope is `k`-independent, so the unity `normGain_` measured once at
+  the default `k` holds across the whole sweep; the `Ms` clamp keeps every setting
+  peak-safe. A new test pins unity + peak-safety across the HYST sweep.
+- `updateParameters` is now `(float hysteresisAmount, float saturation)` — the
+  `tape`/`speed`/`effectiveSampleRate`/`model` args were dropped.
+
+Full model writeup lives at `docs/design/tape-saturation-jiles-atherton.md`.
 
 ---
 

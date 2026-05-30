@@ -859,6 +859,14 @@ The tier system (Part XV) chooses among these at startup based on measured hardw
 
 Tape data lives on the machine that captured it, always. The network carries only coordination metadata. This is non-negotiable and is justified fully in Part XIV.
 
+### 8.7 Tape colour: the saturation character
+
+The tape's sonic character — the gentle compression and harmonic colour a real machine imparts — comes from a single **magnetic-hysteresis tape model**, the only tape nonlinearity in the system. Rather than a fixed transfer curve applied sample by sample, the model tracks magnetisation as a function of the applied field *and its history*, so it traces the program-dependent minor loops of real tape: the colour responds to what came before, not just to the current sample. Its knee sits **above** normal program, exactly as a calibrated machine keeps everyday level below the compression point, so the working range passes through transparently and only material above the knee is softened.
+
+The model is **level-matched by construction**: it is unity through the working range and **never expands a peak**. There is no dynamic loudness makeup riding on it — a saturation stage that returns "lost" loudness inevitably inflates transients past full scale, so the model carries none and relies instead on its above-program knee to stay level-matched on its own. This makes an honest A/B possible (matched loudness and frequency response) and makes host overload impossible by design.
+
+Two controls voice it. **HYST** sets the width of the hysteresis loop — from a tighter, cleaner loop through the default voicing to a wider loop with more colour — without changing the small-signal level. **SAT** sets the drive into the model's knee, with a matched inverse afterward so a hotter setting adds harmonic character rather than level.
+
 ---
 
 # Part IX — The Constituent Hierarchy
