@@ -12,6 +12,9 @@ namespace ida {
 std::vector<std::byte> FlacAudioCodec::encode(const float* left, const float* right,
                                                int numFrames, double sampleRate) const
 {
+    if (numFrames <= 0)
+        return {};
+
     juce::MemoryBlock block;
     {
         // MemoryOutputStream backed by `block` — outlives the writer.
@@ -28,6 +31,9 @@ std::vector<std::byte> FlacAudioCodec::encode(const float* left, const float* ri
                                  .withQualityOptionIndex(3);
 
         // createWriterFor takes ownership of streamBase (std::exchange semantics).
+        // On failure: JUCE nulls streamBase via std::exchange before returning nullptr,
+        // so the raw stream pointer is already released — do NOT add a manual delete
+        // (it would double-free on success). See FlacTapeSink.cpp writerFor failure path.
         auto writer = fmt.createWriterFor(streamBase, options);
         if (writer == nullptr)
             return {};
@@ -56,12 +62,16 @@ bool FlacAudioCodec::decode(const std::byte* payload, std::size_t len, PcmBlock&
     if (reader == nullptr)
         return false;
 
+    if (reader->numChannels != 2)
+        return false;
+
     const auto numSamples = static_cast<int>(reader->lengthInSamples);
     if (numSamples <= 0)
         return false;
 
     juce::AudioBuffer<float> buf(2, numSamples);
-    reader->read(&buf, 0, numSamples, 0, true, true);
+    if (!reader->read(&buf, 0, numSamples, 0, true, true))
+        return false;
 
     const auto n = static_cast<std::size_t>(numSamples);
     out.left .assign(buf.getReadPointer(0), buf.getReadPointer(0) + n);
@@ -82,6 +92,9 @@ bool FlacAudioCodec::decode(const std::byte* payload, std::size_t len, PcmBlock&
 std::vector<std::byte> PcmAudioCodec::encode(const float* left, const float* right,
                                               int numFrames, double /*sampleRate*/) const
 {
+    if (numFrames < 0)
+        return {};
+
     static constexpr std::size_t kHeaderBytes   = 4;          // u32 numFrames
     static constexpr std::size_t kBytesPerFrame = 8;          // 2 × float32
 

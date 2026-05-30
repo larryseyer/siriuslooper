@@ -4,6 +4,7 @@
 // encode→decode round-trips for every header field and the payload.
 #include "ida/TapeRecord.h"
 #include "ida/Rational.h"
+#include "ida/AudioPayloadCodec.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
@@ -301,11 +302,11 @@ TEST_CASE("TapeCodecRegistry — registering a second codec with same id replace
 // ---------------------------------------------------------------------------
 // 8. PcmAudioCodec + FlacAudioCodec (T0a Task 3)
 // ---------------------------------------------------------------------------
-#include "ida/AudioPayloadCodec.h"
 
 namespace {
 
 // Build a stereo ramp: left[i] = i / (N-1), right[i] = -left[i].
+// Requires numFrames >= 2 (divides by numFrames-1; UB / NaN at numFrames == 1).
 void makeStereoRamp (int numFrames, std::vector<float>& left, std::vector<float>& right)
 {
     left.resize  (static_cast<std::size_t> (numFrames));
