@@ -1,12 +1,60 @@
 # IDA — Deferred Items
 
-### 2026-05-29 — ⚠ PRIORITY: a single TAPECOLOR instance overloads the CPU (crackle when enabled)
-- Files: `external/lsfx_tapecolor/dsp/TapeColorProcessor.{h,cpp}` (quality/oversampling), `external/OTTO/src/otto-core/include/otto/mixer/MixerBus.h` (per-player bus `tapeColor_->scratchConfig().quality = 1` default), possibly a runtime quality setter OttoHost/IDA drives; `external/lsfx_tapecolor/dsp/ConvolutionStage.cpp` (the 2026-05-24 IR pre-bake todo).
-- What's open: AFTER the selective-bus mask + OTTO engagement gate (which compose down to 1× TAPECOLOR for one PlayerOut strip), a SINGLE enabled per-player TAPECOLOR still crackles (processor overload). Operator: "clean as long as I do not enable tapecolor… as soon as I enable tapecolor, crackles come back." Buffer is already 512 (not a tiny-buffer issue). TAPECOLOR is genuinely heavy: J-A hysteresis OVERSAMPLED + convolution IR + transformer/tube/bias/mod/noise.
-- **First lever to try (cheap, do this BEFORE any DSP rewrite):** drop the consumed per-player bus TAPECOLOR to **Eco (quality=0, 1× = NO oversampling)**. Tiers: `0=Eco(1×) / 1=Standard(2×) / 2=HQ(4×)` map 1:1 to the juce::dsp::Oversampling factor. Buses currently default Standard(1). Eco removes the oversampling wrap (the dominant cost). May fully resolve it for free.
-- If Eco still overloads → real DSP-cost reduction (offline IR pre-bake per 2026-05-24 todo / lighter hysteresis / skip convolution on buses). This is lsfx_tapecolor + OTTO territory.
-- ⚠ **Coordination:** TAPECOLOR DSP is the SHARED lsfx_tapecolor submodule + OTTO's WetChain wrapper. Do NOT unilaterally rewrite it from IDA's terminal — coordinate via `CROSS_PROJECT_INBOX.md` + the operator (two-terminal protocol). OTTO's terminal owns the TAPECOLOR DSP line.
-- What's needed: try Eco-tier (operator confirms crackle gone with TAPECOLOR enabled at Eco); if not, scope a coordinated lsfx_tapecolor optimization slice.
+### 2026-05-30 — RESOLVED (not a real bug): "single TAPECOLOR overloads CPU" was a stale-build ghost
+- Investigated 2026-05-30 with IDA's OverloadProtection load meter (Preparation pane "Load: X%").
+  CLEAN-built binary (M4 Max, 1 OTTO player-1 strip, OTTO playing): TAPECOLOR disabled 24.4%, Eco 22.4%,
+  HiQ 24.0% — FLAT, ~23% at every tier, shed:0, ~77% headroom. TAPECOLOR cost is in the measurement
+  noise at all quality tiers. HiQ confirmed clean by ear.
+- The earlier "enable TAPECOLOR -> processor overload" was on the INCREMENTAL build left from the prior
+  session. Most-probable cause: stale object files that hadn't consistently picked up last session's
+  TAPECOLOR-touching changes (OTTO-merge call-site CPU gate, config double-buffer mirror-back fix, editor
+  apply-0 removal, denormal guard, per-block MIDI-alloc fix) -> more processing engaged than intended /
+  denormals not flushed. Clean rebuild made all TUs consistent -> near-zero cost showed. Unprovable
+  post-hoc (build dir deleted); matches the documented "incremental builds hide config drift" rule.
+  CANARY: if crackle ever returns on a freshly clean-built binary, that's a NEW real signal -> chase then.
+- The OLD cost model was doubly wrong: there is NO iterative J-A solver (replaced 2026-05-25 by a static
+  asinh waveshaper) and NO convolution IR (retired Phase 9, "fully algorithmic"). The only
+  quality-dependent cost is juce::dsp::Oversampling wrapping a cheap asinh.
+- Outcome: the IDA-side Eco-override work built this session was REVERTED (net-zero code change); OTTO's
+  normal default restored. Nothing to fix.
+
+### 2026-05-30 — Jiles-Atherton hysteresis A/B experiment (own DSP session; OPERATOR WANTS TO HEAR IT)
+- Spec: `docs/superpowers/specs/2026-05-30-jiles-atherton-ab-experiment.md`
+- Files (anticipated): `external/OTTO/src/otto-core/{include,src}/otto/effects/tapecolor/HysteresisProcessor.{h,cpp}`
+  (currently the static asinh waveshaper); WetChain stays the host (it already oversamples).
+- What: implement a proper Jiles-Atherton (Chow NR4-style) magnetic-hysteresis solver as an ALTERNATIVE to
+  asinh, fix the documented failure (un-normalized small-signal gain), and A/B it on real material.
+  Operator's ears are the judge; adopt only if audibly better; keep asinh as fallback.
+- Why it failed before (now KNOWN — was thought unknown): J-A small-signal slope is c*Ms/(3a) ~ -13 dB for
+  Chow reference coefficients (documented in HysteresisProcessor.h header). Un-normalized -> gated low-level
+  detail (dull) + forced overdrive (distorted) = operator's "always dull and distorted." Fix = normalize
+  small-signal gain to unity (Chow's own model does this).
+- Why pursue: J-A is the only path to true hysteresis MEMORY (minor loops, history/freq-dependent saturation)
+  that asinh structurally cannot do; CPU is NOT a constraint (tape measured ~0% on desktop).
+- Coordination: OTTO-core DSP, affects both products. OTTO's terminal owns this DSP line; coordinate via
+  CROSS_PROJECT_INBOX.md. Own session: brainstorm -> implement (A/B switch) -> operator blind-test -> decide.
+
+### 2026-05-30 — Audio-thread idle load ~22% — profiling/optimization slice (mostly for iOS)
+- What: the audio callback sits at ~22% of one core with OTTO essentially idle (1 player). 77% headroom on
+  desktop = not blocking; on iOS/A13 the equivalent is far tighter. Operator flagged it as "expensive for
+  something just sitting there."
+- What's needed: a real profiler pass (Instruments Time Profiler) to ATTRIBUTE the 22% before optimizing
+  (no guessing). Prime suspects: per-channel dual peak+LUFS metering across both mixers + OTTO; full-graph
+  processing of silent channels; sfizz idle overhead. Do when turning to iOS; not urgent on desktop.
+
+### 2026-05-30 — Intermittent: OTTO play button dead on first launch, fine on relaunch (startup race)
+- Files (anticipated): `app/MainComponent.cpp` (OTTO setup / audio-callback-add ordering vs transport-bar
+  wiring), `otto-bridge/src/OttoHost.cpp` (play() -> sendToAudioThread SPSC; renderBlock pump start).
+- What: 2026-05-30 the operator hit "play button does not work" once; relaunching the SAME binary fixed it.
+  Signature of a startup race (audio device / OTTO pump not fully up at first play, or transport-bar ->
+  OttoHost::play wiring landing after first interaction). Not reproducible on demand; not the reverted
+  TAPECOLOR work (play path is orthogonal). Low priority until reproducible.
+
+### 2026-05-30 — Stale comments in OTTO WetChain.cpp describe deleted code (note for OTTO)
+- Files: `external/OTTO/src/otto-core/src/effects/tapecolor/WetChain.cpp` (HysteresisProcessor.h is correct).
+- What: WetChain.cpp comments still say "Jiles-Atherton", "trapezoidal integration", "Talpha", "convolution IR"
+  around the oversampling block — but J-A was replaced by asinh (2026-05-25) and convolution retired (Phase 9).
+  These comments misled this session's cost reasoning. OTTO-side comment cleanup; flag to OTTO's terminal.
 
 ### 2026-05-29 — Codify the two-terminal coordination protocol in IDA's CLAUDE.md
 - Files: `CLAUDE.md` (IDA's Cross-Project Inbox Protocol section).
