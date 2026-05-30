@@ -2092,3 +2092,9 @@ Remaining (OTTO-side timeline, NOT blockers for IDA):
 
 4. **OTTO `EventBus::publish` mutex+alloc** — already queued in OTTO inbox 2026-05-27 entry. IDA's handler is RT-clean either way.
 5. **OTTO standalone test suite unblock** — OTTO's host-top-level CMake is pre-existingly broken (missing CLAP/Catch2/clap-juce-extensions submodules + `cmake/OTTOConfig.cmake`). T15's `test_processblock_split_app` is registered correctly but won't build until OTTO's configure is unblocked. IDA's `[otto-host-pump]` 4-case suite continues to close the verification end-to-end.
+
+### [2026-05-30] — T0a follow-on: TapeRecordReader opens a FileInputStream per readAudioRecord call (T0b pre-work)
+- Files: `audio/src/TapeRecordReader.cpp` (`readAudioRecord`, ~line 250)
+- What was deferred: `readAudioRecord` constructs a fresh `juce::FileInputStream(file_)` on every call. Fine for the random-access test usage, but T0b's render/playback path will call it in a tight loop over many records → O(N) file opens, a perf cliff.
+- Why deferred: Not a T0a blocker — not visible at current call sites, tests unaffected, and the fix changes the reader's internal lifetime model (cache an open stream + seek). Surfaced by the T0a final holistic review.
+- What's needed to finish: Before T0b playback lands, cache an open read stream in the reader (or accept a stream) and seek per record rather than re-open. Keep the recover=false concurrent-read guarantees (no write) intact.
