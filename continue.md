@@ -1,124 +1,144 @@
-# Session Continuation — 2026-05-30 (T0a tape-record-store COMPLETE, Tasks 1–9 landed)
+# Session Continuation — 2026-05-30 (T0b playback-resolution path COMPLETE)
 
 ## Current State
 
-**Tier-0 / Phase T0a — the durable, media-agnostic tape record store — is DONE.**
-All 9 tasks implemented via `superpowers:subagent-driven-development` against the
-committed plan, each with spec-compliance + code-quality review and a fix loop,
-plus a final whole-subsystem holistic review (verdict: ship-ready). The next
-session starts **T0b** (the playback-resolution path) — see "After T0a" below.
+**Tier-0 / Phase T0b — the playback-resolution path — is DONE.** A recorded
+phrase now streams from the on-disk tape store into its Output-Mixer channel,
+driven by OTTO's transport playhead. Built subagent-driven against the committed
+plan (`docs/superpowers/plans/2026-05-30-playback-resolution-path-t0b.md`), each
+task with spec + code-quality review + fix loop, plus a final whole-subsystem
+holistic review (verdict: ship-ready for operator ear-test, blocking item fixed).
 
-- **Plan (committed):** `docs/superpowers/plans/2026-05-30-tape-record-store.md`
-  — authoritative byte layout + API signatures. Fully executed.
+The **operator ear-test is the remaining confirmation** — the engine path is
+fully headless-proven; runtime/GUI is operator-verified (the agent cannot hear it).
+
+- **Plan (committed):** `docs/superpowers/plans/2026-05-30-playback-resolution-path-t0b.md`.
 - **Design spec:** `docs/superpowers/specs/2026-05-30-render-path-and-tape-store-design.md`
-  (the "why"; whitepaper §8.1–8.5, §15.2, §17.8, §17.9).
-- **Chat plan / tier roadmap:**
-  `/Users/larryseyer/.claude/plans/read-continue-and-begin-sleepy-oasis.md`
-  (T0a detail + T0b outline + full IDA tier roadmap T0→T5).
+  (Phase T0b, §155–229; the "why" — whitepaper §3.6/§5.2/§5.7/§6.6/§8).
 
-## Repo State (verified against `git log` + clean build, not narration)
+## Repo State (verified, not narrated)
 
-- **IDA** master HEAD = **`1b7c956`**, and **origin/master is in sync** (all pushed).
-  Clean working tree except `external/sfizz` (pre-existing untracked content — leave it).
+- **IDA** master HEAD = **`7ac220e`**, **origin/master in sync** (all pushed).
+  Clean tree except `external/sfizz` (pre-existing untracked — leave it).
 - **OTTO** submodule UNCHANGED this session. No `external/OTTO/` edits, no SHA bump.
-  Inbox: `[FROM OTTO → IDA]` had nothing for us; the `[FROM IDA → OTTO]` entries are
-  `needs-ack` addressed to OTTO's Claude — not ours to prune.
-- **Final verification at HEAD:** clean build (`rm -rf build` + reconfigure) of `IdaTests`
-  AND the `IDA.app` (signed) both succeed; full `ctest` = **870/871** — the single
-  non-pass is the documented separately-run `MainComponentPluginEditorTests_NOT_BUILT`
-  (the established baseline, NOT a regression). `[tape-record]` suite = **48 cases /
-  4588 assertions**, all green.
-- `git grep FlacTapeSink -- ':!docs/' ':!*.md'` → **zero** (the class is fully retired).
+  Inbox: `[FROM OTTO → IDA]` empty; the `[FROM IDA → OTTO]` entries are `needs-ack`
+  addressed to OTTO's Claude — not ours to prune.
+- **Final verification at HEAD:** CLEAN build (`rm -rf build` + reconfigure) of
+  `IdaTests` AND the signed `IDA.app` both succeed; full `ctest` = **894/895** — the
+  single non-pass is the documented separately-run `MainComponentPluginEditorTests_NOT_BUILT`
+  (established baseline, NOT a regression). `[tape-playback]` = **21 cases / 790
+  assertions**, all green.
 
-## T0a commit trail (this session, in order — all pushed)
+## What T0b delivers (on disk + tested)
 
-- Task 3 codecs: `7ab8df6` feat + `a27367d` fix (read-result/stereo/frame guards)
-- Task 4 writer: `1b19610` feat + `cc5f3a6` fix (RT audit row, sr-capture, alloc test, det. tests)
-- Task 5 reader: `a6f013b` feat + `0c5f03d` fix (len guard, ctor trap, random-access proof test)
-- Task 6 recovery: `dbadf37` feat + `e8b2e3e` fix (honest truncation report + malformed-body recovery)
-- Task 7 concurrent read: `98f8efe` feat + `c0f0cbd` fix (existence poll, per-refresh monotonicity)
-- Task 8 tier flush: `dc4be83` feat + `ea3f81e` fix (std::clamp, named-constant assertions, tier coverage)
-- Task 9 swap+retire: `9715d09` feat + `75ebb39` fix (derive codec from tier policy, purge FlacTapeSink refs)
-- Final-review fix: `a53dd03` (symmetric zero-frame guard) + `1b7c956` (todo entry)
-- (Tasks 1–2 landed last session at `12256e9` / `55495b3`.)
+Data flow (input mixer → tape → **[T0b]** → output mixer):
+- **Playhead** (`engine/.../TransportPlayhead.h`, `otto-bridge/.../OttoHost.*`):
+  `OttoHost::renderBlock` publishes `TransportPlayhead{positionInSeconds,isPlaying}`
+  via lock-free atomics. v1 identity calibration: positionInSeconds =
+  elapsed-PLAYING-samples / sr (monotonic-while-playing by construction; sidesteps
+  OTTO's pattern-null position quirk). `prepare()` resets the published atomics too.
+- **Snapshot** (`engine/.../ActiveReadsSnapshot.h`): `PhraseSlotRead{slot,
+  tapeSampleStart,active}` + fixed-cap `ActiveReadsSnapshot` (kMaxPhraseSlots=64) +
+  `ActiveReadsPublisher` (SPSC seqlock; lock-free bounded-retry `read` on the audio
+  thread, never wait-free — comment says so).
+- **Resolver** (`engine/.../PlaybackResolver.*`): control-worker (~10ms) reads the
+  playhead → exact `Rational(llround(sec*sr), llround(sr))` LMC time →
+  `RenderPipeline::activeReadsAt` (tree-walk, off-thread) → maps ConstituentId→slot
+  → steers each slot's prefetcher (`setTargetSample`) → publishes the
+  pre-resolved snapshot. Injected std::function collaborators (testable in isolation).
+- **Prefetcher** (`audio/.../TapePrefetcher.*`): per phrase channel; worker decodes
+  tape records AHEAD into a lock-free stereo PCM ring; audio-thread `pull` is
+  wait-free + zero-fills underrun. **Locates records via the reader index's `lmcTs`
+  timestamps** (NOT fixed framesPerRecord) — correct for VARIABLE-size live records
+  (the writer frames one audio block per record; block size is not guaranteed
+  constant). `open(file, registry, double sampleRate, loopLengthSamples)`.
+- **Reader** (`audio/.../TapeRecordReader.*`): T0a + Task-1 change — caches one read
+  stream across `readAudioRecord`, reset on `refresh` (single-worker contract documented).
+- **Phrase scratch** (`engine/.../OutputMixer.*`): stable per-channel stereo scratch
+  (mirror of `InputMixer::postStrip_`) — `ensurePhraseScratch`/`phraseScratchPointer`/
+  `mutablePhraseScratch`; erased on `removeChannel` (no stale-on-id-reuse). The
+  channel's audio source points at it via `setChannelAudioSource`.
+- **Playback step** (`audio/.../AudioCallback.*`): new RT-safe step between OTTO
+  render and OutputMixer dispatch — seqlock read + per-slot `pull` → memcpy into
+  phrase scratch (clamped to `Bus::kMaxBusMixSamples`); active→inactive zeroed once.
+  Zero alloc/lock/IO/decode/tree-walk on the audio thread (alloc test enforces it).
+- **Wiring** (`app/MainComponent.*`): owns the registry (PCM+FLAC) / publisher /
+  resolver / `RenderPipeline` (from `demo_.root` + `demo_.sessionToLmc`) / per-channel
+  prefetchers / slot map. Wired in `refreshOutputMixerPhraseChannels` (resolver
+  stopped + audio callback detached around the whole mutation — provably quiescent)
+  + the device-prepare path + teardown (reverse order). Initial session load routes
+  through the same `refreshOutputMixerPhraseChannels` path.
 
-## What T0a delivers (on disk + tested)
+## T0b commit trail (this session, in order — all pushed, HEAD `7ac220e`)
 
-The full append-only, checksummed, media-agnostic tape store, end-to-end coherent
-(byte contract, codec-id chain, Rational round-trip, RT-safety boundary, stereo
-invariant all verified by the holistic review):
+`f2fa903` plan → `47ba93d`+`7b3ed5e` (T1 reader cache) → `5613aca`+`915a9f7` (T2
+playhead) → `406b949`+`13cea01` (T3 snapshot) → `5ab2739` (T4 phrase scratch) →
+`f38a1a9`+`bc96fbf` (T5 prefetcher) → `57f6d3d`+`d37075b` (T6 resolver) →
+`27b2981`+`630ff51` (T7 playback step) → `8a3990b` (T8a e2e) →
+`7d18842`+`78aa904` (T5b index-by-lmcTs, variable-block correctness) →
+`faf353d`+`7302a14` (T8b MainComponent wiring) → `7ac220e` (holistic-review fix:
+scratch clamp + seqlock-race note).
 
-- **Byte layer** (`core/.../TapeRecord.{h,cpp}`): file header `IDATAPE\0`+u16 ver+u16 reserved
-  (12 B); record `[u32 bodyLen][body][u32 crc32(body)]`; body = seq u64 + type u16 +
-  codec u16 + conceptual Rational + lmc Rational (44 B); LE primitives; CRC-32 IEEE 802.3.
-- **Codec layer** (`engine/.../IPayloadCodec.h` + `engine/src/IPayloadCodec.cpp`):
-  `IPayloadCodec`, `TapeCodecRegistry`, `PcmBlock`.
-- **Audio codecs** (`audio/.../AudioPayloadCodec.{h,cpp}`): `FlacAudioCodec` (24-bit
-  FLAC-per-block, self-contained, standalone-decodable) + `PcmAudioCodec` (interleaved LE
-  float32, bit-exact). Both stereo-only, garbage-safe, symmetric zero-frame guard.
-- **Writer** (`audio/.../TapeRecordWriter.{h,cpp}`): an `ITapeSink`; audio→SPSC→worker→
-  framed-append; RT-safe `deliverTapeBlock` (proven by an `operator new`-override alloc test);
-  per-tape `tape-<id>.idatape`; `lmcTs=Rational(framesWritten, round(sr))`, `conceptualTs==lmcTs`
-  at capture (documented v1 limit — real map is T0b's TempoMap concern); tier-driven flush.
-- **Reader** (`audio/.../TapeRecordReader.{h,cpp}`): scan/index/random-access decode (O(1) by
-  position, proven by a counting-codec test); crash recovery (recover=true truncates a
-  bad/partial/malformed tail + fills an honest `TapeTruncationReport` §17.9; recover=false
-  NEVER writes); concurrent read-during-write via `refresh` (monotonic index, all-valid-CRC).
-- **Tier flush cadence** (`app/CapabilityTier.{h,cpp}`): `TierPolicy.flushIntervalMs`
-  Lavish=1 / Comfortable=50 / Tight=200 / Survival=1000 (§17.8); writer clamps `[1,5000]`.
-- **Live swap**: `app/MainComponent.cpp` capture path now constructs `TapeRecordWriter`
-  (codec derived from `tierPolicy_.tapeFormat`: UncompressedPcm→PCM else FLAC; flush from
-  policy). `FlacTapeSink.{h,cpp}` + its tests DELETED; RT_SAFETY_CONTRACT.md audit row swapped.
-  Topology unchanged: `InputMixer.setTapeSink` → `TapeColoringSink` → `tapeRecordWriter_`.
+## Operator ear-test (the remaining confirmation)
 
-## Open follow-on (in `todo.md`, NOT blockers)
+The signed `IDA.app` is freshly clean-built. To eyes/ears-on:
+1. Launch `IDA` (Desktop alias) — or the agent can launch it.
+2. Record input to a tape so a phrase pill exists (its tape `.idatape` is on disk).
+3. Hit play (OTTO transport). The phrase should sound through its Output-Mixer
+   strip and its per-phrase meter should move; stop → silence.
+- Caveat: a phrase only sounds if its tape FILE already exists (recorded). A pill
+  whose tape isn't recorded yet stays silent until the next channel refresh re-opens
+  it (no auto-retry on tape-create — see v1 limits).
 
-- **`readAudioRecord` opens a `FileInputStream` per call** (T0b pre-work). Fine now; T0b's
-  playback loop over many records would make it O(N) opens. Cache/seek before T0b playback
-  lands. (`audio/src/TapeRecordReader.cpp` ~:250.) Added 2026-05-30.
+## Honest v1 limits (in `todo.md`, NOT blockers)
 
-## Operator-verify (optional — runtime capture is operator-verified, not unit-tested)
+- **FreeRunning leaf loops only** (RenderPipeline M3 reality).
+- **Identity device calibration** (positionInSeconds→sample = round(sec*sr));
+  real loopback calibration deferred.
+- **Playhead = elapsed-playing-seconds**, not OTTO's ppq position; transport
+  relocate/seek within OTTO's timeline not yet reflected. Sub-block play-start
+  error (whole first block credited) — RD1 stub.
+- **Prefetcher wrap is from 0** (`s %= loopLengthSamples`): correct for a loop whose
+  tape slice starts at 0 (the common "recorded loop = whole tape" case); `tapeIn != 0`
+  wraps to 0 instead of tapeIn. Refine to slice-relative wrap later.
+- **Seek-on-drain latency**: a transport jump is honored only after the ~1s ring
+  drains (compounds with the 10ms resolve cadence).
+- **Multi-tape phrases**: only the FIRST leaf loop's tape is wired per pill.
+- **Unrecorded-tape silence**: a pill whose tape file doesn't exist stays silent
+  until a later `refreshOutputMixerPhraseChannels` re-opens it (no auto-retry).
+- Prefetch ring fixed ~1.0 s (tier-coupled depth deferred).
 
-The `.app` builds + launches; the live capture path now writes `.idatape` record containers
-instead of monolithic `.flac`. To eyes-on: launch `IDA` (Desktop alias), record input to a
-tape, and confirm `tape-<id>.idatape` files appear in the tapes dir. GUI/runtime behavior is
-the operator's confirmation; the engine path is fully headless-tested.
+## After T0b: next (own session)
 
-## After T0a: T0b (next plan, own session)
+T0b closes the load-bearing "phrase channels are silent" gap. Candidates next:
+- Resume engine milestones (M8 S7+) per the V7/V10 order, OR
+- The OPERATOR-RAISED arrangement subsystem (in `todo.md` 2026-05-30): (1) phrase
+  playback + arrangement model/UX, (2) "pruning" (operator will DEFINE — capture,
+  don't infer), (3) phrase-boundary crossfades (MIDI/audio/video), (4) export of an
+  arranged phrase timeline (§6.11 "render"). Await a dedicated design session.
+- Tighten a v1 limit if the operator's ear-test surfaces one (slice-relative wrap,
+  seek latency, or the unrecorded-tape auto-retry are the likely first asks).
 
-Playback-resolution path — RT-safe OTTO-transport playhead accessor → off-thread
-`RenderPipeline::activeReadsAt` snapshot → `TapeReader` worker prefetch (on T0a's
-reader; FIRST address the per-call file-open todo above) → new audio-callback playback
-step (`AudioCallback.cpp` between OTTO render ~line 112 and OutputMixer dispatch ~118)
-filling each phrase channel's scratch via `setChannelAudioSource` (MON template,
-`InputMixer.cpp:227-242`). v1: identity calibration, FreeRunning leaf loops only.
-Outline in the chat plan file. Write a T0b plan via `superpowers:writing-plans` first.
+## Method note (continue this if iterating the same way)
 
-## Open design topics (own future session, AFTER T0b — captured in `todo.md` 2026-05-30)
-
-Operator-raised arrangement subsystem: (1) phrase playback + arrangement model/UX,
-(2) "pruning" (operator will DEFINE — capture, don't infer), (3) phrase-boundary
-crossfades for MIDI/audio/video, (4) export of an arranged phrase timeline to disk
-(§6.11 "render"). Await a dedicated design session.
-
-## Method note (continue this if iterating T0b the same way)
-
-Subagent-driven: one `general-purpose` implementer (model `sonnet`) per task with FULL
-task text pasted in (don't make it read the plan file). Per task: implement → spec review
-→ code-quality review → fix loop → **git-verify** (real `git log` + `ls` + a re-run of the
-suite whose summary line you actually read) before advancing. The harness occasionally
-emits STALE clangd diagnostics ("file not found", "no member", "does not match declaration")
-for freshly-edited headers — a forced `touch`+recompile of the TU confirms they're false
-positives; trust the real Ninja build, not the diagnostic. Subagents stage ONLY their task's
-files (never `git add -A` — the build emits a stray gitignored `tests/IdaTests`). Commits
-single-line `feat:`/`fix: T0a — …`. Work on `master`; push is authorized.
+Subagent-driven (`superpowers:subagent-driven-development`): one `general-purpose`
+implementer (model `sonnet`) per task, FULL task text pasted in (don't make it read
+the plan file). Per task: implement → spec-compliance review → code-quality review →
+fix loop → git-verify (real `git log` + re-run the named suite whose summary line you
+read) before advancing. The harness emits STALE clangd diagnostics ("file not found",
+"no member", Catch operand errors) for freshly-edited headers/tests — trust the real
+Ninja build, not the diagnostic. Subagents stage ONLY their task's files (never
+`git add -A` — the build emits a stray gitignored `tests/IdaTests`). Single-line
+`feat:`/`fix: T0b — …` commits. Work on `master`; push authorized. Two genuine
+plan-stage corrections caught during execution: `Rational` has no `fromDouble` (use
+`Rational(llround(sec*sr), llround(sr))`), and the prefetcher must locate records by
+the index `lmcTs` (variable-block reality), not a fixed framesPerRecord.
 
 ## Commands to run first (next chat)
 
 ```bash
 cd /Users/larryseyer/IDA
-git log --oneline -8         # expect 1b7c956 at HEAD, in sync with origin/master
-git status --short           # expect only external/sfizz
-cmake --build build --target IdaTests && ./build/tests/IdaTests "[tape-record]"   # expect 48 cases / 4588 assertions
-# Then: write the T0b plan (superpowers:writing-plans), starting with the readAudioRecord todo item.
+git log --oneline -6          # expect 7ac220e at HEAD, in sync with origin/master
+git status --short            # expect only external/sfizz
+cmake --build build --target IdaTests && ./build/tests/IdaTests "[tape-playback]"  # 21 cases / 790 assertions
 ```
