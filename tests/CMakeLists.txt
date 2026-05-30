@@ -111,6 +111,13 @@ add_executable(IdaTests
     # J-A vs asinh saturation A/B experiment (2026-05-30): headless DSP tests
     # for the Jiles-Atherton model in lsfx::tapecolor::HysteresisProcessor.
     HysteresisProcessorJATests.cpp
+    # Full-chain peak-safety regression (2026-05-30): drives the entire
+    # lsfx::TapeColorProcessor (oversampling + record-emphasis + Level pre-drive)
+    # with peaky program for BOTH saturation models and pins "a tape stage must
+    # never expand peaks". The bare HysteresisProcessor J-A tests run base-rate
+    # sine/ramp and missed the makeup-induced transient overload the operator
+    # hit in Reaper.
+    TapeColorChainPeakTests.cpp
     # TAPECOLOR Slice 2 — per-tape routing decorator. Sits between the
     # InputMixer's per-tape sum and the FlacTapeSink, applying TAPECOLOR
     # to tapes whose mode is BeforeWrite. AfterRead is downstream-only;

@@ -1,6 +1,40 @@
 # Jiles-Atherton vs. asinh — tape-saturation A/B experiment
 
-Status: queued (own DSP session). Operator wants to hear the difference and decide by ear.
+Status: **RESOLVED — Jiles-Atherton adopted (operator verdict by ear, 2026-05-30).**
+J-A is now the operator-preferred tape-saturation model. `asinh` is retained as
+the selectable fallback (`SaturationModel::Asinh`); J-A is `SaturationModel::JilesAtherton`.
+
+## Verdict + the overload fix (2026-05-30)
+
+The first audition build **overloaded instantly** in Reaper (protective mute) — the
+operator never heard the character. Root cause: the A/B harness's shared dynamic
+broadband-RMS level-match **expanded transient peaks past full scale** (peaks
+compress more than RMS through a saturator, so returning the RMS loss boosted the
+peaks), and a sharp transient drove the fixed-point solver through its near-singular
+irreversible denominator to a finite-but-huge magnetisation. A full-chain peak test
+caught a **+65 dB** output peak from a 1.0 input.
+
+The fix — a saturation stage must be level-matched **by construction**, never by a
+transient-expanding makeup:
+1. Re-calibrated the operating point: `kJaA 0.10 → 0.40` (Qfull = Gin·Ms/a ≈ 2.5,
+   not 10) — gentle, knee above program, like asinh and real tape.
+2. **Removed the dynamic broadband-RMS level-match entirely.** Both models are now
+   level-matched by construction (gentle, non-expanding saturation). Residual
+   constant loudness offset is the manual OUT trim knob's job.
+3. Added a physical magnetisation clamp `|M| ≤ 1.05·Ms` inside the solver step —
+   makes the numerical transient blow-up impossible.
+
+After the fix the operator auditioned the rebuilt `TAPECOLOR AB` VST3 and judged
+**"Jiles-Atherton is FAR superior — that's the one we keep."** Regression guard:
+`tests/TapeColorChainPeakTests.cpp` pins output peak ≤ input peak + 0.5 dB on the
+full oversampled chain for both models (RED +65 dB → GREEN ≤ +0.4 dB);
+`tests/HysteresisProcessorJATests.cpp` pins deep-linear unity, flat FR, peak-safety,
+no-NaN, and rate-stability. The earlier always-on dynamic level-match is **gone** —
+do not reintroduce a makeup that can raise output peak above input peak.
+
+---
+
+_Original experiment design (kept for the rationale record):_
 
 ## Context
 

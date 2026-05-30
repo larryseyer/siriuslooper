@@ -61,22 +61,6 @@ double fundamentalMag (const juce::AudioBuffer<float>& buf, double freqHz,
     return std::sqrt (re * re + im * im);
 }
 
-// Plain RMS over the final `window` samples of channel 0.
-double rms (const juce::AudioBuffer<float>& buf, int window)
-{
-    const int total = buf.getNumSamples();
-    const int start = juce::jmax (0, total - window);
-    const int count = total - start;
-    if (count <= 0) return 0.0;
-    double s = 0.0;
-    for (int n = start; n < total; ++n)
-    {
-        const double v = buf.getSample (0, n);
-        s += v * v;
-    }
-    return std::sqrt (s / count);
-}
-
 double peakAbs (const juce::AudioBuffer<float>& buf)
 {
     double peak = 0.0;
@@ -188,15 +172,21 @@ TEST_CASE ("J-A frequency response is flat (not dark)", "[hysteresis-ja][dsp]")
     }
 }
 
-TEST_CASE ("J-A is loudness-transparent at full scale yet shapes the waveform",
+TEST_CASE ("J-A is peak-safe at full scale yet shapes the waveform",
            "[hysteresis-ja][dsp]")
 {
-    // The level-match makes the stage output RMS track its input RMS so an
-    // asinh↔J-A A/B compares CHARACTER at equal loudness. So at full scale the
-    // output level must match the input (not the raw ~-6.7 dB compression),
-    // AND the waveform must still be shaped (harmonics) — not a bypass.
+    // Why this matters: the J-A stage must be level-matched against asinh BY
+    // CONSTRUCTION (gentle, non-expanding saturation), NOT by a dynamic makeup.
+    // The earlier broadband-RMS makeup boosted transients past full scale and
+    // overloaded the Reaper track. The honest A/B invariant is therefore:
+    //   1. the output PEAK never exceeds the input peak (a saturator compresses,
+    //      it never expands) — this is the regression guard for the overload;
+    //   2. the waveform is still shaped (harmonics) — not a bypass.
+    // Note RMS may rise slightly as the soft knee fattens the sine toward a
+    // squarer shape (sine RMS 0.707·peak → square RMS = peak); that is real
+    // tape behaviour and is fine SO LONG AS the peak stays bounded.
     constexpr double sr = 48000.0;
-    constexpr int samples = 48000;   // 1 s — let the ~50 ms level-match converge
+    constexpr int samples = 48000;   // 1 s — converge to steady-state minor loop
     HysteresisProcessor hp;
     hp.prepare (sr, 2);
     configureJA (hp, sr);
@@ -205,16 +195,17 @@ TEST_CASE ("J-A is loudness-transparent at full scale yet shapes the waveform",
     juce::AudioBuffer<float> original;
     original.makeCopyOf (buf);
 
-    const double inRms = rms (buf, 8192);
+    const double inPeak = peakAbs (original);
     hp.process (buf);
-    const double outRms = rms (buf, 8192);
+    const double outPeak = peakAbs (buf);
 
-    INFO ("in/out RMS " << inRms << " / " << outRms << " (" << dbDiff (outRms, inRms) << " dB)");
-    REQUIRE (std::abs (dbDiff (outRms, inRms)) < 0.5);   // loudness-transparent
+    INFO ("in/out peak " << inPeak << " / " << outPeak
+          << " (" << dbDiff (outPeak, inPeak) << " dB)");
+    REQUIRE (outPeak <= inPeak * 1.05);   // peak-safe: never expands (≤ +0.4 dB)
 
-    // The model genuinely distorts: the level-matched output must differ
-    // materially from the (loudness-equal) clean input — proving it is not a
-    // transparent bypass. Compare the converged tail.
+    // The model genuinely distorts: the output must differ materially from the
+    // clean input — proving it is not a transparent bypass. Compare the
+    // converged tail.
     double maxDiff = 0.0;
     for (int n = samples - 8192; n < samples; ++n)
         maxDiff = std::max (maxDiff,
@@ -239,7 +230,11 @@ TEST_CASE ("J-A output is finite and bounded at full-scale and over-range",
         hp.process (buf);
         INFO ("amp " << amp << " peak " << peakAbs (buf));
         REQUIRE (allFinite (buf));
-        REQUIRE (peakAbs (buf) < 8.0);   // generous: catches divergence, not a sonic ceiling
+        // A saturator must NEVER expand: output peak ≤ input peak (+5% margin
+        // for the soft-knee overshoot near the iteration). The old +18 dBFS
+        // (peak<8.0) ceiling let the +65 dB transient blow-up pass; this is the
+        // tight bound that catches it.
+        REQUIRE (peakAbs (buf) <= amp * 1.05);
     }
 }
 
@@ -268,8 +263,8 @@ TEST_CASE ("J-A has no gross fold-back on a slow ascending ramp", "[hysteresis-j
 {
     // A slow one-directional ramp traces the ascending branch of the loop. The
     // transfer must be essentially non-decreasing (no fold-back / instability).
-    // The level-match's time-varying makeup adds tiny (~1e-4, inaudible) ripple,
-    // so the tolerance guards against gross fold-back, not micro-ripple.
+    // The fixed-point solver adds tiny (~1e-4, inaudible) ripple, so the
+    // tolerance guards against gross fold-back, not micro-ripple.
     constexpr double sr = 48000.0;
     constexpr int samples = 8192;
     HysteresisProcessor hp;
@@ -346,6 +341,6 @@ TEST_CASE ("J-A is stable and unity across oversampling rates", "[hysteresis-ja]
         auto loud = makeSine (1.0, 1000.0, esr, 8192);
         hp.process (loud);
         REQUIRE (allFinite (loud));
-        REQUIRE (peakAbs (loud) < 8.0);
+        REQUIRE (peakAbs (loud) <= 1.05);   // peak-safe at every rate (never expands)
     }
 }
