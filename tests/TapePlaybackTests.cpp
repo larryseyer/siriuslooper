@@ -1,5 +1,7 @@
 #include "ida/TransportPlayhead.h"
 #include "ida/ActiveReadsSnapshot.h"
+#include "ida/AudioCallback.h"
+#include "ida/EngineConfig.h"
 #include "ida/PlaybackResolver.h"
 #include "ida/RenderPipeline.h"
 #include "ida/Constituent.h"
@@ -19,11 +21,19 @@
 #include <juce_core/juce_core.h>
 
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstddef>
 #include <memory>
 #include <thread>
 #include <vector>
+
+// The operator-new override + alloc counters are defined in
+// IdaMasterSpectrumTests.cpp. TapePlaybackTests.cpp reuses them via extern
+// (same pattern as TapeRecordStoreTests.cpp).
+extern thread_local std::atomic<size_t> g_allocCount;
+extern thread_local bool g_counting;
 
 using namespace ida;
 
@@ -409,4 +419,67 @@ TEST_CASE ("resolver skips reads whose constituent has no slot", "[tape-playback
     resolver.resolveOnceForTest();
     ida::ActiveReadsSnapshot snap; publisher.read (snap);
     REQUIRE (snap.count == 0); // unmapped reads are dropped
+}
+
+// ---------------------------------------------------------------------------
+// AudioCallback playback step (T0b Task 7)
+// ---------------------------------------------------------------------------
+
+TEST_CASE ("playback step pulls active slot into its scratch; inactive stays zero",
+           "[tape-playback][callback]")
+{
+    juce::TemporaryFile tmp (".idatape");
+    TapeCodecRegistry registry = makePlaybackRegistry();
+    writeRampTape (tmp.getFile(), registry, /*records=*/4, /*fpr=*/256);
+    TapePrefetcher pre;
+    REQUIRE (pre.open (tmp.getFile(), registry, 256, 0));
+    pre.prepare (4096);
+    pre.setTargetSample (0);
+    pre.serviceForTest();
+
+    std::vector<float> scratchL (256, -1.0f), scratchR (256, -1.0f);
+
+    ActiveReadsPublisher publisher;
+    ida::AudioCallback cb { ida::EngineConfig {} };
+    cb.setActiveReadsPublisher (&publisher);
+    cb.bindPlaybackSlotForTest (/*slot=*/0, &pre, scratchL.data(), scratchR.data());
+
+    ActiveReadsSnapshot snap;
+    snap.add ({ /*slot=*/0, /*tapeSampleStart=*/0, /*active=*/true });
+    publisher.publish (snap);
+
+    cb.runPlaybackStepForTest (/*numSamples=*/128);
+    REQUIRE (scratchL[0] == Catch::Approx (0.0f));
+    REQUIRE (scratchL[1] == Catch::Approx (1.0f));   // ramp landed in scratch
+
+    // Now publish an empty snapshot: the step zeroes the previously-active slot.
+    ActiveReadsSnapshot empty;
+    publisher.publish (empty);
+    cb.runPlaybackStepForTest (128);
+    REQUIRE (scratchL[1] == 0.0f);
+}
+
+TEST_CASE ("playback step performs zero allocations", "[tape-playback][callback][rt-safety]")
+{
+    juce::TemporaryFile tmp (".idatape");
+    TapeCodecRegistry registry = makePlaybackRegistry();
+    writeRampTape (tmp.getFile(), registry, 4, 256);
+    TapePrefetcher pre;
+    REQUIRE (pre.open (tmp.getFile(), registry, 256, 0));
+    pre.prepare (4096); pre.setTargetSample (0); pre.serviceForTest();
+
+    std::vector<float> l (256, 0.0f), r (256, 0.0f);
+    ActiveReadsPublisher publisher;
+    ida::AudioCallback cb { ida::EngineConfig {} };
+    cb.setActiveReadsPublisher (&publisher);
+    cb.bindPlaybackSlotForTest (0, &pre, l.data(), r.data());
+    ActiveReadsSnapshot snap; snap.add ({ 0, 0, true }); publisher.publish (snap);
+
+    cb.runPlaybackStepForTest (128);          // warm up (any lazy init outside measure)
+
+    g_allocCount.store (0, std::memory_order_relaxed);
+    g_counting = true;
+    for (int i = 0; i < 1000; ++i) cb.runPlaybackStepForTest (128);
+    g_counting = false;
+    REQUIRE (g_allocCount.load (std::memory_order_relaxed) == 0u);
 }

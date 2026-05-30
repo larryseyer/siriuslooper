@@ -1,11 +1,13 @@
 #pragma once
 
+#include "ida/ActiveReadsSnapshot.h"
 #include "ida/EngineConfig.h"
 #include "ida/MasterMeter.h"
 #include "ida/MasterSpectrum.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
 
+#include <array>
 #include <atomic>
 #include <cstddef>
 #include <vector>
@@ -19,6 +21,7 @@ class InputMixer;
 class OutputMixer;
 class NotificationBus;
 class IOttoRenderSource;
+class TapePrefetcher;
 
 /// The single audio-thread entry point for the standalone app — V7 white paper
 /// Part V plus Part 5.6's realtime-safety contract, lowered to JUCE's
@@ -122,6 +125,25 @@ public:
     /// to detach (default for sessions / tests without OTTO).
     void setOttoRenderSource (IOttoRenderSource* source) noexcept { ottoRenderSource_ = source; }
 
+    /// T0b Task 7 — attach the lock-free active-reads publisher. The playback
+    /// step reads a snapshot each block (seqlock, no alloc/lock). Set-once on
+    /// the message thread before the device starts; non-owning. Pass nullptr
+    /// to disable the playback step (default).
+    void setActiveReadsPublisher (ActiveReadsPublisher* p) noexcept { activeReads_ = p; }
+
+    /// Bind a phrase-channel slot to its prefetcher + destination scratch
+    /// pointers (the OutputMixer phrase scratch). Set-once at wiring time on
+    /// the message thread before the device starts; non-owning.
+    void bindPlaybackSlot (int slot, TapePrefetcher* pre,
+                           float* scratchL, float* scratchR) noexcept;
+
+    /// Test entry points (no audio device required).
+    void bindPlaybackSlotForTest (int slot, TapePrefetcher* pre,
+                                  float* l, float* r) noexcept
+    { bindPlaybackSlot (slot, pre, l, r); }
+    void runPlaybackStepForTest (int numSamples) noexcept
+    { renderPlaybackStep (numSamples); }
+
     /// M6 Session 2 — attach the engine→UI truthfulness channel (V5 §8.6).
     /// The audio thread posts `DeviceEvent` notifications from
     /// `audioDeviceAboutToStart` and `audioDeviceStopped` (both of which run
@@ -221,6 +243,19 @@ private:
     // local buffer per callback would malloc on the first addEvent of every
     // note-bearing block — continuous audio-thread allocation (crackle).
     juce::MidiBuffer     ottoMidiScratch_;
+
+    // T0b Task 7 — playback step: lock-free snapshot + per-slot prefetcher bindings.
+    struct PlaybackSlot {
+        TapePrefetcher* pre       { nullptr };
+        float*          l         { nullptr };
+        float*          r         { nullptr };
+        bool            wasActive { false };
+    };
+    ActiveReadsPublisher*                      activeReads_      { nullptr };
+    std::array<PlaybackSlot, kMaxPhraseSlots>  playbackSlots_    {};
+    ActiveReadsSnapshot                        playbackSnapshot_ {};  // reused, no per-block alloc
+
+    void renderPlaybackStep (int numSamples) noexcept;
 
     std::atomic<double> currentSampleRate_       { 0.0 };
     std::atomic<int>    currentBufferSize_       { 0 };

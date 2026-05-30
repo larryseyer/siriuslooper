@@ -5,9 +5,12 @@
 #include "ida/Lmc.h"
 #include "ida/NotificationBus.h"
 #include "ida/OutputMixer.h"
+#include "ida/TapePrefetcher.h"
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
+#include <algorithm>
+#include <array>
 #include <cstdio>
 #include <cstring>
 
@@ -21,6 +24,45 @@ AudioCallback::AudioCallback (EngineConfig config) noexcept
     // so OTTO's per-block `addEvent` never reallocates on the audio thread.
     // 8 KB ≈ hundreds of note events — far beyond any single block's output.
     ottoMidiScratch_.ensureSize (8192);
+}
+
+void AudioCallback::bindPlaybackSlot (int slot, TapePrefetcher* pre,
+                                      float* scratchL, float* scratchR) noexcept
+{
+    if (slot < 0 || slot >= kMaxPhraseSlots) return;
+    playbackSlots_[static_cast<std::size_t> (slot)] = { pre, scratchL, scratchR, false };
+}
+
+void AudioCallback::renderPlaybackStep (int numSamples) noexcept
+{
+    if (activeReads_ == nullptr) return;
+    activeReads_->read (playbackSnapshot_);   // lock-free seqlock read into reused member
+
+    std::array<bool, kMaxPhraseSlots> active {};
+    for (int i = 0; i < playbackSnapshot_.count; ++i)
+    {
+        const auto& s = playbackSnapshot_.slots[static_cast<std::size_t> (i)];
+        if (s.active && s.slot >= 0 && s.slot < kMaxPhraseSlots)
+            active[static_cast<std::size_t> (s.slot)] = true;
+    }
+
+    for (int slot = 0; slot < kMaxPhraseSlots; ++slot)
+    {
+        auto& ps = playbackSlots_[static_cast<std::size_t> (slot)];
+        if (ps.l == nullptr) continue;
+        if (active[static_cast<std::size_t> (slot)] && ps.pre != nullptr)
+        {
+            ps.pre->pull (ps.l, ps.r, numSamples);  // fills + zero-fills underrun; wait-free
+            ps.wasActive = true;
+        }
+        else if (ps.wasActive)
+        {
+            // Active→inactive: silence the scratch exactly once (not every block).
+            std::fill (ps.l, ps.l + numSamples, 0.0f);
+            std::fill (ps.r, ps.r + numSamples, 0.0f);
+            ps.wasActive = false;
+        }
+    }
 }
 
 namespace
@@ -110,6 +152,11 @@ void AudioCallback::audioDeviceIOCallbackWithContext (
     ottoMidiScratch_.clear();
     if (ottoRenderSource_ != nullptr)
         ottoRenderSource_->renderBlock (numSamples, ottoMidiScratch_);
+
+    // Step 2c: T0b playback-resolution. Fill each sounding phrase channel's
+    // stable scratch from its prefetch ring (atomic snapshot read + lock-free
+    // ring pull + memcpy). RT-safe: no alloc/lock/IO/decode/tree-walk.
+    renderPlaybackStep (numSamples);
 
     // Step 3: OutputMixer render. Writes additively into the output buffers.
     // V9 Slice 3 auto-created MON channels read the InputMixer's post-strip
