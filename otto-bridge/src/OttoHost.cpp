@@ -205,6 +205,11 @@ void OttoHost::prepare (double sampleRate, int maxBlockSize)
     impl_->prepared           = true;
     impl_->preparedSampleRate = sampleRate;
     impl_->playedSamples_     = 0;
+    // Keep the published snapshot consistent with the reset private counter so a
+    // consumer reading between prepare() and the first renderBlock sees 0/stopped
+    // rather than the pre-prepare values.
+    impl_->playheadSeconds_.store (0.0, std::memory_order_release);
+    impl_->playheadPlaying_.store (false, std::memory_order_release);
 
     // Re-assert IDA's selective-bus mask after (re-)prepare so a strip set
     // chosen before this prepare stays authoritative.
