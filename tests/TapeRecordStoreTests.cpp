@@ -748,6 +748,34 @@ ida::TapeCodecRegistry makeFullRegistry()
     return reg;
 }
 
+// T3: Counting codec — wraps PcmAudioCodec, increments decodeCalls on each
+// decode(), delegates actual decoding so bit-exact checks still pass.
+class CountingPcmCodec final : public ida::IPayloadCodec {
+public:
+    mutable int decodeCalls { 0 };
+
+    ida::TapeCodecId codecId() const noexcept override
+    {
+        return ida::TapeCodecId::AudioPcm;
+    }
+
+    std::vector<std::byte> encode (const float* left, const float* right,
+                                   int numFrames, double sampleRate) const override
+    {
+        return inner_.encode (left, right, numFrames, sampleRate);
+    }
+
+    bool decode (const std::byte* data, std::size_t size,
+                 ida::PcmBlock& out) const override
+    {
+        ++decodeCalls;
+        return inner_.decode (data, size, out);
+    }
+
+private:
+    ida::PcmAudioCodec inner_;
+};
+
 } // namespace
 
 TEST_CASE("TapeRecordReader — open(recover=true) indexes N PCM records with ascending seqs and offsets",
@@ -952,4 +980,161 @@ TEST_CASE("TapeRecordReader — readAudioRecord returns false for position >= re
     REQUIRE_FALSE (reader->readAudioRecord (static_cast<std::uint64_t> (kN), block, hdr));
     // Well past count.
     REQUIRE_FALSE (reader->readAudioRecord (999u, block, hdr));
+}
+
+// ---------------------------------------------------------------------------
+// 12. TapeRecordReader — open() failure paths (T1)
+// ---------------------------------------------------------------------------
+
+TEST_CASE("TapeRecordReader::open returns nullptr for a nonexistent file",
+          "[tape-record]")
+{
+    const juce::File missing = juce::File::getSpecialLocation (
+        juce::File::tempDirectory).getChildFile ("ida-test-reader-noexist.idatape");
+    missing.deleteFile();
+
+    ida::TapeCodecRegistry reg;
+    ida::TapeTruncationReport report;
+    auto reader = ida::TapeRecordReader::open (missing, reg, report, /*recover=*/false);
+    REQUIRE (reader == nullptr);
+}
+
+TEST_CASE("TapeRecordReader::open returns nullptr when file header magic is wrong",
+          "[tape-record]")
+{
+    const juce::File f = juce::File::getSpecialLocation (
+        juce::File::tempDirectory).getChildFile ("ida-test-reader-badmagic.idatape");
+    f.deleteFile();
+
+    // Write 12 bytes of garbage — definitely not IDATAPE\0 + version.
+    {
+        juce::FileOutputStream fos (f);
+        REQUIRE (fos.openedOk());
+        const std::array<std::byte, 12> garbage = {
+            std::byte{0xDE}, std::byte{0xAD}, std::byte{0xBE}, std::byte{0xEF},
+            std::byte{0x00}, std::byte{0x11}, std::byte{0x22}, std::byte{0x33},
+            std::byte{0x44}, std::byte{0x55}, std::byte{0x66}, std::byte{0x77}
+        };
+        fos.write (garbage.data(), garbage.size());
+    }
+
+    ida::TapeCodecRegistry reg;
+    ida::TapeTruncationReport report;
+    auto reader = ida::TapeRecordReader::open (f, reg, report, /*recover=*/false);
+    REQUIRE (reader == nullptr);
+}
+
+// ---------------------------------------------------------------------------
+// 13. TapeRecordReader — unregistered-codec path (T2)
+// ---------------------------------------------------------------------------
+
+TEST_CASE("TapeRecordReader::readAudioRecord returns false when codec is unregistered",
+          "[tape-record]")
+{
+    static constexpr int    kN     = 3;
+    static constexpr int    kBlock = 64;
+    static constexpr double kSr    = 48000.0;
+
+    const juce::File dir = juce::File::getSpecialLocation (
+        juce::File::tempDirectory).getChildFile ("ida-test-reader-nocodec");
+    dir.deleteRecursively();
+    dir.createDirectory();
+
+    const ida::TapeId tape { 1 };
+    juce::File tapeFile;
+
+    {
+        ida::TapeRecordWriter writer (dir, kSr, 64, ida::TapeCodecId::AudioPcm, 5);
+        std::vector<float> left (kBlock, 0.2f), right (kBlock, -0.2f);
+        for (int i = 0; i < kN; ++i)
+            writer.deliverTapeBlock (tape, left.data(), right.data(), kBlock);
+        writer.closeTape (tape);
+        tapeFile = writer.tapeFile (tape);
+    }
+
+    // Registry with NO codecs registered.
+    ida::TapeCodecRegistry emptyReg;
+    ida::TapeTruncationReport report;
+    auto reader = ida::TapeRecordReader::open (tapeFile, emptyReg, report, /*recover=*/true);
+    REQUIRE (reader != nullptr);
+    REQUIRE (reader->recordCount() == static_cast<std::uint64_t> (kN));
+
+    ida::PcmBlock block;
+    ida::TapeRecordHeader hdr;
+
+    bool threw = false;
+    bool result = true;
+    try { result = reader->readAudioRecord (0, block, hdr); }
+    catch (...) { threw = true; }
+
+    REQUIRE_FALSE (threw);
+    REQUIRE_FALSE (result);
+}
+
+// ---------------------------------------------------------------------------
+// 14. TapeRecordReader — random access proof via counting codec (T3)
+// ---------------------------------------------------------------------------
+
+TEST_CASE("TapeRecordReader::readAudioRecord(K) invokes decode exactly once (no predecessor decodes)",
+          "[tape-record]")
+{
+    static constexpr int    kN     = 5;
+    static constexpr int    kBlock = 64;
+    static constexpr double kSr    = 44100.0;
+
+    const juce::File dir = juce::File::getSpecialLocation (
+        juce::File::tempDirectory).getChildFile ("ida-test-reader-counting");
+    dir.deleteRecursively();
+    dir.createDirectory();
+
+    const ida::TapeId tape { 1 };
+    juce::File tapeFile;
+
+    // Each block has a distinct constant value (record i → (i+1)*0.1f).
+    {
+        ida::TapeRecordWriter writer (dir, kSr, 64, ida::TapeCodecId::AudioPcm, 5);
+        for (int i = 0; i < kN; ++i)
+        {
+            const float val = static_cast<float> (i + 1) * 0.1f;
+            std::vector<float> left (kBlock, val), right (kBlock, -val);
+            writer.deliverTapeBlock (tape, left.data(), right.data(), kBlock);
+        }
+        writer.closeTape (tape);
+        tapeFile = writer.tapeFile (tape);
+    }
+
+    // Build a registry wired to the counting codec.
+    auto counting = std::make_shared<CountingPcmCodec>();
+    ida::TapeCodecRegistry reg;
+    reg.registerCodec (counting);
+
+    ida::TapeTruncationReport report;
+    auto reader = ida::TapeRecordReader::open (tapeFile, reg, report, /*recover=*/true);
+    REQUIRE (reader != nullptr);
+    REQUIRE (reader->recordCount() == static_cast<std::uint64_t> (kN));
+
+    // Reset counter after open() — open() only scans, should not call decode.
+    counting->decodeCalls = 0;
+
+    // Read position K=3 out-of-order (skips records 0, 1, 2).
+    static constexpr std::uint64_t kK = 3;
+    ida::PcmBlock block;
+    ida::TapeRecordHeader hdr;
+    REQUIRE (reader->readAudioRecord (kK, block, hdr));
+
+    // Exactly one decode call — predecessors were NOT decoded.
+    REQUIRE (counting->decodeCalls == 1);
+
+    // Correct record decoded.
+    REQUIRE (hdr.seq == kK);
+    REQUIRE (block.numFrames() == kBlock);
+
+    const float expectedVal = static_cast<float> (kK + 1) * 0.1f;
+    for (int i = 0; i < kBlock; ++i)
+    {
+        CHECK_THAT (block.left [static_cast<std::size_t> (i)],
+                    Catch::Matchers::WithinAbs (expectedVal, 0.0f));
+        CHECK_THAT (block.right[static_cast<std::size_t> (i)],
+                    Catch::Matchers::WithinAbs (-expectedVal, 0.0f));
+    }
 }

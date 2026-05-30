@@ -2,6 +2,7 @@
 
 #include <juce_core/juce_core.h>
 
+#include <limits>
 #include <vector>
 
 namespace ida {
@@ -17,6 +18,7 @@ bool readBytesAt (juce::FileInputStream& fis,
 {
     if (! fis.setPosition (static_cast<juce::int64> (offset)))
         return false;
+    jassert (n <= static_cast<std::uint64_t> (std::numeric_limits<int>::max()));
     const int read = fis.read (dst, static_cast<int> (n));
     return static_cast<std::uint64_t> (read) == n;
 }
@@ -64,7 +66,11 @@ void TapeRecordReader::scanFrom (std::uint64_t         startOffset,
     if (! fis.openedOk())
         return;
 
-    const auto fileLen = static_cast<std::uint64_t> (fis.getTotalLength());
+    const juce::int64 rawLen = fis.getTotalLength();
+    if (rawLen < 0)
+        return; // unknown or error — leave index empty
+
+    const auto fileLen = static_cast<std::uint64_t> (rawLen);
 
     std::uint64_t offset = startOffset;
 

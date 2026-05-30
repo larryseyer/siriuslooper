@@ -54,6 +54,8 @@ public:
     void refresh (TapeTruncationReport& reportOut);
 
 private:
+    TapeRecordReader() = default;   // I3: only open() constructs via private ctor
+
     juce::File          file_;
     TapeCodecRegistry*  registry_  { nullptr };
     std::vector<RecordIndexEntry> index_;
