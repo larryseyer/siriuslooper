@@ -2670,6 +2670,31 @@ public:
         return static_cast<int> (ottoStrips_.size());
     }
 
+    /// S6 — OTTO output index for the OTTO strip at `idx`. Out-of-range
+    /// returns -1. The strip's id IS the OTTO output index (set at
+    /// appendOttoStripImpl time). Mirror of the phrase-loop's row→index read.
+    [[nodiscard]] int ottoOutputIndexAt (int idx) const noexcept
+    {
+        if (idx < 0 || idx >= static_cast<int> (ottoStrips_.size())) return -1;
+        return ottoStrips_[static_cast<std::size_t> (idx)]->getChannelIndex();
+    }
+
+    /// S6 — OTTO row DEST picker push from MainComponent. Mirror of
+    /// setPhraseDestinations / setBusDestinations: stores the per-strip choice
+    /// lists + current destinations and updates each DEST button's label so the
+    /// operator sees "what am I routed to" without opening the menu.
+    void setOttoDestinations (const std::vector<std::vector<DestChoice>>& choices,
+                              const std::vector<StripDest>& dests)
+    {
+        ottoChoices_ = choices;
+        for (int i = 0; i < ottoStripCount() && i < static_cast<int> (dests.size()); ++i)
+        {
+            ottoStripDests_[static_cast<std::size_t> (i)] = dests[static_cast<std::size_t> (i)];
+            const auto& label = dests[static_cast<std::size_t> (i)].currentName;
+            ottoDestButtons_[static_cast<std::size_t> (i)]->setButtonText (label.isEmpty() ? "—" : label);
+        }
+    }
+
     /// Set of OTTO output indices currently occupying a strip. Used by the
     /// blank-area "Add OTTO source" submenu to filter the picker so an
     /// already-added output isn't offered twice.
@@ -5154,6 +5179,32 @@ MainComponent::MainComponent()
             audioDeviceManager_.addAudioCallback (audioCallback_.get());
             refreshOutputDestinations();
         };
+        // S6 — OTTO strip DEST picker. OTTO strips are first-class OutputMixer
+        // channels, so this routes a CHANNEL (not a bus) exactly like the phrase
+        // picker: resolve ottoOutputIndex → OutputChannelId via
+        // ottoChannelByOutputIndex_, then routeChannelToBus / setChannelMainOut-
+        // ToHardwareOutput. Topology mutation, so bracket the audio callback the
+        // same way onBusDestinationChosen / onPhraseDestinationChosen do.
+        outputMixerPane_->onOttoDestinationChosen = [this] (int ottoOutputIndex,
+                                                            OutputMixerPane::DestChoice dest)
+        {
+            if (outputMixer_ == nullptr) return;
+            const auto it = ottoChannelByOutputIndex_.find (ottoOutputIndex);
+            if (it == ottoChannelByOutputIndex_.end()) return;
+            const auto chId = it->second;
+            audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+            switch (dest.kind)
+            {
+                case OutputMixerPane::DestKind::Bus:
+                    outputMixer_->routeChannelToBus (chId, ida::BusId{ dest.id }, 1.0f);
+                    break;
+                case OutputMixerPane::DestKind::HardwareOutput:
+                    outputMixer_->setChannelMainOutToHardwareOutput (chId, dest.pairIndex);
+                    break;
+            }
+            audioDeviceManager_.addAudioCallback (audioCallback_.get());
+            refreshOutputDestinations();
+        };
         outputMixerPane_->onMasterDestinationChosen = [this] (OutputMixerPane::DestChoice dest)
         {
             // Master is always HardwareOutput-kind from setMasterDestination();
@@ -7270,6 +7321,58 @@ void MainComponent::refreshOutputDestinations()
     }
 
     outputMixerPane_->setPhraseDestinations (perPhraseChoices, perPhrase);
+
+    // S6 — OTTO row DEST picker. OTTO strips are first-class OutputMixer
+    // channels, so the choice set + current-dest read use the SAME engine
+    // surface as the phrase loop above (master + every aux bus + every
+    // hardware-output pair; channelMainOut / channelMainOutBus /
+    // channelMainOutHardwareOutPair drive the current dest). Mirror of the
+    // phrase block; ottoOutputIndexAt(i) → ottoChannelByOutputIndex_ resolves
+    // the strip row to its OutputChannelId.
+    const int on = outputMixerPane_->ottoStripCount();
+    std::vector<std::vector<OutputMixerPane::DestChoice>> perOttoChoices (static_cast<std::size_t> (on));
+    std::vector<OutputMixerPane::StripDest>               perOtto        (static_cast<std::size_t> (on));
+
+    for (int i = 0; i < on; ++i)
+    {
+        const int ottoOutputIndex = outputMixerPane_->ottoOutputIndexAt (i);
+        const auto it = ottoChannelByOutputIndex_.find (ottoOutputIndex);
+        if (it == ottoChannelByOutputIndex_.end()) continue;
+        const auto chId = it->second;
+
+        auto& choices = perOttoChoices[static_cast<std::size_t> (i)];
+        choices.push_back ({ DestKind::Bus, /*id*/ 0, "Master", /*pairIndex*/ 0 });
+        for (const auto& busId : outputBusStripIds_)
+            if (auto* bus = outputMixer_->busForId (busId))
+                choices.push_back ({ DestKind::Bus, busId.value(),
+                                     juce::String (bus->config().name),
+                                     /*pairIndex*/ 0 });
+        for (const auto& p : hwPairs)
+            choices.push_back ({ DestKind::HardwareOutput, /*id*/ 0, p.label, p.pairIndex });
+
+        auto& dest = perOtto[static_cast<std::size_t> (i)];
+        if (outputMixer_->channelMainOut (chId) == ida::OutputMixer::MainOutDest::HardwareOutput)
+        {
+            const int pair = outputMixer_->channelMainOutHardwareOutPair (chId);
+            dest.currentKind      = DestKind::HardwareOutput;
+            dest.currentId        = 0;
+            dest.currentPairIndex = pair;
+            dest.currentName      = labelForPair (pair);
+        }
+        else
+        {
+            const auto activeBus = outputMixer_->channelMainOutBus (chId);
+            dest.currentKind      = DestKind::Bus;
+            dest.currentId        = activeBus.value();
+            dest.currentPairIndex = 0;
+            if (activeBus.value() == 0)
+                dest.currentName = "Master";
+            else if (auto* bus = outputMixer_->busForId (activeBus))
+                dest.currentName = juce::String (bus->config().name);
+        }
+    }
+
+    outputMixerPane_->setOttoDestinations (perOttoChoices, perOtto);
 
     // MON-strip picker. Same shape as the phrase block: each MON strip's
     // destination is its auto-minted OutputMixer channel's main-out (Bus or
