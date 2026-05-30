@@ -3,6 +3,7 @@
 #include <juce_core/juce_core.h>
 
 #include <limits>
+#include <string>
 #include <vector>
 
 namespace ida {
@@ -23,6 +24,37 @@ bool readBytesAt (juce::FileInputStream& fis,
     return static_cast<std::uint64_t> (read) == n;
 }
 
+// Truncate `file` to `offset` bytes and fill `reportOut` honestly.
+// Called only when recover==true after the input stream has been destroyed.
+void truncateAt (const juce::File&     file,
+                 std::uint64_t         offset,
+                 std::uint64_t         recordsKept,
+                 const std::string&    reason,
+                 TapeTruncationReport& reportOut)
+{
+    juce::FileOutputStream fos (file);
+    if (fos.openedOk())
+    {
+        fos.setPosition (static_cast<juce::int64> (offset));
+        const juce::Result result = fos.truncate();
+        if (result.failed())
+        {
+            reportOut.truncated         = true;
+            reportOut.recordsKept       = recordsKept;
+            reportOut.truncatedAtOffset = offset;
+            reportOut.reason            = reason + " (truncate failed: "
+                                          + result.getErrorMessage().toStdString() + ")";
+            return;
+        }
+        fos.flush();
+    }
+
+    reportOut.truncated         = true;
+    reportOut.recordsKept       = recordsKept;
+    reportOut.truncatedAtOffset = offset;
+    reportOut.reason            = reason;
+}
+
 } // namespace
 
 std::unique_ptr<TapeRecordReader> TapeRecordReader::open (
@@ -31,19 +63,22 @@ std::unique_ptr<TapeRecordReader> TapeRecordReader::open (
     TapeTruncationReport& reportOut,
     bool                  recover)
 {
-    juce::FileInputStream fis (file);
-    if (! fis.openedOk())
-        return nullptr;
+    // Validate the 12-byte file header in its own scope so the stream is
+    // closed before scanFrom (which opens its own stream and may truncate).
+    {
+        juce::FileInputStream fis (file);
+        if (! fis.openedOk())
+            return nullptr;
 
-    // Validate the 12-byte file header.
-    std::vector<std::byte> headerBuf (kTapeFileHeaderBytes);
-    if (fis.read (headerBuf.data(), static_cast<int> (kTapeFileHeaderBytes))
-            != static_cast<int> (kTapeFileHeaderBytes))
-        return nullptr;
+        std::vector<std::byte> headerBuf (kTapeFileHeaderBytes);
+        if (fis.read (headerBuf.data(), static_cast<int> (kTapeFileHeaderBytes))
+                != static_cast<int> (kTapeFileHeaderBytes))
+            return nullptr;
 
-    std::uint16_t version = 0;
-    if (! readFileHeader (headerBuf.data(), kTapeFileHeaderBytes, version))
-        return nullptr;
+        std::uint16_t version = 0;
+        if (! readFileHeader (headerBuf.data(), kTapeFileHeaderBytes, version))
+            return nullptr;
+    } // fis destroyed here — no open handle during scanFrom
 
     auto reader = std::unique_ptr<TapeRecordReader> (new TapeRecordReader());
     reader->file_      = file;
@@ -56,78 +91,121 @@ std::unique_ptr<TapeRecordReader> TapeRecordReader::open (
     return reader;
 }
 
+// Scan one record starting at `offset` from `fis`. Returns true if a complete
+// valid record was decoded and appended to `index_`; returns false and sets
+// `truncOffsetOut`/`reasonOut` if the record is bad (caller decides next step).
+// `truncOffsetOut` is set to `recordStart` on any bad-record exit.
+// `reasonOut` describes the fault (empty on clean EOF or I/O error).
+bool TapeRecordReader::tryReadRecord (juce::FileInputStream& fis,
+                                       std::uint64_t          fileLen,
+                                       std::uint64_t&         offset,
+                                       std::uint64_t&         truncOffsetOut,
+                                       std::string&           reasonOut)
+{
+    if (offset + 4 > fileLen)
+        return false; // clean EOF
+
+    const std::uint64_t recordStart = offset;
+
+    std::byte lenBuf[4];
+    if (! readBytesAt (fis, offset, lenBuf, 4))
+        return false;
+    const std::uint32_t bodyLen = readLE32 (lenBuf);
+    offset += 4;
+
+    if (offset + static_cast<std::uint64_t> (bodyLen) + 4 > fileLen)
+    {
+        truncOffsetOut = recordStart;
+        reasonOut      = "partial trailing record";
+        offset         = recordStart;
+        return false;
+    }
+
+    std::vector<std::byte> body (bodyLen);
+    if (! readBytesAt (fis, offset, body.data(), bodyLen))
+        return false;
+
+    std::byte crcBuf[4];
+    if (! readBytesAt (fis, offset + bodyLen, crcBuf, 4))
+        return false;
+
+    if (crc32 (body.data(), bodyLen) != readLE32 (crcBuf))
+    {
+        truncOffsetOut = recordStart;
+        reasonOut      = "crc mismatch at record " + std::to_string (index_.size());
+        offset         = recordStart;
+        return false;
+    }
+
+    TapeRecordHeader hdr;
+    const std::byte* payloadPtr = nullptr;
+    std::size_t      payloadLen = 0;
+    if (! decodeRecordBody (body.data(), bodyLen, hdr, payloadPtr, payloadLen))
+        return false;
+
+    RecordIndexEntry entry;
+    entry.seq        = hdr.seq;
+    entry.fileOffset = recordStart;
+    entry.bodyLen    = bodyLen;
+    entry.type       = hdr.type;
+    entry.codec      = hdr.codec;
+    entry.lmcTs      = hdr.lmcTs;
+    index_.push_back (entry);
+
+    offset += static_cast<std::uint64_t> (bodyLen) + 4;
+    return true;
+}
+
 void TapeRecordReader::scanFrom (std::uint64_t         startOffset,
                                   bool                  recover,
                                   TapeTruncationReport& reportOut)
 {
-    (void) recover; // T6 will use this to truncate bad trailing records
+    std::uint64_t truncOffset = 0;
+    std::string   truncReason;
+    bool          needsTrunc  = false;
 
-    juce::FileInputStream fis (file_);
-    if (! fis.openedOk())
-        return;
-
-    const juce::int64 rawLen = fis.getTotalLength();
-    if (rawLen < 0)
-        return; // unknown or error — leave index empty
-
-    const auto fileLen = static_cast<std::uint64_t> (rawLen);
-
-    std::uint64_t offset = startOffset;
-
-    while (offset + 4 <= fileLen)
+    // The input stream is scoped so it is destroyed before any truncation.
+    // (Two open handles on the same file fight on Windows.)
     {
-        const std::uint64_t recordStart = offset;
+        juce::FileInputStream fis (file_);
+        if (! fis.openedOk())
+            return;
 
-        // Read the 4-byte bodyLen prefix.
-        std::byte lenBuf[4];
-        if (! readBytesAt (fis, offset, lenBuf, 4))
-            break;
-        const std::uint32_t bodyLen = readLE32 (lenBuf);
-        offset += 4;
+        const juce::int64 rawLen = fis.getTotalLength();
+        if (rawLen < 0)
+            return;
 
-        // Check that body + trailing CRC fit in the file.
-        if (offset + static_cast<std::uint64_t> (bodyLen) + 4 > fileLen)
-            break; // partial trailing record — stop (T6 handles truncation)
+        const auto    fileLen = static_cast<std::uint64_t> (rawLen);
+        std::uint64_t offset  = startOffset;
 
-        // Read body.
-        std::vector<std::byte> body (bodyLen);
-        if (! readBytesAt (fis, offset, body.data(), bodyLen))
-            break;
+        while (offset + 4 <= fileLen)
+        {
+            const std::uint64_t prevOffset = offset;
+            if (! tryReadRecord (fis, fileLen, offset, truncOffset, truncReason))
+            {
+                if (recover && ! truncReason.empty())
+                    needsTrunc = true;
+                scannedTo_ = prevOffset; // last good position
+                break;
+            }
+        }
 
-        // Read trailing CRC.
-        std::byte crcBuf[4];
-        if (! readBytesAt (fis, offset + bodyLen, crcBuf, 4))
-            break;
-        const std::uint32_t storedCrc = readLE32 (crcBuf);
+        if (! needsTrunc)
+            scannedTo_ = offset;
+    } // fis destroyed here — safe to open FileOutputStream below
 
-        // Verify CRC.
-        if (crc32 (body.data(), bodyLen) != storedCrc)
-            break; // corrupted record — stop
-
-        // Decode the header fields.
-        TapeRecordHeader    hdr;
-        const std::byte*    payloadPtr = nullptr;
-        std::size_t         payloadLen = 0;
-        if (! decodeRecordBody (body.data(), bodyLen, hdr, payloadPtr, payloadLen))
-            break;
-
-        RecordIndexEntry entry;
-        entry.seq        = hdr.seq;
-        entry.fileOffset = recordStart;
-        entry.bodyLen    = bodyLen;
-        entry.type       = hdr.type;
-        entry.codec      = hdr.codec;
-        entry.lmcTs      = hdr.lmcTs;
-        index_.push_back (entry);
-
-        offset += static_cast<std::uint64_t> (bodyLen) + 4;
+    if (needsTrunc)
+    {
+        truncateAt (file_, truncOffset,
+                    static_cast<std::uint64_t> (index_.size()),
+                    truncReason, reportOut);
+        return;
     }
 
-    scannedTo_ = offset;
-    reportOut.truncated = false;
-    reportOut.recordsKept = static_cast<std::uint64_t> (index_.size());
+    reportOut.truncated         = false;
+    reportOut.recordsKept       = static_cast<std::uint64_t> (index_.size());
     reportOut.truncatedAtOffset = 0;
-    reportOut.reason = "";
+    reportOut.reason            = "";
 }
 
 std::uint64_t TapeRecordReader::recordCount() const noexcept

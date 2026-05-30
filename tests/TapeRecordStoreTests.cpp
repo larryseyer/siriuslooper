@@ -1138,3 +1138,257 @@ TEST_CASE("TapeRecordReader::readAudioRecord(K) invokes decode exactly once (no 
                     Catch::Matchers::WithinAbs (-expectedVal, 0.0f));
     }
 }
+
+// ---------------------------------------------------------------------------
+// 15. TapeRecordReader — crash recovery (T0a Task 6)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Write N valid records into a temp file via TapeRecordWriter and return the
+// file path. Also returns the start offset of each record in `recordOffsets`.
+juce::File buildNRecordFile (const juce::File&           dir,
+                              int                          n,
+                              std::vector<std::uint64_t>& recordOffsets)
+{
+    static constexpr int    kBlock   = 64;
+    static constexpr double kSr      = 48000.0;
+    static constexpr int    kFlushMs = 5;
+
+    const ida::TapeId tape { 1 };
+    juce::File tapeFile;
+
+    {
+        ida::TapeRecordWriter writer (dir, kSr, 256, ida::TapeCodecId::AudioPcm, kFlushMs);
+        std::vector<float> left (kBlock, 0.1f), right (kBlock, -0.1f);
+        for (int i = 0; i < n; ++i)
+            writer.deliverTapeBlock (tape, left.data(), right.data(), kBlock);
+        writer.closeTape (tape);
+        tapeFile = writer.tapeFile (tape);
+    }
+
+    // Parse the file to collect record start offsets.
+    recordOffsets.clear();
+    juce::FileInputStream fis (tapeFile);
+    REQUIRE (fis.openedOk());
+    const auto fileLen = static_cast<std::uint64_t> (fis.getTotalLength());
+
+    std::uint64_t pos = static_cast<std::uint64_t> (ida::kTapeFileHeaderBytes);
+    while (pos + 4 <= fileLen)
+    {
+        recordOffsets.push_back (pos);
+        std::byte lenBuf[4];
+        fis.setPosition (static_cast<juce::int64> (pos));
+        fis.read (lenBuf, 4);
+        const std::uint32_t bodyLen = ida::readLE32 (lenBuf);
+        pos += 4 + static_cast<std::uint64_t> (bodyLen) + 4;
+    }
+
+    return tapeFile;
+}
+
+// Append a structurally partial record: a 4-byte bodyLen prefix claiming
+// `claimedBodyLen` bytes of body, followed by only `actualBodyBytes` bytes.
+void appendPartialRecord (const juce::File& f,
+                          std::uint32_t     claimedBodyLen,
+                          std::uint32_t     actualBodyBytes)
+{
+    juce::FileOutputStream fos (f);
+    REQUIRE (fos.openedOk());
+    fos.setPosition (fos.getFile().getSize());
+
+    std::byte lenBuf[4];
+    ida::writeLE32 (lenBuf, claimedBodyLen);
+    fos.write (lenBuf, 4);
+
+    std::vector<std::byte> garbage (actualBodyBytes, std::byte{0xAB});
+    if (actualBodyBytes > 0)
+        fos.write (garbage.data(), static_cast<std::size_t> (actualBodyBytes));
+}
+
+// Flip a single byte inside the body of the record at `recordOffset`
+// (which points at the 4-byte bodyLen prefix).
+// `byteInBody` is the 0-based index into the body (after the 4-byte prefix).
+void corruptRecordBodyByte (const juce::File& f,
+                             std::uint64_t     recordOffset,
+                             std::uint32_t     byteInBody)
+{
+    const std::uint64_t byteOffset = recordOffset + 4 + byteInBody;
+
+    juce::FileInputStream fis (f);
+    REQUIRE (fis.openedOk());
+    fis.setPosition (static_cast<juce::int64> (byteOffset));
+    std::byte b;
+    fis.read (&b, 1);
+
+    FILE* fp = std::fopen (f.getFullPathName().toRawUTF8(), "r+b");
+    REQUIRE (fp != nullptr);
+    std::fseek (fp, static_cast<long> (byteOffset), SEEK_SET);
+    const std::byte flipped = ~b;
+    std::fwrite (&flipped, 1, 1, fp);
+    std::fclose (fp);
+}
+
+} // namespace
+
+// (a) Partial trailing record — recover=true truncates and reports correctly.
+TEST_CASE("TapeRecordReader recover=true: partial trailing record is truncated",
+          "[tape-record]")
+{
+    static constexpr int kN = 4;
+
+    const juce::File dir = juce::File::getSpecialLocation (
+        juce::File::tempDirectory).getChildFile ("ida-test-recover-partial");
+    dir.deleteRecursively();
+    dir.createDirectory();
+
+    std::vector<std::uint64_t> recordOffsets;
+    const juce::File tapeFile = buildNRecordFile (dir, kN, recordOffsets);
+    REQUIRE (static_cast<int> (recordOffsets.size()) == kN);
+
+    // The partial record starts right after the last complete record.
+    const std::uint64_t partialStart = static_cast<std::uint64_t> (tapeFile.getSize());
+
+    // Append a partial record: claim 1000 body bytes but write only 10.
+    appendPartialRecord (tapeFile, 1000, 10);
+    REQUIRE (static_cast<std::uint64_t> (tapeFile.getSize()) > partialStart);
+
+    auto reg = makeFullRegistry();
+    ida::TapeTruncationReport report;
+    auto reader = ida::TapeRecordReader::open (tapeFile, reg, report, /*recover=*/true);
+
+    REQUIRE (reader != nullptr);
+    REQUIRE (reader->recordCount() == static_cast<std::uint64_t> (kN));
+    REQUIRE (report.truncated == true);
+    REQUIRE (report.recordsKept == static_cast<std::uint64_t> (kN));
+    REQUIRE (report.truncatedAtOffset == partialStart);
+
+    // On-disk file must be physically truncated to partialStart.
+    REQUIRE (static_cast<std::uint64_t> (tapeFile.getSize()) == partialStart);
+}
+
+// (b) CRC mismatch in the last record — recover=true truncates from that record.
+TEST_CASE("TapeRecordReader recover=true: last record CRC mismatch truncates that record",
+          "[tape-record]")
+{
+    static constexpr int kN = 5;
+
+    const juce::File dir = juce::File::getSpecialLocation (
+        juce::File::tempDirectory).getChildFile ("ida-test-recover-crc-last");
+    dir.deleteRecursively();
+    dir.createDirectory();
+
+    std::vector<std::uint64_t> recordOffsets;
+    const juce::File tapeFile = buildNRecordFile (dir, kN, recordOffsets);
+    REQUIRE (static_cast<int> (recordOffsets.size()) == kN);
+
+    const std::uint64_t lastRecordStart = recordOffsets.back();
+    corruptRecordBodyByte (tapeFile, lastRecordStart, 5);
+
+    auto reg = makeFullRegistry();
+    ida::TapeTruncationReport report;
+    auto reader = ida::TapeRecordReader::open (tapeFile, reg, report, /*recover=*/true);
+
+    REQUIRE (reader != nullptr);
+    REQUIRE (reader->recordCount() == static_cast<std::uint64_t> (kN - 1));
+    REQUIRE (report.truncated == true);
+    REQUIRE (report.recordsKept == static_cast<std::uint64_t> (kN - 1));
+    REQUIRE (report.truncatedAtOffset == lastRecordStart);
+
+    REQUIRE (static_cast<std::uint64_t> (tapeFile.getSize()) == lastRecordStart);
+}
+
+// (c) CRC mismatch in a middle record — everything from that record onward is dropped.
+TEST_CASE("TapeRecordReader recover=true: middle record CRC mismatch truncates from that record",
+          "[tape-record]")
+{
+    static constexpr int kN = 6;
+
+    const juce::File dir = juce::File::getSpecialLocation (
+        juce::File::tempDirectory).getChildFile ("ida-test-recover-crc-middle");
+    dir.deleteRecursively();
+    dir.createDirectory();
+
+    std::vector<std::uint64_t> recordOffsets;
+    const juce::File tapeFile = buildNRecordFile (dir, kN, recordOffsets);
+    REQUIRE (static_cast<int> (recordOffsets.size()) == kN);
+
+    // Corrupt record at index 2 (0-based) — records 2..5 should be lost.
+    static constexpr int kCorruptIdx = 2;
+    const std::uint64_t corruptStart = recordOffsets[static_cast<std::size_t> (kCorruptIdx)];
+    corruptRecordBodyByte (tapeFile, corruptStart, 0);
+
+    auto reg = makeFullRegistry();
+    ida::TapeTruncationReport report;
+    auto reader = ida::TapeRecordReader::open (tapeFile, reg, report, /*recover=*/true);
+
+    REQUIRE (reader != nullptr);
+    REQUIRE (reader->recordCount() == static_cast<std::uint64_t> (kCorruptIdx));
+    REQUIRE (report.truncated == true);
+    REQUIRE (report.recordsKept == static_cast<std::uint64_t> (kCorruptIdx));
+    REQUIRE (report.truncatedAtOffset == corruptStart);
+
+    REQUIRE (static_cast<std::uint64_t> (tapeFile.getSize()) == corruptStart);
+}
+
+// (d) Clean file — recover=true reports no truncation and leaves file unchanged.
+TEST_CASE("TapeRecordReader recover=true: clean file reports no truncation",
+          "[tape-record]")
+{
+    static constexpr int kN = 5;
+
+    const juce::File dir = juce::File::getSpecialLocation (
+        juce::File::tempDirectory).getChildFile ("ida-test-recover-clean");
+    dir.deleteRecursively();
+    dir.createDirectory();
+
+    std::vector<std::uint64_t> recordOffsets;
+    const juce::File tapeFile = buildNRecordFile (dir, kN, recordOffsets);
+
+    const auto originalSize = static_cast<std::uint64_t> (tapeFile.getSize());
+
+    auto reg = makeFullRegistry();
+    ida::TapeTruncationReport report;
+    auto reader = ida::TapeRecordReader::open (tapeFile, reg, report, /*recover=*/true);
+
+    REQUIRE (reader != nullptr);
+    REQUIRE (reader->recordCount() == static_cast<std::uint64_t> (kN));
+    REQUIRE (report.truncated == false);
+    REQUIRE (report.reason.empty());
+    REQUIRE (static_cast<std::uint64_t> (tapeFile.getSize()) == originalSize);
+}
+
+// (e) recover=false on a file with a partial trailing record: no mutation, no error.
+TEST_CASE("TapeRecordReader recover=false: partial trailing record leaves file unchanged",
+          "[tape-record]")
+{
+    static constexpr int kN = 3;
+
+    const juce::File dir = juce::File::getSpecialLocation (
+        juce::File::tempDirectory).getChildFile ("ida-test-recover-false-partial");
+    dir.deleteRecursively();
+    dir.createDirectory();
+
+    std::vector<std::uint64_t> recordOffsets;
+    const juce::File tapeFile = buildNRecordFile (dir, kN, recordOffsets);
+
+    const std::uint64_t sizeBeforePartial = static_cast<std::uint64_t> (tapeFile.getSize());
+
+    // Append a partial record: claim 500 bytes but write only 8.
+    appendPartialRecord (tapeFile, 500, 8);
+
+    const std::uint64_t sizeWithPartial = static_cast<std::uint64_t> (tapeFile.getSize());
+    REQUIRE (sizeWithPartial > sizeBeforePartial);
+
+    auto reg = makeFullRegistry();
+    ida::TapeTruncationReport report;
+    auto reader = ida::TapeRecordReader::open (tapeFile, reg, report, /*recover=*/false);
+
+    REQUIRE (reader != nullptr);
+    // Only the N complete records are indexed; the partial tail is not an error.
+    REQUIRE (reader->recordCount() == static_cast<std::uint64_t> (kN));
+    // recover=false must not set truncated=true (no mutation claim).
+    REQUIRE (report.truncated == false);
+    // File must be byte-for-byte unchanged.
+    REQUIRE (static_cast<std::uint64_t> (tapeFile.getSize()) == sizeWithPartial);
+}

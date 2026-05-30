@@ -63,10 +63,21 @@ private:
 
     // Scan records from startOffset, appending valid entries to index_.
     // On a clean file both recover=true and recover=false behave identically.
-    // Task 6 will add truncation logic for recover=true.
+    // When recover=true and a bad/partial record is found, truncates the file.
     void scanFrom (std::uint64_t startOffset,
                    bool          recover,
                    TapeTruncationReport& reportOut);
+
+    // Attempt to read and index one record at `offset` from `fis`.
+    // Advances `offset` past the record on success.
+    // On a bad/partial record, sets `truncOffsetOut` and `reasonOut`, resets
+    // `offset` to `recordStart`, and returns false.
+    // Returns false on clean EOF (reasonOut remains empty) or I/O error.
+    bool tryReadRecord (juce::FileInputStream& fis,
+                        std::uint64_t          fileLen,
+                        std::uint64_t&         offset,
+                        std::uint64_t&         truncOffsetOut,
+                        std::string&           reasonOut);
 };
 
 } // namespace ida
