@@ -12,7 +12,7 @@ TapeRecordWriter::TapeRecordWriter (juce::File tapesDir, double sampleRate,
     : tapesDir_      (std::move (tapesDir)),
       sampleRate_    (sampleRate),
       audioCodec_    (audioCodec),
-      flushIntervalMs_ (flushIntervalMs),
+      flushIntervalMs_ (std::max (kMinFlushIntervalMs, std::min (flushIntervalMs, kMaxFlushIntervalMs))),
       queue_         (queueCapacity)
 {
     // Register both built-in codecs; the configured audioCodec_ selects which

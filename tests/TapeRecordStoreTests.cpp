@@ -11,6 +11,7 @@
 #include "ida/IPayloadCodec.h"
 #include "ida/TapeRecordReader.h"
 #include "ida/TapeRecordWriter.h"
+#include "CapabilityTier.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
@@ -1732,4 +1733,90 @@ TEST_CASE("TapeRecordReader recover=false: dangling bodyLen prefix is invisible 
 
     // All visible records must have valid CRCs.
     REQUIRE (allVisibleRecordsHaveValidCrc (*reader, tapeFile));
+}
+
+// ---------------------------------------------------------------------------
+// 17. Tier-driven flush cadence (T0a Task 8)
+// ---------------------------------------------------------------------------
+
+// (a) Per-tier flushIntervalMs values match whitepaper §17.8.
+TEST_CASE ("policyFor: flushIntervalMs is 1/50/200/1000 for Lavish/Comfortable/Tight/Survival",
+           "[tape-record]")
+{
+    REQUIRE (ida::policyFor (ida::CapabilityTier::Lavish).flushIntervalMs      == 1);
+    REQUIRE (ida::policyFor (ida::CapabilityTier::Comfortable).flushIntervalMs == 50);
+    REQUIRE (ida::policyFor (ida::CapabilityTier::Tight).flushIntervalMs       == 200);
+    REQUIRE (ida::policyFor (ida::CapabilityTier::Survival).flushIntervalMs    == 1000);
+}
+
+// (b) A block delivered to a writer with flushIntervalMs=50 becomes visible to
+//     a recover=false reader's refresh() within a bounded wait (≤500 ms).
+TEST_CASE ("TapeRecordWriter with flushIntervalMs=50: block visible to reader within 500 ms",
+           "[tape-record]")
+{
+    const juce::File dir = juce::File::getSpecialLocation (
+        juce::File::tempDirectory).getChildFile ("ida-test-t8-flush-cadence");
+    dir.deleteRecursively();
+    dir.createDirectory();
+
+    static constexpr double kSr        = 48000.0;
+    static constexpr int    kBlock     = 64;
+    static constexpr int    kFlushMs   = 50;
+    static constexpr int    kPollMs    = 500; // generous for CI
+
+    const ida::TapeId tape { 1 };
+
+    ida::TapeRecordWriter writer (dir, kSr, 256, ida::TapeCodecId::AudioPcm, kFlushMs);
+    const juce::File tapeFile = writer.tapeFile (tape);
+
+    // Deliver one block to the writer.
+    std::vector<float> left (kBlock, 0.1f), right (kBlock, -0.1f);
+    writer.deliverTapeBlock (tape, left.data(), right.data(), kBlock);
+
+    // Wait for the file to be created (lazy open on worker thread).
+    {
+        using Clock = std::chrono::steady_clock;
+        using Ms    = std::chrono::milliseconds;
+        const auto deadline = Clock::now() + Ms (kPollMs);
+        while (! tapeFile.existsAsFile() && Clock::now() < deadline)
+            std::this_thread::sleep_for (Ms (5));
+    }
+
+    REQUIRE (tapeFile.existsAsFile());
+
+    // Open a recover=false reader and poll until the record is visible.
+    auto reg = makeFullRegistry();
+    ida::TapeTruncationReport report;
+    auto reader = ida::TapeRecordReader::open (tapeFile, reg, report, /*recover=*/false);
+    REQUIRE (reader != nullptr);
+
+    // pollForCount enforces non-decreasing count on every refresh; bounded by kPollMs.
+    const std::uint64_t count = pollForCount (*reader, 1u, kPollMs);
+    REQUIRE (count >= 1u);
+}
+
+// (c) TapeRecordWriter clamps flushIntervalMs to [1, 5000].
+TEST_CASE ("TapeRecordWriter clamps flushIntervalMs: 0 → 1, 99999 → 5000",
+           "[tape-record]")
+{
+    const juce::File dir = juce::File::getSpecialLocation (
+        juce::File::tempDirectory).getChildFile ("ida-test-t8-clamp");
+    dir.deleteRecursively();
+    dir.createDirectory();
+
+    // Input 0 must be clamped to 1.
+    {
+        const juce::File subDir = dir.getChildFile ("clamp-low");
+        subDir.createDirectory();
+        ida::TapeRecordWriter writer (subDir, 48000.0, 32, ida::TapeCodecId::AudioPcm, 0);
+        REQUIRE (writer.flushIntervalMs() == 1);
+    }
+
+    // Input 99999 must be clamped to 5000.
+    {
+        const juce::File subDir = dir.getChildFile ("clamp-high");
+        subDir.createDirectory();
+        ida::TapeRecordWriter writer (subDir, 48000.0, 32, ida::TapeCodecId::AudioPcm, 99999);
+        REQUIRE (writer.flushIntervalMs() == 5000);
+    }
 }

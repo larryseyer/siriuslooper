@@ -84,20 +84,20 @@ TierPolicy policyFor (CapabilityTier tier)
     {
         case CapabilityTier::Lavish:
             return { TapeFormat::UncompressedPcm, AsrcQuality::VeryHigh,
-                     EffectStrategy::AllLive, 120 };
+                     EffectStrategy::AllLive, 120, 1 };
         case CapabilityTier::Comfortable:
             return { TapeFormat::Flac, AsrcQuality::VeryHigh,
-                     EffectStrategy::AllLive, 30 };
+                     EffectStrategy::AllLive, 30, 50 };
         case CapabilityTier::Tight:
             return { TapeFormat::Flac, AsrcQuality::High,
-                     EffectStrategy::MixedLiveCached, 5 };
+                     EffectStrategy::MixedLiveCached, 5, 200 };
         case CapabilityTier::Survival:
             return { TapeFormat::Flac, AsrcQuality::Medium,
-                     EffectStrategy::AggressiveCaching, 1 };
+                     EffectStrategy::AggressiveCaching, 1, 1000 };
     }
 
     // Unreachable: every enumerator is handled above.
-    return { TapeFormat::Flac, AsrcQuality::Medium, EffectStrategy::AggressiveCaching, 1 };
+    return { TapeFormat::Flac, AsrcQuality::Medium, EffectStrategy::AggressiveCaching, 1, 1000 };
 }
 
 const char* toString (CapabilityTier tier)

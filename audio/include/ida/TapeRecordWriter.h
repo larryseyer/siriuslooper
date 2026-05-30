@@ -29,6 +29,10 @@ namespace ida
 /// it on the stack and the SPSC queue value-copies it.
 inline constexpr int kTapeRecordWriterMaxFramesPerMessage = 4096;
 
+/// Clamp bounds for the flushIntervalMs constructor argument (whitepaper §17.8).
+inline constexpr int kMinFlushIntervalMs = 1;
+inline constexpr int kMaxFlushIntervalMs = 5000;
+
 /// RT-safe ITapeSink: writes one append-only .idatape stream per TapeId on a
 /// worker thread. The audio thread only copies the block into a POD message and
 /// pushes it onto a single SPSC queue — no alloc, no lock, no I/O, noexcept

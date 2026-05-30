@@ -66,6 +66,7 @@ struct TierPolicy
     AsrcQuality    asrcQuality;
     EffectStrategy effectStrategy;
     int            ringDepthSeconds; ///< nominal retroactive-ring depth (Part 6.4)
+    int            flushIntervalMs;  ///< tape-writer flush cadence (whitepaper §17.8)
 };
 
 /// The startup capability assessment (white paper Part 13.1): a pure function
