@@ -12,6 +12,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 option(IDA_BUILD_TESTS "Build the IDA test suite" ON)
+option(IDA_BUILD_TAPECOLOR_PLUGIN "Build the standalone TAPECOLOR A/B test plugin (VST3/AU/Standalone)" OFF)
 
 # OTTO asset bundle (IRs, samples, fonts, GUI assets, models). Gitignored
 # under external/OTTO/assets/ because of copyright; at dev time IDA reads
@@ -88,4 +89,10 @@ if(IDA_BUILD_TESTS)
     enable_testing()
     find_package(Threads REQUIRED)
     add_subdirectory(tests)
+endif()
+
+# Opt-in standalone TAPECOLOR A/B test plugin (asinh vs Jiles-Atherton on real
+# music in a DAW). Not part of the shipping product.
+if(IDA_BUILD_TAPECOLOR_PLUGIN)
+    add_subdirectory(tools/tapecolor_plugin)
 endif()

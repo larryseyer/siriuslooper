@@ -18,21 +18,32 @@
 - Outcome: the IDA-side Eco-override work built this session was REVERTED (net-zero code change); OTTO's
   normal default restored. Nothing to fix.
 
-### 2026-05-30 — Jiles-Atherton hysteresis A/B experiment (own DSP session; OPERATOR WANTS TO HEAR IT)
+### 2026-05-30 — Jiles-Atherton hysteresis A/B experiment — HARNESS BUILT, pending operator ear-verdict + commit
 - Spec: `docs/superpowers/specs/2026-05-30-jiles-atherton-ab-experiment.md`
-- Files (anticipated): `external/OTTO/src/otto-core/{include,src}/otto/effects/tapecolor/HysteresisProcessor.{h,cpp}`
-  (currently the static asinh waveshaper); WetChain stays the host (it already oversamples).
-- What: implement a proper Jiles-Atherton (Chow NR4-style) magnetic-hysteresis solver as an ALTERNATIVE to
-  asinh, fix the documented failure (un-normalized small-signal gain), and A/B it on real material.
-  Operator's ears are the judge; adopt only if audibly better; keep asinh as fallback.
-- Why it failed before (now KNOWN — was thought unknown): J-A small-signal slope is c*Ms/(3a) ~ -13 dB for
-  Chow reference coefficients (documented in HysteresisProcessor.h header). Un-normalized -> gated low-level
-  detail (dull) + forced overdrive (distorted) = operator's "always dull and distorted." Fix = normalize
-  small-signal gain to unity (Chow's own model does this).
-- Why pursue: J-A is the only path to true hysteresis MEMORY (minor loops, history/freq-dependent saturation)
-  that asinh structurally cannot do; CPU is NOT a constraint (tape measured ~0% on desktop).
-- Coordination: OTTO-core DSP, affects both products. OTTO's terminal owns this DSP line; coordinate via
-  CROSS_PROJECT_INBOX.md. Own session: brainstorm -> implement (A/B switch) -> operator blind-test -> decide.
+- DONE (working tree, NOT yet committed/pushed — held for the ear verdict so coefficients can be tuned first):
+  - lsfx (source of truth) `dsp/HysteresisProcessor.{h,cpp}`: `enum SaturationModel{Asinh,JilesAtherton}`,
+    Chow NR4 fixed-point H-domain solver, empirically-calibrated unity small-signal `normGain_`, stereo-linked
+    loudness-transparent level-match (both models), `reset()` clears state. `TapeColorConfig.saturationModel`
+    field + `kSaturationModel` param ID + "Asinh"/"J-A" choice labels + threaded through `TapeColorProcessor`.
+  - OTTO mirror (namespace-swap, byte-faithful): `otto-core/.../HysteresisProcessor.{h,cpp}`,
+    `WetChainConfig.saturationModel`, `WetChain` threading, **"SAT MODEL" picker** in `OttoNativeTapeColorEditor`
+    + `OttoEditorHost` read/writeChoice dispatch. Live A/B toggle = OTTO native tape editor.
+  - Tests: `tests/HysteresisProcessorJATests.cpp` (9 cases): unity small-signal, FR-flat (anti-dark guard),
+    loudness-transparent + still-shapes, bounded, no-NaN, no-fold-back, reset, rate-stable. Full suite 827 green.
+  - Coefficients (first set, tune by ear): Ms=1, a=0.10, alpha=1.6e-3, c=0.70, k=0.12, G_in=1.0.
+  - **Reaper test platform (operator's preferred):** new opt-in plugin target `tools/tapecolor_plugin/`
+    (`-DIDA_BUILD_TAPECOLOR_PLUGIN=ON`) wraps `lsfx::TapeColorProcessor` as VST3/AU/Standalone with JUCE's
+    generic editor. `kSaturationModel` registered as an APVTS choice param (all 7 sites in
+    TapeColorParameters.cpp). Built + installed `~/Library/Audio/Plug-Ins/VST3/TAPECOLOR AB.vst3`; Standalone
+    runtime-smoke-tested OK. "Saturation Model" = Asinh/J-A, "Enabled" defaults ON. THIS is where the operator
+    A/Bs real music.
+- OPERATOR DECISION PENDING (sole acceptance = ears): keep J-A / tune coefficients / revert to asinh-only.
+  Once decided, run the 3-repo commit dance (lsfx Ida-Origin commit+push -> OTTO Ida-Origin commit+push +
+  inbox entry + Config.h SHA bump -> IDA bump both pins + commit+push). Working trees currently dirty.
+- PRODUCT DECISION the audition surfaces: the level-match is auto-gain ALWAYS-ON for BOTH models (needed for an
+  honest A/B). It slightly alters the shipping asinh tone (makes the tape stage loudness-transparent). If the
+  operator wants asinh's pre-experiment behavior preserved as the product default, gate the level-match behind
+  the experiment (e.g. only when both models are user-selectable) — flag for the keep/revert decision.
 
 ### 2026-05-30 — Audio-thread idle load ~22% — profiling/optimization slice (mostly for iOS)
 - What: the audio callback sits at ~22% of one core with OTTO essentially idle (1 player). 77% headroom on

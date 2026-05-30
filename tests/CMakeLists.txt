@@ -108,6 +108,9 @@ add_executable(IdaTests
     # anywhere plumbing only; default-OFF semantics; param surface lands in
     # a follow-on slice. Same include-path pattern as EqAdapterTests above.
     TapeColorAdapterTests.cpp
+    # J-A vs asinh saturation A/B experiment (2026-05-30): headless DSP tests
+    # for the Jiles-Atherton model in lsfx::tapecolor::HysteresisProcessor.
+    HysteresisProcessorJATests.cpp
     # TAPECOLOR Slice 2 — per-tape routing decorator. Sits between the
     # InputMixer's per-tape sum and the FlacTapeSink, applying TAPECOLOR
     # to tapes whose mode is BeforeWrite. AfterRead is downstream-only;
