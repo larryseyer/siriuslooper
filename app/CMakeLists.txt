@@ -27,6 +27,12 @@ juce_add_gui_app(IDA
     COMPANY_NAME "Larry Seyer"
     BUNDLE_ID com.larryseyer.ida
     VERSION ${PROJECT_VERSION}
+    # juceaide converts this square master PNG to the platform-native icon at
+    # configure time (Icon.icns on macOS, Icon.ico on Windows, the iOS asset
+    # catalog on iOS) and bundles it. Matches OTTO's ICON_BIG pattern; the
+    # pre-built assets/GUI/{IDA Icon.icns,AppIcon.appiconset} are left for Xcode
+    # tooling but are not the build's source of truth.
+    ICON_BIG "${CMAKE_SOURCE_DIR}/assets/GUI/IDA_LOGO FINAL.png"
     # macOS TCC: without these usage-description keys the system silently
     # greys out files in the user's Downloads / Documents / Desktop folders
     # and on removable volumes, even with NSOpenPanel.
