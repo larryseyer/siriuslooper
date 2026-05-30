@@ -1,6 +1,7 @@
 #include "ida/TapeRecordWriter.h"
 #include "ida/AudioPayloadCodec.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace ida
@@ -12,7 +13,7 @@ TapeRecordWriter::TapeRecordWriter (juce::File tapesDir, double sampleRate,
     : tapesDir_      (std::move (tapesDir)),
       sampleRate_    (sampleRate),
       audioCodec_    (audioCodec),
-      flushIntervalMs_ (std::max (kMinFlushIntervalMs, std::min (flushIntervalMs, kMaxFlushIntervalMs))),
+      flushIntervalMs_ (std::clamp (flushIntervalMs, kMinFlushIntervalMs, kMaxFlushIntervalMs)),
       queue_         (queueCapacity)
 {
     // Register both built-in codecs; the configured audioCodec_ selects which

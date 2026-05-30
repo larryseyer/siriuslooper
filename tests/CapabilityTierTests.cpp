@@ -122,21 +122,25 @@ TEST_CASE ("each tier's policy matches the white paper Part 13.2 table", "[capab
     CHECK (lavish.asrcQuality == AsrcQuality::VeryHigh);
     CHECK (lavish.effectStrategy == EffectStrategy::AllLive);
     CHECK (lavish.ringDepthSeconds > ida::policyFor (CapabilityTier::Comfortable).ringDepthSeconds);
+    CHECK (lavish.flushIntervalMs == 1);
 
     const auto comfortable = ida::policyFor (CapabilityTier::Comfortable);
     CHECK (comfortable.tapeFormat == TapeFormat::Flac);
     CHECK (comfortable.asrcQuality == AsrcQuality::VeryHigh);
     CHECK (comfortable.effectStrategy == EffectStrategy::AllLive);
+    CHECK (comfortable.flushIntervalMs == 50);
 
     const auto tight = ida::policyFor (CapabilityTier::Tight);
     CHECK (tight.asrcQuality == AsrcQuality::High);
     CHECK (tight.effectStrategy == EffectStrategy::MixedLiveCached);
+    CHECK (tight.flushIntervalMs == 200);
 
     const auto survival = ida::policyFor (CapabilityTier::Survival);
     CHECK (survival.tapeFormat == TapeFormat::Flac);
     CHECK (survival.asrcQuality == AsrcQuality::Medium);
     CHECK (survival.effectStrategy == EffectStrategy::AggressiveCaching);
     CHECK (survival.ringDepthSeconds >= 1); // the ring is never empty
+    CHECK (survival.flushIntervalMs == 1000);
 }
 
 TEST_CASE ("every tier has a stable display name", "[capability]")

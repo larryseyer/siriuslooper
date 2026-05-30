@@ -1804,19 +1804,19 @@ TEST_CASE ("TapeRecordWriter clamps flushIntervalMs: 0 → 1, 99999 → 5000",
     dir.deleteRecursively();
     dir.createDirectory();
 
-    // Input 0 must be clamped to 1.
+    // Input 0 must be clamped to kMinFlushIntervalMs.
     {
         const juce::File subDir = dir.getChildFile ("clamp-low");
         subDir.createDirectory();
         ida::TapeRecordWriter writer (subDir, 48000.0, 32, ida::TapeCodecId::AudioPcm, 0);
-        REQUIRE (writer.flushIntervalMs() == 1);
+        REQUIRE (writer.flushIntervalMs() == ida::kMinFlushIntervalMs);
     }
 
-    // Input 99999 must be clamped to 5000.
+    // Input 99999 must be clamped to kMaxFlushIntervalMs.
     {
         const juce::File subDir = dir.getChildFile ("clamp-high");
         subDir.createDirectory();
         ida::TapeRecordWriter writer (subDir, 48000.0, 32, ida::TapeCodecId::AudioPcm, 99999);
-        REQUIRE (writer.flushIntervalMs() == 5000);
+        REQUIRE (writer.flushIntervalMs() == ida::kMaxFlushIntervalMs);
     }
 }
