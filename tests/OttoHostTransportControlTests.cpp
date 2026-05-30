@@ -75,7 +75,7 @@ TEST_CASE ("OttoHost::snapshotMaster returns the documented sentinel before setM
     // Sentinel is a hardcoded -100.0f constant in the null-publisher branch,
     // so exact equality is correct — but -Wfloat-equal can't see through the
     // forwarder, so WithinAbs with a tight tolerance reads the same and stays
-    // warning-clean (matches the FlacTapeSinkTests.cpp convention).
+    // warning-clean (WithinAbs-for-float-equality is the project convention).
     CHECK_THAT (s.leftDb,  Catch::Matchers::WithinAbs (-100.0f, 1.0e-6f));
     CHECK_THAT (s.rightDb, Catch::Matchers::WithinAbs (-100.0f, 1.0e-6f));
     CHECK_THAT (s.peakDb,  Catch::Matchers::WithinAbs (-100.0f, 1.0e-6f));

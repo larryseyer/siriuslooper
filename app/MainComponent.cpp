@@ -4241,9 +4241,9 @@ MainComponent::MainComponent()
     // Tape subsystem slice 3 — bind the live per-tape recorder. Sample rate
     // is set from the device setup (and on device change) below; 256 queue slots
     // cover the worst-case touched-tapes-per-block burst with headroom.
-    // Codec selection: Lavish tier uses uncompressed PCM (no decode cost);
-    // all other tiers use FLAC (lossless, roughly half the storage).
-    const auto codecForTier = (tier_ == CapabilityTier::Lavish)
+    // Codec selection derives from tier policy (single source of truth in
+    // TierPolicy::tapeFormat): UncompressedPcm → AudioPcm, Flac → AudioFlac.
+    const auto codecForTier = (tierPolicy_.tapeFormat == ida::TapeFormat::UncompressedPcm)
                                   ? ida::TapeCodecId::AudioPcm
                                   : ida::TapeCodecId::AudioFlac;
     tapeRecordWriter_ = std::make_unique<ida::TapeRecordWriter> (

@@ -1,6 +1,6 @@
 // Tests for ida::TapeColoringSink — the per-tape TAPECOLOR routing decorator
 // (TAPECOLOR Slice 2). Sits between InputMixer's per-tape sum and the
-// downstream sink (FlacTapeSink in MainComponent). For tapes whose mode is
+// downstream sink (TapeRecordWriter in MainComponent). For tapes whose mode is
 // BeforeWrite it routes the block through the tape's TapeColorAdapter before
 // forwarding to the inner sink; for None and AfterRead it forwards bit-
 // identically (AfterRead colors on playback, downstream of this sink).
