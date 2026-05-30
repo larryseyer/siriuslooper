@@ -1,5 +1,18 @@
 # IDA — Deferred Items
 
+### 2026-05-29 — ⚠ PRIORITY: a single TAPECOLOR instance overloads the CPU (crackle when enabled)
+- Files: `external/lsfx_tapecolor/dsp/TapeColorProcessor.{h,cpp}` (quality/oversampling), `external/OTTO/src/otto-core/include/otto/mixer/MixerBus.h` (per-player bus `tapeColor_->scratchConfig().quality = 1` default), possibly a runtime quality setter OttoHost/IDA drives; `external/lsfx_tapecolor/dsp/ConvolutionStage.cpp` (the 2026-05-24 IR pre-bake todo).
+- What's open: AFTER the selective-bus mask + OTTO engagement gate (which compose down to 1× TAPECOLOR for one PlayerOut strip), a SINGLE enabled per-player TAPECOLOR still crackles (processor overload). Operator: "clean as long as I do not enable tapecolor… as soon as I enable tapecolor, crackles come back." Buffer is already 512 (not a tiny-buffer issue). TAPECOLOR is genuinely heavy: J-A hysteresis OVERSAMPLED + convolution IR + transformer/tube/bias/mod/noise.
+- **First lever to try (cheap, do this BEFORE any DSP rewrite):** drop the consumed per-player bus TAPECOLOR to **Eco (quality=0, 1× = NO oversampling)**. Tiers: `0=Eco(1×) / 1=Standard(2×) / 2=HQ(4×)` map 1:1 to the juce::dsp::Oversampling factor. Buses currently default Standard(1). Eco removes the oversampling wrap (the dominant cost). May fully resolve it for free.
+- If Eco still overloads → real DSP-cost reduction (offline IR pre-bake per 2026-05-24 todo / lighter hysteresis / skip convolution on buses). This is lsfx_tapecolor + OTTO territory.
+- ⚠ **Coordination:** TAPECOLOR DSP is the SHARED lsfx_tapecolor submodule + OTTO's WetChain wrapper. Do NOT unilaterally rewrite it from IDA's terminal — coordinate via `CROSS_PROJECT_INBOX.md` + the operator (two-terminal protocol). OTTO's terminal owns the TAPECOLOR DSP line.
+- What's needed: try Eco-tier (operator confirms crackle gone with TAPECOLOR enabled at Eco); if not, scope a coordinated lsfx_tapecolor optimization slice.
+
+### 2026-05-29 — Codify the two-terminal coordination protocol in IDA's CLAUDE.md
+- Files: `CLAUDE.md` (IDA's Cross-Project Inbox Protocol section).
+- What's open: after a concurrent-edit near-miss (OTTO's terminal + IDA's terminal both editing OTTO `PluginProcessor.cpp`), we agreed a three-layer protocol. OTTO's terminal is adding the "IN-FLIGHT WORK" board to the inbox + the convention to OTTO's CLAUDE.md. IDA must add the matching section to IDA's CLAUDE.md: (1) inbox = durable async handoff; (2) git safety net — fetch-before-edit-and-push, merge-not-force, never force-push/reset OTTO, one pusher at a time; (3) operator = real-time arbiter; (4) IN-FLIGHT board discipline; (5) when both terminals live, IDA REQUESTS OTTO-core changes via inbox instead of editing directly (reserve edit-autonomy for when OTTO's terminal is idle). See continue.md §5.
+- What's needed: write the section (quick); confirm OTTO mirrored its side.
+
 ### 2026-05-29 — Functional insert (INS) FX on output-mixer CHANNELS (OTTO + phrase + MON) — own slice
 - Files (anticipated):
   - `engine/src/OutputMixer.cpp` (`setEffectChainHost` currently walks buses ONLY — must also bind every channel strip via `ChannelStrip::setEffectChainHost(host, nodeKey)`; `addChannel`/`setChannelStrip` must bind the host on live-created channels too, mirror of how `addBus` binds at line ~256).
