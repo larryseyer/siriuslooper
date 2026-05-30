@@ -213,6 +213,15 @@ private:
     NotificationBus*    notificationBus_  { nullptr };
     IOttoRenderSource*  ottoRenderSource_ { nullptr };
 
+    // Reused scratch for OTTO's per-block generated MIDI. OTTO writes pattern
+    // note-on/off events into this buffer during playback; IDA discards them
+    // (it does not consume OTTO's MIDI-out). Pre-sized once in the ctor via
+    // `ensureSize` so `MidiBuffer::addEvent` never reallocates on the audio
+    // thread. `clear()` each block (clearQuick) keeps the capacity. A fresh
+    // local buffer per callback would malloc on the first addEvent of every
+    // note-bearing block — continuous audio-thread allocation (crackle).
+    juce::MidiBuffer     ottoMidiScratch_;
+
     std::atomic<double> currentSampleRate_       { 0.0 };
     std::atomic<int>    currentBufferSize_       { 0 };
     std::atomic<double> lastCallbackElapsedSec_  { 0.0 };

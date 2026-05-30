@@ -17,6 +17,10 @@ namespace ida
 AudioCallback::AudioCallback (EngineConfig config) noexcept
     : config_ (config)
 {
+    // Pre-allocate the OTTO MIDI scratch ONCE (message thread, construction)
+    // so OTTO's per-block `addEvent` never reallocates on the audio thread.
+    // 8 KB ≈ hundreds of note events — far beyond any single block's output.
+    ottoMidiScratch_.ensureSize (8192);
 }
 
 namespace
@@ -96,11 +100,16 @@ void AudioCallback::audioDeviceIOCallbackWithContext (
     // advances totalSamplePosition + syncs fillMode). RT-safe per OTTO's
     // CLAUDE.md. No-op when no source is attached (default for sessions /
     // tests without OTTO).
-    juce::MidiBuffer ottoMidi; // S3c: file-input / external-MIDI routing
-                               // into OTTO is a future slice (design spec
-                               // §7). Empty buffer is RT-safe — no allocation.
+    // OTTO writes pattern-generated note events INTO this buffer during
+    // playback. A fresh local `juce::MidiBuffer` would have zero capacity and
+    // malloc on the FIRST addEvent of every note-bearing block — a per-block
+    // audio-thread allocation that crackles. Reuse the pre-sized member and
+    // clear() it (clearQuick keeps capacity, no alloc). IDA discards OTTO's
+    // MIDI-out; the buffer exists only to receive it. (Feeding file-input /
+    // external MIDI INTO OTTO is a future slice — design spec §7.)
+    ottoMidiScratch_.clear();
     if (ottoRenderSource_ != nullptr)
-        ottoRenderSource_->renderBlock (numSamples, ottoMidi);
+        ottoRenderSource_->renderBlock (numSamples, ottoMidiScratch_);
 
     // Step 3: OutputMixer render. Writes additively into the output buffers.
     // V9 Slice 3 auto-created MON channels read the InputMixer's post-strip
