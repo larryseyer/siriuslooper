@@ -23,7 +23,7 @@ std::vector<std::byte> FlacAudioCodec::encode(const float* left, const float* ri
         juce::FlacAudioFormat fmt;
         std::unique_ptr<juce::OutputStream> streamBase = std::move(stream);
 
-        // 24-bit stereo FLAC at compression level 3 — mirrors FlacTapeSink::writerFor.
+        // 24-bit stereo FLAC at compression level 3 — mirrors TapeRecordWriter's FLAC encode path.
         const auto options = juce::AudioFormatWriterOptions{}
                                  .withSampleRate(sampleRate)
                                  .withNumChannels(2)
@@ -33,7 +33,7 @@ std::vector<std::byte> FlacAudioCodec::encode(const float* left, const float* ri
         // createWriterFor takes ownership of streamBase (std::exchange semantics).
         // On failure: JUCE nulls streamBase via std::exchange before returning nullptr,
         // so the raw stream pointer is already released — do NOT add a manual delete
-        // (it would double-free on success). See FlacTapeSink.cpp writerFor failure path.
+        // (it would double-free on success). JUCE's createWriterFor nulls the stream on failure.
         auto writer = fmt.createWriterFor(streamBase, options);
         if (writer == nullptr)
             return {};

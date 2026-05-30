@@ -19,7 +19,7 @@ class TapeColorAdapter;
 /// TAPECOLOR Slice 2 — the per-tape TAPECOLOR routing decorator.
 ///
 /// Sits between the `InputMixer`'s per-tape sum (the `ITapeSink` boundary)
-/// and the downstream sink (`FlacTapeSink` in the standalone app). For tapes
+/// and the downstream sink (`TapeRecordWriter` in the standalone app). For tapes
 /// whose mode is `BeforeWrite` it routes each block through that tape's
 /// `TapeColorAdapter` before forwarding to the inner sink — the color is
 /// baked into whatever the inner sink persists.
@@ -48,7 +48,7 @@ public:
     static constexpr int kMaxTapes = 64;
 
     /// `innerSink` is the downstream sink — typically the standalone app's
-    /// `FlacTapeSink`. Non-owning; the inner sink must outlive this object.
+    /// `TapeRecordWriter`. Non-owning; the inner sink must outlive this object.
     /// `sampleRate` / `maxBlockSize` are used to `prepare()` the per-tape
     /// adapters as they are added.
     TapeColoringSink (ITapeSink* innerSink, double sampleRate, int maxBlockSize);

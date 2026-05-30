@@ -4238,22 +4238,29 @@ MainComponent::MainComponent()
     notificationDrainBuffer_.reserve (kCategoryCount * NotificationBus::kRingCapacity);
     inputMixer_->setNotificationBus (notificationBus_.get());
 
-    // Tape subsystem slice 3 — bind the live per-tape FLAC recorder. Sample rate
+    // Tape subsystem slice 3 — bind the live per-tape recorder. Sample rate
     // is set from the device setup (and on device change) below; 256 queue slots
     // cover the worst-case touched-tapes-per-block burst with headroom.
-    flacTapeSink_ = std::make_unique<ida::FlacTapeSink> (
+    // Codec selection: Lavish tier uses uncompressed PCM (no decode cost);
+    // all other tiers use FLAC (lossless, roughly half the storage).
+    const auto codecForTier = (tier_ == CapabilityTier::Lavish)
+                                  ? ida::TapeCodecId::AudioPcm
+                                  : ida::TapeCodecId::AudioFlac;
+    tapeRecordWriter_ = std::make_unique<ida::TapeRecordWriter> (
         tapesDirectory(),
         audioDeviceManager_.getAudioDeviceSetup().sampleRate,
-        256);
+        256,
+        codecForTier,
+        tierPolicy_.flushIntervalMs);
 
-    // TAPECOLOR Slice 2 — wrap the FLAC sink in the per-tape coloring
+    // TAPECOLOR Slice 2 — wrap the recorder in the per-tape coloring
     // decorator. For tapes with mode == BeforeWrite, the decorator applies
     // TAPECOLOR before forwarding bytes downstream; for None/AfterRead it's
     // a bit-identical passthrough. The default for every tape is None, so
     // wiring this on costs nothing at runtime until the operator opts in.
     const auto deviceSetupForColor = audioDeviceManager_.getAudioDeviceSetup();
     tapeColoringSink_ = std::make_unique<ida::TapeColoringSink> (
-        flacTapeSink_.get(),
+        tapeRecordWriter_.get(),
         deviceSetupForColor.sampleRate > 0.0 ? deviceSetupForColor.sampleRate : 48000.0,
         deviceSetupForColor.bufferSize  > 0  ? deviceSetupForColor.bufferSize  : 512);
 
@@ -4406,8 +4413,8 @@ MainComponent::MainComponent()
     // that the device is open. The sink was constructed with whatever
     // getAudioDeviceSetup returned before initialise (often 0); this call
     // guarantees the worker sees a non-zero rate before the first audio block.
-    if (flacTapeSink_ != nullptr)
-        flacTapeSink_->setSampleRate (audioDeviceManager_.getAudioDeviceSetup().sampleRate);
+    if (tapeRecordWriter_ != nullptr)
+        tapeRecordWriter_->setSampleRate (audioDeviceManager_.getAudioDeviceSetup().sampleRate);
 
     // P7 T3a-C — prepare any internal-FX adapters bound to the OOP host so
     // their first audio-thread `process` returns true rather than the
@@ -6067,7 +6074,7 @@ void MainComponent::timerCallback()
         overloadProtection_.reportLoad (elapsed / budget);
     }
 
-    // Tape slice 3 — keep the FLAC sink tracking the live device sample rate.
+    // Tape slice 3 — keep the tape recorder tracking the live device sample rate.
     // The rate is otherwise latched once during construction (rebuildInputStrips),
     // which can run BEFORE audioDeviceAboutToStart has set currentSampleRate_ — a
     // 0 there makes the sink's lazy writer drop every block (no file). Refreshing
@@ -6075,14 +6082,14 @@ void MainComponent::timerCallback()
     // the device starting (or changing); setSampleRate is an idempotent atomic
     // store and only affects writers created AFTER it, so this never rewrites an
     // open tape's header.
-    if (flacTapeSink_ != nullptr && rate > 0.0)
-        flacTapeSink_->setSampleRate (rate);
+    if (tapeRecordWriter_ != nullptr && rate > 0.0)
+        tapeRecordWriter_->setSampleRate (rate);
 
     // tape-UI T5 — surface the capture-overflow diagnostic on the Tapes tab.
-    // droppedBlockCount() is a monotonic counter the FLAC sink bumps when the
+    // droppedBlockCount() is a monotonic counter the recorder bumps when the
     // audio thread out-runs the disk worker; non-zero means lost capture.
-    if (tapesPane_ != nullptr && flacTapeSink_ != nullptr)
-        tapesPane_->setDroppedBlocks (flacTapeSink_->droppedBlockCount());
+    if (tapesPane_ != nullptr && tapeRecordWriter_ != nullptr)
+        tapesPane_->setDroppedBlocks (tapeRecordWriter_->droppedBlockCount());
 
     // M6 Sessions 2+3 — drain the engine→UI truthfulness channel on the same
     // 30 Hz cadence as the diagnostics refresh, append drained entries onto
@@ -7785,11 +7792,11 @@ void MainComponent::rebuildInputStrips()
         if (auto* s = inputStripAt (i))
             s->prepare (sampleRate, kInputLufsMaxBlock);
 
-    // Tape slice 3 — propagate any sample-rate change to the FLAC sink while
+    // Tape slice 3 — propagate any sample-rate change to the tape recorder while
     // the callback is detached (the sink header requires this on the message
     // thread, before audio starts or between removeAudioCallback/addAudioCallback).
-    if (flacTapeSink_ != nullptr)
-        flacTapeSink_->setSampleRate (sampleRate);
+    if (tapeRecordWriter_ != nullptr)
+        tapeRecordWriter_->setSampleRate (sampleRate);
     // TAPECOLOR Slice 2 — re-prepare every per-tape adapter at the new rate
     // so BeforeWrite coloring stays in step with the device. Same RT-safety
     // posture as the FLAC sink: message thread, audio callback detached.
@@ -7982,9 +7989,9 @@ void MainComponent::removeTape (ida::TapeId id)
     for (const auto& chId : inputStripChannelIds_)
         if (inputMixer_->channelMainOutIsTape (chId, id))
             inputMixer_->setChannelMainOutToTape (chId);   // primary
-    flacTapeSink_->closeTape (id);               // SPSC: inside the bracket only
+    tapeRecordWriter_->closeTape (id);            // SPSC: inside the bracket only
     inputMixer_->removeTape (id);
-    // TAPECOLOR Slice 2 — release the per-tape adapter alongside the FLAC
+    // TAPECOLOR Slice 2 — release the per-tape adapter alongside the
     // writer. After this point deliverTapeBlock for `id` is passthrough.
     if (tapeColoringSink_ != nullptr)
         tapeColoringSink_->removeTape (id);

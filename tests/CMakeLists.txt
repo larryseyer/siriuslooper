@@ -85,7 +85,6 @@ add_executable(IdaTests
     PluginStateExtensionTests.cpp
     StatefulSynthFixtureTests.cpp
     MixerGraphTests.cpp
-    FlacTapeSinkTests.cpp
     # T0a — TapeRecord byte-layer: LE helpers, CRC-32, file-header, encode/decode.
     TapeRecordStoreTests.cpp
     # P7 T3a (internal-FX adapters — EQ first): adapter wrapper + factory.
@@ -121,7 +120,7 @@ add_executable(IdaTests
     # hit in Reaper.
     TapeColorChainPeakTests.cpp
     # TAPECOLOR Slice 2 — per-tape routing decorator. Sits between the
-    # InputMixer's per-tape sum and the FlacTapeSink, applying TAPECOLOR
+    # InputMixer's per-tape sum and TapeRecordWriter, applying TAPECOLOR
     # to tapes whose mode is BeforeWrite. AfterRead is downstream-only;
     # this decorator forwards it bit-identical on the write path.
     TapeColoringSinkTests.cpp
