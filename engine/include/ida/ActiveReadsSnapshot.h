@@ -39,15 +39,16 @@ struct ActiveReadsSnapshot {
 static_assert (std::is_trivially_copyable_v<ActiveReadsSnapshot>);
 
 /// Single-producer (worker) / single-consumer (audio thread) seqlock publisher.
-/// The consumer read is wait-free in the common case and retries only if a write
-/// was concurrent; the producer never blocks. No allocation on either side.
+/// Lock-free: the consumer retries only if a write was concurrent; the producer
+/// never blocks. No allocation on either side. The single release fence in
+/// publish() pairs with the single acquire fence in read() — the seq stores/loads
+/// alone do not order the bulk buffer_ copy, so those two fences are load-bearing.
 class ActiveReadsPublisher {
 public:
     void publish (const ActiveReadsSnapshot& s) noexcept
     {
         const std::uint32_t seq = seq_.load (std::memory_order_relaxed);
-        seq_.store (seq + 1, std::memory_order_release);   // odd: write in progress
-        std::atomic_thread_fence (std::memory_order_release);
+        seq_.store (seq + 1, std::memory_order_relaxed);   // odd: write in progress
         buffer_ = s;                                       // POD copy
         std::atomic_thread_fence (std::memory_order_release);
         seq_.store (seq + 2, std::memory_order_release);   // even: write complete
@@ -59,7 +60,6 @@ public:
         {
             const std::uint32_t before = seq_.load (std::memory_order_acquire);
             if (before & 1u) continue;                     // writer mid-write
-            std::atomic_thread_fence (std::memory_order_acquire);
             out = buffer_;                                 // POD copy
             std::atomic_thread_fence (std::memory_order_acquire);
             const std::uint32_t after = seq_.load (std::memory_order_acquire);
