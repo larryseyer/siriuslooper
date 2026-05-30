@@ -19,7 +19,8 @@ add_library(IdaAudio STATIC
     src/FileInputPersistence.cpp
     src/FileInputRegistry.cpp
     src/FileInputSource.cpp
-    src/FlacTapeSink.cpp)
+    src/FlacTapeSink.cpp
+    src/TapeRecordWriter.cpp)
 
 target_include_directories(IdaAudio PUBLIC include)
 

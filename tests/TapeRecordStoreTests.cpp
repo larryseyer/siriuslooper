@@ -2,6 +2,8 @@
 // on-disk format contract: correct little-endian encoding, standard
 // CRC-32 (IEEE 802.3), file-header magic / version, and full
 // encode→decode round-trips for every header field and the payload.
+// Task 4 tests additionally cover TapeRecordWriter (worker-framed append,
+// flush, RT-safe entry, per-tape sequencing, exact Rational lmcTs).
 #include "ida/TapeRecord.h"
 #include "ida/Rational.h"
 #include "ida/AudioPayloadCodec.h"
@@ -436,4 +438,266 @@ TEST_CASE("FlacAudioCodec — decode of garbage bytes returns false without thro
     catch (...) { threw = true; }
     REQUIRE_FALSE (threw);
     REQUIRE_FALSE (result);
+}
+
+// ---------------------------------------------------------------------------
+// 9. TapeRecordWriter — worker-framed append, flush, RT-safe entry (T0a Task 4)
+// ---------------------------------------------------------------------------
+#include "ida/TapeRecordWriter.h"
+
+#include <juce_core/juce_core.h>
+
+#include <chrono>
+#include <cmath>
+#include <thread>
+#include <vector>
+
+namespace {
+
+// Helper: read the entire contents of a juce::File into a std::vector<std::byte>.
+std::vector<std::byte> readFileBytes (const juce::File& f)
+{
+    juce::FileInputStream fis (f);
+    if (! fis.openedOk()) return {};
+    const auto size = static_cast<std::size_t> (fis.getTotalLength());
+    std::vector<std::byte> buf (size);
+    fis.read (buf.data(), static_cast<int> (size));
+    return buf;
+}
+
+// Parse all records from raw file bytes starting at offset `pos` (after the
+// 12-byte file header). Each record layout: [u32 bodyLen][body][u32 crc].
+// Returns number of records successfully parsed into `records`.
+struct ParsedRecord
+{
+    ida::TapeRecordHeader header;
+    std::size_t           payloadLen { 0 };
+};
+
+bool parseAllRecords (const std::vector<std::byte>& raw,
+                      std::vector<ParsedRecord>&    records)
+{
+    if (raw.size() < ida::kTapeFileHeaderBytes) return false;
+
+    std::size_t pos = ida::kTapeFileHeaderBytes; // skip file header
+    while (pos + 4 <= raw.size())
+    {
+        const std::uint32_t bodyLen = ida::readLE32 (raw.data() + pos);
+        pos += 4;
+        if (pos + bodyLen + 4 > raw.size()) return false; // truncated
+
+        const std::byte*    body      = raw.data() + pos;
+        const std::uint32_t storedCrc = ida::readLE32 (raw.data() + pos + bodyLen);
+        const std::uint32_t calcCrc   = ida::crc32 (body, bodyLen);
+        if (storedCrc != calcCrc) return false; // CRC mismatch
+
+        ParsedRecord pr;
+        const std::byte* payloadOut = nullptr;
+        std::size_t      payloadLen = 0;
+        if (! ida::decodeRecordBody (body, bodyLen, pr.header, payloadOut, payloadLen))
+            return false;
+        pr.payloadLen = payloadLen;
+        records.push_back (pr);
+
+        pos += bodyLen + 4; // advance past body + crc
+    }
+    return pos == raw.size(); // must consume exactly the whole file
+}
+
+// Helper: run a TapeRecordWriter, deliver N blocks, close the tape, then
+// return once the file is non-empty (poll up to 500 ms).
+void waitForFile (const juce::File& f)
+{
+    for (int i = 0; i < 100; ++i)
+    {
+        if (f.getSize() > 0) return;
+        std::this_thread::sleep_for (std::chrono::milliseconds (5));
+    }
+}
+
+} // namespace
+
+TEST_CASE("TapeRecordWriter — N blocks produce N records with valid CRC and ascending seq",
+          "[tape-record]")
+{
+    // Write to a temp directory so nothing persists across runs.
+    const juce::File dir = juce::File::getSpecialLocation (
+        juce::File::tempDirectory).getChildFile ("ida-test-trw-single");
+    dir.deleteRecursively();
+    dir.createDirectory();
+
+    static constexpr double kSr        = 48000.0;
+    static constexpr int    kBlockSize  = 64;
+    static constexpr int    kNumBlocks  = 8;
+    static constexpr int    kFlushMs    = 5;
+    static constexpr std::size_t kQueueCap = 64;
+
+    ida::TapeRecordWriter writer (dir, kSr, kQueueCap, ida::TapeCodecId::AudioPcm, kFlushMs);
+
+    const ida::TapeId tape { 1 };
+
+    // Generate constant-value stereo blocks (value doesn't matter for format test).
+    std::vector<float> left  (kBlockSize, 0.1f);
+    std::vector<float> right (kBlockSize, -0.1f);
+
+    for (int i = 0; i < kNumBlocks; ++i)
+        writer.deliverTapeBlock (tape, left.data(), right.data(), kBlockSize);
+
+    // Flush + close so the file is a complete, valid record container.
+    writer.closeTape (tape);
+
+    // Allow the worker to process after closeTape.
+    const juce::File tapeFile = writer.tapeFile (tape);
+    waitForFile (tapeFile);
+    // Give extra time for the close to finalize.
+    std::this_thread::sleep_for (std::chrono::milliseconds (50));
+
+    // Parse the raw bytes.
+    const auto raw = readFileBytes (tapeFile);
+    REQUIRE (raw.size() >= ida::kTapeFileHeaderBytes);
+
+    // File header: first 12 bytes must have valid magic and version == 1.
+    std::uint16_t ver = 0;
+    REQUIRE (ida::readFileHeader (raw.data(), raw.size(), ver));
+    REQUIRE (ver == 1);
+
+    // Parse records.
+    std::vector<ParsedRecord> records;
+    REQUIRE (parseAllRecords (raw, records));
+    REQUIRE (static_cast<int> (records.size()) == kNumBlocks);
+
+    // Each record must have seq 0..N-1, valid CRC was verified by parseAllRecords.
+    for (int i = 0; i < kNumBlocks; ++i)
+    {
+        REQUIRE (records[static_cast<std::size_t> (i)].header.seq
+                 == static_cast<std::uint64_t> (i));
+    }
+}
+
+TEST_CASE("TapeRecordWriter — two tapes write to two distinct .idatape files",
+          "[tape-record]")
+{
+    const juce::File dir = juce::File::getSpecialLocation (
+        juce::File::tempDirectory).getChildFile ("ida-test-trw-two");
+    dir.deleteRecursively();
+    dir.createDirectory();
+
+    static constexpr double kSr       = 44100.0;
+    static constexpr int    kBlock    = 128;
+    static constexpr int    kFlushMs  = 5;
+
+    ida::TapeRecordWriter writer (dir, kSr, 64, ida::TapeCodecId::AudioPcm, kFlushMs);
+
+    const ida::TapeId tapeA { 1 };
+    const ida::TapeId tapeB { 2 };
+
+    std::vector<float> lA (kBlock, 0.2f), rA (kBlock, -0.2f);
+    std::vector<float> lB (kBlock, 0.3f), rB (kBlock, -0.3f);
+
+    writer.deliverTapeBlock (tapeA, lA.data(), rA.data(), kBlock);
+    writer.deliverTapeBlock (tapeB, lB.data(), rB.data(), kBlock);
+
+    writer.closeTape (tapeA);
+    writer.closeTape (tapeB);
+
+    std::this_thread::sleep_for (std::chrono::milliseconds (100));
+
+    const juce::File fileA = writer.tapeFile (tapeA);
+    const juce::File fileB = writer.tapeFile (tapeB);
+
+    // Files must exist and be distinct paths.
+    REQUIRE (fileA.existsAsFile());
+    REQUIRE (fileB.existsAsFile());
+    REQUIRE (fileA.getFullPathName() != fileB.getFullPathName());
+
+    // Both must have valid file headers.
+    {
+        const auto rawA = readFileBytes (fileA);
+        std::uint16_t ver = 0;
+        REQUIRE (ida::readFileHeader (rawA.data(), rawA.size(), ver));
+        REQUIRE (ver == 1);
+    }
+    {
+        const auto rawB = readFileBytes (fileB);
+        std::uint16_t ver = 0;
+        REQUIRE (ida::readFileHeader (rawB.data(), rawB.size(), ver));
+        REQUIRE (ver == 1);
+    }
+}
+
+TEST_CASE("TapeRecordWriter — per-record lmcTs increases by blockFrames/sampleRate exactly",
+          "[tape-record]")
+{
+    const juce::File dir = juce::File::getSpecialLocation (
+        juce::File::tempDirectory).getChildFile ("ida-test-trw-ts");
+    dir.deleteRecursively();
+    dir.createDirectory();
+
+    static constexpr double kSr       = 48000.0;
+    static constexpr int    kBlock    = 512;
+    static constexpr int    kN        = 5;
+    static constexpr int    kFlushMs  = 5;
+
+    ida::TapeRecordWriter writer (dir, kSr, 64, ida::TapeCodecId::AudioPcm, kFlushMs);
+
+    const ida::TapeId tape { 7 };
+    std::vector<float> left (kBlock, 0.0f), right (kBlock, 0.0f);
+
+    for (int i = 0; i < kN; ++i)
+        writer.deliverTapeBlock (tape, left.data(), right.data(), kBlock);
+
+    writer.closeTape (tape);
+    std::this_thread::sleep_for (std::chrono::milliseconds (100));
+
+    const auto raw = readFileBytes (writer.tapeFile (tape));
+    std::vector<ParsedRecord> records;
+    REQUIRE (parseAllRecords (raw, records));
+    REQUIRE (static_cast<int> (records.size()) == kN);
+
+    // lmcTs for record i == Rational(i * kBlock, round(kSr)).
+    // The numerator must be i * kBlock and denominator round(kSr), after normalization
+    // the GCD may reduce them — so check via cross-multiplication for exact equality.
+    const auto kSrInt = static_cast<std::int64_t> (std::llround (kSr));
+    for (int i = 0; i < kN; ++i)
+    {
+        const ida::Rational expected { static_cast<std::int64_t> (i) * kBlock, kSrInt };
+        const ida::Rational& actual  = records[static_cast<std::size_t> (i)].header.lmcTs;
+        REQUIRE (actual == expected);
+    }
+}
+
+TEST_CASE("TapeRecordWriter — oversized block is dropped and bumps droppedBlockCount",
+          "[tape-record]")
+{
+    const juce::File dir = juce::File::getSpecialLocation (
+        juce::File::tempDirectory).getChildFile ("ida-test-trw-drop");
+    dir.deleteRecursively();
+    dir.createDirectory();
+
+    ida::TapeRecordWriter writer (dir, 48000.0, 64, ida::TapeCodecId::AudioPcm, 5);
+
+    REQUIRE (writer.droppedBlockCount() == 0u);
+
+    const ida::TapeId tape { 1 };
+    // numSamples one more than the hard cap — must be dropped, not truncated.
+    const int oversized = ida::kTapeRecordWriterMaxFramesPerMessage + 1;
+    std::vector<float> left  (static_cast<std::size_t> (oversized), 0.0f);
+    std::vector<float> right (static_cast<std::size_t> (oversized), 0.0f);
+    writer.deliverTapeBlock (tape, left.data(), right.data(), oversized);
+
+    REQUIRE (writer.droppedBlockCount() == 1u);
+}
+
+TEST_CASE("TapeRecordWriter — flushIntervalMs is accessible after construction",
+          "[tape-record]")
+{
+    const juce::File dir = juce::File::getSpecialLocation (
+        juce::File::tempDirectory).getChildFile ("ida-test-trw-flush");
+    dir.deleteRecursively();
+    dir.createDirectory();
+
+    static constexpr int kFlushMs = 17;
+    ida::TapeRecordWriter writer (dir, 48000.0, 32, ida::TapeCodecId::AudioPcm, kFlushMs);
+
+    REQUIRE (writer.flushIntervalMs() == kFlushMs);
 }
