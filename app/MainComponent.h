@@ -3,8 +3,10 @@
 #include "CapabilityTier.h"
 #include "DemoSession.h"
 
+#include "ida/ActiveReadsSnapshot.h"
 #include "ida/AudioCallback.h"
 #include "ida/AudioDeviceCalibration.h"
+#include "ida/AudioPayloadCodec.h"
 #include "ida/CaptureSession.h"
 #include "ida/ChannelDetail.h"
 #include "ida/ChannelStrip.h"
@@ -12,8 +14,12 @@
 #include "ida/InputDescriptor.h"
 #include "ida/FileInputPersistence.h"
 #include "ida/FileInputRegistry.h"
+#include "ida/IPayloadCodec.h"
+#include "ida/PlaybackResolver.h"
+#include "ida/RenderPipeline.h"
 #include "ida/TapeRecordWriter.h"
 #include "ida/TapeColoringSink.h"
+#include "ida/TapePrefetcher.h"
 #include "ida/InputMixer.h"
 #include "ida/LatencyBudget.h"
 #include "ida/Lmc.h"
@@ -151,6 +157,24 @@ private:
     /// prior `addOttoOutputStrip` call. Lookup-only; the slice 4b picker
     /// uses this to filter the "Add OTTO source" menu.
     bool hasOttoOutputStrip (int ottoOutputIndex) const;
+
+    /// Register PCM + FLAC codecs into tapeCodecRegistry_. Called once at
+    /// construction. Mirrors makePlaybackRegistry() in TapePlaybackTests.
+    void registerPlaybackCodecs();
+
+    /// Result of resolving a pill's first leaf loop to a tape file + loop length.
+    struct PillTapeInfo
+    {
+        juce::File    tapeFile;
+        std::int64_t  loopLengthSamples { 0 };
+        bool          ok                { false };
+    };
+
+    /// Walk demo_.root to find the Constituent with id==cid, then resolve the
+    /// first leaf loop's tape file + loop length in samples. Returns ok=false
+    /// when no tape reference exists (pill not yet recorded).
+    [[nodiscard]] PillTapeInfo resolveLoopTapeInfo (ida::ConstituentId cid,
+                                                    double sampleRate) const;
 
     /// Walks the current pill list (PillState DFS order via selectTimelineView),
     /// adds/removes OutputMixer channels to match, and pushes the resulting
@@ -383,6 +407,24 @@ private:
     // (M-OTTO-3). Construction allocates the four Player sampler engines;
     // prepare() forwards the device sample rate / block size into OTTO.
     std::unique_ptr<ida::OttoHost>        ottoHost_;
+
+    // T0b playback resolution path. Declared after ottoHost_ (destroyed before
+    // it on unwind) and after audioCallback_ (stopped explicitly in the dtor
+    // before the callback is destroyed — no LIFO ordering dependency needed).
+    // tapeCodecRegistry_ is value-init so codec registration can happen once
+    // at construction-time via registerPlaybackCodecs().
+    ida::TapeCodecRegistry                            tapeCodecRegistry_;
+    ida::ActiveReadsPublisher                         activeReadsPublisher_;
+    ida::PlaybackResolver                             playbackResolver_;
+    std::unique_ptr<ida::RenderPipeline>              renderPipeline_;
+    // Slot-indexed prefetchers: phrasePrefetchers_[slot] == nullptr means free.
+    // Slot indices in slotByConstituent_ are stable across the lifetime of a
+    // constituent's channel (freed slots are reused on the next add).
+    std::vector<std::unique_ptr<ida::TapePrefetcher>> phrasePrefetchers_;
+    // ConstituentId.value() -> dense slot index for O(1) audio-thread lookup
+    // (PlaybackResolver::setSlotForConstituent callback, message-thread path).
+    std::unordered_map<std::int64_t, int>             slotByConstituent_;
+    bool                                              playbackResolverStarted_ { false };
 
     // M1 Session 3 — engine pieces wired alongside the audio thread.
     // ASRCs are held by the callback (one per input/output channel) but

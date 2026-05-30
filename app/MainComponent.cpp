@@ -1,5 +1,7 @@
 #include "MainComponent.h"
 
+#include "ida/TapeRecord.h"
+
 #include "IdaPreferences.h"
 #include "OttoStripRebind.h"
 #include "StripContextOverlay.h"
@@ -4176,6 +4178,8 @@ MainComponent::MainComponent()
     ottoStripMuted_.assign (static_cast<std::size_t> (OttoHost::kNumOttoOutputs), false);
     ottoStripSoloed_.assign (static_cast<std::size_t> (OttoHost::kNumOttoOutputs), false);
 
+    registerPlaybackCodecs();
+
     // Seed nextConstituentId_ to one past the maximum id present in the
     // initial demo session, so promotion's allocateId callback never collides
     // with an existing id.
@@ -4406,6 +4410,49 @@ MainComponent::MainComponent()
         ottoHost_->prepare (sr, bs);
     }
     audioCallback_->setOttoRenderSource (ottoHost_.get());
+
+    // T0b — one-time playback resolver wiring. Done after OttoHost is prepared
+    // (snapshotPlayhead reads OTTO's TransportTracker) and before the first
+    // addAudioCallback (the resolver worker reads the snapshot publisher the
+    // audio thread also reads).
+    {
+        const double sr = audioDeviceManager_.getAudioDeviceSetup().sampleRate > 0.0
+                              ? audioDeviceManager_.getAudioDeviceSetup().sampleRate
+                              : 48000.0;
+
+        renderPipeline_ = demo_.root
+                              ? std::make_unique<ida::RenderPipeline> (demo_.root,
+                                                                       demo_.sessionToLmc)
+                              : nullptr;
+
+        playbackResolver_.setPipeline  (renderPipeline_.get());
+        playbackResolver_.setPublisher (&activeReadsPublisher_);
+        playbackResolver_.setSampleRate (sr);
+
+        playbackResolver_.setPlayheadProvider (
+            [this] { return ottoHost_->snapshotPlayhead(); });
+
+        playbackResolver_.setSlotForConstituent (
+            [this] (ida::ConstituentId c)
+            {
+                const auto it = slotByConstituent_.find (c.value());
+                return it == slotByConstituent_.end() ? -1 : it->second;
+            });
+
+        playbackResolver_.setSteerPrefetcher (
+            [this] (int slot, std::int64_t s)
+            {
+                if (slot >= 0
+                    && slot < static_cast<int> (phrasePrefetchers_.size())
+                    && phrasePrefetchers_[static_cast<std::size_t> (slot)] != nullptr)
+                    phrasePrefetchers_[static_cast<std::size_t> (slot)]->setTargetSample (s);
+            });
+
+        audioCallback_->setActiveReadsPublisher (&activeReadsPublisher_);
+
+        playbackResolver_.start();
+        playbackResolverStarted_ = true;
+    }
 
     audioDeviceManager_.addAudioCallback (audioCallback_.get());
 
@@ -5948,6 +5995,68 @@ MainComponent::MainComponent()
     startTimerHz (30);
 }
 
+// ---------------------------------------------------------------------------
+// T0b playback path helpers
+// ---------------------------------------------------------------------------
+
+void MainComponent::registerPlaybackCodecs()
+{
+    tapeCodecRegistry_.registerCodec (std::make_shared<PcmAudioCodec>());
+    tapeCodecRegistry_.registerCodec (std::make_shared<FlacAudioCodec>());
+}
+
+MainComponent::PillTapeInfo
+MainComponent::resolveLoopTapeInfo (ida::ConstituentId cid, double sampleRate) const
+{
+    if (demo_.root == nullptr) return {};
+
+    // Find the Constituent with id == cid anywhere in the tree.
+    const Constituent* found = nullptr;
+    std::function<void (const Constituent&)> findById = [&] (const Constituent& c)
+    {
+        if (found != nullptr) return;
+        if (c.id() == cid) { found = &c; return; }
+        for (const auto& child : c.children())
+            findById (*child);
+    };
+    findById (*demo_.root);
+
+    if (found == nullptr) return {};
+
+    // If the constituent IS a loop, use its tape reference directly.
+    if (found->isLoop())
+    {
+        const auto& ref = *found->tapeReference();
+        const double effectiveSr = sampleRate > 0.0 ? sampleRate : 48000.0;
+        const auto loopLen = std::llround (ref.sliceLength().toDouble() * effectiveSr);
+        return { tapesDirectory().getChildFile ("tape-"
+                     + juce::String (ref.tape.value()) + ".idatape"),
+                 loopLen,
+                 true };
+    }
+
+    // Otherwise descend into children to find the first leaf loop.
+    const Constituent* leaf = nullptr;
+    std::function<void (const Constituent&)> findLeafLoop = [&] (const Constituent& c)
+    {
+        if (leaf != nullptr) return;
+        if (c.isLoop()) { leaf = &c; return; }
+        for (const auto& child : c.children())
+            findLeafLoop (*child);
+    };
+    findLeafLoop (*found);
+
+    if (leaf == nullptr) return {};
+
+    const auto& ref = *leaf->tapeReference();
+    const double effectiveSr = sampleRate > 0.0 ? sampleRate : 48000.0;
+    const auto loopLen = std::llround (ref.sliceLength().toDouble() * effectiveSr);
+    return { tapesDirectory().getChildFile ("tape-"
+                 + juce::String (ref.tape.value()) + ".idatape"),
+             loopLen,
+             true };
+}
+
 MainComponent::~MainComponent()
 {
     // M7 S9 — close all open plug-in editors BEFORE the chain host
@@ -5967,6 +6076,19 @@ MainComponent::~MainComponent()
     // automatic teardown.
     if (audioCallback_)
         audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+
+    // T0b — stop the resolver first (it steers prefetchers), then stop + free
+    // each prefetcher. Both must be quiesced before audioCallback_ destructs
+    // (its slot table holds raw pointers into the prefetchers).
+    if (playbackResolverStarted_)
+    {
+        playbackResolver_.stop();
+        playbackResolverStarted_ = false;
+    }
+    for (auto& p : phrasePrefetchers_)
+        if (p) p->stop();
+    phrasePrefetchers_.clear();
+
     audioDeviceManager_.closeAudioDevice();
 }
 
@@ -6991,20 +7113,116 @@ void MainComponent::refreshOutputMixerPhraseChannels()
 
     if (! toRemove.empty() || ! toAdd.empty())
     {
+        // Quiesce both the audio callback AND the resolver worker before
+        // mutating prefetcher slots or the render pipeline pointer. The
+        // resolver steers prefetchers via raw pointers that are about to
+        // be freed; stopping it here is the synchronisation barrier.
         audioDeviceManager_.removeAudioCallback (audioCallback_.get());
+        if (playbackResolverStarted_)
+            playbackResolver_.stop();
+
+        // --- remove outgoing phrases ---
         for (auto cidValue : toRemove)
         {
             outputMixer_->removeChannel (phraseChannelByConstituent_.at (cidValue));
             phraseChannelByConstituent_.erase (cidValue);
+
+            // Tear down the prefetcher slot for this constituent.
+            const auto slotIt = slotByConstituent_.find (cidValue);
+            if (slotIt != slotByConstituent_.end())
+            {
+                const int slot = slotIt->second;
+                // Unbind from the audio callback BEFORE stopping — the
+                // callback must not pull from a stopped prefetcher.
+                audioCallback_->bindPlaybackSlot (slot, nullptr, nullptr, nullptr);
+                if (phrasePrefetchers_[static_cast<std::size_t> (slot)])
+                {
+                    phrasePrefetchers_[static_cast<std::size_t> (slot)]->stop();
+                    phrasePrefetchers_[static_cast<std::size_t> (slot)].reset();
+                }
+                slotByConstituent_.erase (slotIt);
+            }
         }
+
+        // --- add incoming phrases ---
+        const double sampleRate = [this]
+        {
+            const double sr = audioDeviceManager_.getAudioDeviceSetup().sampleRate;
+            return sr > 0.0 ? sr : 48000.0;
+        }();
+
+        // Ring size: ~1 s of audio at the current sample rate (a generous
+        // decode-ahead budget that bounds seek-on-drain latency to ~1 s;
+        // see todo.md v1 limits note).
+        const int kRingFrames = static_cast<int> (std::llround (sampleRate));
+
         for (const auto& cid : toAdd)
         {
             const auto chId = outputMixer_->addChannel (ida::SignalType::Audio);
             if (chId.value() == 0) continue; // engine at kMaxOutputChannels cap
+
             outputMixer_->setChannelStrip (chId,
                 std::make_unique<ChannelStrip<SignalType::Audio>>());
             phraseChannelByConstituent_.emplace (cid.value(), chId);
+
+            // Wire phrase scratch so the audio callback can pull decoded
+            // audio directly into the OutputMixer channel's buffer.
+            outputMixer_->ensurePhraseScratch (chId);
+            outputMixer_->setChannelAudioSource (
+                chId,
+                outputMixer_->phraseScratchPointer (chId, 0),
+                outputMixer_->phraseScratchPointer (chId, 1));
+
+            // Resolve the pill's first leaf loop tape file.
+            const auto tapeInfo = resolveLoopTapeInfo (cid, sampleRate);
+            if (! tapeInfo.ok) continue; // tape not recorded yet — stays silent
+
+            // Find a free slot (null entry) or append a new one.
+            int slot = -1;
+            for (int s = 0; s < static_cast<int> (phrasePrefetchers_.size()); ++s)
+            {
+                if (phrasePrefetchers_[static_cast<std::size_t> (s)] == nullptr)
+                {
+                    slot = s;
+                    break;
+                }
+            }
+            if (slot < 0)
+            {
+                if (static_cast<int> (phrasePrefetchers_.size()) >= kMaxPhraseSlots)
+                    continue; // at slot cap — channel stays silent
+                phrasePrefetchers_.push_back (nullptr);
+                slot = static_cast<int> (phrasePrefetchers_.size()) - 1;
+            }
+
+            auto pre = std::make_unique<ida::TapePrefetcher>();
+            if (! pre->open (tapeInfo.tapeFile, tapeCodecRegistry_,
+                             sampleRate, tapeInfo.loopLengthSamples))
+                continue; // file unreadable (race with record path) — stays silent
+
+            pre->prepare (kRingFrames);
+            pre->start();
+
+            audioCallback_->bindPlaybackSlot (
+                slot,
+                pre.get(),
+                outputMixer_->mutablePhraseScratch (chId, 0),
+                outputMixer_->mutablePhraseScratch (chId, 1));
+
+            slotByConstituent_[cid.value()] = slot;
+            phrasePrefetchers_[static_cast<std::size_t> (slot)] = std::move (pre);
         }
+
+        // Rebuild the render pipeline so the resolver sees the current tree.
+        renderPipeline_ = demo_.root
+                              ? std::make_unique<ida::RenderPipeline> (demo_.root,
+                                                                       demo_.sessionToLmc)
+                              : nullptr;
+        playbackResolver_.setPipeline (renderPipeline_.get());
+
+        if (playbackResolverStarted_)
+            playbackResolver_.start();
+
         audioDeviceManager_.addAudioCallback (audioCallback_.get());
     }
 
