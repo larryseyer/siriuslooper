@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <limits>
 
 namespace ida {
 
@@ -94,6 +95,10 @@ void TapePrefetcher::fillRing()
         --it;
         const std::uint64_t k = static_cast<std::uint64_t> (
             it - recordStartSample_.begin());
+        // off fits in int: a single record never holds > INT_MAX frames (the
+        // writer frames one audio block per record). The clamp below tolerates
+        // off >= nframes for a short final record.
+        jassert (s - *it <= static_cast<std::int64_t> (std::numeric_limits<int>::max()));
         const int off = static_cast<int> (s - *it);
 
         if (k >= reader_->recordCount()) break;        // nothing more to decode
