@@ -6803,6 +6803,27 @@ void MainComponent::recomputeOttoOutputStripMutes()
     }
 }
 
+void MainComponent::updateOttoActiveBusMask()
+{
+    if (ottoHost_ == nullptr) return;
+
+    // OTTO's 4 per-player category buses are output indices
+    // [kOttoPlayerBusRangeBegin, kNumOttoOutputs) → mask bits 0..3. Set the bit
+    // for every player-bus output IDA has a strip for; clear the rest so OTTO
+    // skips their TAPECOLOR DSP. Channel / FX-return outputs (0..27) do not map
+    // to a category bus, so consuming one of those alone leaves the mask 0 and
+    // OTTO runs no per-player TAPECOLOR at all.
+    std::uint32_t mask = 0;
+    for (const auto& [outIdx, chId] : ottoChannelByOutputIndex_)
+    {
+        juce::ignoreUnused (chId);
+        const int cat = outIdx - ida::OttoHost::kOttoPlayerBusRangeBegin;
+        if (cat >= 0 && outIdx < ida::OttoHost::kNumOttoOutputs)
+            mask |= (std::uint32_t { 1 } << cat);
+    }
+    ottoHost_->setActivePlayerBusMask (mask);
+}
+
 void MainComponent::refreshInputMixer()
 {
     if (inputMixerPane_ == nullptr) return;
@@ -7072,6 +7093,7 @@ ida::OutputChannelId MainComponent::addOttoOutputStrip (int ottoOutputIndex)
     audioDeviceManager_.addAudioCallback (audioCallback_.get());
 
     ottoChannelByOutputIndex_.emplace (ottoOutputIndex, chId);
+    updateOttoActiveBusMask();   // this player bus is now consumed — let OTTO run its FX
     return chId;
 }
 
@@ -7087,6 +7109,7 @@ void MainComponent::removeOttoOutputStrip (int ottoOutputIndex)
     audioDeviceManager_.addAudioCallback (audioCallback_.get());
 
     ottoChannelByOutputIndex_.erase (it);
+    updateOttoActiveBusMask();   // this player bus is no longer consumed — OTTO can skip its FX
 
     // Drop this strip's mute/solo state and recompute: removing a soloed strip
     // must release the solo-silence it imposed on the rest of the band, and a
@@ -8631,6 +8654,9 @@ void MainComponent::chooseFileAndLoad()
 
                             // Apply the (clean) effective mute to the freshly-rebuilt strips.
                             recomputeOttoOutputStripMutes();
+                            // Tell OTTO which player buses the loaded session consumes
+                            // (skip the TAPECOLOR DSP on the rest).
+                            updateOttoActiveBusMask();
                             refreshOutputDestinations();
                         }
                         // V9: re-bind the InputMixer's OutputMixer attachment

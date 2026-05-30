@@ -190,6 +190,12 @@ private:
     /// of each OTTO channel's engine mute; also pushes the effective mute to the
     /// strip's visual. (Phrase/MON/bus solo is deferred — see todo.md.)
     void recomputeOttoOutputStripMutes();
+
+    /// Tells OTTO which of its 4 per-player category buses (outputs 28..31) IDA
+    /// actually consumes, derived from `ottoChannelByOutputIndex_`. OTTO skips
+    /// the (expensive TAPECOLOR) DSP for player buses no strip reads. Call after
+    /// any change to the OTTO strip set (add/remove/load). Message-thread only.
+    void updateOttoActiveBusMask();
     /// (Re)registers the engine input channels and rebuilds the pane's strips
     /// from `inputPairs_`: a stereo pair → one stereo strip, a mono pair → two
     /// mono-source strips (RME split). Brackets the channel-map mutation with

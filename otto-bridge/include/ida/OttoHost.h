@@ -4,6 +4,7 @@
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
+#include <cstdint>
 #include <memory>
 
 namespace juce { class AudioProcessor; }
@@ -129,6 +130,18 @@ public:
     /// prepared. Audio-thread only.
     const float* getOttoOutputLeft  (int ottoOutputIndex) const noexcept;
     const float* getOttoOutputRight (int ottoOutputIndex) const noexcept;
+
+    /// IDA-embedding CPU optimization: tell OTTO which of the 4 per-player
+    /// category buses (PlayerOut1..4 → outputs 28..31) IDA actually consumes.
+    /// `categoryMask` bit c set ⇒ IDA reads player-bus output (28 + c), so that
+    /// bus must run its full chain (incl. the expensive TAPECOLOR oversampling).
+    /// Bit c clear ⇒ IDA does not read it, so OTTO skips that bus's DSP and
+    /// emits silence — avoiding wasted per-player TAPECOLOR for unused outputs.
+    /// Default before any call: all four consumed (no behavior change). The
+    /// mask is stored and re-applied across `prepare()`. Cheap atomic store into
+    /// OTTO's GlobalMixer; call from the message thread whenever the set of OTTO
+    /// output strips changes.
+    void setActivePlayerBusMask (std::uint32_t categoryMask) noexcept;
 
     // -------------------------------------------------------------------------
     // S3a T5 — transport controls + master-output snapshot accessors

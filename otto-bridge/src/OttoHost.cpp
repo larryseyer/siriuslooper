@@ -155,6 +155,13 @@ struct OttoHost::Impl : public juce::Timer
     bool                           prepared { false };
     double                         preparedSampleRate { 0.0 };
 
+    // IDA-embedding selective-bus mask (see OttoHost::setActivePlayerBusMask).
+    // Default all-consumed → no behavior change. Stored here so it survives
+    // and is re-applied across prepare() (prepareToPlay does not reset the
+    // GlobalMixer's own default-all-set mask, but re-applying keeps IDA's
+    // chosen mask authoritative after any re-prepare).
+    std::uint32_t                  activePlayerBusMask { 0xFFFFFFFFu };
+
     LockFreeSpscQueue<TransportSnapshot> transportRing;
     std::vector<IOttoTransportListener*> listeners;       // message-thread only
 
@@ -187,6 +194,19 @@ void OttoHost::prepare (double sampleRate, int maxBlockSize)
     impl_->processor->prepareToPlay (sampleRate, maxBlockSize);
     impl_->prepared           = true;
     impl_->preparedSampleRate = sampleRate;
+
+    // Re-assert IDA's selective-bus mask after (re-)prepare so a strip set
+    // chosen before this prepare stays authoritative.
+    impl_->processor->getPlayerManager().getGlobalMixer()
+        .setActiveBusMask (impl_->activePlayerBusMask);
+}
+
+void OttoHost::setActivePlayerBusMask (std::uint32_t categoryMask) noexcept
+{
+    impl_->activePlayerBusMask = categoryMask;
+    if (impl_->prepared)
+        impl_->processor->getPlayerManager().getGlobalMixer()
+            .setActiveBusMask (categoryMask);
 }
 
 bool OttoHost::isPrepared() const noexcept
