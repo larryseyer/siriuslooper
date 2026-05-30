@@ -1,5 +1,6 @@
 #include "ida/PlaybackResolver.h"
 #include "ida/RenderPipeline.h"
+#include "ida/Rational.h"
 
 #include <chrono>
 #include <cmath>

@@ -2,7 +2,6 @@
 
 #include "ida/ActiveReadsSnapshot.h"
 #include "ida/TransportPlayhead.h"
-#include "ida/Rational.h"
 #include "ida/ConstituentId.h"
 
 #include <atomic>
