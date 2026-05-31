@@ -347,9 +347,9 @@ constraint honored *now*:
 A persistent bank of **phrase-trigger buttons** gives every phrase a fixed,
 MIDI-mappable launcher — the on-screen counterpart of §8.4's per-phrase pedal.
 
-- **Layout & placement:** a single **horizontal row directly beneath the top-bar
-  transport area** — `< 1 2 3 4 5 6 7 8 >`, eight numbered buttons flanked by
-  left/right chevrons. The chevrons page through **banks of 8** (bank 1 = phrases
+- **Layout & placement:** a single **horizontal row directly beneath the beat
+  counter** (which itself sits under the top transport row) — `< 1 2 3 4 5 6 7 8 >`,
+  eight numbered buttons flanked by left/right chevrons. The chevrons page through **banks of 8** (bank 1 = phrases
   1–8, bank 2 = phrases 9–16, …), so the unbounded phrase count (§8) is reachable
   eight at a time.
 - **Permanent positional assignment.** Button position *p* in bank *b* is

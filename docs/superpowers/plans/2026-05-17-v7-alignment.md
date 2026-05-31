@@ -8,6 +8,23 @@
 
 ---
 
+## ⚠ Active resequencing — operator-testability diversions (read this before picking a milestone)
+
+This roadmap is the **engine-first order.** Execution has **deliberately diverged** from it to keep IDA operator-testable as it grows. Both diversions below pull *operator-facing UX* forward from **Part I / M22** (which the engine-first order parked at "M22+"). Neither deletes or reorders the M-milestones — each milestone's remaining engine scope stays where it is; the diversions only land specific operator-facing slices early.
+
+**Diversion 1 (established, in progress) — white-paper Part VI mixer + GUI.** The full creative mixer on each side of the tape + OTTO visual parity, pulled ahead of its M-order home. Tracked in `continue.md` (Current focus) + `docs/design/mixer-design.md`.
+
+**Diversion 2 (registered 2026-05-31) — Blank-Slate First-Run + Phrase Creation.**
+*Why:* IDA boots into a pre-authored demo song, so no one can walk the real path **first launch → create a channel → record → create a phrase → play it back.** Until that path exists, the app cannot be honestly tested. *What it lands:* retire the demo boot; **resource-aware capture** (the LMC always runs; a tape records *iff* an input is assigned); **project-scoped tapes** (folder `yyyymmddhhmmss-<name>`, files `tape_<x>`, no orphans, irreplaceable — deletion only behind a deliberate warning); explicit channel creation; the **per-phrase phrase/loop state machine** over the existing mark-in/out + `promote()` path; a **phrase-trigger button bank**; **play-all-loops**; eventual MIDI / single-pedal control (Quantiloop-style) via a source-agnostic command layer.
+
+- **Design ("why"), approved:** `docs/superpowers/specs/2026-05-30-blank-slate-first-run-and-phrase-creation-design.md`. It scopes the whitepaper's "always-running tape" to "running while assigned" — `docs/IDA_Whitepaper_V10.md` is now canonical (supersedes the `V8` path in this roadmap's header).
+- **Docs-update plan:** `docs/superpowers/plans/2026-05-30-whitepaper-spec-doc-update.md`.
+- **Implementation roadmap (8 dependency-ordered slices):** `docs/superpowers/plans/2026-05-30-blank-slate-first-run-implementation.md`; per-slice detailed plans at `docs/superpowers/plans/2026-05-30-slice-{1..8}-*.md`. Execute via `superpowers:subagent-driven-development`, **Slice 1 first**.
+- **Milestones it advances / partially satisfies (does NOT replace):** **M22** (hide-internals operator UX — the bulk); **M3/M8** (tape lifecycle: assignment-gated recording, retention, reachability / no-orphans); **M5** (operator mixer channels); a **new project-scoped storage concern adjacent to M11 (IAF)** — reconcile the `yyyymmddhhmmss-<name>/tape_<x>` layout with IAF when M11 lands; the state machine builds on the existing `Promotion`/`CaptureSession` (no engine milestone owned it).
+- **Return point:** when Diversion 2 completes, resume Diversion 1 (Part VI mixer/GUI), then the engine order at **M8 S7+** per `continue.md`. When M22 is reached, it folds in whatever operator-UX these diversions already delivered rather than redoing it.
+
+---
+
 ## Context
 
 This plan exists because the IDA white paper grew from V2 (the version the code was last designed against) through V3, V4, V5, V6, to V7 in one large authoring push. The architectural shape from V2 is preserved — the paper is explicit that V3 was additive-and-clarifying, not a do-over — but the additions are substantial: input mixer / output mixer / direct layer (V3); MIDI 2.0 UMP-shaped tape events, inclusive design, validation harness (V4); plug-in determinism + failure semantics + realtime audit (V5); export targets + ensemble security defaults + plug-in format scope (V6); out-of-process plug-in hosting + IDA Archive Format + ensemble consistency + video tier-aware rendering + MIDI 2.0 closure (V7).
