@@ -1,6 +1,6 @@
 # Blank-Slate First-Run + Phrase/Loop Creation — Design
 
-Status: design complete (defaults applied to §15; awaiting operator sign-off → implementation plan)
+Status: approved — whitepaper V10 amended (resource-aware capture, §8.1); implementation plan at `docs/superpowers/plans/2026-05-30-blank-slate-first-run-implementation.md`
 Date: 2026-05-30
 Canonical "why": `docs/IDA_Whitepaper_V10.md`
 Supersedes the boot path established by `app/DemoSession.cpp`.

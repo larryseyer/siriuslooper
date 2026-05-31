@@ -24,7 +24,7 @@ The reframe is built on three principles that hold together:
 
 3. **A loop is an idea, and ideas are worth repeating.** Every architectural decision exists to serve the capture, repetition, and arrangement of musical ideas without the friction that has always come with that capture.
 
-What follows is built around a **Logical Master Clock (LMC)** treated as the only honest external timebase at the membrane, an **input mixer → tape → output mixer** signal path in which both mixers handle live audio, live MIDI, live video, and file I/O as first-class signal types, a **direct layer** that bypasses the tape for low-latency live monitoring (the per-channel **MON** toggle of §7.2), the tape as the always-running source of truth, a unified **Constituent hierarchy** (tape → loop → phrase → section → song → set) in which each level operates in its own conceptual time domain, and a user interface that trusts the musician absolutely.
+What follows is built around a **Logical Master Clock (LMC)** treated as the only honest external timebase at the membrane, an **input mixer → tape → output mixer** signal path in which both mixers handle live audio, live MIDI, live video, and file I/O as first-class signal types, a **direct layer** that bypasses the tape for low-latency live monitoring (the per-channel **MON** toggle of §7.2), the tape as the source of truth — running wherever a source is assigned (§8.1) — a unified **Constituent hierarchy** (tape → loop → phrase → section → song → set) in which each level operates in its own conceptual time domain, and a user interface that trusts the musician absolutely.
 
 The result is a looper that can do things existing loopers cannot — including capturing polymetric phrases, supporting structural improvisation through role-fillable phrases, and reproducing micro-timing and feel exactly — while also doing the things existing loopers already do, without the friction that has always come with them. The architecture is a complete production environment from physical input to physical output, with no architectural distinction between live signals and file I/O.
 
@@ -126,7 +126,7 @@ The boundary is most legible in comparison. On the axes that matter to a perform
 
 | Axis | Typical Looper | IDA |
 | --- | --- | --- |
-| Pre-declaration of loop length | Required before recording starts | Not required; tape is always running |
+| Pre-declaration of loop length | Required before recording starts | Not required; the tape runs while its input is assigned |
 | Punishment for imprecise timing | In-points and out-points commit at the footswitch press | Boundaries refined retroactively from the tape |
 | Polymetric / polytemporal coexistence | Single shared grid; loops must agree on tempo and meter | Each Constituent in its own conceptual time domain |
 | Micro-timing fidelity | Quantized or smoothed by the recording grid | Preserved exactly; conceptual time has no quantization grid |
@@ -331,7 +331,7 @@ This is the fundamental architectural inversion of this looper. Most loopers cou
 
 ### 5.2 The signal path: input mixer → tape → output mixer, with direct layer
 
-The engine's architecture is a three-stage signal path with a parallel bypass. At each end is a **mixer** — a software object that handles channel topology, signal conditioning, and the crossing between physical and conceptual time. In the middle is the **tape**, the always-running source of truth. Bypassing the tape entirely is the *direct layer* (see Glossary), a parallel signal path used for low-latency live monitoring via the per-channel **MON** toggle of §7.2. The direct layer is detailed in Part VII.
+The engine's architecture is a three-stage signal path with a parallel bypass. At each end is a **mixer** — a software object that handles channel topology, signal conditioning, and the crossing between physical and conceptual time. In the middle is the **tape**, the source of truth — always-running wherever a source is assigned (§8.1). Bypassing the tape entirely is the *direct layer* (see Glossary), a parallel signal path used for low-latency live monitoring via the per-channel **MON** toggle of §7.2. The direct layer is detailed in Part VII.
 
 ```
                        ┌──────── DIRECT LAYER ────────┐
@@ -425,7 +425,7 @@ IDA ships with OTTO — a bundled rhythm engine that is **part of IDA**, not a p
 
 Part V introduced the three-stage signal path. This part is its detailed treatment.
 
-The architecture has a deliberate symmetry: a full creative mixer on each side of the tape, with the tape as the always-running pivot between them. This symmetry matters. It means the looper is not a "recorder with playback" — it is **a production environment in which capture and playback are equally first-class operations, each with its own complete mixer.**
+The architecture has a deliberate symmetry: a full creative mixer on each side of the tape, with the tape as the pivot between them — always-running wherever a source is assigned (§8.1). This symmetry matters. It means the looper is not a "recorder with playback" — it is **a production environment in which capture and playback are equally first-class operations, each with its own complete mixer.**
 
 ```mermaid
 flowchart LR
@@ -440,7 +440,7 @@ flowchart LR
         ICH["Channels<br/>per modality<br/>per source"]
     end
 
-    TAPE[("📼 Tape<br/><i>append-only<br/>always running<br/>source of truth</i>")]
+    TAPE[("📼 Tape<br/><i>append-only<br/>runs while assigned<br/>source of truth</i>")]
 
     subgraph OM["Output Mixer<br/><i>full creative mixer</i>"]
         OCH["Channels<br/>per Constituent<br/>per destination"]
@@ -589,7 +589,7 @@ There is no hidden tape-management layer. The user sees their mixer; the mixer's
 
 ## 6.5 The tape, briefly
 
-The tape is detailed fully in Part VIII. The signal-path summary: it is append-only, immutable, always-running, and carries timestamped events from one input each. Multiple parallel tapes accommodate multi-channel sources and parallel dry/processing recordings. **The tape is the source of truth and the architectural pivot point of the entire system.**
+The tape is detailed fully in Part VIII. The signal-path summary: it is append-only, immutable, always-running while a source is assigned (§8.1), and carries timestamped events from one input each. Multiple parallel tapes accommodate multi-channel sources and parallel dry/processing recordings. **The tape is the source of truth and the architectural pivot point of the entire system.**
 
 ## 6.6 The output mixer
 
@@ -800,9 +800,11 @@ This is the architectural inversion at the heart of the system's storage model.
 
 ### 8.1 Everything is always recorded
 
-The looper is not "armed" or "recording" or "in standby." From the moment the user opens a session, **every input is being captured to a tape, continuously, until the session ends.** The tapes run whether the user has any plans to use them or not. They run during silence. They run during conversation. They run during the act of thinking.
+The looper does not make you "arm" or "standby" before the creative moment. From the moment a source is **assigned** to a tape, **that input is captured continuously — there is no record-arming of the take.** An assigned tape runs whether or not the user has any plans to use what it captures: it runs during silence, during conversation, during the act of thinking.
 
-This is not an exotic recording mode. It is the default — the only — mode. Storage is cheap; ideas are precious. The architecture refuses to lose ideas.
+This is the default — the only — mode for an assigned source. Ideas are precious and the architecture refuses to lose them. But the tape captures every moment **without wasting resources**: it runs **only where a source is actually assigned.** Assigning an input arms its tape; unassigning the last input stops it; an input no one has routed costs no disk at all. The unconditional, always-on element is the **clock (LMC)** — not the tape.
+
+Two layers are kept distinct. *Tape recording* is gated by assignment (automatic — assignment is the arm). *Phrase/loop capture* is the performer's marking gesture over a tape that is already running. Retroactive capture lives on the first layer: an assigned tape holds its reach-back from the moment of assignment, so a phrase can be marked a beat after it was played, back to the assignment point — before which there is deliberately no data. Tapes are the **irreplaceable** source of truth (phrases are recreatable views; tapes are not), each owned by a project and never orphaned — so they are kept deliberately, never spent or discarded carelessly.
 
 ### 8.2 All inputs are tapes
 
@@ -839,7 +841,7 @@ This is the architectural foundation that makes the entire system tractable. It 
 
 ### 8.4 The retroactive ring
 
-Because tapes are always running, the user never has to "start recording before the moment they want to capture." The moment is already on the tape. The user marks a boundary on a tape that has been running for some time, and pulls the in-point backward to grab the pickup note that preceded the mark.
+Because an assigned tape runs from the moment its input is assigned, the user never has to "start recording before the moment they want to capture." The moment is already on the tape. The user marks a boundary on a tape that has been running for some time, and pulls the in-point backward to grab the pickup note that preceded the mark — back to the assignment point, before which there is deliberately no data (§8.1).
 
 The *retroactive ring* (see Glossary) is the in-memory portion of recent tape data, held against the possibility that the user will reach backward in time to capture something. Its depth depends on the capability tier (Part XV): seconds for tight resource budgets, minutes for comfortable ones, hours for lavish.
 
@@ -853,7 +855,7 @@ Three reasonable strategies for tape storage:
 - **Lossless compressed** (FLAC for audio, intra-frame codec for video): roughly half the storage cost, with decompression overhead at read time
 - **Tiered**: uncompressed in the retroactive ring (RAM), lossless on disk during the live session, optional offline archival compression on session close
 
-The tier system (Part XV) chooses among these at startup based on measured hardware capability. The **tiered** strategy is the committed default: the retroactive ring stays uncompressed in RAM for instant reach-back, while the live on-disk tape is **lossless-compressed**, and content-addressing is an archival step taken only once a tape stops growing (at session close). Lossless-on-disk is not merely a space optimization — on constrained and mobile targets, where an always-running tape would otherwise consume roughly a gigabyte per hour per source, it is what makes always-running capture feasible at all.
+The tier system (Part XV) chooses among these at startup based on measured hardware capability. The **tiered** strategy is the committed default: the retroactive ring stays uncompressed in RAM for instant reach-back, while the live on-disk tape is **lossless-compressed**, and content-addressing is an archival step taken only once a tape stops growing (at session close). Lossless-on-disk is not merely a space optimization — on constrained and mobile targets, where an always-running tape would otherwise consume roughly a gigabyte per hour per source, it is what makes always-running capture feasible at all. The primary control on that cost is not recording unassigned sources at all (§8.1); lossless-on-disk is the secondary control for the sources that *are* assigned.
 
 ### 8.6 Tapes are local
 
@@ -1996,7 +1998,7 @@ The following decisions, taken together, are the architecture. Each is stated wi
 2. **A loop conceptually is a position interval over tape data**, not a sample count or frame count.
 3. **Time-domain at the core, sample-domain at the membrane.** Continuous ASRC bridges the two.
 4. **Latency compensation is architectural.** Every tape event carries its true capture time; one-time loopback calibration per device.
-5. **Everything is always recorded.** The tape, not the loop, is the source of truth.
+5. **Everything is always recorded** — wherever a source is assigned (§8.1). The tape, not the loop, is the source of truth.
 6. **All inputs are tapes** — audio, video, MIDI, control, parameter automation, system events — sharing one uniform event format.
 7. **Tapes are append-only and immutable.** All editing happens elsewhere.
 8. **Tapes are local; they never traverse the network** as primary data.
