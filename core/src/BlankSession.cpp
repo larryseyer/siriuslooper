@@ -27,4 +27,9 @@ BlankSession buildBlankSession()
                           Rational (0), {} };
 }
 
+bool eraseRequiresConfirmation (const TapePool& pool) noexcept
+{
+    return pool.count() > 0;
+}
+
 } // namespace ida

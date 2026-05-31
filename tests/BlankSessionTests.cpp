@@ -8,6 +8,7 @@
 #include "ida/Constituent.h"
 #include "ida/Position.h"
 #include "ida/Rational.h"
+#include "ida/TapePool.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -34,4 +35,19 @@ TEST_CASE ("buildBlankSession reports a zero session length", "[blankSession]")
     const auto blank = buildBlankSession();
     CHECK (blank.lengthLmcSeconds == Rational (0));
     CHECK (blank.root->conceptualOut() == Position (Rational (0)));
+}
+
+TEST_CASE ("eraseRequiresConfirmation is false for an empty project", "[blankSession][erase]")
+{
+    ida::TapePool empty;                          // Slice 1: default ctor is empty
+    CHECK_FALSE (ida::eraseRequiresConfirmation (empty));
+}
+
+TEST_CASE ("eraseRequiresConfirmation is true once any tape exists", "[blankSession][erase]")
+{
+    ida::TapePool pool;
+    pool.add ("Tape 1");
+    CHECK (ida::eraseRequiresConfirmation (pool));   // §2.1: tapes present ⇒ must warn
+    pool.add ("Tape 2");
+    CHECK (ida::eraseRequiresConfirmation (pool));
 }

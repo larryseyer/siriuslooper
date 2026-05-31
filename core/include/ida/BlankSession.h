@@ -3,6 +3,7 @@
 #include "ida/Constituent.h"
 #include "ida/InputDescriptor.h"
 #include "ida/Rational.h"
+#include "ida/TapePool.h"
 #include "ida/TempoMap.h"
 
 #include <memory>
@@ -31,5 +32,12 @@ struct BlankSession
 /// existing RenderPipeline / timeline math has a real map to apply even though
 /// nothing is placed yet.
 BlankSession buildBlankSession();
+
+/// PARAMOUNT safety predicate (spec §2.1). Returns true iff erasing this
+/// project's recordings would destroy at least one irreplaceable tape — i.e.
+/// the pool is non-empty. The New-Song / erase flow uses this to decide whether
+/// to show the deliberate-erase warning: empty ⇒ no prompt (nothing to lose);
+/// non-empty ⇒ the user MUST confirm before any tape is deleted. Pure.
+bool eraseRequiresConfirmation (const TapePool& pool) noexcept;
 
 } // namespace ida
