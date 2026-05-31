@@ -53,7 +53,7 @@ DemoSession buildDemoSession()
                                              ExitCharacter::HandOff));
     const auto intro = std::make_shared<const Constituent> (
         arrangement::layer (introPhraseShell,
-            { makeLoop (11, "intro", Rational (3), 100) }));
+            { makeLoop (11, "intro", Rational (3), 1) }));
 
     // Verse — ONE shared Phrase that the song places three times. The shared
     // Phrase is a layer of two simultaneous loops (rhythm + lead) and lives
@@ -67,8 +67,8 @@ DemoSession buildDemoSession()
                                              ExitCharacter::HandOff));
     const auto verse = std::make_shared<const Constituent> (
         arrangement::layer (versePhraseShell,
-            { makeLoop (21, "verse: rhythm", Rational (6), 200),
-              makeLoop (22, "verse: lead",   Rational (3), 300) }));
+            { makeLoop (21, "verse: rhythm", Rational (6), 2),
+              makeLoop (22, "verse: lead",   Rational (3), 3) }));
 
     // Outro [21,24).
     const Constituent outroPhraseShell =
@@ -79,7 +79,7 @@ DemoSession buildDemoSession()
                                              ExitCharacter::Resolution));
     const auto outro = std::make_shared<const Constituent> (
         arrangement::layer (outroPhraseShell,
-            { makeLoop (31, "outro", Rational (3), 400) }));
+            { makeLoop (31, "outro", Rational (3), 4) }));
 
     // Build the song: intro at [0,3), three verse wrappers at [3,9), [9,15),
     // [15,21), outro at [21,24). Twenty-four whole notes total.
@@ -105,10 +105,15 @@ DemoSession buildDemoSession()
     const Rational lengthSeconds = sessionToLmc.apply (Rational (24));
 
     std::vector<InputDescriptor> inputs;
-    inputs.push_back ({ TapeId (100), InputKind::Audio, "Intro pad",   0 });
-    inputs.push_back ({ TapeId (200), InputKind::Audio, "Verse rhythm",1 });
-    inputs.push_back ({ TapeId (300), InputKind::Audio, "Verse lead",  2 });
-    inputs.push_back ({ TapeId (400), InputKind::Audio, "Outro pad",   3 });
+    // Tape ids match the leaf-loop tape references above (1..4) so that live
+    // capture — which commits each input strip to a real pool tape — feeds the
+    // phrase that reads the same tape. Id 1 is first so it becomes the pool's
+    // permanent primary (the default strip destination). See MainComponent's
+    // tape-pool seeding from these descriptors.
+    inputs.push_back ({ TapeId (1), InputKind::Audio, "Intro pad",   0 });
+    inputs.push_back ({ TapeId (2), InputKind::Audio, "Verse rhythm",1 });
+    inputs.push_back ({ TapeId (3), InputKind::Audio, "Verse lead",  2 });
+    inputs.push_back ({ TapeId (4), InputKind::Audio, "Outro pad",   3 });
 
     return DemoSession { session, std::move (sessionToLmc), lengthSeconds,
                          std::move (inputs) };

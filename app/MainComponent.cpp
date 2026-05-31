@@ -4281,6 +4281,18 @@ MainComponent::MainComponent()
     inputMixer_->setFileInputSourceRegistry (&fileInputRegistry_);
 
     // Tape-UI slice — TapePool is the single source of truth for which tapes exist.
+    // Seed it from the session's input descriptors so every tape a phrase reads
+    // back is a real capture destination the input strips can commit to (the
+    // demo authors one tape per input: ids 1..4, id 1 = permanent primary). A
+    // session with no inputs falls back to the default single-primary pool.
+    if (! demo_.inputs.empty())
+    {
+        std::vector<ida::TapeDescriptor> seed;
+        seed.reserve (demo_.inputs.size());
+        for (const auto& in : demo_.inputs)
+            seed.push_back ({ in.tapeId, in.displayName });
+        tapePool_ = ida::TapePool (std::move (seed));
+    }
     // Mirror it into the input mixer's routing terminals at startup.
     ida::mirrorTapePool (tapePool_, *inputMixer_);
     // And mirror the same set into the TAPECOLOR decorator so each pool tape
