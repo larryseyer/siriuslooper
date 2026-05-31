@@ -2120,3 +2120,9 @@ Remaining (OTTO-side timeline, NOT blockers for IDA):
   4. **Multi-tape phrases.** Only the FIRST leaf loop's tape is wired per pill (one prefetcher per phrase channel). A phrase containing multiple loop children with different tape IDs will only play the first child's tape.
 - Why deferred: v1 scope; none of these are correctness regressions for the common "single recorded loop per phrase" case that T0b targets.
 - What's needed to finish: (1) add `sliceStartSample` param to TapePrefetcher::open; (2) see Task 5 entry for seek; (3) watch-for-tape-appear retry (could hook into TapeRecordWriter's completion callback); (4) extend resolveLoopTapeInfo to return all leaf loops + wire one prefetcher per leaf (requires multi-prefetcher slot allocation per channel).
+
+### 2026-05-30 - Slice 2 follow-on: route the live tape store through ProjectPaths
+- Files: app/MainComponent.cpp (tapesDirectory() ~90, TapeRecordWriter ctor ~4263, reader sites ~6059/6081), audio/src/TapeRecordWriter.cpp:104 (tapeFile), audio/include/ida/TapeRecordWriter.h
+- What was deferred: the live store root is still `…/IDA/tapes/` with `tape-<id>.idatape`; Slice 2 built `ida::persistence::tapeFileFor`/`projectTapesDir`/`tapeFileName` (`<folderId>/tape_<x>.idatape`) but did not rewire the three hardcoded sites.
+- Why deferred: rewiring needs the live `IdaProject` instance, which is minted by the blank-slate boot path (Slice 3) / channel-create + capture wiring (Slice 4); Slice 2 has no app-scoped project to path against yet.
+- What's needed to finish: in Slice 3/4, hold an `IdaProject` on MainComponent, pass `projectTapesDir(idaAppSupportDirectory(), project)` to the TapeRecordWriter ctor, and have TapeRecordWriter::tapeFile + the two MainComponent reader sites build their path via `ida::persistence::tapeFileName(id)` (one source of truth). Decide there whether the writer takes a pre-resolved tapesDir (current shape) or learns the builder.
