@@ -11,7 +11,8 @@
 
 add_library(IdaPersistence STATIC
     src/SessionFormat.cpp
-    src/TapeStore.cpp)
+    src/TapeStore.cpp
+    src/ProjectPaths.cpp)
 
 target_include_directories(IdaPersistence PUBLIC include)
 

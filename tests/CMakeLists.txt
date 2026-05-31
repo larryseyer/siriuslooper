@@ -11,6 +11,7 @@ add_executable(IdaTests
     CaptureSessionTests.cpp
     TapePoolTests.cpp
     IdaProjectTests.cpp
+    ProjectPathsTests.cpp
     TapePoolMirrorTests.cpp
     PromotionTests.cpp
     FileInputDescriptorTests.cpp
