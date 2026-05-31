@@ -426,6 +426,18 @@ lead, say).
   match what `PlaybackResolver` already resolves (the leaf-loop id), so they fix
   the pill-id-vs-loop-id keying defect (roadmap cross-slice findings) *by
   construction* rather than by re-keying a single shared channel.
+- **No fixed output-channel cap (operator-locked 2026-05-31).** The Output Mixer
+  scales to as many loop-channels as the session has loops — the legacy
+  `kMaxOutputChannels = 32` limit is **removed**. (That constant backs RT buffer
+  pre-allocation, so its safe removal is a switch to dynamic / grow-on-demand
+  allocation — owned by the output-mixer slice, not a lone one-liner.)
+- **Physical-output routing defaults to the monitor pair.** Each output channel
+  defaults its physical-output assignment to the **first stereo pair**
+  (conventionally the monitor). Every channel is **assignable to any physical
+  output pair** (consistent with `[[project_master_routable_to_any_pair]]`), but
+  because a real session has **far more loop-channels than physical outputs**, the
+  norm is that channels **sum to the monitor stereo pair** — monitoring is always a
+  stereo pair, never an attempt to fan out to outputs that don't exist.
 
 ## 9. Transport coupling (OTTO)
 

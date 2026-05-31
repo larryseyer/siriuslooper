@@ -269,7 +269,7 @@ git commit -m "feat: TapePool allows an empty pool and optional primary (blank-s
 
 **Spec refs:** §8.5 (play = all loops), spec note lifting the T0b "first leaf-loop only" limit.
 **Depends on:** Slice 5.
-**Files:** `refreshOutputMixerPhraseChannels()` (`app/MainComponent.cpp:7105`) + the `TapePrefetcher` / `OutputMixer` / `Bus` wiring — create **one OutputMixer channel per loop** (keyed by the leaf-loop ConstituentId, matching `PlaybackResolver`), labeled `T#P#L#`, and **sum a phrase's loop-channels at a per-phrase bus** → master (spec §8.6). Supersedes the earlier single-phrase-channel approach.
+**Files:** `refreshOutputMixerPhraseChannels()` (`app/MainComponent.cpp:7105`) + the `TapePrefetcher` / `OutputMixer` / `Bus` wiring — create **one OutputMixer channel per loop** (keyed by the leaf-loop ConstituentId, matching `PlaybackResolver`), labeled `T#P#L#`, and **sum a phrase's loop-channels at a per-phrase bus** → master (spec §8.6). Supersedes the earlier single-phrase-channel approach. **Remove the `kMaxOutputChannels = 32` cap** — switch per-channel scratch to dynamic/grow-on-demand allocation; default each channel's physical-output to the first stereo pair (monitor), assignable to any physical pair.
 **Test strategy:** headless where the loop-enumeration is pure; otherwise operator-verified that a phrase with two layered loops plays both. Mind RT-safety on the mixing path.
 **Done when:** every loop of a phrase is its own `T#P#L#` Output Mixer channel; a phrase with ≥2 loops plays all of them, balanced via their per-loop faders and summed at the per-phrase bus.
 

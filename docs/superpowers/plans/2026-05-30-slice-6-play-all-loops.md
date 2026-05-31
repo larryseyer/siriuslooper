@@ -12,10 +12,13 @@
 > loop-channels then **sum at a per-phrase bus** → master (that bus is what the
 > phrase-button bank triggers and what "play all loops" routes through). The **bug
 > analysis below remains correct and useful**; the **remedy must be re-derived** as
-> per-loop channels + a per-phrase bus — it now touches `OutputMixer`/`Bus`, and the
-> 32-channel `kMaxOutputChannels` cap must be reconsidered (loops, not phrases, now
-> consume channels; raise with the operator if a real session can exceed it).
-> Re-plan this slice against §8.6 before executing.
+> per-loop channels + a per-phrase bus — it now touches `OutputMixer`/`Bus`. The
+> **`kMaxOutputChannels = 32` cap is REMOVED (operator-locked 2026-05-31)**: switch
+> the per-channel scratch from a fixed-`32` ceiling to **dynamic / grow-on-demand**
+> allocation (the cap backs RT pre-allocation, so this is the real work — not a
+> one-liner), and **default each channel's physical-output to the first stereo pair
+> (the monitor)**, assignable to any physical pair (channels far outnumber physical
+> outs, so they sum to the monitor pair). Re-plan this slice against §8.6 before executing.
 
 **Goal:** A phrase's Output-Mixer channel must mix **every** leaf-loop the phrase owns, played simultaneously (a phrase is a stack of loops), not just its first leaf-loop. This lifts the T0b known limit recorded in the design spec §8.5 ("today the Output Mixer phrase strip prefetches only the phrase's *first* leaf-loop tape"). Operator-visible success: a phrase with two layered loops (e.g. the demo verse: rhythm tape 2 + lead tape 3) plays BOTH.
 
