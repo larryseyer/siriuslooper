@@ -54,7 +54,9 @@ graph phases; bus controls; MON strips; file input).
 - [ ] **OTTO output-strip detail panel** — EQ/CMP (+ pan/width/sends) wired per OTTO strip (slice "4c"; 4b shipped without it)
 - [ ] **OTTO transport-start surface** so playback is audible (slice "4d") — *verify against the landed `TransportBarHost`/S3a; may need only the start wiring, not a new surface*
 - [ ] **OTTO stereo-mix output** (sentinel index `-2`, sums OTTO's 4 PlayerOut sub-buses) — design+plan done (`../specs/2026-05-27-otto-stereo-mix-output.md`), implementation not started
-- [ ] **Dual peak+LUFS FaderMeter on every OTTO output strip** (visual parity with phrase/MON/bus strips) — *verify: master meter exists, per-output binding unconfirmed*
+- [x] **Master meter** (transport-bar, master mix point) — operator-confirmed working 2026-05-31
+- [ ] **Master spectrum display does not work** (operator-confirmed 2026-05-31) — OTTO `TransportBar` `SpectrumDisplay` shows nothing although the feed is wired (`TransportBarHost` pulls `OttoHost::spectrumBinDb` → `setSpectrumBin`); diagnose when Diversion 1 resumes
+- [ ] **Dual peak+LUFS FaderMeter on every OTTO output strip** (visual parity with phrase/MON/bus strips) — *verify: master meter works, per-output binding unconfirmed*
 - [ ] **Functional insert (INS) chain on output-mixer CHANNELS** (phrase/MON/OTTO), not buses-only — needs the `IEffectChainHost` node-key-collision audit first (todo.md)
 - [ ] **Cross-group solo** across phrase/MON/bus/OTTO strips — today solo is OTTO-band-local only; other strips' solo buttons are inert (todo.md)
 - [ ] **Fix plugin-scanner GUI-lock** ("P7-scanner") — unblocks the 3rd-party VST/CLAP insert picker on every channel (todo.md; the insert UI is internal-FX-only until this lands)
