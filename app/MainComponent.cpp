@@ -4175,7 +4175,7 @@ juce::File MainComponent::hostBinaryPath() const
 // MainComponent
 // =============================================================================
 MainComponent::MainComponent()
-    : demo_ (buildDemoSession()),
+    : demo_ (buildBlankSession()),
       undoStack_ (demo_.root),
       sessionLengthSeconds_ (demo_.lengthLmcSeconds),
       tier_ (demoTier()),
@@ -4204,13 +4204,6 @@ MainComponent::MainComponent()
                 walk (*child);
         };
         walk (*undoStack_.current());
-    }
-
-    // Demo edit so undo/redo have something to traverse: a renamed session.
-    {
-        const auto renamed = std::make_shared<const Constituent> (
-            demo_.root->withName ("renamed session"));
-        undoStack_.push (renamed, "rename session");
     }
 
     // --- Audio I/O (M1 Sessions 1-2) ------------------------------------------

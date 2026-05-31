@@ -2,6 +2,7 @@
 
 #include "CapabilityTier.h"
 #include "DemoSession.h"
+#include "ida/BlankSession.h"
 
 #include "ida/ActiveReadsSnapshot.h"
 #include "ida/AudioCallback.h"
@@ -337,7 +338,11 @@ private:
     void reloadDemo();
 
     // --- session state (drives every view) ---
-    DemoSession  demo_;
+    // Boot state. Despite the legacy member name, this is the BLANK session
+    // (spec §4.1/§11) — an empty project, not the retired demo song. The name is
+    // kept to minimize churn across the many `demo_.<field>` read sites; all the
+    // fields BlankSession exposes match the ones those sites read.
+    BlankSession  demo_;
     UndoStack    undoStack_;
     Rational     sessionLengthSeconds_;
 
