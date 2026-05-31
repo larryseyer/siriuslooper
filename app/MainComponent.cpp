@@ -4294,8 +4294,8 @@ MainComponent::MainComponent()
     // Tape-UI slice — TapePool is the single source of truth for which tapes exist.
     // Seed it from the session's input descriptors so every tape a phrase reads
     // back is a real capture destination the input strips can commit to (the
-    // demo authors one tape per input: ids 1..4, id 1 = permanent primary). A
-    // session with no inputs falls back to the default single-primary pool.
+    // demo authors one tape per input: ids 1..4, id 1 = primary). A session
+    // with no inputs leaves the default empty (blank-slate) pool — no tapes seeded.
     if (! demo_.inputs.empty())
     {
         std::vector<ida::TapeDescriptor> seed;
