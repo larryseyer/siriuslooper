@@ -76,16 +76,28 @@ control is future via a **source-agnostic command layer**. Demo-song boot is ret
 - **Channel Add/Remove undo** has no natural `UndoStack` lane (it is Constituent-tree-shaped,
   not channel-shaped); spec §15.2 defaulted "yes." Decide whether channel edits are undoable.
 
+## This session (2026-05-31, bookkeeping pass — no code)
+
+- Added **Slices 9–12** to the diversion roadmap (phrase ADD/OVER modes, top-bar toggle, live MIDI
+  triggering) + a post-M13 Collapse/Expand item — see the standalone plan and the merge findings.
+- Stood up the **master status dashboard** `docs/superpowers/plans/STATUS.md` (every M1–M24 + every
+  active-diversion slice, with checkboxes) and a **Master-plan bookkeeping protocol** in `CLAUDE.md`
+  ("proceed with the next item" + tick-box/register-sub-plan/refresh-continue as the definition of done).
+- **Archived 40 completed plans** into `docs/superpowers/plans/archive/` (working set now 11 live plans).
+- **Decomposed Diversion 1** (mixer/GUI) remaining work into real checkboxes in STATUS.md; recorded
+  operator verifications: **master meter works**, **master spectrum display does NOT** (diagnose when
+  Diversion 1 resumes).
+
 ## Repo state (verified)
 
-- HEAD = this handoff commit; pushed, origin/master in sync. Session commits: `d5960c0` (spec),
-  `976b471` (8 slice plans + doc-update plan + diversion registration), `c5a1f88` (whitepaper
-  always-running→assigned), `1de2d3d` (prior handoff), `13aa027` (mixer naming: input stereo
-  pairs + output per-loop `T#P#L#` + per-phrase bus), `832b04b` (output cap removed + monitor
-  default).
+- HEAD pushed, origin/master in sync. This session's commits: `4c7644e` (Slices 9–12 merge), `9ec12ba`
+  (STATUS dashboard + bookkeeping + archive 40), `1c5ea42` (Diversion 1 decomposition), `039d99c`
+  (spectrum-broken/master-meter-confirmed). Prior: `d5960c0` (spec), `976b471` (8 slice plans), `c5a1f88`
+  (whitepaper always-running→assigned).
 - Clean tree except `external/sfizz` (pre-existing untracked — leave it).
-- **No production code changed yet** — this was design + planning. First operator-testable
-  result arrives after roughly Slices 1–6 (record → phrase → playback).
+- **No production code changed yet** — still design + planning. **Next action is unchanged: Slice 1.**
+  First operator-testable result arrives after roughly Slices 1–6 (record → phrase → playback).
+- `docs/superpowers/plans/STATUS.md` is now the single source of truth for what's next — read it first.
 - Memory `project_looper_at_least_one_tape_invariant` annotated **OVERTURNED** (the ≥1-tape
   floor is removed by this work — do NOT implement floor enforcement).
 
