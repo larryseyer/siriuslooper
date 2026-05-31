@@ -1,144 +1,129 @@
-# Session Continuation — 2026-05-30 (T0b playback-resolution path COMPLETE)
+# Session Continuation — 2026-05-30 (NEXT CHAT: blank-slate + phrase-creation flow)
 
-## Current State
+## ⭐ The essential next topic (operator-set — START A FRESH CHAT FOR THE DESIGN)
 
-**Tier-0 / Phase T0b — the playback-resolution path — is DONE.** A recorded
-phrase now streams from the on-disk tape store into its Output-Mixer channel,
-driven by OTTO's transport playhead. Built subagent-driven against the committed
-plan (`docs/superpowers/plans/2026-05-30-playback-resolution-path-t0b.md`), each
-task with spec + code-quality review + fix loop, plus a final whole-subsystem
-holistic review (verdict: ship-ready for operator ear-test, blocking item fixed).
+**How phrases are CREATED is the thing that blocks testing IDA, and the current
+starting state is the wrong approach.** Today IDA boots into a pre-authored
+**demo song** (`app/DemoSession.cpp` — `buildDemoSession()`): a fixed
+intro/verse/verse/verse/outro arrangement with pre-existing phrases and tape
+references. The operator's directive:
 
-The **operator ear-test is the remaining confirmation** — the engine path is
-fully headless-proven; runtime/GUI is operator-verified (the agent cannot hear it).
+> We need a **blank slate** — no demo song, no phrases, no tapes. Let the tester
+> walk **all** the steps to go from first launch of IDA to actually using it.
 
-- **Plan (committed):** `docs/superpowers/plans/2026-05-30-playback-resolution-path-t0b.md`.
-- **Design spec:** `docs/superpowers/specs/2026-05-30-render-path-and-tape-store-design.md`
-  (Phase T0b, §155–229; the "why" — whitepaper §3.6/§5.2/§5.7/§6.6/§8).
+So the next chat is a **design session** (use `superpowers:brainstorming`) on the
+operator-facing first-run flow:
 
-## Repo State (verified, not narrated)
+1. First launch = empty project. Minimal default mixers only (per
+   [[project_minimal_default_mixers]]): channels matching physical I/O, the pool
+   floor of exactly one primary tape (`TapeId{1}`), **no** phrases, **no**
+   pre-authored song.
+2. The tester records → audio lands in a **tape** (never "into a phrase").
+3. The tester then **creates a phrase** as a structure-layer view over recorded
+   tape region(s) — THIS is the missing/undesigned step. A phrase is just a
+   length + in/out references into tape(s) (loops, single regions, anything);
+   it's assigned *after* capture (even sub-ms after). There is currently **no UI
+   gesture to create a phrase from a recorded tape** — that's the gap.
+4. The new phrase then appears as an Output-Mixer strip and plays back (the T0b
+   playback path already works once a phrase references a recorded tape).
 
-- **IDA** master HEAD = **`7ac220e`**, **origin/master in sync** (all pushed).
+Do NOT keep patching the demo session. The demo fixture should be **retired**
+(or reduced to a true empty default) and replaced by a real create-a-phrase flow.
+Capture this as the headline before touching code.
+
+**Hard terminology rule the operator drove home (now in memory
+[[project_close_stops_all_tapes_single_instance]] sibling — see below):** inputs
+assign to **TAPES**, never phrases. Phrases are structure-layer views shown on
+the Output Mixer / timeline, never in any input-mixer assignment UI. Never frame
+recording as going "into a phrase."
+
+## Repo State (verified)
+
+- **IDA** master HEAD = **`6b199b0`**, pushed, in sync with origin/master.
   Clean tree except `external/sfizz` (pre-existing untracked — leave it).
-- **OTTO** submodule UNCHANGED this session. No `external/OTTO/` edits, no SHA bump.
-  Inbox: `[FROM OTTO → IDA]` empty; the `[FROM IDA → OTTO]` entries are `needs-ack`
-  addressed to OTTO's Claude — not ours to prune.
-- **Final verification at HEAD:** CLEAN build (`rm -rf build` + reconfigure) of
-  `IdaTests` AND the signed `IDA.app` both succeed; full `ctest` = **894/895** — the
-  single non-pass is the documented separately-run `MainComponentPluginEditorTests_NOT_BUILT`
-  (established baseline, NOT a regression). `[tape-playback]` = **21 cases / 790
-  assertions**, all green.
+- **OTTO** submodule UNCHANGED this session; no SHA bump. Inbox `[FROM OTTO →
+  IDA]` empty. The `[FROM IDA → OTTO]` entries are `needs-ack` for OTTO's Claude.
+- An IDA instance (single-instance enforced) may still be running from this
+  session's testing — it records continuously to the tape store while open;
+  close it when done (that finalizes the tape).
 
-## What T0b delivers (on disk + tested)
+## What this session actually did (debugging the T0b ear-test)
 
-Data flow (input mixer → tape → **[T0b]** → output mixer):
-- **Playhead** (`engine/.../TransportPlayhead.h`, `otto-bridge/.../OttoHost.*`):
-  `OttoHost::renderBlock` publishes `TransportPlayhead{positionInSeconds,isPlaying}`
-  via lock-free atomics. v1 identity calibration: positionInSeconds =
-  elapsed-PLAYING-samples / sr (monotonic-while-playing by construction; sidesteps
-  OTTO's pattern-null position quirk). `prepare()` resets the published atomics too.
-- **Snapshot** (`engine/.../ActiveReadsSnapshot.h`): `PhraseSlotRead{slot,
-  tapeSampleStart,active}` + fixed-cap `ActiveReadsSnapshot` (kMaxPhraseSlots=64) +
-  `ActiveReadsPublisher` (SPSC seqlock; lock-free bounded-retry `read` on the audio
-  thread, never wait-free — comment says so).
-- **Resolver** (`engine/.../PlaybackResolver.*`): control-worker (~10ms) reads the
-  playhead → exact `Rational(llround(sec*sr), llround(sr))` LMC time →
-  `RenderPipeline::activeReadsAt` (tree-walk, off-thread) → maps ConstituentId→slot
-  → steers each slot's prefetcher (`setTargetSample`) → publishes the
-  pre-resolved snapshot. Injected std::function collaborators (testable in isolation).
-- **Prefetcher** (`audio/.../TapePrefetcher.*`): per phrase channel; worker decodes
-  tape records AHEAD into a lock-free stereo PCM ring; audio-thread `pull` is
-  wait-free + zero-fills underrun. **Locates records via the reader index's `lmcTs`
-  timestamps** (NOT fixed framesPerRecord) — correct for VARIABLE-size live records
-  (the writer frames one audio block per record; block size is not guaranteed
-  constant). `open(file, registry, double sampleRate, loopLengthSamples)`.
-- **Reader** (`audio/.../TapeRecordReader.*`): T0a + Task-1 change — caches one read
-  stream across `readAudioRecord`, reset on `refresh` (single-worker contract documented).
-- **Phrase scratch** (`engine/.../OutputMixer.*`): stable per-channel stereo scratch
-  (mirror of `InputMixer::postStrip_`) — `ensurePhraseScratch`/`phraseScratchPointer`/
-  `mutablePhraseScratch`; erased on `removeChannel` (no stale-on-id-reuse). The
-  channel's audio source points at it via `setChannelAudioSource`.
-- **Playback step** (`audio/.../AudioCallback.*`): new RT-safe step between OTTO
-  render and OutputMixer dispatch — seqlock read + per-slot `pull` → memcpy into
-  phrase scratch (clamped to `Bus::kMaxBusMixSamples`); active→inactive zeroed once.
-  Zero alloc/lock/IO/decode/tree-walk on the audio thread (alloc test enforces it).
-- **Wiring** (`app/MainComponent.*`): owns the registry (PCM+FLAC) / publisher /
-  resolver / `RenderPipeline` (from `demo_.root` + `demo_.sessionToLmc`) / per-channel
-  prefetchers / slot map. Wired in `refreshOutputMixerPhraseChannels` (resolver
-  stopped + audio callback detached around the whole mutation — provably quiescent)
-  + the device-prepare path + teardown (reverse order). Initial session load routes
-  through the same `refreshOutputMixerPhraseChannels` path.
+The operator's T0b ear-test (record → play a phrase) was **silent**. Root-caused
+and fixed four things (all pushed); the *fifth* finding is the blank-slate
+redirect above.
 
-## T0b commit trail (this session, in order — all pushed, HEAD `7ac220e`)
+1. **`e61b892` — tape-id mismatch (the silence).** The demo's phrase leaf-loops
+   referenced `TapeId 100/200/300/400`, but live capture commits input strips to
+   the pool's **primary `TapeId{1}`**. Nothing recorded to 100–400, so the
+   playback resolver opened `tape-100.idatape` (never created) → every phrase
+   channel silent. Fix: demo loops + inputs remapped to ids 1..4, and the
+   `TapePool` is now **seeded from the session inputs** so each tape a phrase
+   reads is a real capture destination. (`DemoSession.cpp`, `MainComponent.cpp`.)
+   The T0b engine path itself was never broken (21 `[tape-playback]` cases green).
+2. **`85e7ee1` — single instance / tape-close-on-exit (operator hard rule).**
+   `Main.cpp` `moreThanOneInstanceAllowed()` was `true`; two copies each pointed
+   their always-running `TapeRecordWriter` at the SAME `tape-1.idatape`, racing
+   delete/reopen → the file ballooned (saw **948 MB**) and closing one window
+   left the other recording. Now **single-instance** (second launch routes to the
+   existing window via `anotherInstanceStarted`). Clean close already finalizes
+   every tape via the `MainComponent`→`TapeRecordWriter` dtor chain — verified by
+   code + empirically. **Never `kill -9` the app when testing tapes** (SIGKILL
+   skips the dtor). Saved as memory [[project_close_stops_all_tapes_single_instance]].
+3. **`942ba5b` — tape store path.** Tapes were landing in `~/Library/IDA/tapes`,
+   not `~/Library/Application Support/IDA/tapes`: `juce::File::
+   userApplicationDataDirectory` is `~/Library` on macOS and the helper omitted
+   "Application Support". New shared `idaAppSupportDirectory()` adds it on
+   macOS/iOS only (Windows/Linux keep `<userAppData>/IDA`). Fixes both the tape
+   store and the calibration sidecar. No migration (operator: no users, no
+   back-compat). **Tapes now live at `~/Library/Application Support/IDA/tapes`.**
+   (Old `~/Library/IDA/tapes` is orphaned — delete it manually if desired; I did
+   not, deletion is a destructive op I wasn't authorized for.)
+4. **`6b199b0` — demo tapes named "Tape N", not after phrases.** The input
+   destination picker correctly lists `tapePool_.tapes()`, but seeding tape
+   *names* from the input displayNames ("Intro pad", "Verse rhythm") made the
+   picker read like inputs were assigned to phrases. Renamed demo pool tapes to
+   "Tape 1..4". **Unverified by eye** (operator pivoted to the blank-slate topic
+   before confirming) — but the picker now lists "Tape 1..4" + buses.
 
-`f2fa903` plan → `47ba93d`+`7b3ed5e` (T1 reader cache) → `5613aca`+`915a9f7` (T2
-playhead) → `406b949`+`13cea01` (T3 snapshot) → `5ab2739` (T4 phrase scratch) →
-`f38a1a9`+`bc96fbf` (T5 prefetcher) → `57f6d3d`+`d37075b` (T6 resolver) →
-`27b2981`+`630ff51` (T7 playback step) → `8a3990b` (T8a e2e) →
-`7d18842`+`78aa904` (T5b index-by-lmcTs, variable-block correctness) →
-`faf353d`+`7302a14` (T8b MainComponent wiring) → `7ac220e` (holistic-review fix:
-scratch clamp + seqlock-race note).
+## Key code anchors (for the blank-slate work)
 
-## Operator ear-test (the remaining confirmation)
+- `app/DemoSession.cpp` — `buildDemoSession()`: the fixture to retire/replace.
+- `app/MainComponent.cpp`:
+  - `~`81 `tapesDirectory()` / `idaAppSupportDirectory()` — tape store root.
+  - `~`4254 `TapeRecordWriter` construction (`tapesDirectory()`); `~`4285 pool
+    seeding from `demo_.inputs` + `mirrorTapePool`.
+  - `7895 rebuildInputStrips()` — input strips are built from **physical
+    `inputPairs_`** (names "In 1", "In 1-2"), each defaulting to
+    `CommitToTape`→primary tape. NOT from `demo_.inputs`.
+  - `7729 refreshInputDestinations()` — input destination picker = `tapePool_`
+    tapes + buses (correct: inputs→tapes).
+  - `7079 refreshOutputMixerPhraseChannels()` — builds one Output-Mixer phrase
+    strip per pill + opens a `TapePrefetcher` per phrase's leaf-loop tape.
+- `core/include/ida/TapePool.h` — default ctor seeds one tape `TapeId{1}` "Tape 1".
+- Canonical "why": `docs/IDA_Whitepaper_V10.md` (data layer = Tape, structure
+  layer = Constituent/phrase, §7.2 split). T0b design:
+  `docs/superpowers/specs/2026-05-30-render-path-and-tape-store-design.md`.
 
-The signed `IDA.app` is freshly clean-built. To eyes/ears-on:
-1. Launch `IDA` (Desktop alias) — or the agent can launch it.
-2. Record input to a tape so a phrase pill exists (its tape `.idatape` is on disk).
-3. Hit play (OTTO transport). The phrase should sound through its Output-Mixer
-   strip and its per-phrase meter should move; stop → silence.
-- Caveat: a phrase only sounds if its tape FILE already exists (recorded). A pill
-  whose tape isn't recorded yet stays silent until the next channel refresh re-opens
-  it (no auto-retry on tape-create — see v1 limits).
+## Known v1 playback limits (still true; from the T0b session, in `todo.md`)
 
-## Honest v1 limits (in `todo.md`, NOT blockers)
-
-- **FreeRunning leaf loops only** (RenderPipeline M3 reality).
-- **Identity device calibration** (positionInSeconds→sample = round(sec*sr));
-  real loopback calibration deferred.
-- **Playhead = elapsed-playing-seconds**, not OTTO's ppq position; transport
-  relocate/seek within OTTO's timeline not yet reflected. Sub-block play-start
-  error (whole first block credited) — RD1 stub.
-- **Prefetcher wrap is from 0** (`s %= loopLengthSamples`): correct for a loop whose
-  tape slice starts at 0 (the common "recorded loop = whole tape" case); `tapeIn != 0`
-  wraps to 0 instead of tapeIn. Refine to slice-relative wrap later.
-- **Seek-on-drain latency**: a transport jump is honored only after the ~1s ring
-  drains (compounds with the 10ms resolve cadence).
-- **Multi-tape phrases**: only the FIRST leaf loop's tape is wired per pill.
-- **Unrecorded-tape silence**: a pill whose tape file doesn't exist stays silent
-  until a later `refreshOutputMixerPhraseChannels` re-opens it (no auto-retry).
-- Prefetch ring fixed ~1.0 s (tier-coupled depth deferred).
-
-## After T0b: next (own session)
-
-T0b closes the load-bearing "phrase channels are silent" gap. Candidates next:
-- Resume engine milestones (M8 S7+) per the V7/V10 order, OR
-- The OPERATOR-RAISED arrangement subsystem (in `todo.md` 2026-05-30): (1) phrase
-  playback + arrangement model/UX, (2) "pruning" (operator will DEFINE — capture,
-  don't infer), (3) phrase-boundary crossfades (MIDI/audio/video), (4) export of an
-  arranged phrase timeline (§6.11 "render"). Await a dedicated design session.
-- Tighten a v1 limit if the operator's ear-test surfaces one (slice-relative wrap,
-  seek latency, or the unrecorded-tape auto-retry are the likely first asks).
-
-## Method note (continue this if iterating the same way)
-
-Subagent-driven (`superpowers:subagent-driven-development`): one `general-purpose`
-implementer (model `sonnet`) per task, FULL task text pasted in (don't make it read
-the plan file). Per task: implement → spec-compliance review → code-quality review →
-fix loop → git-verify (real `git log` + re-run the named suite whose summary line you
-read) before advancing. The harness emits STALE clangd diagnostics ("file not found",
-"no member", Catch operand errors) for freshly-edited headers/tests — trust the real
-Ninja build, not the diagnostic. Subagents stage ONLY their task's files (never
-`git add -A` — the build emits a stray gitignored `tests/IdaTests`). Single-line
-`feat:`/`fix: T0b — …` commits. Work on `master`; push authorized. Two genuine
-plan-stage corrections caught during execution: `Rational` has no `fromDouble` (use
-`Rational(llround(sec*sr), llround(sr))`), and the prefetcher must locate records by
-the index `lmcTs` (variable-block reality), not a fixed framesPerRecord.
+FreeRunning leaf loops only; identity device calibration; playhead = elapsed-
+playing-seconds (no OTTO seek/relocate yet); prefetcher wrap-from-0; seek-on-
+drain ~1 s latency; first leaf-loop tape only per pill; **unrecorded-tape
+silence + no auto-retry** (a phrase whose tape file didn't exist at channel-open
+stays silent until the next `refreshOutputMixerPhraseChannels`); ~1.0 s ring.
+The unrecorded-tape/auto-retry limit interacts badly with live record→play in a
+single run (the prefetcher opens at launch; the always-running writer deletes +
+recreates the tape on first write per session) — worth designing alongside the
+phrase-creation flow.
 
 ## Commands to run first (next chat)
 
 ```bash
 cd /Users/larryseyer/IDA
-git log --oneline -6          # expect 7ac220e at HEAD, in sync with origin/master
+git log --oneline -6          # expect 6b199b0 at HEAD, in sync with origin/master
 git status --short            # expect only external/sfizz
-cmake --build build --target IdaTests && ./build/tests/IdaTests "[tape-playback]"  # 21 cases / 790 assertions
+ls -la "$HOME/Library/Application Support/IDA/tapes"   # tape store (new path)
 ```
+Then START A FRESH BRAINSTORM on the blank-slate first-run + phrase-creation flow
+before any code.
