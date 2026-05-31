@@ -1250,8 +1250,8 @@ TapePool deserializeTapePool (const juce::String& json)
         fail ("tape pool document must be a JSON object");
 
     const auto tapes = requireProperty (parsed, "tapes");
-    if (! tapes.isArray() || tapes.size() == 0)
-        fail ("tape pool must carry a non-empty tapes array");
+    if (! tapes.isArray())
+        fail ("tape pool 'tapes' property must be an array");
 
     std::vector<TapeDescriptor> descriptors;
     descriptors.reserve (static_cast<std::size_t> (tapes.size()));

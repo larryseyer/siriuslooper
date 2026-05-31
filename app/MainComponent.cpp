@@ -3689,11 +3689,13 @@ public:
         addAndMakeVisible (dropped_);
     }
 
-    /// Rebuilds the row list from `infos` (one Row each). Remove is disabled
-    /// (a) when only one tape remains so the >=1 pool floor is unbreakable, and
-    /// (b) on the primary tape, which is permanent (TapePool/InputMixer/MainComponent
-    /// all refuse to remove it). Both must be reflected in the UI or the operator
-    /// can click a Remove that silently desyncs pool from mixer.
+    /// Rebuilds the row list from `infos` (one Row each). The pool itself may
+    /// now be emptied (the blank-slate spec overturned the >=1 floor), but the
+    /// InputMixer still pins its primary terminal (TapeId{1}) until Slice 4, and
+    /// MainComponent::removeTape refuses that single case. Remove is therefore
+    /// disabled on the primary row and while only one tape remains, so the
+    /// operator can't click a Remove the engine will reject and desync the UI.
+    /// `primary` is TapeId{0} (matches no row) when the pool is empty.
     void setTapes (const std::vector<TapeInfo>& infos, ida::TapeId primary)
     {
         rows_.clear();
@@ -8233,11 +8235,13 @@ void MainComponent::renameTape (ida::TapeId id, const juce::String& name)
 
 void MainComponent::removeTape (ida::TapeId id)
 {
-    if (tapePool_.count() <= 1) return;          // >=1 pool floor (TapePool also refuses)
-    if (id == tapePool_.primary()) return;       // primary is permanent (InputMixer pins it
-                                                 // too) — must bail BEFORE closeTape, or we'd
-                                                 // close the primary writer then desync when
-                                                 // inputMixer_->removeTape refuses TapeId{1}.
+    // The pool floor is overturned (blank-slate spec): a pool may be emptied
+    // and the primary is no longer pinned, so removing any pool tape — including
+    // the front/primary — is allowed. The InputMixer still pins TapeId{1} as a
+    // permanent terminal (Slice 4 unpins it); guard that single case so we never
+    // close the primary writer and then desync when inputMixer_->removeTape
+    // refuses TapeId{1}.
+    if (id == ida::TapeId { 1 } && inputMixer_->hasTape (id)) return;
 
     audioDeviceManager_.removeAudioCallback (audioCallback_.get());
     // Route any channel that targeted this tape back to the primary tape.
@@ -8260,9 +8264,11 @@ void MainComponent::removeTape (ida::TapeId id)
     if (armedTapeIds_.empty() && captureSession_.isArmed())
         captureSession_.disarm();
 
-    // Prevent focusedTape_ from dangling on the now-removed tape.
+    // Prevent focusedTape_ from dangling on the now-removed tape. Fall back to
+    // the new front (primary), or the TapeId{0} "none" sentinel when the pool
+    // is now empty — the same sentinel the ctor uses for an inputs-less project.
     if (focusedTape_ == id)
-        focusedTape_ = tapePool_.primary();
+        focusedTape_ = tapePool_.primary().value_or (ida::TapeId (0));
 
     refreshTapesPane();
     refreshTimeline();
@@ -8283,7 +8289,9 @@ void MainComponent::refreshTapesPane()
     infos.reserve (tapePool_.tapes().size());
     for (const auto& t : tapePool_.tapes())
         infos.push_back ({ t.id, juce::String (t.name) });
-    tapesPane_->setTapes (infos, tapePool_.primary());
+    // Empty pool ⇒ TapeId{0}, a "none" sentinel that matches no row (an empty
+    // pool has no rows anyway); otherwise the front id highlights as primary.
+    tapesPane_->setTapes (infos, tapePool_.primary().value_or (ida::TapeId (0)));
 }
 
 void MainComponent::refreshDiagnostics()
@@ -8834,11 +8842,14 @@ void MainComponent::chooseFileAndLoad()
 
                     // Snapshot the current pool's non-primary ids before the
                     // move so we can prune them from both the InputMixer and
-                    // (TAPECOLOR Slice 2) the per-tape decorator. The primary
-                    // is permanent in both subsystems.
+                    // (TAPECOLOR Slice 2) the per-tape decorator. The mixer's
+                    // primary terminal stays pinned (Slice 4 unpins it). The
+                    // pool may now be empty (no primary) — in that case prune
+                    // every tape it holds.
+                    const auto currentPrimary = tapePool_.primary();
                     std::vector<ida::TapeId> staleNonPrimary;
                     for (const auto& tape : tapePool_.tapes())
-                        if (tape.id != tapePool_.primary())
+                        if (! currentPrimary.has_value() || tape.id != *currentPrimary)
                             staleNonPrimary.push_back (tape.id);
 
                     for (auto id : staleNonPrimary)

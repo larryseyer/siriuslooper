@@ -1,6 +1,9 @@
 // Tests for ida::TapePool — the project's pool of tapes (tape subsystem
-// slice 1). Pins the >=1 invariant, monotonic id allocation, add/remove/rename,
-// the explicit-list ctor's validation, and the SessionFormat round-trip.
+// slice 1, blank-slate revision). The pool is now possibly empty: a default
+// pool is the New Song state, primary() is optional, and remove() may empty
+// the pool and never pins the primary. Pins monotonic id allocation,
+// add/remove/rename, the explicit-list ctor's validation, and the
+// SessionFormat round-trip.
 #include "ida/TapePool.h"
 
 #include "ida/SessionFormat.h"
@@ -10,21 +13,31 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <stdexcept>
+#include <vector>
 
 using ida::TapeDescriptor;
 using ida::TapeId;
 using ida::TapePool;
 
-TEST_CASE ("default TapePool holds exactly one primary tape", "[tape-pool]")
+TEST_CASE ("default TapePool is empty (blank-slate)", "[tape-pool]")
 {
     TapePool pool;
-    REQUIRE (pool.count() == 1);
-    CHECK (pool.at (0).id == TapeId (1));
-    CHECK (pool.at (0).name == "Tape 1");
-    CHECK (pool.primary() == TapeId (1));
-    CHECK (pool.find (TapeId (1)) != nullptr);
-    CHECK (pool.find (TapeId (999)) == nullptr);
-    CHECK (pool.tapes().size() == 1u);
+    CHECK (pool.count() == 0);
+    CHECK (pool.tapes().empty());
+    CHECK_FALSE (pool.primary().has_value());
+    CHECK (pool.find (TapeId (1)) == nullptr);
+}
+
+TEST_CASE ("TapePool::add seeds the first tape and primary follows the front", "[tape-pool]")
+{
+    TapePool pool;
+    const auto first = pool.add ("Tape 1");
+    CHECK (first == TapeId (1));
+    REQUIRE (pool.primary().has_value());
+    CHECK (*pool.primary() == TapeId (1));
+    const auto second = pool.add ("Drums");
+    CHECK (second == TapeId (2));
+    CHECK (*pool.primary() == TapeId (1)); // primary unchanged by add
 }
 
 TEST_CASE ("TapePool::add appends a tape with a fresh monotonic id", "[tape-pool]")
@@ -33,63 +46,52 @@ TEST_CASE ("TapePool::add appends a tape with a fresh monotonic id", "[tape-pool
     const auto a = pool.add ("Drums");
     const auto b = pool.add ("Bass");
 
-    CHECK (a == TapeId (2));
-    CHECK (b == TapeId (3));
-    REQUIRE (pool.count() == 3);
-    CHECK (pool.at (1).id == a);
-    CHECK (pool.at (1).name == "Drums");
-    CHECK (pool.at (2).id == b);
-    CHECK (pool.at (2).name == "Bass");
-    CHECK (pool.primary() == TapeId (1)); // primary unchanged by add
+    CHECK (a == TapeId (1));
+    CHECK (b == TapeId (2));
+    REQUIRE (pool.count() == 2);
+    CHECK (pool.at (0).id == a);
+    CHECK (pool.at (0).name == "Drums");
+    CHECK (pool.at (1).id == b);
+    CHECK (pool.at (1).name == "Bass");
+    REQUIRE (pool.primary().has_value());
+    CHECK (*pool.primary() == TapeId (1)); // primary is the front
 }
 
-TEST_CASE ("TapePool::remove erases a tape but enforces the >=1 floor", "[tape-pool]")
+TEST_CASE ("TapePool::remove can empty the pool and does not pin the primary", "[tape-pool]")
 {
     TapePool pool;
-    const auto drums = pool.add ("Drums");
+    const auto a = pool.add ("A");
+    const auto b = pool.add ("B");
     REQUIRE (pool.count() == 2);
 
-    SECTION ("removing a non-last tape succeeds")
+    SECTION ("removing the primary is allowed; front advances")
     {
-        CHECK (pool.remove (drums));
+        CHECK (pool.remove (a));
         CHECK (pool.count() == 1);
-        CHECK (pool.find (drums) == nullptr);
-        CHECK (pool.primary() == TapeId (1));
+        REQUIRE (pool.primary().has_value());
+        CHECK (*pool.primary() == b);
     }
-
-    SECTION ("removing the last remaining tape is refused (floor of 1)")
+    SECTION ("removing the last tape empties the pool")
     {
-        REQUIRE (pool.remove (drums));        // back down to 1
-        REQUIRE (pool.count() == 1);
-        CHECK_FALSE (pool.remove (TapeId (1))); // refused
-        CHECK (pool.count() == 1);              // unchanged — falsifiable
-        CHECK (pool.find (TapeId (1)) != nullptr);
+        REQUIRE (pool.remove (a));
+        REQUIRE (pool.remove (b));
+        CHECK (pool.count() == 0);
+        CHECK_FALSE (pool.primary().has_value());
     }
-
     SECTION ("removing an unknown id returns false")
     {
         CHECK_FALSE (pool.remove (TapeId (999)));
         CHECK (pool.count() == 2);
-    }
-
-    SECTION ("removing the primary is refused even above the floor")
-    {
-        // The primary tape is permanent: InputMixer pins it and refuses removal,
-        // so the pool must agree or the two desync (primary writer closed while the
-        // pool entry vanishes). This must hold with >=2 tapes, not just at the floor.
-        CHECK_FALSE (pool.remove (pool.primary()));
-        CHECK (pool.count() == 2);                 // unchanged — falsifiable
-        CHECK (pool.find (pool.primary()) != nullptr);
     }
 }
 
 TEST_CASE ("TapePool::add after remove never reuses an id", "[tape-pool]")
 {
     TapePool pool;
-    const auto a = pool.add ("A"); // id 2
-    REQUIRE (pool.remove (a));     // erase id 2
-    const auto b = pool.add ("B"); // must be id 3, not 2
-    CHECK (b == TapeId (3));
+    const auto a = pool.add ("A"); // id 1
+    REQUIRE (pool.remove (a));     // erase id 1 (pool now empty)
+    const auto b = pool.add ("B"); // must be id 2, not 1
+    CHECK (b == TapeId (2));
 }
 
 TEST_CASE ("TapePool::rename changes a tape's name", "[tape-pool]")
@@ -110,18 +112,23 @@ TEST_CASE ("TapePool explicit-list ctor seeds from a non-empty unique list", "[t
         TapeDescriptor { TapeId (7), "Gtr" } });
 
     REQUIRE (pool.count() == 2);
-    CHECK (pool.primary() == TapeId (4));
+    REQUIRE (pool.primary().has_value());
+    CHECK (*pool.primary() == TapeId (4));
     CHECK (pool.at (1).name == "Gtr");
 
     // nextId_ seeded one past the max id (7) -> next add is 8.
     CHECK (pool.add ("New") == TapeId (8));
 }
 
-TEST_CASE ("TapePool explicit-list ctor rejects empty and duplicate ids", "[tape-pool]")
+TEST_CASE ("TapePool explicit-list ctor accepts an empty list", "[tape-pool]")
 {
-    REQUIRE_THROWS_AS (TapePool (std::vector<TapeDescriptor> {}),
-                       std::invalid_argument);
+    TapePool pool (std::vector<TapeDescriptor> {});
+    CHECK (pool.count() == 0);
+    CHECK (pool.add ("First") == TapeId (1)); // empty list ⇒ nextId_ stays 1
+}
 
+TEST_CASE ("TapePool explicit-list ctor rejects duplicate ids", "[tape-pool]")
+{
     REQUIRE_THROWS_AS (
         TapePool (std::vector<TapeDescriptor> {
             TapeDescriptor { TapeId (3), "A" },
@@ -148,11 +155,20 @@ TEST_CASE ("TapePool round-trips through SessionFormat", "[tape-pool][sessionfor
     CHECK (loadedCopy.add ("New") == TapeId (10));
 }
 
-TEST_CASE ("deserializeTapePool rejects empty and malformed documents", "[tape-pool][sessionformat]")
+TEST_CASE ("empty TapePool round-trips through SessionFormat", "[tape-pool][sessionformat]")
 {
-    // Present-but-empty tapes array violates the >=1 on-disk contract.
-    REQUIRE_THROWS_AS (ida::persistence::deserializeTapePool ("{ \"tapes\": [] }"),
-                       std::runtime_error);
+    TapePool empty (std::vector<TapeDescriptor> {});
+    const auto json   = ida::persistence::serializeTapePool (empty);
+    const auto loaded = ida::persistence::deserializeTapePool (json);
+    CHECK (loaded.count() == 0);
+}
+
+TEST_CASE ("deserializeTapePool accepts an empty array but rejects malformed documents",
+           "[tape-pool][sessionformat]")
+{
+    // Present-but-empty tapes array is the legal blank-slate state — it loads
+    // to an empty pool rather than throwing (the >=1 floor is overturned).
+    CHECK (ida::persistence::deserializeTapePool ("{ \"tapes\": [] }").count() == 0);
     // Not valid JSON.
     REQUIRE_THROWS_AS (ida::persistence::deserializeTapePool ("{ not json"),
                        std::runtime_error);
@@ -176,10 +192,11 @@ TEST_CASE ("TapeDescriptor defaults tapeColor to None", "[tape-pool][tapecolor]"
     CHECK (d.tapeColor == ida::TapeColorMode::None);
 }
 
-TEST_CASE ("default TapePool seeds primary tape with tapeColor == None",
+TEST_CASE ("the first added TapePool tape defaults tapeColor == None",
            "[tape-pool][tapecolor]")
 {
     TapePool pool;
+    pool.add ("Tape 1");
     CHECK (pool.at (0).tapeColor == ida::TapeColorMode::None);
 
     // add() preserves the default — newly-added tapes are silent until the

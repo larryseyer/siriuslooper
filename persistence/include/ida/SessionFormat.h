@@ -47,11 +47,11 @@ OutputMixerGraphState deserializeOutputMixerGraphState (const juce::String& json
 juce::String serializeTapePool (const TapePool& pool);
 
 /// Reconstructs a tape pool from serializeTapePool's output. Throws
-/// std::runtime_error on a malformed document. A present-but-empty tapes array
-/// is rejected (the >=1 invariant is a load-time contract too). Callers loading
-/// a pre-tape-pool session construct a default TapePool() instead of calling
-/// this (forward-compat is the caller's responsibility, matching the mixer-graph
-/// convention).
+/// std::runtime_error on a malformed document or a missing 'tapes' property. A
+/// present-but-empty tapes array is accepted and loads to an empty pool (the
+/// blank-slate / New Song state). Callers loading a pre-tape-pool session
+/// construct a default TapePool() instead of calling this (forward-compat is the
+/// caller's responsibility, matching the mixer-graph convention).
 TapePool deserializeTapePool (const juce::String& json);
 
 /// Serializes the OutputMixer's `ConstituentId -> OutputChannelId` phrase-
