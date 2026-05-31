@@ -24,6 +24,7 @@ add_library(IdaCore STATIC
     src/Sha256.cpp
     src/VersionPinningRecord.cpp
     src/TapePool.cpp
+    src/BlankSession.cpp
     src/TapeRecord.cpp
     src/IdaProject.cpp)
 

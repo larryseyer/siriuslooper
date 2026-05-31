@@ -36,6 +36,7 @@ add_executable(IdaTests
     RenderPipelineTests.cpp
     CapabilityTierTests.cpp
     DemoSessionTests.cpp
+    BlankSessionTests.cpp
     OverloadProtectionTests.cpp
     SessionFormatTests.cpp
     TapeStoreTests.cpp
