@@ -44,11 +44,22 @@ Tracked in `../../../continue.md` (Current focus) + `docs/design/mixer-design.md
 are in `archive/` (OTTO embed, pane, audio pump, transport bar, strip routing/persistence; mixer-routing
 graph phases; bus controls; MON strips; file input).
 
-- [x] OTTO embed + pane + audio pump + transport bar + strip routing/persistence (slices landed)
-- [x] Mixer routing graph, bus controls, MON output strips, file-input strips (landed)
-- [ ] **Remaining mixer/GUI completion — NOT yet decomposed into a tracked slice list.**
-      *Known bookkeeping gap: decompose this into checklist items before the next Diversion-1 work,
-      so it can be tracked here like everything else.*
+**Landed:**
+- [x] OTTO embed + pane + audio pump + master meter/transport bar + output-strip DEST routing & persistence
+- [x] Mixer routing graph (buses/sends/FX-returns) + bus controls + MON output strips + file-input strips
+- [x] Input Mixer UI (channel + bus/FX-return strips, destination picker, dual peak+LUFS meter)
+- [x] Output-strip EQ/CMP detail-tab foundation + insert-chain popup (internal-FX only so far)
+
+**Remaining** (decomposed 2026-05-31; several have detailed entries in `../../../todo.md`):
+- [ ] **OTTO output-strip detail panel** — EQ/CMP (+ pan/width/sends) wired per OTTO strip (slice "4c"; 4b shipped without it)
+- [ ] **OTTO transport-start surface** so playback is audible (slice "4d") — *verify against the landed `TransportBarHost`/S3a; may need only the start wiring, not a new surface*
+- [ ] **OTTO stereo-mix output** (sentinel index `-2`, sums OTTO's 4 PlayerOut sub-buses) — design+plan done (`../specs/2026-05-27-otto-stereo-mix-output.md`), implementation not started
+- [ ] **Dual peak+LUFS FaderMeter on every OTTO output strip** (visual parity with phrase/MON/bus strips) — *verify: master meter exists, per-output binding unconfirmed*
+- [ ] **Functional insert (INS) chain on output-mixer CHANNELS** (phrase/MON/OTTO), not buses-only — needs the `IEffectChainHost` node-key-collision audit first (todo.md)
+- [ ] **Cross-group solo** across phrase/MON/bus/OTTO strips — today solo is OTTO-band-local only; other strips' solo buttons are inert (todo.md)
+- [ ] **Fix plugin-scanner GUI-lock** ("P7-scanner") — unblocks the 3rd-party VST/CLAP insert picker on every channel (todo.md; the insert UI is internal-FX-only until this lands)
+
+**Diversion 1 done when:** both mixers ship full per-strip controls (gain/pan/width/EQ/CMP/sends/mute/cross-group-solo/inserts) that persist through save→load; OTTO visual parity (tab + transport + 32 named outputs + stereo-mix + per-output detail + dual meter + cross-group solo); and 3rd-party plugin inserts are available on every channel (scanner fixed).
 
 ---
 
