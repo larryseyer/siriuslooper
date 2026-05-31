@@ -5,6 +5,17 @@
 > "proceed with the next item in the master plan." Bookkeeping rules: `CLAUDE.md` → *Master-plan
 > bookkeeping*. (Finished plans now live in `docs/superpowers/plans/archive/`.)
 
+> ## ⚠ READ FIRST — a concurrent session is editing the master plan
+> Another Claude session is, in parallel, writing a **separate plan for different work** and will
+> **add its item(s) to `STATUS.md`** (likely a new diversion or milestone entry). Before you execute
+> "the next unchecked `[ ]` item," **re-read `STATUS.md` fresh** and check that the first unchecked
+> item is actually the right thing to do next — the other session may have inserted an item *above*
+> Diversion 2 · Slice 2, or its ordering relative to the active diversions may not make sense.
+> If the inserted item's placement/sequencing looks wrong (e.g. it jumps ahead of in-flight
+> diversion work without a stated reason), **pause and ask the operator** rather than blindly taking
+> the topmost `[ ]`. Diversion 2 is mid-flight (Slice 1 done) — finishing its slices in order is the
+> expected path unless the operator says otherwise. `git pull` first in case the other session pushed.
+
 ## Start here — Slice 1 landed; execute Slice 2 next
 
 **Slice 1 (TapePool empty pool + optional primary) is DONE** — landed `66ca9c1`, pushed to
@@ -115,8 +126,10 @@ control is future via a **source-agnostic command layer**. Demo-song boot is ret
 
 ## Repo state (verified)
 
-- HEAD pushed, origin/master in sync. Slice 1 landed at `66ca9c1`
-  (`feat: TapePool allows an empty pool and optional primary …`) plus this bookkeeping commit.
+- HEAD = `4086b5e`, pushed, origin/master in sync (0/0). Slice 1's four commits:
+  `66ca9c1` (substance) → `e02fc57` (bookkeeping: STATUS tick + continue) → `de3bb1e` (Tapes-tab
+  floor deferral recorded in `todo.md`) → `4086b5e` (stale-comment fix from code-quality review).
+  ⚠ A concurrent session may have pushed after this — `git pull` and re-check `git log` at start.
 - Clean tree except `external/sfizz` (pre-existing dirty submodule) and untracked `.serena/`
   (Serena MCP scratch) — leave both.
 - **First production code of Diversion 2 has landed (Slice 1).** First operator-testable / visible
