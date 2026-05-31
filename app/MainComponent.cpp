@@ -4298,8 +4298,13 @@ MainComponent::MainComponent()
     {
         std::vector<ida::TapeDescriptor> seed;
         seed.reserve (demo_.inputs.size());
+        // Tapes are data-layer capture destinations — name them as TAPES, never
+        // after the song phrases/sections that a Constituent later defines over
+        // them. An input channel is assigned to a tape; a phrase ("intro",
+        // "verse") is a structure-layer view, assigned after capture and shown
+        // on the Output Mixer / timeline, never in the input destination picker.
         for (const auto& in : demo_.inputs)
-            seed.push_back ({ in.tapeId, in.displayName });
+            seed.push_back ({ in.tapeId, "Tape " + std::to_string (in.tapeId.value()) });
         tapePool_ = ida::TapePool (std::move (seed));
     }
     // Mirror it into the input mixer's routing terminals at startup.
