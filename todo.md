@@ -1,5 +1,11 @@
 # IDA — Deferred Items
 
+### 2026-05-31 — Tapes-tab Remove-button UI floor (deferred to Diversion-2 Slice 4)
+- Files: `app/MainComponent.cpp` (`setTapes`, the `poolAboveFloor` / `canRemove` logic + its floor-claim doc comments; the matching doc near `setTapes`'s declaration and `app/MainComponent.h`).
+- What was deferred: the Tapes-tab Remove button stays disabled when only one tape remains and on the primary row (a UI-level ≥1 floor + UI primary-pin). Slice 1 overturned the *data-model* floor (`TapePool::remove` now empties the pool; `primary()` is `std::optional<TapeId>`), but left this UI affordance in place.
+- Why deferred: pre-existing (not introduced by Slice 1) and reaching the empty pool via the operator UI is Slice 3/4 scope, not Slice 1 (data-model + compile-guard). Removing it now would let the UI request a removal the `InputMixer` still hard-refuses — it pins `TapeId{1}` in its ctor until Slice 4. Confirmed by both Slice 1 reviewers (spec: pre-existing / borderline-scope; code-quality: APPROVED, non-blocking).
+- What's needed to finish: in **Slice 4**, when `InputMixer`/MixerGraph unpins `TapeId{1}`, drop the `infos.size() > 1` clause (and the `info.id != primary` UI primary-pin) so the operator can empty the pool through the Tapes tab, and update the surrounding doc comments (they still describe a permanent ≥1 design that no longer holds at the data-model level).
+
 ### 2026-05-30 — Phrase arrangement / playback / pruning / crossfades / timeline export (OPERATOR-RAISED; own design session, NOT in the T0a/T0b render-path plan)
 - Raised by the operator 2026-05-30 mid-T0a-execution as "must do at some point, no need to add to the current plan." These are facets of the future arrangement subsystem (see the 2026-05-19 "Render-to-parts / timeline / finished-song" entry below and memory `project_render_to_parts_timeline`). T0b delivers raw playback-resolution (what sounds at LMC time T → phrase-channel scratch); these go beyond it.
 - Open topics to design (each gets brainstorm→spec→plan when scheduled):
