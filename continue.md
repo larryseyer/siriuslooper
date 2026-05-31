@@ -1,4 +1,4 @@
-# Session Continuation — 2026-05-31 (NEXT: Slice 2 — IDA Project unit + storage)
+# Session Continuation — 2026-05-31 (NEXT: Slice 3 — Blank-slate boot + New Song)
 
 > **Master status dashboard:** `docs/superpowers/plans/STATUS.md` — the single checklist of every
 > milestone + slice (what's done, what's next). Read it with this file at session start. To advance:
@@ -8,17 +8,21 @@
 > ## ✅ Concurrent-session insert — RESOLVED
 > The concurrent session's plan landed and was filed (`f56a820`) as a **Diversion 1 → Remaining**
 > item ("OTTO-source menu: grouped add commands + batch seam + master tap") — it runs when
-> Diversion 1 resumes, **not** ahead of Diversion 2. **"The next item" is unchanged: Diversion 2 ·
-> Slice 2.** Still `git pull` at session start as a matter of habit.
+> Diversion 1 resumes, **not** ahead of Diversion 2. **"The next item" is now Diversion 2 ·
+> Slice 3** (Slices 1 & 2 done). Still `git pull` at session start as a matter of habit.
 
-## Start here — Slice 1 landed; execute Slice 2 next
+## Start here — Slices 1 & 2 landed; execute Slice 3 next
 
-**Slice 1 (TapePool empty pool + optional primary) is DONE** — landed `66ca9c1`, pushed to
-origin/master, both reviews clean (spec-compliant + code-quality approved), `IdaTests` green
-(273 assertions / 65 cases for `[tape-pool],[sessionformat]`), full suite no new regressions.
-**Next action: Slice 2 — IDA Project unit + project-scoped storage**, via
+**Slice 1 (TapePool empty pool + optional primary) is DONE** — `66ca9c1`. **Slice 2 (IDA
+Project unit + project-scoped storage) is DONE** — landed `847f2db` (`ida::IdaProject`, core) →
+`f30a862` (`ida::persistence` path builders) → `7a45fff` (Slice 3/4 deferral in `todo.md`), all
+pushed to origin/master, every task spec-compliant + code-quality approved. Full suite green at
+baseline (`[ida-project]` 6 cases/20 assertions, `[project-paths]` 4 cases/10 assertions; the 1
+non-pass is the separately-run `MainComponentPluginEditorTests` placeholder), `IDA` app links.
+**Next action: Slice 3 — Blank-slate boot + New Song**, via
 `superpowers:subagent-driven-development`, against its detail plan
-`docs/superpowers/plans/2026-05-30-slice-2-ida-project-and-storage.md`.
+`docs/superpowers/plans/2026-05-30-slice-3-blank-slate-and-new-song.md`. (Slice 2's detail plan is
+now in `archive/`.)
 
 Design + planning for the whole **Blank-Slate First-Run + Phrase Creation** diversion is
 **complete, approved, committed, and pushed**; the whitepaper is amended. Remaining slices:
@@ -39,16 +43,25 @@ Design + planning for the whole **Blank-Slate First-Run + Phrase Creation** dive
   `docs/superpowers/plans/2026-05-17-v7-alignment.md` (⚠ Active resequencing; return point =
   Part VI mixer/GUI → engine M8 S7+).
 
-## Slice 2 (do this next) — IDA Project unit + project-scoped tape storage
+## Slice 3 (do this next) — Blank-slate boot + New Song
 
-Detail plan: `docs/superpowers/plans/2026-05-30-slice-2-ida-project-and-storage.md`. Headless
-TDD. New `IdaProject` type (`{ folderId: yyyymmddhhmmss-<sanitized-name>, displayName,
-createdTimestamp }`) + a `projectTapesDir(project)` path helper over `idaAppSupportDirectory()`
-+ a `tape_<x>` filename builder; migrate the tape-store root (`…/IDA/tapes/`) to
-`…/IDA/<folderId>/`. Inject the timestamp in tests (don't call the clock). Depends on Slice 1
-(done). **Heed the cross-slice finding:** the `tape-<id>.idatape` name is hardcoded in 3 sites
-(`audio/src/TapeRecordWriter.cpp:104`, `app/MainComponent.cpp:6059` & `:6081`) — Slice 2 builds
-the convergence point; Slices 3/4 rewire to it.
+Detail plan: `docs/superpowers/plans/2026-05-30-slice-3-blank-slate-and-new-song.md`. Read it,
+then execute via `superpowers:subagent-driven-development`. This is the slice that **mints the live
+`IdaProject` on the boot path** — so it is the natural home to start consuming Slice 2's builder
+(`ida::persistence::projectTapesDir`/`tapeFileName`/`tapeFileFor`) at the store root, fulfilling
+the `todo.md` deferral landed in `7a45fff` (rewire `tapesDirectory()` / `TapeRecordWriter` ctor /
+the two `MainComponent` reader sites onto one source of truth). Confirm against the Slice 3 plan
+whether the rewiring is in Slice 3 or held to Slice 4 — the deferral note lists both.
+
+### Slice 2 — DONE (`847f2db` → `f30a862` → `7a45fff`)
+
+`ida::IdaProject` (core, JUCE-free): immutable creation-stamped `folderId()` =
+`yyyymmddhhmmss-<sanitized-name>`, separate mutable `displayName()`, static `sanitizeName()`;
+timestamp is **injected** (no wall clock in core/tests). `ida::persistence::tapeFileName(TapeId)`
+= `tape_<x>.idatape` (1-based `value()`), `projectTapesDir(root, project)` = `<root>/<folderId>`,
+`tapeFileFor(...)` composes them (every tape path `isAChildOf` its project folder — structural
+no-orphan guard). **No existing call site rewired** (that's the `todo.md` deferral for Slice 3/4).
+Both tasks spec-compliant + code-quality approved; full suite green at baseline; `IDA` links.
 
 ### Slice 1 — DONE (`66ca9c1`)
 
@@ -99,6 +112,20 @@ control is future via a **source-agnostic command layer**. Demo-song boot is ret
 - **Channel Add/Remove undo** has no natural `UndoStack` lane (it is Constituent-tree-shaped,
   not channel-shaped); spec §15.2 defaulted "yes." Decide whether channel edits are undoable.
 
+## This session (2026-05-31 — Slice 2 implemented via subagent-driven-development)
+
+- **Implemented Slice 2** (IDA Project unit + project-scoped storage) start-to-finish via three
+  fresh implementer subagents (TDD each), with the two-stage review (spec-compliance →
+  code-quality) after Tasks 1 & 2 — all clean. Task 1 `847f2db` (`ida::IdaProject`, core,
+  JUCE-free, injected timestamp); Task 2 `f30a862` (`ida::persistence` path builders); Task 3
+  `7a45fff` (verification + `todo.md` Slice 3/4 store-root rewiring deferral). All pushed
+  origin/master. Full suite green at baseline; `IDA` links.
+- Bookkeeping done same turn: ticked Slice 2 `[x]` in `STATUS.md` + advanced "The next item" to
+  Slice 3; `git mv`'d the Slice 2 detail plan into `archive/`; refreshed this file.
+- A concurrent Diversion-1 push (`5596cb5` "output buss change for otto") had landed before this
+  session started, exactly as the prior handoff warned — it doesn't touch Slice 2's
+  core/persistence/tests files, so no conflict.
+
 ## This session (2026-05-31 — filed a Diversion 1 item from a concurrent session)
 
 - A separate session wrote a feature plan ("Simplify the Add OTTO source menu");
@@ -136,15 +163,15 @@ control is future via a **source-agnostic command layer**. Demo-song boot is ret
 
 ## Repo state (verified)
 
-- HEAD = `4086b5e`, pushed, origin/master in sync (0/0). Slice 1's four commits:
-  `66ca9c1` (substance) → `e02fc57` (bookkeeping: STATUS tick + continue) → `de3bb1e` (Tapes-tab
-  floor deferral recorded in `todo.md`) → `4086b5e` (stale-comment fix from code-quality review).
-  ⚠ A concurrent session may have pushed after this — `git pull` and re-check `git log` at start.
+- HEAD = `7a45fff` (Slice 2 Task 3), pushed, origin/master in sync. Slice 2's commits:
+  `847f2db` (Task 1 IdaProject) → `f30a862` (Task 2 ProjectPaths) → `7a45fff` (Task 3 verify +
+  todo.md deferral). The bookkeeping commit (STATUS tick + plan archive + this file) follows.
+  ⚠ A concurrent session may push after this — `git pull` and re-check `git log` at start.
 - Clean tree except `external/sfizz` (pre-existing dirty submodule) and untracked `.serena/`
   (Serena MCP scratch) — leave both.
-- **First production code of Diversion 2 has landed (Slice 1).** First operator-testable / visible
-  result still arrives after roughly Slices 1–6 (record → phrase → playback). Slices 1–4 are
-  headless foundation with **no GUI change to look at**.
+- **Diversion 2 Slices 1 & 2 have landed (headless foundation).** First operator-testable /
+  visible result still arrives after roughly Slices 1–6 (record → phrase → playback). Slices 1–4
+  are headless foundation with **no GUI change to look at** (Slice 3 begins the boot-path wiring).
 - `docs/superpowers/plans/STATUS.md` is the single source of truth for what's next — read it first.
 - Memory `project_looper_at_least_one_tape_invariant` is **OVERTURNED** (floor removed by Slice 1 —
   do NOT implement floor enforcement).
@@ -154,11 +181,12 @@ control is future via a **source-agnostic command layer**. Demo-song boot is ret
 ```bash
 cd /Users/larryseyer/IDA
 git log --oneline -8
-sed -n '1,140p' docs/superpowers/plans/2026-05-30-slice-2-ida-project-and-storage.md   # Slice 2 detail plan
+sed -n '1,200p' docs/superpowers/plans/2026-05-30-slice-3-blank-slate-and-new-song.md   # Slice 3 detail plan
 ```
-Then **begin Slice 2** (IDA Project unit + project-scoped storage) via
-`superpowers:subagent-driven-development`. Clean `rm -rf build` before any operator GUI hand-off
-(per `[[feedback_clean_builds_only_for_testing]]`).
+Then **begin Slice 3** (Blank-slate boot + New Song) via
+`superpowers:subagent-driven-development`. Slice 3 likely touches `MainComponent` / boot path, so
+a clean `rm -rf build` is required before any operator GUI hand-off (per
+`[[feedback_clean_builds_only_for_testing]]`).
 
 ## Session kickoff prompts
 
