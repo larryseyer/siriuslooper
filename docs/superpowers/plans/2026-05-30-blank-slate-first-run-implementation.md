@@ -48,6 +48,9 @@ Each slice has a full bite-sized plan produced 2026-05-31; execute each via `sup
 | 6 | `docs/superpowers/plans/2026-05-30-slice-6-play-all-loops.md` |
 | 7 | `docs/superpowers/plans/2026-05-30-slice-7-tapes-tab-archive.md` |
 | 8 | `docs/superpowers/plans/2026-05-30-slice-8-phrase-button-bank.md` |
+| 9–12 | `docs/superpowers/plans/2026-05-31-phrase-modes-collapse-mode-ui-midi-trigger.md` (scoped below; per-slice detail authored at execution) |
+
+Slices 9–12 (phrase modes ADD/OVER, the top-bar mode toggle, and live per-phrase MIDI triggering) were appended 2026-05-31; each depends only on already-numbered slices, so 1–8 are unchanged. Collapse/Expand is registered separately against **M13** in the long-range roadmap (it needs an offline render-to-file path that does not exist yet).
 
 ## Cross-slice findings from the detailed-planning pass (must-read before executing)
 
@@ -60,6 +63,7 @@ The per-slice planning (live-code exploration) surfaced realities the scope-leve
 - **Transport:** `TransportBarHost::playPauseClicked()` *toggles* (stops if playing). Record-while-stopped must call `OttoHost::play()` **unconditionally** — Slice 5 routes through an injected `ITransportControl`/adapter, not the toggle.
 - **Slice 8 defines the Slice 5 seam:** `IPhraseStateSource` + `IPhraseCommandSink` in `core/`, with a HARD-STOP if Slice 5's real state machine is absent at execution (no parallel capture path, per spec §8.4). Reuses `app/StripContextOverlay.h` (right-click + 500 ms long-press + inline rename) and `selectTimelineView().pills`. Colour map: rec→`error`, play→`success`, overdub→`warning`, stopped→dim `phraseColour`, empty→`transportInactive`.
 - **Channel add/remove undo (spec §15.2 "default YES") has no natural lane** — `UndoStack` is Constituent-tree-shaped, not channel-shaped. Flagged for operator sign-off rather than forced into a faked entry.
+- **Phrase mode is per-loop, not per-phrase (operator-locked 2026-05-31).** ADD/OVER is a per-loop attribute (`LoopPlaybackMode` on the loop Constituent), set from a single **global current mode** (top-bar toggle + MIDI) at loop-creation time — so **one phrase may hold both ADD and OVER loops**. Keep it distinct from `Promotion.h`'s `AttachmentMode { Shared, Overlay }` (placement-sharing, a different axis). **OVER masks** all other content of its phrase for its `[in,out)` span (a playback substitution in `PlaybackResolver`/`RenderPipeline`, never destructive); ADD layers and, when shorter than its span, **loops-to-fill** (default) or plays once per the global `addModeLoopFill` setting (OVER is always once). Layout follows Slice 6: **ADD loop ⇒ its own `T#P#L#` channel; OVER loop ⇒ no channel, routes through the phrase track / per-phrase bus.** Full plan: Slices 9–12 below.
 
 ---
 
@@ -288,6 +292,50 @@ git commit -m "feat: TapePool allows an empty pool and optional primary (blank-s
 **Files:** a new phrase-button-bank component placed as a horizontal row directly beneath the top-bar transport area; bank paging via chevrons; per-button state→color through `ui/include/ida/IdaPalette.h` (rec=red, play=green, overdub=amber, empty/stopped=dim) reconciled with the phrase identity colour method (`docs/design/ida-colour-method.md`); the context menu (Clear removes the phrase only, never its tape — §2.1; all ops undoable); per-button MIDI note/channel/port storage (assignment UI now; live MIDI trigger is the future §14 work).
 **Test strategy (headless):** positional bank math (`(b-1)*8+p`), state→color mapping, empty-slot inertness; the press dispatches the same command as Slice 5's layer. GUI-verified: layout, paging, colors, context menu, rename.
 **Done when:** existing phrases appear as colored, labeled, paged buttons that trigger their state and expose the context menu; empty slots are inert.
+
+---
+
+## Phrase modes, mode UI, and live MIDI triggering (Slices 9–12)
+
+Standalone plan: `docs/superpowers/plans/2026-05-31-phrase-modes-collapse-mode-ui-midi-trigger.md`.
+Each slice's first step amends the design spec §8 (new §8.7/§8.8, and promoting §8.5's per-button MIDI
+to live triggering) before code, mirroring how Slices 5–8 reference §8.
+
+## Slice 9 — Phrase-mode data model + global settings  *(headless TDD)*
+
+**Spec refs:** §8 (loops as Constituents), new §8.7 (ADD/OVER per-loop modes + ADD loop-fill).
+**Depends on:** Slice 5.
+**Files:** `core/include/ida/Constituent.h` (`enum class LoopPlaybackMode { Add, Over };` + an optional per-loop field alongside the loop's `TapeReference` — **distinct from** `Promotion.h` `AttachmentMode { Shared, Overlay }`); `core/include/ida/Promotion.h` (`promote()` stamps the new loop with the current mode, parameter, default `Add`); `app/IdaPreferences.h` (`addModeLoopFill()` bool default `true`, `currentPhraseMode()` default `Add`, over the existing `prefs::shared()` `PropertiesFile`); `persistence/.../SessionFormat.*` (serialize/deserialize per-loop mode; legacy trees default `Add`).
+**Test strategy (headless):** loop minted under `Over` reports `Over`; default `Add`; SessionFormat round-trips a mixed ADD/OVER tree; legacy (no mode) → all-`Add`; prefs default values.
+**Done when:** mode persists per loop through `promote()` + SessionFormat; both global settings read/write; `IdaTests` + `IDA` build green.
+
+## Slice 10 — ADD/OVER playback resolution + Output-Mixer track layout
+
+**Spec refs:** §8.5/§8.6 (per-loop channels, per-phrase bus), new §8.7 (OVER masking + loop-fill).
+**Depends on:** Slices 6, 9.
+**Files:** `engine/include/ida/RenderPipeline.h` (`activeReadsAt`) + `engine/include/ida/PlaybackResolver.h` — **OVER masking** (an `Over` loop suppresses all other content of its phrase for its `[in,out)` span; `Add` loops layer) and **ADD loop-fill** (short `Add` loop repeats to fill when `addModeLoopFill` is on, else plays once — reuse `RepetitionRules`/`LoopRenderer` `Forever` vs `Once`; OVER always `Once`), resolved off the audio thread; `app/MainComponent.cpp` `refreshOutputMixerPhraseChannels()` (~7105) + `OutputMixer` `addChannel`/`removeChannel` + the Slice 6 per-phrase bus — **ADD loop ⇒ own `T#P#L#` channel; OVER loop ⇒ no new channel, routes through the phrase track / per-phrase bus**, re-keying on the message thread.
+**Test strategy:** headless — OVER masks an underlying ADD loop in-span; ADD short loop fills vs plays-once per the setting; channel count = number of ADD loops. Operator-verified: a phrase with one ADD + one OVER loop sounds correct and shows the right strips. Mind RT-safety on the mixing path.
+**Done when:** ADD layers (own channel, optional fill); OVER replaces in-span (shares phrase track), exactly matching the §8.7 model.
+
+## Slice 11 — Top-bar ADD/OVER toggle UI  *(operator-verified)*
+
+**Spec refs:** new §8.8 (top-bar mode toggle).
+**Depends on:** Slices 9, 10.
+**Files:** `app/TransportBarHost.{h,cpp}` (own an IDA mode-toggle button; read/write `prefs::currentPhraseMode()`; label `ADD`/`OVER`; reflect external/MIDI changes). **OTTO seam:** play/pause lives in OTTO's `TransportBar` (`external/OTTO/src/otto-plugin/ui/components/TransportBar.cpp`, `layoutCompact/Medium/Full` via `removeFromLeft`) — add a minimal **accessory-slot hook** IDA populates immediately after the play/pause button, an OTTO edit under the **Cross-Project Inbox Protocol** (`external/OTTO/CROSS_PROJECT_INBOX.md`, `Ida-Origin:` trailer, submodule SHA bump), keeping the phrase-mode concept IDA-owned.
+**Test strategy:** operator-verified (button position right of play/pause, label flips with mode, click toggles behavior); headless for the label-from-mode mapping if extracted as a pure helper.
+**Done when:** the toggle sits immediately right of play/pause, reads ADD/OVER, and switches the global current mode Slice 10 honors.
+
+## Slice 12 — Per-phrase MIDI trigger + live MIDI input
+
+**Spec refs:** §8.4 (source-agnostic commands), §8.5 (per-button MIDI) — **promoted** here from storage-only to **live triggering** + per-phrase trigger on the channel-9 control channel (the §14 future work, pulled forward).
+**Depends on:** Slices 5, 8, 11.
+**Files:** `core/include/ida/Phrase.h` `PhraseMetadata` (optional `MidiTrigger { int channel; bool isCc; int number; }`, persisted with the phrase — reconciles Slice 8's per-button storage so the assignment lives on the phrase); a **new IDA MIDI-input handler** (standalone + AUv3-safe) with default positional map phrase *n* → note/CC *n* on **channel 9**, dispatching the **same source-agnostic command** as Slice 8's button (Slice 5 `IPhraseCommandSink`) so live MIDI and button share one path, and a channel-9 note/CC that toggles ADD/OVER (Slice 11); Slice 8's phrase-button bank **Assign MIDI…** writes the phrase's `MidiTrigger`.
+**Test strategy (headless):** positional map resolves note/CC → phrase index; a fake channel-9 message dispatches the identical command a button press would (byte-identical resulting tree, per Slice 5's source-agnostic test); non-control-channel messages ignored; mode-toggle CC flips the global mode. Operator-verified: a MIDI controller fires phrases and flips ADD/OVER.
+**Done when:** phrases fire from channel-9 MIDI and from buttons via one command path; each phrase persists its own trigger; the mode toggle responds to MIDI.
+
+## Collapse / Expand a phrase — **deferred to after M13** (not a diversion slice)
+
+Registered against **M13 (File-I/O + export)** in the long-range roadmap, *not* numbered here, because it needs an offline render-through-the-Output-Mixer-FX → file path (whitepaper §6.11) that does not exist yet. **Depends on:** Slice 10 (ADD track layout) + M13. Scope: an undoable per-phrase collapse/expand command; **Collapse** renders the parent phrase data + ADD-loop channels — applying each channel's `EffectChain` (`MixerGraphState`/`OutputChannelState.inserts`) — into one FLAC clip via the M13 render path, makes it a **temporary stand-in** `TapeReference` on the phrase track, and removes the ADD `T#P#L#` channels; **Expand** restores the preserved loop subtree + re-adds the channels (OVER loops untouched — already collapsed). **Non-destructive:** originals always retained. Full scope in the standalone plan.
 
 ---
 

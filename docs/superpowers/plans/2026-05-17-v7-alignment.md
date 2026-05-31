@@ -20,6 +20,7 @@ This roadmap is the **engine-first order.** Execution has **deliberately diverge
 - **Design ("why"), approved:** `docs/superpowers/specs/2026-05-30-blank-slate-first-run-and-phrase-creation-design.md`. It scopes the whitepaper's "always-running tape" to "running while assigned" — `docs/IDA_Whitepaper_V10.md` is now canonical (supersedes the `V8` path in this roadmap's header).
 - **Docs-update plan:** `docs/superpowers/plans/2026-05-30-whitepaper-spec-doc-update.md`.
 - **Implementation roadmap (8 dependency-ordered slices):** `docs/superpowers/plans/2026-05-30-blank-slate-first-run-implementation.md`; per-slice detailed plans at `docs/superpowers/plans/2026-05-30-slice-{1..8}-*.md`. Execute via `superpowers:subagent-driven-development`, **Slice 1 first**.
+- **Phrase modes + mode UI + live MIDI triggering (added 2026-05-31), Slices 9–12:** `docs/superpowers/plans/2026-05-31-phrase-modes-collapse-mode-ui-midi-trigger.md`. Per-loop ADD/OVER modes (global top-bar toggle, recorded per loop; a phrase may mix both), the top-bar ADD/OVER toggle right of play/pause, and per-phrase MIDI triggering on the channel-9 control channel (pulls the §14 live-trigger forward). Appended after Slice 8 (no renumbering). Its companion **Collapse/Expand** is **deferred to after M13** (see below).
 - **Milestones it advances / partially satisfies (does NOT replace):** **M22** (hide-internals operator UX — the bulk); **M3/M8** (tape lifecycle: assignment-gated recording, retention, reachability / no-orphans); **M5** (operator mixer channels); a **new project-scoped storage concern adjacent to M11 (IAF)** — reconcile the `yyyymmddhhmmss-<name>/tape_<x>` layout with IAF when M11 lands; the state machine builds on the existing `Promotion`/`CaptureSession` (no engine milestone owned it).
 - **Return point:** when Diversion 2 completes, resume Diversion 1 (Part VI mixer/GUI), then the engine order at **M8 S7+** per `continue.md`. When M22 is reached, it folds in whatever operator-UX these diversions already delivered rather than redoing it.
 
@@ -914,6 +915,8 @@ bash bash/autotest.sh
 - Tests cover round-trip for each format.
 
 **Dependencies.** M9 (UMP shape exists), M11 (IAF stores files in `tapes/` subdir), M12 (video read/write codec selection aligned).
+
+**Consumer deferred to after this milestone — phrase Collapse/Expand (registered 2026-05-31).** The Diversion-2 phrase-modes work (`docs/superpowers/plans/2026-05-31-phrase-modes-collapse-mode-ui-midi-trigger.md`) includes a per-phrase **Collapse/Expand**: Collapse renders a phrase's parent data + its ADD-mode loop channels — applying each channel's `EffectChain` — into one FLAC clip that temporarily stands in on the phrase's track (ADD loop `T#P#L#` channels removed), and Expand restores the preserved loop subtree + channels (non-destructive, OVER loops untouched). This needs M13's offline render-through-the-Output-Mixer-FX → file path (V6/V7 §6.11 "render is playback aimed at a file") and so lands **as a thin consumer once M13 exists**, depending also on Slice 10 (ADD track layout). It does not build the render engine — M13 does.
 
 **Files touched.**
 

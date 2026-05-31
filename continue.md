@@ -6,9 +6,16 @@ Design + planning for the **Blank-Slate First-Run + Phrase Creation** diversion 
 **complete, approved, committed, and pushed**; the whitepaper is amended. **Next action:
 implement, beginning at Slice 1**, via `superpowers:subagent-driven-development`, against:
 
-- **Roadmap (8 slices + cross-slice findings; Slice 1 detailed inline):**
+- **Roadmap (now 12 slices + cross-slice findings; Slice 1 detailed inline):**
   `docs/superpowers/plans/2026-05-30-blank-slate-first-run-implementation.md`
 - **Per-slice detailed plans:** `docs/superpowers/plans/2026-05-30-slice-{2..8}-*.md`
+- **Slices 9–12 (added 2026-05-31) — phrase ADD/OVER modes + top-bar mode toggle + live MIDI
+  triggering:** `docs/superpowers/plans/2026-05-31-phrase-modes-collapse-mode-ui-midi-trigger.md`.
+  Mode is **per-loop, set from a global top-bar toggle (and MIDI), recorded at loop creation — a phrase
+  may mix ADD and OVER loops.** ADD layers (own `T#P#L#` channel, loops-to-fill by default); OVER masks
+  its span on playback and shares the phrase track (no channel). Companion **Collapse/Expand is deferred
+  to after M13** (needs the §6.11 offline render-to-file path). Slice 1 is still the next action — these
+  append after Slice 8 (no renumbering).
 - **Approved design ("why"):**
   `docs/superpowers/specs/2026-05-30-blank-slate-first-run-and-phrase-creation-design.md`
 - Registered as **Diversion 2** in the long-range roadmap
