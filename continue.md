@@ -1,5 +1,10 @@
 # Session Continuation — 2026-05-31 (NEXT: START IMPLEMENTING — Slice 1)
 
+> **Master status dashboard:** `docs/superpowers/plans/STATUS.md` — the single checklist of every
+> milestone + slice (what's done, what's next). Read it with this file at session start. To advance:
+> "proceed with the next item in the master plan." Bookkeeping rules: `CLAUDE.md` → *Master-plan
+> bookkeeping*. (Finished plans now live in `docs/superpowers/plans/archive/`.)
+
 ## Start here — no more design, execute
 
 Design + planning for the **Blank-Slate First-Run + Phrase Creation** diversion is

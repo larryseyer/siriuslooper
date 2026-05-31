@@ -2,10 +2,35 @@
 
 Project-specific rules for IDA. The user-level `~/.claude/CLAUDE.md`
 (commit discipline, hard-stops, code standards, iOS/JUCE platform rules) applies
-everywhere and is NOT repeated here. **Always read `continue.md` first** — it is
-the live session handoff (what just shipped, what's queued).
+everywhere and is NOT repeated here. **At session start read `continue.md`
+(the live handoff) and `docs/superpowers/plans/STATUS.md` (the master status
+dashboard — what's done, what's next) first.**
 
 ---
+
+## Master-plan bookkeeping
+
+`docs/superpowers/plans/STATUS.md` is the **single source of truth** for what is
+done and what is next: an exhaustive checklist of every milestone (M1–M24) and
+every active-diversion slice, each linked to its detail sub-plan. The long-range
+narrative lives in `docs/superpowers/plans/2026-05-17-v7-alignment.md`; detail
+plans live beside it; finished plans live in `docs/superpowers/plans/archive/`.
+
+- **"Proceed with the next item" (in the master plan)** = take the first
+  unchecked `[ ]` item in `STATUS.md` (active diversions run before the paused
+  engine order). If it has a detail sub-plan, read and execute it; if it is only
+  *scoped*, first write its detail sub-plan, register the link in `STATUS.md`,
+  then execute.
+- **Definition of done — applies to every item.** Before claiming an item
+  complete you MUST, in the same turn: (1) tick its box in `STATUS.md`, (2) add
+  the link to any sub-plan you spawned for it, (3) refresh `continue.md`. An item
+  is **not done** until the bookkeeping is updated — a spawned-but-unregistered
+  sub-plan is a silent deferral (banned by the user-level "fail loud / no silent
+  deferral" rules).
+- **Archive on completion.** Move a finished slice/milestone's detail plan into
+  `docs/superpowers/plans/archive/` (git mv — history preserved) so the working
+  folder shows only live plans.
+- **Legend:** `[x]` done · `[~]` in progress · `[ ]` not started.
 
 ## Current focus (2026-05-20)
 
