@@ -10,6 +10,7 @@ add_executable(IdaTests
     RoleResolverTests.cpp
     CaptureSessionTests.cpp
     TapePoolTests.cpp
+    IdaProjectTests.cpp
     TapePoolMirrorTests.cpp
     PromotionTests.cpp
     FileInputDescriptorTests.cpp

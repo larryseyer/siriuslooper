@@ -24,7 +24,8 @@ add_library(IdaCore STATIC
     src/Sha256.cpp
     src/VersionPinningRecord.cpp
     src/TapePool.cpp
-    src/TapeRecord.cpp)
+    src/TapeRecord.cpp
+    src/IdaProject.cpp)
 
 target_include_directories(IdaCore PUBLIC include)
 
