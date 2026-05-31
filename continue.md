@@ -104,6 +104,21 @@ control is future via a **source-agnostic command layer**. Demo-song boot is ret
 - **Channel Add/Remove undo** has no natural `UndoStack` lane (it is Constituent-tree-shaped,
   not channel-shaped); spec §15.2 defaulted "yes." Decide whether channel edits are undoable.
 
+## This session (2026-05-31 — filed a Diversion 1 item from a concurrent session)
+
+- A separate session wrote a feature plan ("Simplify the Add OTTO source menu");
+  filed it into the master plan as a new **Diversion 1 → Remaining** checkbox in
+  `STATUS.md` ("OTTO-source menu: grouped add commands + batch seam + master
+  tap"), detail plan
+  `docs/superpowers/plans/2026-05-31-otto-source-menu-grouped-commands.md`. It
+  runs **when Diversion 1 resumes** (operator-confirmed sequencing) — **Slice 2
+  remains the next action**, "The next item" in `STATUS.md` is unchanged.
+- Resolved its one open verification (read-only): OTTO exposes **no** master
+  stereo accessor and `OttoHost::renderBlock` skips OTTO's master sum, so the
+  master tap (item 11) prefers **summing IDA-side from the 0–31 taps** (no
+  `external/OTTO/` edit needed) — recorded in that plan's Slice C.
+- Docs-only; no production code touched this session.
+
 ## This session (2026-05-31 — Slice 1 implemented via subagent-driven-development)
 
 - **Implemented Slice 1** (TapePool empty pool + optional primary) start-to-finish: one fresh

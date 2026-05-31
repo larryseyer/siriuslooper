@@ -55,6 +55,7 @@ graph phases; bus controls; MON strips; file input).
 - [ ] **OTTO output-strip detail panel** — EQ/CMP (+ pan/width/sends) wired per OTTO strip (slice "4c"; 4b shipped without it)
 - [ ] **OTTO transport-start surface** so playback is audible (slice "4d") — *verify against the landed `TransportBarHost`/S3a; may need only the start wiring, not a new surface*
 - [ ] **OTTO stereo-mix output** (sentinel index `-2`, sums OTTO's 4 PlayerOut sub-buses) — design+plan done (`../specs/2026-05-27-otto-stereo-mix-output.md`), implementation not started
+- [ ] **OTTO-source menu: grouped add commands + batch seam + master tap** — replace the 32-item "Add OTTO source" submenu with 11 intent-level grouped commands (family elements +RevDelay returns, family buses, all player buses, OTTO master) via a bracket-once batch-add seam · [otto-source-menu](2026-05-31-otto-source-menu-grouped-commands.md)
 - [x] **Master meter** (transport-bar, master mix point) — operator-confirmed working 2026-05-31
 - [ ] **Master spectrum display does not work** (operator-confirmed 2026-05-31) — OTTO `TransportBar` `SpectrumDisplay` shows nothing although the feed is wired (`TransportBarHost` pulls `OttoHost::spectrumBinDb` → `setSpectrumBin`); diagnose when Diversion 1 resumes
 - [ ] **Dual peak+LUFS FaderMeter on every OTTO output strip** (visual parity with phrase/MON/bus strips) — *verify: master meter works, per-output binding unconfirmed*
