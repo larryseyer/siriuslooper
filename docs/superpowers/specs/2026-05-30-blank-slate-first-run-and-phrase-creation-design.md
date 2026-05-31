@@ -189,6 +189,9 @@ substrate; it does not start or stop the tape.
     convention, assign the channel to it → recording begins. (The Tapes tab
     displays each tape alongside the input that feeds it.)
   - **Cap:** Add Channel offers nothing when all physical inputs are in use.
+- **Channel label = physical input pair.** Because every input is stereo (the
+  stereo-only hard invariant), an Input Mixer channel is labeled by its physical
+  stereo pair — `1&2`, `3&4`, `5&6`, … — never by a tape or phrase.
 - **Removing a channel** unassigns its input. Under 1:1 that leaves its tape with
   zero inputs → the tape **stops recording**, but it is **retained**: still owned
   by the project and visible in the Tapes tab as archive — it is *not* an orphan
@@ -400,6 +403,29 @@ MIDI-mappable launcher — the on-screen counterpart of §8.4's per-phrase pedal
   separate code path. The broader single-pedal control *vocabulary*
   (press / long-press / double-tap → action, CC mapping for transport) remains the
   future §8.4 work; **per-button MIDI assignment is part of this design.**
+
+### 8.6 Output Mixer: one channel per loop (`T#P#L#`), summed at a per-phrase bus
+
+The Output Mixer exposes **one channel per loop** — *not* one per phrase. Each loop
+is its own strip so the operator can balance the loops within a phrase (rhythm vs
+lead, say).
+
+- **Channel label = the loop's full coordinate:** `T<tape>P<phrase>L<loop>` —
+  which tape it reads, which phrase contains it, which loop index (e.g. `T1P1L1`).
+  (Input Mixer labels stay physical stereo pairs, §5; the two consoles name things
+  differently on purpose — capture endpoints vs. mixdown constituents.)
+- **A phrase's loops sum at a per-phrase bus** (`P<phrase>`) → master. That bus is
+  the phrase's single handle: it is what the phrase-button bank (§8.5)
+  triggers/controls and what makes "**play this phrase with all its loops**"
+  (§8.5) one operation. (Engineering call, per the channels→buses→master
+  architecture; collapse to a flat per-loop list only if the operator rejects the
+  bus.)
+- **This refines the whitepaper's "one channel per phrase"** → *one channel per
+  loop, summed at a per-phrase bus*, and **supersedes Slice 6's** "sum loops into
+  one phrase channel in the audio callback." Per-loop channels keyed by **loop id**
+  match what `PlaybackResolver` already resolves (the leaf-loop id), so they fix
+  the pill-id-vs-loop-id keying defect (roadmap cross-slice findings) *by
+  construction* rather than by re-keying a single shared channel.
 
 ## 9. Transport coupling (OTTO)
 

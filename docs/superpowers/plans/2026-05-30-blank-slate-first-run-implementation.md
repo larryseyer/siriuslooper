@@ -53,7 +53,7 @@ Each slice has a full bite-sized plan produced 2026-05-31; execute each via `sup
 
 The per-slice planning (live-code exploration) surfaced realities the scope-level slices missed:
 
-- **Slice 6 is a correctness fix, not just an enhancement.** `slotByConstituent_` is keyed by the **phrase/pill** ConstituentId, but `PlaybackResolver` resolves the **leaf-loop** id — a pill id never equals a leaf-loop id, so the current single-first-leaf playback path is wired to a slot the resolver never matches (it likely doesn't sound for any real phrase). "Play all loops" and "make phrase playback actually sound" are the **same** fix: re-key the map by loop id and **sum** loops into a shared per-phrase scratch in `AudioCallback::renderPlaybackStep`. No OutputMixer/Bus change; one channel per phrase preserved (keeps pill↔strip 1:1 + the 32-channel cap).
+- **Slice 6 = per-loop output channels (operator-locked 2026-05-31) — and a correctness fix.** The Output Mixer gets **one channel per loop** (`T#P#L#`), keyed by the **leaf-loop** ConstituentId — which is exactly what `PlaybackResolver` resolves, so it fixes the prior pill-id-vs-loop-id keying defect *by construction* (no shared-channel re-keying). A phrase's loop-channels **sum at a per-phrase bus** → master (spec §8.6). This **supersedes** the earlier "one channel per phrase, sum in `renderPlaybackStep`" plan — Slice 6 must be re-derived against §8.6 and now **does** touch `OutputMixer`/`Bus` (a per-phrase bus). The phrase-button bank (Slice 8) and "play all loops" both target that per-phrase bus.
 - **Slice 4 is mostly removal.** "Records iff assigned" is *already* structural (`renderInputGraph` only delivers to touched tape slots; `TapeRecordWriter` is lazy and never deletes). The work is killing the looper-floor (`canDisarmChannelRecording`) and unpinning `TapeId{1}` — whose **real** pin is the `MixerGraph` graph-front Tape terminal, not just the `removeTape` guard.
 - **The `tape-<id>.idatape` filename is hardcoded in 3 sites** (`audio/src/TapeRecordWriter.cpp:104`, `app/MainComponent.cpp:6059` and `:6081`), not one. Slice 2 builds the path/name convergence point; Slices 3/4 rewire the live writer + the two reader paths to it. **Slice 7's Reveal must target the same path source the writer uses**, or it opens an empty folder. `.idatape` extension kept (the spec named only the `tape_<x>` stem; container is FLAC/PCM by tier).
 - **`primary()`-optional ripple is wider than Slice 1 listed:** also `MainComponent.cpp:8265 / 8286 / ~8861` and `mirrorTapePool` (empty-pool safety). Slice 1/3 must guard all of them or the `IDA` target won't compile.
@@ -269,9 +269,9 @@ git commit -m "feat: TapePool allows an empty pool and optional primary (blank-s
 
 **Spec refs:** §8.5 (play = all loops), spec note lifting the T0b "first leaf-loop only" limit.
 **Depends on:** Slice 5.
-**Files:** `refreshOutputMixerPhraseChannels()` (`app/MainComponent.cpp:7105`) + the `TapePrefetcher` wiring — a phrase channel must mix **every** loop the phrase owns, not just the first leaf-loop.
+**Files:** `refreshOutputMixerPhraseChannels()` (`app/MainComponent.cpp:7105`) + the `TapePrefetcher` / `OutputMixer` / `Bus` wiring — create **one OutputMixer channel per loop** (keyed by the leaf-loop ConstituentId, matching `PlaybackResolver`), labeled `T#P#L#`, and **sum a phrase's loop-channels at a per-phrase bus** → master (spec §8.6). Supersedes the earlier single-phrase-channel approach.
 **Test strategy:** headless where the loop-enumeration is pure; otherwise operator-verified that a phrase with two layered loops plays both. Mind RT-safety on the mixing path.
-**Done when:** a phrase with ≥2 loops plays all of them together.
+**Done when:** every loop of a phrase is its own `T#P#L#` Output Mixer channel; a phrase with ≥2 loops plays all of them, balanced via their per-loop faders and summed at the per-phrase bus.
 
 ## Slice 7 — Tapes tab = per-input archive + reveal-in-storage
 

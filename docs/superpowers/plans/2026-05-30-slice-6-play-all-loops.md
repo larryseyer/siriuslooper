@@ -2,6 +2,21 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax.
 
+> **⚠ REVISED 2026-05-31 — operator locked per-loop output channels.** Directive:
+> *"We need an output channel for EACH loop in a phrase."* This **supersedes the
+> "keep one OutputMixer channel per phrase" decision in this plan's body** (and its
+> sum-into-one-shared-scratch remedy). New model (design spec **§8.6**): **one
+> OutputMixer channel per leaf-loop**, labeled `T<tape>P<phrase>L<loop>`, keyed by
+> the **leaf-loop ConstituentId** — which *matches* `PlaybackResolver`, so it fixes
+> the pill-id-vs-loop-id keying bug diagnosed below **by construction**. A phrase's
+> loop-channels then **sum at a per-phrase bus** → master (that bus is what the
+> phrase-button bank triggers and what "play all loops" routes through). The **bug
+> analysis below remains correct and useful**; the **remedy must be re-derived** as
+> per-loop channels + a per-phrase bus — it now touches `OutputMixer`/`Bus`, and the
+> 32-channel `kMaxOutputChannels` cap must be reconsidered (loops, not phrases, now
+> consume channels; raise with the operator if a real session can exceed it).
+> Re-plan this slice against §8.6 before executing.
+
 **Goal:** A phrase's Output-Mixer channel must mix **every** leaf-loop the phrase owns, played simultaneously (a phrase is a stack of loops), not just its first leaf-loop. This lifts the T0b known limit recorded in the design spec §8.5 ("today the Output Mixer phrase strip prefetches only the phrase's *first* leaf-loop tape"). Operator-visible success: a phrase with two layered loops (e.g. the demo verse: rhythm tape 2 + lead tape 3) plays BOTH.
 
 **Architecture:** The outbound engine is **already loop-centric**. `RenderPipeline::activeReadsAt` (`engine/src/RenderPipeline.cpp:50-102`) walks the Constituent tree depth-first and emits **one `ActiveRead` per sounding leaf-loop**, each keyed by that loop's own `ConstituentId` (`ar.loop`). `PlaybackResolver::resolveOnce` (`engine/src/PlaybackResolver.cpp:27-36`) maps each `ar.loop → slot` via the injected `slotFor_` callback and publishes one active snapshot entry per loop. The audio callback's `renderPlaybackStep` (`audio/src/AudioCallback.cpp:36-72`) pulls each active slot's prefetcher into a destination scratch.
