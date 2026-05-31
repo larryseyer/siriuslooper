@@ -5,16 +5,11 @@
 > "proceed with the next item in the master plan." Bookkeeping rules: `CLAUDE.md` → *Master-plan
 > bookkeeping*. (Finished plans now live in `docs/superpowers/plans/archive/`.)
 
-> ## ⚠ READ FIRST — a concurrent session is editing the master plan
-> Another Claude session is, in parallel, writing a **separate plan for different work** and will
-> **add its item(s) to `STATUS.md`** (likely a new diversion or milestone entry). Before you execute
-> "the next unchecked `[ ]` item," **re-read `STATUS.md` fresh** and check that the first unchecked
-> item is actually the right thing to do next — the other session may have inserted an item *above*
-> Diversion 2 · Slice 2, or its ordering relative to the active diversions may not make sense.
-> If the inserted item's placement/sequencing looks wrong (e.g. it jumps ahead of in-flight
-> diversion work without a stated reason), **pause and ask the operator** rather than blindly taking
-> the topmost `[ ]`. Diversion 2 is mid-flight (Slice 1 done) — finishing its slices in order is the
-> expected path unless the operator says otherwise. `git pull` first in case the other session pushed.
+> ## ✅ Concurrent-session insert — RESOLVED
+> The concurrent session's plan landed and was filed (`f56a820`) as a **Diversion 1 → Remaining**
+> item ("OTTO-source menu: grouped add commands + batch seam + master tap") — it runs when
+> Diversion 1 resumes, **not** ahead of Diversion 2. **"The next item" is unchanged: Diversion 2 ·
+> Slice 2.** Still `git pull` at session start as a matter of habit.
 
 ## Start here — Slice 1 landed; execute Slice 2 next
 
