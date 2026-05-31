@@ -10,8 +10,9 @@
 
 Active diversions run **ahead of** the paused engine order. The single next action is:
 
-- **Diversion 2 · Slice 1 — TapePool: empty pool + optional primary** (detail inline in the
-  blank-slate roadmap). First operator-testable result arrives after roughly Slices 1–6.
+- **Diversion 2 · Slice 2 — IDA Project unit + project-scoped storage**
+  ([detail plan](2026-05-30-slice-2-ida-project-and-storage.md)). First operator-testable
+  result arrives after roughly Slices 1–6.
 
 Return point after Diversion 2 completes: resume **Diversion 1** (mixer/GUI), then the engine order
 at **M8 S7+**.
@@ -20,12 +21,12 @@ at **M8 S7+**.
 
 ## Active diversions (run before resuming the engine order)
 
-### Diversion 2 — Blank-Slate First-Run + Phrase Creation  ·  *design done, implementation not started*
+### Diversion 2 — Blank-Slate First-Run + Phrase Creation  ·  *implementation in progress (Slice 1 done)*
 Roadmap: [`2026-05-30-blank-slate-first-run-implementation.md`](2026-05-30-blank-slate-first-run-implementation.md) ·
 Spec: `../specs/2026-05-30-blank-slate-first-run-and-phrase-creation-design.md` ·
 Doc-update: [`2026-05-30-whitepaper-spec-doc-update.md`](2026-05-30-whitepaper-spec-doc-update.md)
 
-- [ ] **Slice 1** — TapePool: empty pool + optional primary  · *detailed inline in the roadmap*
+- [x] **Slice 1** — TapePool: empty pool + optional primary  · *detailed inline in the roadmap* · landed `66ca9c1`
 - [ ] **Slice 2** — IDA Project unit + project-scoped storage  · [slice-2](2026-05-30-slice-2-ida-project-and-storage.md)
 - [ ] **Slice 3** — Blank-slate boot + New Song  · [slice-3](2026-05-30-slice-3-blank-slate-and-new-song.md)
 - [ ] **Slice 4** — Channel creation + assignment-gated recording  · [slice-4](2026-05-30-slice-4-channel-creation-and-arm-gating.md)

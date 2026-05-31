@@ -1,15 +1,21 @@
-# Session Continuation — 2026-05-31 (NEXT: START IMPLEMENTING — Slice 1)
+# Session Continuation — 2026-05-31 (NEXT: Slice 2 — IDA Project unit + storage)
 
 > **Master status dashboard:** `docs/superpowers/plans/STATUS.md` — the single checklist of every
 > milestone + slice (what's done, what's next). Read it with this file at session start. To advance:
 > "proceed with the next item in the master plan." Bookkeeping rules: `CLAUDE.md` → *Master-plan
 > bookkeeping*. (Finished plans now live in `docs/superpowers/plans/archive/`.)
 
-## Start here — no more design, execute
+## Start here — Slice 1 landed; execute Slice 2 next
 
-Design + planning for the **Blank-Slate First-Run + Phrase Creation** diversion is
-**complete, approved, committed, and pushed**; the whitepaper is amended. **Next action:
-implement, beginning at Slice 1**, via `superpowers:subagent-driven-development`, against:
+**Slice 1 (TapePool empty pool + optional primary) is DONE** — landed `66ca9c1`, pushed to
+origin/master, both reviews clean (spec-compliant + code-quality approved), `IdaTests` green
+(273 assertions / 65 cases for `[tape-pool],[sessionformat]`), full suite no new regressions.
+**Next action: Slice 2 — IDA Project unit + project-scoped storage**, via
+`superpowers:subagent-driven-development`, against its detail plan
+`docs/superpowers/plans/2026-05-30-slice-2-ida-project-and-storage.md`.
+
+Design + planning for the whole **Blank-Slate First-Run + Phrase Creation** diversion is
+**complete, approved, committed, and pushed**; the whitepaper is amended. Remaining slices:
 
 - **Roadmap (now 12 slices + cross-slice findings; Slice 1 detailed inline):**
   `docs/superpowers/plans/2026-05-30-blank-slate-first-run-implementation.md`
@@ -27,14 +33,25 @@ implement, beginning at Slice 1**, via `superpowers:subagent-driven-development`
   `docs/superpowers/plans/2026-05-17-v7-alignment.md` (⚠ Active resequencing; return point =
   Part VI mixer/GUI → engine M8 S7+).
 
-## Slice 1 (do this first) — TapePool: empty pool + optional primary
+## Slice 2 (do this next) — IDA Project unit + project-scoped tape storage
 
-Headless TDD in `tests/TapePoolTests.cpp`. Make `TapePool` default-empty; `primary()` →
-`std::optional<TapeId>` (nullopt when empty); `remove()` can empty the pool and **drops the
-`TapeId{1}` pin**; explicit ctor + `SessionFormat` accept an empty pool. **Guard every
-`primary()` caller** so the `IDA` target still links: `InputMixer`, `MainComponent` ctor
-seeding + `refreshInputDestinations`, and (found during planning) `MainComponent.cpp:8265 /
-8286 / ~8861` + `mirrorTapePool`. Full red→green→commit steps are inline in the roadmap.
+Detail plan: `docs/superpowers/plans/2026-05-30-slice-2-ida-project-and-storage.md`. Headless
+TDD. New `IdaProject` type (`{ folderId: yyyymmddhhmmss-<sanitized-name>, displayName,
+createdTimestamp }`) + a `projectTapesDir(project)` path helper over `idaAppSupportDirectory()`
++ a `tape_<x>` filename builder; migrate the tape-store root (`…/IDA/tapes/`) to
+`…/IDA/<folderId>/`. Inject the timestamp in tests (don't call the clock). Depends on Slice 1
+(done). **Heed the cross-slice finding:** the `tape-<id>.idatape` name is hardcoded in 3 sites
+(`audio/src/TapeRecordWriter.cpp:104`, `app/MainComponent.cpp:6059` & `:6081`) — Slice 2 builds
+the convergence point; Slices 3/4 rewire to it.
+
+### Slice 1 — DONE (`66ca9c1`)
+
+`TapePool` is now legally empty; `primary()` → `std::optional<TapeId>`; `remove()` can empty the
+pool and no longer pins the primary; explicit ctor + `deserializeTapePool` accept an empty pool.
+App `primary()` ripple guarded with `value_or(TapeId(0))` / `has_value()`. One narrow guard left
+in `MainComponent::removeTape` refusing `TapeId{1}` **while `InputMixer` still pins it in its
+ctor** — self-expires when Slice 4 unpins the mixer (not a re-introduced floor; both reviewers
+accepted). `InputMixer`/`mirrorTapePool` deliberately untouched (Slice 4 work).
 
 ## The locked model (one breath) — all decisions final
 
@@ -76,40 +93,49 @@ control is future via a **source-agnostic command layer**. Demo-song boot is ret
 - **Channel Add/Remove undo** has no natural `UndoStack` lane (it is Constituent-tree-shaped,
   not channel-shaped); spec §15.2 defaulted "yes." Decide whether channel edits are undoable.
 
-## This session (2026-05-31, bookkeeping pass — no code)
+## This session (2026-05-31 — Slice 1 implemented via subagent-driven-development)
 
-- Added **Slices 9–12** to the diversion roadmap (phrase ADD/OVER modes, top-bar toggle, live MIDI
-  triggering) + a post-M13 Collapse/Expand item — see the standalone plan and the merge findings.
-- Stood up the **master status dashboard** `docs/superpowers/plans/STATUS.md` (every M1–M24 + every
-  active-diversion slice, with checkboxes) and a **Master-plan bookkeeping protocol** in `CLAUDE.md`
-  ("proceed with the next item" + tick-box/register-sub-plan/refresh-continue as the definition of done).
-- **Archived 40 completed plans** into `docs/superpowers/plans/archive/` (working set now 11 live plans).
-- **Decomposed Diversion 1** (mixer/GUI) remaining work into real checkboxes in STATUS.md; recorded
-  operator verifications: **master meter works**, **master spectrum display does NOT** (diagnose when
+- **Implemented Slice 1** (TapePool empty pool + optional primary) start-to-finish: one fresh
+  implementer subagent (TDD), then the two-stage review (spec-compliance → code-quality), both
+  clean. Independently re-verified: `IdaTests` builds, `[tape-pool],[sessionformat]` = 273
+  assertions / 65 cases pass, full suite 896/898 (2 known non-passes: #791 plugin-editor
+  placeholder run separately; #53 plugin-host supervisor-kill — passes in isolation, load flake).
+  Committed `66ca9c1`, pushed origin/master.
+- Ticked Slice 1 `[x]` in `STATUS.md`; next item is now **Slice 2**.
+
+### Prior session (2026-05-31, bookkeeping pass — no code)
+
+- Added **Slices 9–12** to the diversion roadmap + a post-M13 Collapse/Expand item.
+- Stood up the **master status dashboard** `docs/superpowers/plans/STATUS.md` + the **Master-plan
+  bookkeeping protocol** in `CLAUDE.md`.
+- **Archived 40 completed plans** into `docs/superpowers/plans/archive/`.
+- **Decomposed Diversion 1** (mixer/GUI) remaining work into checkboxes; recorded operator
+  verifications: **master meter works**, **master spectrum display does NOT** (diagnose when
   Diversion 1 resumes).
 
 ## Repo state (verified)
 
-- HEAD pushed, origin/master in sync. This session's commits: `4c7644e` (Slices 9–12 merge), `9ec12ba`
-  (STATUS dashboard + bookkeeping + archive 40), `1c5ea42` (Diversion 1 decomposition), `039d99c`
-  (spectrum-broken/master-meter-confirmed). Prior: `d5960c0` (spec), `976b471` (8 slice plans), `c5a1f88`
-  (whitepaper always-running→assigned).
-- Clean tree except `external/sfizz` (pre-existing untracked — leave it).
-- **No production code changed yet** — still design + planning. **Next action is unchanged: Slice 1.**
-  First operator-testable result arrives after roughly Slices 1–6 (record → phrase → playback).
-- `docs/superpowers/plans/STATUS.md` is now the single source of truth for what's next — read it first.
-- Memory `project_looper_at_least_one_tape_invariant` annotated **OVERTURNED** (the ≥1-tape
-  floor is removed by this work — do NOT implement floor enforcement).
+- HEAD pushed, origin/master in sync. Slice 1 landed at `66ca9c1`
+  (`feat: TapePool allows an empty pool and optional primary …`) plus this bookkeeping commit.
+- Clean tree except `external/sfizz` (pre-existing dirty submodule) and untracked `.serena/`
+  (Serena MCP scratch) — leave both.
+- **First production code of Diversion 2 has landed (Slice 1).** First operator-testable / visible
+  result still arrives after roughly Slices 1–6 (record → phrase → playback). Slices 1–4 are
+  headless foundation with **no GUI change to look at**.
+- `docs/superpowers/plans/STATUS.md` is the single source of truth for what's next — read it first.
+- Memory `project_looper_at_least_one_tape_invariant` is **OVERTURNED** (floor removed by Slice 1 —
+  do NOT implement floor enforcement).
 
 ## Commands to run first (next chat)
 
 ```bash
 cd /Users/larryseyer/IDA
 git log --oneline -8
-sed -n '1,140p' docs/superpowers/plans/2026-05-30-blank-slate-first-run-implementation.md  # goal, file map, findings, Slice 1
+sed -n '1,140p' docs/superpowers/plans/2026-05-30-slice-2-ida-project-and-storage.md   # Slice 2 detail plan
 ```
-Then **begin Slice 1** (TapePool empty + optional primary) via `superpowers:subagent-driven-development`.
-Clean `rm -rf build` before any operator GUI hand-off (per `[[feedback_clean_builds_only_for_testing]]`).
+Then **begin Slice 2** (IDA Project unit + project-scoped storage) via
+`superpowers:subagent-driven-development`. Clean `rm -rf build` before any operator GUI hand-off
+(per `[[feedback_clean_builds_only_for_testing]]`).
 
 ## Session kickoff prompts
 
