@@ -62,25 +62,34 @@ namespace
         void timerCallback() override { if (onTimer) onTimer(); }
     };
 
-    /// M8 S6 — the device-scoped calibration sidecar. Calibration describes one
-    /// hardware clock's drift (white paper Part 4.3), so it belongs to the
-    /// machine, not to a session document — it lives under app-support and never
-    /// travels inside a session moved to other hardware.
-    juce::File calibrationSidecarFile()
+    /// The per-machine app-support root for IDA. On macOS/iOS this resolves to
+    /// ~/Library/Application Support/IDA — the same location IdaPreferences
+    /// writes IDA.settings (juce::File::userApplicationDataDirectory is
+    /// ~/Library on Apple platforms, so the "Application Support" segment must
+    /// be added explicitly); on other platforms it is <userAppData>/IDA.
+    /// Per-machine state (calibration, the tape store) lives here — never inside
+    /// a session document — so it survives a session moved to other hardware.
+    juce::File idaAppSupportDirectory()
     {
-        return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-            .getChildFile ("IDA")
-            .getChildFile ("calibration.json");
+        auto root = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory);
+       #if JUCE_MAC || JUCE_IOS
+        root = root.getChildFile ("Application Support");
+       #endif
+        return root.getChildFile ("IDA");
     }
 
-    /// Tape slice 3 — root directory for per-tape FLAC files. Mirrors the
-    /// calibration sidecar location pattern: under app-support, never inside
-    /// a session document, so recordings survive session moves.
+    /// M8 S6 — the device-scoped calibration sidecar. Calibration describes one
+    /// hardware clock's drift (white paper Part 4.3), so it belongs to the
+    /// machine, not to a session document.
+    juce::File calibrationSidecarFile()
+    {
+        return idaAppSupportDirectory().getChildFile ("calibration.json");
+    }
+
+    /// Tape slice 3 — root directory for per-tape FLAC files.
     juce::File tapesDirectory()
     {
-        return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-            .getChildFile ("IDA")
-            .getChildFile ("tapes");
+        return idaAppSupportDirectory().getChildFile ("tapes");
     }
 
     /// The playhead slider works in sixteenths of an LMC second so its value
