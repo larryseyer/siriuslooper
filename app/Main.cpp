@@ -14,7 +14,24 @@ public:
 
     const juce::String getApplicationName() override    { return "IDA"; }
     const juce::String getApplicationVersion() override { return "0.1.0"; }
-    bool moreThanOneInstanceAllowed() override          { return true; }
+
+    // Single-instance only. IDA's tape store is a fixed on-disk location
+    // (~/Library/IDA/tapes); a second running copy would point its own
+    // always-running tape writers at the SAME files, each deleting/reopening
+    // and racing the other, so the tape grows unbounded and closing one window
+    // leaves the other still recording. One instance guarantees that closing
+    // the app stops all recording. A second launch is routed to the existing
+    // instance via anotherInstanceStarted() and exits.
+    bool moreThanOneInstanceAllowed() override          { return false; }
+
+    void anotherInstanceStarted (const juce::String&) override
+    {
+        if (mainWindow != nullptr)
+        {
+            mainWindow->setVisible (true);
+            mainWindow->toFront (true);
+        }
+    }
 
     void initialise (const juce::String&) override
     {
