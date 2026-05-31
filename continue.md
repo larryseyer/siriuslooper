@@ -110,3 +110,29 @@ sed -n '1,140p' docs/superpowers/plans/2026-05-30-blank-slate-first-run-implemen
 ```
 Then **begin Slice 1** (TapePool empty + optional primary) via `superpowers:subagent-driven-development`.
 Clean `rm -rf build` before any operator GUI hand-off (per `[[feedback_clean_builds_only_for_testing]]`).
+
+## Session kickoff prompts
+
+Two drivers, same detail plans. Default to **attended**; use **unattended** only
+for a batch of purely-headless, unambiguous tasks. Full rationale lives in the
+"Master-plan bookkeeping" section of `CLAUDE.md` (context-is-volatile rule).
+
+**Attended (paste at session start — master orchestrates, subagents implement):**
+
+> Read `continue.md` and `docs/superpowers/plans/STATUS.md`. Take the first
+> unchecked `[ ]` item (active diversions before the paused engine order). Execute
+> it with `superpowers:subagent-driven-development`: dispatch ONE fresh subagent
+> per task in its detail plan, TDD each, run the two-stage review (spec
+> compliance, then code quality), and do NOT implement tasks in this session
+> yourself — keep your context thin so it stays under ~35%. After each task: tick
+> `STATUS.md`, refresh `continue.md`, commit + push. Stop and surface any blocker
+> per the hard-stop rules instead of guessing. If the item has no detail sub-plan
+> yet, write one with `superpowers:writing-plans`, register its link in
+> `STATUS.md`, then execute.
+
+**Unattended (operator runs in a separate terminal — never launched by Claude):**
+
+> `./run_ralph.sh` — already wired to `prd.json` / `progress.txt` with watchdog,
+> monitor, and the 45-min / $35-per-iter / stagnation halt gates. Confirm the next
+> slice's tasks are headless + unambiguous before launching; ralph halts on its
+> own gates and on `<promise>HALTED</promise>`.

@@ -32,6 +32,18 @@ plans live beside it; finished plans live in `docs/superpowers/plans/archive/`.
   folder shows only live plans.
 - **Legend:** `[x]` done · `[~]` in progress · `[ ]` not started.
 
+**Context is volatile, disk is durable.** Past ~35% context Claude slows and
+silently drops requested work. Any fact that must survive to the next session
+lives on disk (`STATUS.md` boxes, `continue.md`, the detail plans, `git log`),
+never only in the session. End a session at a clean task boundary rather than
+push a degrading window — stopping early with the bookkeeping updated is a
+success, not a failure. Prefer a fresh session (which reconstructs exactly what
+was persisted) over `/compact` (which summarizes lossily) at a boundary. The
+master/interactive session should dispatch each task to a fresh subagent
+(`superpowers:subagent-driven-development`) rather than implement it directly, so
+the master accumulates only slim review summaries and stays under the wall. See
+the session kickoff prompts at the bottom of `continue.md`.
+
 ## Current focus (2026-05-20)
 
 Building the **white-paper mixer + GUI architecture** (Part VI: a full creative
